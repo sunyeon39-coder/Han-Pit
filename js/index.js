@@ -38,12 +38,26 @@ const newEventCardBtn = document.getElementById("newEventCardBtn");
 const saveEventCardBtn = document.getElementById("saveEventCardBtn");
 const deleteEventCardBtn = document.getElementById("deleteEventCardBtn");
 const eventCardList = document.getElementById("eventCardList");
+const dealerOpsMount = document.getElementById("dealerOpsMount");
+
+let stopDealerAttendanceWatch = null;
+let stopDealerSeatWatch = null;
+
+let dealerAttendanceMap = new Map();
+let dealerSeatMap = new Map();
+
+const dealerAdminUi = {
+  search: "",
+  status: "all",
+  sort: "name"
+};
 
 let events = [];
 let currentTournament = null;
 let currentUserProfile = null;
 let currentSeatAssignment = null;
 let seatSummaryMap = new Map();
+let dealerUiCollapsed = true;
 
 let stopTournamentWatch = null;
 let stopMySeatNotificationWatch = null;
@@ -185,6 +199,507 @@ function openModal(el) {
 
 function closeModal(el) {
   el?.classList.remove("show");
+}
+/* ===============================
+   DEALER ATTENDANCE
+=============================== */
+function getAttendanceDocId(tournamentId, uid) {
+  return `${tournamentId}__${uid}`;
+}
+
+function getAttendanceRef(tournamentId, uid) {
+  return doc(db, "dealer_attendance", getAttendanceDocId(tournamentId, uid));
+}
+
+function getAttendanceStatusLabel(status) {
+  if (status === "checked_in") return "출근 완료";
+  if (status === "waiting") return "대기";
+  if (status === "assigned") return "배치중";
+  if (status === "break") return "휴식";
+  if (status === "checked_out") return "퇴근";
+  return "출근 전";
+}
+
+function formatClock(ts) {
+  if (!ts) return "-";
+  const d = new Date(ts);
+  return d.toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+function formatClockOrDash(ts) {
+  return ts ? formatClock(ts) : "-";
+}
+
+function formatDuration(ms) {
+  const safe = Math.max(0, Number(ms || 0));
+  const totalMin = Math.floor(safe / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return `${String(h).padStart(2, "0")}시간 ${String(m).padStart(2, "0")}분`;
+}
+
+function getNowMs() {
+  return Date.now();
+}
+
+function getBaseAttendance(user) {
+  if (!user) return null;
+  const tournamentId = getTournamentId();
+  return dealerAttendanceMap.get(getAttendanceDocId(tournamentId, user.uid)) || null;
+}
+
+function getDerivedAttendance(user) {
+  if (!user) return null;
+
+  const base = getBaseAttendance(user);
+  const seatInfo = dealerSeatMap.get(user.uid);
+
+  if (!base) {
+    return {
+      uid: user.uid,
+      nickname: currentUserProfile?.nickname || user.displayName || "Unknown",
+      status: seatInfo ? "assigned" : "off",
+      checkedInAt: null,
+      checkedOutAt: null,
+      breakStartedAt: null,
+      totalBreakMs: 0,
+      currentEventId: seatInfo?.eventId || "",
+      currentBoxId: seatInfo?.boxId || "",
+      currentSeatId: seatInfo?.seatId || "",
+      currentSeatLabel: seatInfo?.seatLabel || "",
+      updatedAt: 0
+    };
+  }
+
+  return {
+    ...base,
+    status: seatInfo ? "assigned" : base.status,
+    currentEventId: seatInfo?.eventId || base.currentEventId || "",
+    currentBoxId: seatInfo?.boxId || base.currentBoxId || "",
+    currentSeatId: seatInfo?.seatId || base.currentSeatId || "",
+    currentSeatLabel: seatInfo?.seatLabel || base.currentSeatLabel || ""
+  };
+}
+
+async function writeAttendanceLog({
+  uid = "",
+  nickname = "",
+  action = "",
+  tournamentId = "",
+  eventId = "",
+  boxId = "",
+  seatId = "",
+  seatLabel = ""
+}) {
+  try {
+    const logId = `log_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    await setDoc(doc(db, "dealer_attendance_logs", logId), {
+      uid,
+      nickname,
+      action,
+      tournamentId,
+      eventId,
+      boxId,
+      seatId,
+      seatLabel,
+      createdAt: Date.now()
+    });
+  } catch (err) {
+    console.error("writeAttendanceLog error:", err);
+  }
+}
+
+async function updateMyAttendanceStatus(nextStatus) {
+  const tournamentId = getTournamentId();
+  const user = auth.currentUser;
+  if (!user || !tournamentId || !currentUserProfile) return;
+
+  const current = getDerivedAttendance(user);
+  const now = getNowMs();
+
+  const payload = {
+    uid: user.uid,
+    nickname: String(currentUserProfile.nickname || user.displayName || "").trim(),
+    email: String(currentUserProfile.email || user.email || "").trim(),
+    tournamentId,
+    status: nextStatus,
+    checkedInAt:
+      nextStatus === "checked_in" || nextStatus === "waiting" || nextStatus === "break"
+        ? (current?.checkedInAt || now)
+        : (current?.checkedInAt || null),
+    checkedOutAt: nextStatus === "checked_out" ? now : null,
+    breakStartedAt:
+      nextStatus === "break"
+        ? now
+        : null,
+    totalBreakMs:
+      nextStatus === "waiting" && current?.status === "break" && current?.breakStartedAt
+        ? Number(current.totalBreakMs || 0) + Math.max(0, now - Number(current.breakStartedAt || 0))
+        : Number(current?.totalBreakMs || 0),
+    currentEventId: current?.currentEventId || "",
+    currentBoxId: current?.currentBoxId || "",
+    currentSeatId: current?.currentSeatId || "",
+    currentSeatLabel: current?.currentSeatLabel || "",
+    updatedAt: now
+  };
+
+  await setDoc(getAttendanceRef(tournamentId, user.uid), payload, { merge: true });
+
+  await writeAttendanceLog({
+    uid: user.uid,
+    nickname: payload.nickname,
+    action: nextStatus,
+    tournamentId
+  });
+}
+
+async function updateAdminAttendanceStatus(uid, nextStatus) {
+  const tournamentId = getTournamentId();
+  if (!uid || !tournamentId) return;
+
+  const current = dealerAttendanceMap.get(getAttendanceDocId(tournamentId, uid));
+  if (!current) return;
+
+  const now = getNowMs();
+
+  const payload = {
+    ...current,
+    status: nextStatus,
+    checkedInAt:
+      nextStatus === "checked_in" || nextStatus === "waiting" || nextStatus === "break"
+        ? (current.checkedInAt || now)
+        : (current.checkedInAt || null),
+    checkedOutAt: nextStatus === "checked_out" ? now : null,
+    breakStartedAt: nextStatus === "break" ? now : null,
+    totalBreakMs:
+      nextStatus === "waiting" && current.status === "break" && current.breakStartedAt
+        ? Number(current.totalBreakMs || 0) + Math.max(0, now - Number(current.breakStartedAt || 0))
+        : Number(current.totalBreakMs || 0),
+    updatedAt: now
+  };
+
+  await setDoc(getAttendanceRef(tournamentId, uid), payload, { merge: true });
+
+  await writeAttendanceLog({
+    uid,
+    nickname: payload.nickname || "",
+    action: `admin_${nextStatus}`,
+    tournamentId
+  });
+}
+
+function getWorkingMs(item) {
+  if (!item?.checkedInAt) return 0;
+  const end = item.status === "checked_out" && item.checkedOutAt ? item.checkedOutAt : Date.now();
+  const total = Math.max(0, end - Number(item.checkedInAt || 0));
+  const currentBreak =
+    item.status === "break" && item.breakStartedAt
+      ? Math.max(0, Date.now() - Number(item.breakStartedAt || 0))
+      : 0;
+  return Math.max(0, total - Number(item.totalBreakMs || 0) - currentBreak);
+}
+
+function getAdminAttendanceList() {
+  const tournamentId = getTournamentId();
+  const list = [];
+
+  dealerAttendanceMap.forEach((value) => {
+    if (value.tournamentId !== tournamentId) return;
+    const derived = {
+      ...value,
+      ...(dealerSeatMap.get(value.uid)
+        ? {
+            status: "assigned",
+            currentEventId: dealerSeatMap.get(value.uid)?.eventId || "",
+            currentBoxId: dealerSeatMap.get(value.uid)?.boxId || "",
+            currentSeatId: dealerSeatMap.get(value.uid)?.seatId || "",
+            currentSeatLabel: dealerSeatMap.get(value.uid)?.seatLabel || ""
+          }
+        : {})
+    };
+    list.push(derived);
+  });
+
+  list.sort((a, b) => (a.nickname || "").localeCompare(b.nickname || "", "ko"));
+  return list;
+}
+function getFilteredAdminAttendanceList() {
+  const base = getAdminAttendanceList();
+
+  const keyword = dealerAdminUi.search.trim().toLowerCase();
+  let list = base.filter((item) => {
+    const name = String(item.nickname || "").toLowerCase();
+    const email = String(item.email || "").toLowerCase();
+    const status = String(item.status || "off").trim();
+
+    const matchKeyword =
+      !keyword ||
+      name.includes(keyword) ||
+      email.includes(keyword);
+
+    const matchStatus =
+      dealerAdminUi.status === "all" ||
+      status === dealerAdminUi.status;
+
+    return matchKeyword && matchStatus;
+  });
+
+  if (dealerAdminUi.sort === "name") {
+    list.sort((a, b) =>
+      String(a.nickname || "").localeCompare(String(b.nickname || ""), "ko")
+    );
+  }
+
+  if (dealerAdminUi.sort === "status") {
+    const order = {
+      waiting: 1,
+      assigned: 2,
+      checked_out: 3,
+      off: 4
+    };
+
+    list.sort((a, b) => {
+      const ao = order[String(a.status || "off")] ?? 99;
+      const bo = order[String(b.status || "off")] ?? 99;
+      if (ao !== bo) return ao - bo;
+      return String(a.nickname || "").localeCompare(String(b.nickname || ""), "ko");
+    });
+  }
+
+  if (dealerAdminUi.sort === "recent") {
+    list.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
+  }
+
+  return list;
+}
+
+function renderDealerOps() {
+  if (!dealerOpsMount) return;
+
+  const isAdmin = currentUserProfile?.role === "admin";
+  const user = auth.currentUser;
+  const me = user ? getDerivedAttendance(user) : null;
+
+  const myStatus = me?.status || "off";
+  const canCheckIn = myStatus === "off" || myStatus === "checked_out";
+  const canCheckOut = myStatus === "waiting";
+
+  const myCheckInText = formatClockOrDash(me?.checkedInAt);
+  const myCheckOutText = formatClockOrDash(me?.checkedOutAt);
+
+  let adminHtml = "";
+
+  if (currentUserProfile?.role === "admin") {
+    const list = getFilteredAdminAttendanceList();
+const totalList = getAdminAttendanceList();
+
+    const counts = {
+  waiting: 0,
+  assigned: 0,
+  checked_out: 0
+};
+
+totalList.forEach((item) => {
+  const s = item.status || "off";
+  if (counts[s] !== undefined) counts[s] += 1;
+});
+
+if (isAdmin && dealerUiCollapsed) {
+  dealerOpsMount.innerHTML = `
+    <section class="dealer-admin-card">
+      <div class="dealer-ops-head">
+        <div>
+          <div class="dealer-ops-title">딜러 운영 현황</div>
+          <div class="dealer-ops-sub">현재 대회 기준 실시간 출근 / 대기 / 배치 상태</div>
+        </div>
+        <button class="dealer-toggle-btn" data-dealer-toggle>▲</button>
+      </div>
+    </section>
+  `;
+  return;
+}
+
+    adminHtml = `
+      <section class="dealer-admin-card">
+        <div class="dealer-ops-head">
+  <div>
+    <div class="dealer-ops-title">딜러 운영 현황</div>
+    <div class="dealer-ops-sub">현재 대회 기준 실시간 출근 / 대기 / 배치 상태</div>
+  </div>
+
+  <button class="dealer-toggle-btn" data-dealer-toggle>
+  ${dealerUiCollapsed ? "▼" : "▲"}
+</button>
+</div>
+
+        <div class="dealer-admin-summary">
+          <div class="dealer-metric">
+            <div class="dealer-metric-label">대기</div>
+            <div class="dealer-metric-value">${counts.waiting}</div>
+          </div>
+          <div class="dealer-metric">
+            <div class="dealer-metric-label">배치중</div>
+            <div class="dealer-metric-value">${counts.assigned}</div>
+          </div>
+          <div class="dealer-metric">
+            <div class="dealer-metric-label">퇴근</div>
+            <div class="dealer-metric-value">${counts.checked_out}</div>
+          </div>
+        </div>
+        <div class="dealer-admin-toolbar">
+  <input
+    class="dealer-admin-search"
+    type="text"
+    placeholder="이름 또는 이메일 검색"
+    value="${escapeHtml(dealerAdminUi.search)}"
+    data-dealer-search
+  />
+
+  <select class="dealer-admin-filter" data-dealer-filter>
+    <option value="all" ${dealerAdminUi.status === "all" ? "selected" : ""}>전체</option>
+    <option value="waiting" ${dealerAdminUi.status === "waiting" ? "selected" : ""}>대기</option>
+    <option value="assigned" ${dealerAdminUi.status === "assigned" ? "selected" : ""}>배치중</option>
+    <option value="checked_out" ${dealerAdminUi.status === "checked_out" ? "selected" : ""}>퇴근</option>
+  </select>
+
+  <select class="dealer-admin-sort" data-dealer-sort>
+    <option value="name" ${dealerAdminUi.sort === "name" ? "selected" : ""}>이름순</option>
+    <option value="status" ${dealerAdminUi.sort === "status" ? "selected" : ""}>상태순</option>
+    <option value="recent" ${dealerAdminUi.sort === "recent" ? "selected" : ""}>최근 변경순</option>
+  </select>
+</div>
+
+        <div class="dealer-admin-list">
+          ${
+            list.length
+              ? list.map((item) => `
+                <div class="dealer-row">
+  <div class="dealer-row-main">
+    <div class="dealer-row-name">${escapeHtml(item.nickname || item.email || item.uid || "Unknown")}</div>
+    <div class="dealer-row-meta">${escapeHtml(item.email || "-")}</div>
+  </div>
+
+  <div class="dealer-row-status">
+    <span class="dealer-status-pill ${escapeHtml(item.status || "off")}">
+      ${escapeHtml(getAttendanceStatusLabel(item.status || "off"))}
+    </span>
+  </div>
+
+  <div class="dealer-row-center">
+    <span>${item.currentSeatLabel ? `Seat ${escapeHtml(item.currentSeatLabel)}` : "-"}</span>
+    <span>${escapeHtml(formatDuration(getWorkingMs(item)))}</span>
+  </div>
+
+  <div class="dealer-row-actions">
+    <button class="dealer-mini-btn" data-admin-action="checked_out" data-admin-uid="${escapeHtml(item.uid)}">퇴근</button>
+  </div>
+</div>
+              `).join("")
+              : `<div class="dealer-empty">아직 출근 기록이 없습니다.</div>`
+          }
+        </div>
+      </section>
+    `;
+  }
+
+  const selfHtml = !isAdmin ? `
+  <section class="dealer-self-card">
+    <div class="dealer-ops-head">
+      <div>
+        <div class="dealer-ops-title">내 근무 상태</div>
+        <div class="dealer-ops-sub">현재 대회 기준 출근 / 퇴근 관리</div>
+      </div>
+      <span class="dealer-status-pill ${escapeHtml(myStatus)}">
+        ${escapeHtml(getAttendanceStatusLabel(myStatus))}
+      </span>
+    </div>
+
+    <div class="dealer-self-compact">
+      <div class="dealer-self-times">
+        <div class="dealer-time-chip">
+          <span class="dealer-time-chip-label">출근</span>
+          <span class="dealer-time-chip-value">${escapeHtml(myCheckInText)}</span>
+        </div>
+
+        <div class="dealer-time-chip">
+          <span class="dealer-time-chip-label">퇴근</span>
+          <span class="dealer-time-chip-value">${escapeHtml(myCheckOutText)}</span>
+        </div>
+      </div>
+
+      <div class="dealer-action-row">
+        <button class="dealer-action-btn primary" data-self-action="waiting" ${canCheckIn ? "" : "disabled"}>출근하기</button>
+        <button class="dealer-action-btn danger" data-self-action="checked_out" ${canCheckOut ? "" : "disabled"}>퇴근하기</button>
+      </div>
+    </div>
+  </section>
+` : "";
+
+  dealerOpsMount.innerHTML = `
+    ${selfHtml}
+    ${adminHtml}
+  `;
+}
+async function loadDealerAttendanceOnce() {
+  dealerAttendanceMap.clear();
+
+  const tournamentId = getTournamentId();
+  const user = auth.currentUser;
+  if (!tournamentId || !user) return;
+
+  try {
+    if (currentUserProfile?.role === "admin") {
+      const snap = await getDocs(collection(db, "dealer_attendance"));
+
+      snap.docs.forEach((d) => {
+        const data = d.data() || {};
+        dealerAttendanceMap.set(d.id, {
+          uid: String(data.uid || "").trim(),
+          nickname: String(data.nickname || "").trim(),
+          email: String(data.email || "").trim(),
+          tournamentId: String(data.tournamentId || "").trim(),
+          status: String(data.status || "off").trim(),
+          checkedInAt: Number(data.checkedInAt || 0) || null,
+          checkedOutAt: Number(data.checkedOutAt || 0) || null,
+          breakStartedAt: Number(data.breakStartedAt || 0) || null,
+          totalBreakMs: Number(data.totalBreakMs || 0) || 0,
+          currentEventId: String(data.currentEventId || "").trim(),
+          currentBoxId: String(data.currentBoxId || "").trim(),
+          currentSeatId: String(data.currentSeatId || "").trim(),
+          currentSeatLabel: String(data.currentSeatLabel || "").trim(),
+          updatedAt: Number(data.updatedAt || 0) || 0
+        });
+      });
+    } else {
+      const snap = await getDoc(getAttendanceRef(tournamentId, user.uid));
+
+      if (snap.exists()) {
+        const data = snap.data() || {};
+        dealerAttendanceMap.set(snap.id, {
+          uid: String(data.uid || "").trim(),
+          nickname: String(data.nickname || "").trim(),
+          email: String(data.email || "").trim(),
+          tournamentId: String(data.tournamentId || "").trim(),
+          status: String(data.status || "off").trim(),
+          checkedInAt: Number(data.checkedInAt || 0) || null,
+          checkedOutAt: Number(data.checkedOutAt || 0) || null,
+          breakStartedAt: Number(data.breakStartedAt || 0) || null,
+          totalBreakMs: Number(data.totalBreakMs || 0) || 0,
+          currentEventId: String(data.currentEventId || "").trim(),
+          currentBoxId: String(data.currentBoxId || "").trim(),
+          currentSeatId: String(data.currentSeatId || "").trim(),
+          currentSeatLabel: String(data.currentSeatLabel || "").trim(),
+          updatedAt: Number(data.updatedAt || 0) || 0
+        });
+      }
+    }
+
+    renderDealerOps();
+  } catch (err) {
+    console.error("loadDealerAttendanceOnce error:", err);
+  }
 }
 
 function getStatus(date, start, close) {
@@ -588,6 +1103,46 @@ function bindLayoutSeatSummaryRealtime() {
   );
 }
 
+function bindDealerSeatRealtime() {
+  if (stopDealerSeatWatch) {
+    stopDealerSeatWatch();
+    stopDealerSeatWatch = null;
+  }
+
+  stopDealerSeatWatch = onSnapshot(
+    collection(db, "layout_events"),
+    (snap) => {
+      dealerSeatMap.clear();
+
+      snap.docs.forEach((d) => {
+        const data = d.data() || {};
+        const eventId = String(data.eventId || "").trim();
+        const boxId = String(data.boxId || "").trim();
+        const seats = Array.isArray(data.seats) ? data.seats : [];
+
+        seats.forEach((seat) => {
+          const uid = String(seat?.personUid || "").trim();
+          if (!uid) return;
+
+          dealerSeatMap.set(uid, {
+            eventId,
+            boxId,
+            seatId: String(seat?.id || "").trim(),
+            seatLabel: String(seat?.label ?? seat?.no ?? "").trim()
+          });
+        });
+      });
+
+      
+
+      renderDealerOps();
+    },
+    (err) => {
+      console.error("bindDealerSeatRealtime error:", err);
+    }
+  );
+}
+
 /* ===============================
    SAVE / DELETE EVENT CARD
 =============================== */
@@ -746,7 +1301,7 @@ async function isUserAlreadySeated(userUid) {
   }
 }
 
-async function autoJoinSharedWaitingOnIndex(user) {
+async function joinSharedWaitingOnCheckIn(user) {
   const tournamentId = getTournamentId();
   if (!user || !tournamentId) return;
 
@@ -790,7 +1345,7 @@ async function autoJoinSharedWaitingOnIndex(user) {
       email,
       name: nickname,
       addedAt: Date.now(),
-      source: "auto",
+      source: "checkin",
       tournamentId
     });
 
@@ -805,7 +1360,48 @@ async function autoJoinSharedWaitingOnIndex(user) {
       { merge: true }
     );
   } catch (error) {
-    console.error("❌ autoJoinSharedWaitingOnIndex error:", error);
+    console.error("❌ joinSharedWaitingOnCheckIn error:", error);
+  }
+}
+
+async function removeFromSharedWaitingOnCheckOut(user) {
+  const tournamentId = getTournamentId();
+  if (!user || !tournamentId) return;
+
+  try {
+    const waitingRef = doc(db, "layout_shared", "global_waiting");
+    const waitingSnap = await getDoc(waitingRef);
+    if (!waitingSnap.exists()) return;
+
+    const waitingState = waitingSnap.data() || {};
+    const waitingList = Array.isArray(waitingState.waiting)
+      ? waitingState.waiting
+      : [];
+
+    const nextWaiting = waitingList.filter((item) => {
+      if (!item || typeof item !== "object") return false;
+
+      const itemUid = String(item.uid || "").trim();
+      const itemTournamentId = String(item.tournamentId || "").trim();
+
+      if (itemUid !== user.uid) return true;
+      if (itemTournamentId && itemTournamentId !== tournamentId) return true;
+
+      return false;
+    });
+
+    await setDoc(
+      waitingRef,
+      {
+        ...waitingState,
+        version: 2,
+        waiting: nextWaiting,
+        updatedAt: Date.now()
+      },
+      { merge: true }
+    );
+  } catch (error) {
+    console.error("❌ removeFromSharedWaitingOnCheckOut error:", error);
   }
 }
 
@@ -883,15 +1479,95 @@ eventCardList?.addEventListener("click", (e) => {
   syncSelectedEventForm();
 });
 
+dealerOpsMount?.addEventListener("input", (e) => {
+  const searchEl = e.target.closest("[data-dealer-search]");
+  if (!searchEl) return;
+
+  dealerAdminUi.search = String(searchEl.value || "");
+  renderDealerOps();
+});
+
+dealerOpsMount?.addEventListener("change", (e) => {
+  const filterEl = e.target.closest("[data-dealer-filter]");
+  if (filterEl) {
+    dealerAdminUi.status = String(filterEl.value || "all");
+    renderDealerOps();
+    return;
+  }
+
+  const sortEl = e.target.closest("[data-dealer-sort]");
+  if (sortEl) {
+    dealerAdminUi.sort = String(sortEl.value || "name");
+    renderDealerOps();
+  }
+});
+
+dealerOpsMount?.addEventListener("click", async (e) => {
+  try {
+    const toggleBtn = e.target.closest("[data-dealer-toggle]");
+    if (toggleBtn) {
+      dealerUiCollapsed = !dealerUiCollapsed;
+      renderDealerOps();
+      return;
+    }
+
+    const isAdmin = currentUserProfile?.role === "admin";
+
+    if (isAdmin) {
+      const adminBtn = e.target.closest("[data-admin-action]");
+      if (adminBtn) {
+        const action = String(adminBtn.getAttribute("data-admin-action") || "").trim();
+        const uid = String(adminBtn.getAttribute("data-admin-uid") || "").trim();
+
+        if (!action || !uid) return;
+
+        await updateAdminAttendanceStatus(uid, action);
+        await loadDealerAttendanceOnce();
+        renderDealerOps();
+        return;
+      }
+    }
+
+    const selfBtn = e.target.closest("[data-self-action]");
+    if (!selfBtn) return;
+
+    const nextStatus = String(selfBtn.getAttribute("data-self-action") || "").trim();
+    if (!nextStatus) return;
+
+    if (nextStatus === "waiting") {
+      await updateMyAttendanceStatus("waiting");
+      await joinSharedWaitingOnCheckIn(auth.currentUser);
+      await loadDealerAttendanceOnce();
+      renderDealerOps();
+      return;
+    }
+
+    if (nextStatus === "checked_out") {
+      await updateMyAttendanceStatus("checked_out");
+      await removeFromSharedWaitingOnCheckOut(auth.currentUser);
+      await loadDealerAttendanceOnce();
+      renderDealerOps();
+      return;
+    }
+  } catch (err) {
+    console.error("dealerOps click error:", err);
+    alert("처리 중 오류가 발생했습니다.");
+  }
+});
+
+
 /* ===============================
    INIT
 =============================== */
 async function init() {
   await loadEvents();
   render();
+  renderDealerOps();
   refreshCardStatuses();
   bindEventsRealtime();
   bindLayoutSeatSummaryRealtime();
+  await loadDealerAttendanceOnce();
+  bindDealerSeatRealtime();
 }
 
 onAuthStateChanged(auth, async (user) => {
@@ -906,14 +1582,15 @@ onAuthStateChanged(auth, async (user) => {
   const userSnap = await getDoc(userRef);
   currentUserProfile = userSnap.exists() ? (userSnap.data() || {}) : null;
 
+  renderDealerOps();
+
   if (currentUserProfile?.role === "admin") {
     eventAdminBtn?.classList.remove("hidden");
     seatMapEditBtn?.classList.remove("hidden");
   }
 
-  await initTournamentPeriodWatch();
-  await autoJoinSharedWaitingOnIndex(user);
-  await init();
+await initTournamentPeriodWatch();
+await init();
 });
 
 setInterval(() => {
@@ -931,6 +1608,8 @@ window.addEventListener("beforeunload", () => {
   if (stopMySeatNotificationWatch) stopMySeatNotificationWatch();
   if (stopEventsWatch) stopEventsWatch();
   if (stopLayoutEventsWatch) stopLayoutEventsWatch();
+  if (stopDealerAttendanceWatch) stopDealerAttendanceWatch();
+if (stopDealerSeatWatch) stopDealerSeatWatch();
 });
 /* ===============================
    SEAT MAP (ADD ONLY)

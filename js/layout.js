@@ -275,6 +275,7 @@ import {
       console.error("saveEventState error:", err);
     }
   }
+  
 
   async function saveWaitingState() {
     try {
@@ -714,6 +715,85 @@ import {
 
     touchWaiting();
   }
+  function getAttendanceDocId(tournamentId, uid) {
+  return `${tournamentId}__${uid}`;
+}
+
+function getAttendanceRef(tournamentId, uid) {
+  return doc(db, "dealer_attendance", getAttendanceDocId(tournamentId, uid));
+}
+
+function getCurrentTournamentIdSafe() {
+  return (
+    new URLSearchParams(location.search).get("tournamentId") ||
+    sessionStorage.getItem("tournamentId") ||
+    ""
+  );
+}
+
+async function setDealerStatus(uid, patch = {}) {
+  const tournamentId = getCurrentTournamentIdSafe();
+  if (!tournamentId || !uid) return;
+
+  try {
+    await setDoc(
+      getAttendanceRef(tournamentId, uid),
+      {
+        uid: String(uid).trim(),
+        tournamentId,
+        updatedAt: Date.now(),
+        ...patch
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    console.error("setDealerStatus error:", err);
+  }
+}
+
+async function moveDealerToWaiting({ uid = "", email = "", name = "" }) {
+  if (!uid || !name) return;
+
+  returnPersonToWaiting(name, uid, email);
+
+  await setDealerStatus(uid, {
+    email: String(email || "").trim(),
+    nickname: String(name || "").trim(),
+    status: "waiting",
+    currentEventId: "",
+    currentBoxId: "",
+    currentSeatId: "",
+    currentSeatLabel: ""
+  });
+}
+
+async function moveDealerToAssigned({
+  uid = "",
+  email = "",
+  name = "",
+  seatId = "",
+  seatLabel = "",
+  eventId = "",
+  boxId = ""
+}) {
+  if (!uid || !name) return;
+
+  waitingState.waiting = waitingState.waiting.filter((w) => {
+    if (!w || typeof w !== "object") return false;
+    return String(w.uid || "").trim() !== String(uid).trim();
+  });
+  touchWaiting();
+
+  await setDealerStatus(uid, {
+    email: String(email || "").trim(),
+    nickname: String(name || "").trim(),
+    status: "assigned",
+    currentEventId: String(eventId || "").trim(),
+    currentBoxId: String(boxId || "").trim(),
+    currentSeatId: String(seatId || "").trim(),
+    currentSeatLabel: String(seatLabel || "").trim()
+  });
+}
 
   function getCanvasRectForSeatPlacement() {
     const canvas = document.querySelector(".pc-canvas");
@@ -820,54 +900,68 @@ import {
   }
 
   function deleteSeat(seatId) {
-    if (!canManageLayout()) return;
+  if (!canManageLayout()) return;
 
-    const idx = eventState.seats.findIndex((s) => s.id === seatId);
-    if (idx < 0) return;
+  const idx = eventState.seats.findIndex((s) => s.id === seatId);
+  if (idx < 0) return;
 
-    const seat = eventState.seats[idx];
-    const prevUid = String(seat.personUid || "").trim();
+  const seat = eventState.seats[idx];
+  const prevName = String(seat.person || "").trim();
+  const prevUid = String(seat.personUid || "").trim();
+  const prevEmail = String(seat.personEmail || "").trim();
 
-    if (!isEmptyPerson(seat.person)) {
-      returnPersonToWaiting(seat.person, seat.personUid || "", seat.personEmail || "");
-    }
+  eventState.seats.splice(idx, 1);
 
-    eventState.seats.splice(idx, 1);
+  if (ui.selectedSeatId === seatId) ui.selectedSeatId = null;
 
-    if (ui.selectedSeatId === seatId) ui.selectedSeatId = null;
+  if (prevUid) {
+    void clearUserSeatNotification(prevUid, "seat_deleted");
+  }
 
-    if (prevUid) {
-      void clearUserSeatNotification(prevUid, "seat_deleted");
-    }
+  touchEvent();
+  render();
 
+  if (prevUid && prevName) {
+    void moveDealerToWaiting({
+      uid: prevUid,
+      email: prevEmail,
+      name: prevName
+    });
+  }
     touchEvent();
     render();
   }
 
   function clearSeat(seatId) {
-    if (!canManageLayout()) return;
+  if (!canManageLayout()) return;
 
-    const s = eventState.seats.find((x) => x.id === seatId);
-    if (!s) return;
+  const s = eventState.seats.find((x) => x.id === seatId);
+  if (!s) return;
 
-    const prevUid = String(s.personUid || "").trim();
+  const prevName = String(s.person || "").trim();
+  const prevUid = String(s.personUid || "").trim();
+  const prevEmail = String(s.personEmail || "").trim();
 
-    if (!isEmptyPerson(s.person)) {
-      returnPersonToWaiting(s.person, s.personUid || "", s.personEmail || "");
-    }
+  s.person = "비어있음";
+  s.personUid = "";
+  s.personEmail = "";
+  s.seatedAt = null;
 
-    s.person = "비어있음";
-    s.personUid = "";
-    s.personEmail = "";
-    s.seatedAt = null;
-
-    if (prevUid) {
-      void clearUserSeatNotification(prevUid, "seat_cleared");
-    }
-
-    touchEvent();
-    render();
+  if (prevUid) {
+    void clearUserSeatNotification(prevUid, "seat_cleared");
   }
+
+  touchEvent();
+  render();
+
+  if (prevUid && prevName) {
+    void moveDealerToWaiting({
+      uid: prevUid,
+      email: prevEmail,
+      name: prevName
+    });
+  }
+}
 
   function addWaiting(name, personUid = "", personEmail = "") {
     if (!canManageLayout()) return;
@@ -908,56 +1002,75 @@ import {
   }
 
   async function assignWaitingToSeat(waitingId, seatId) {
-    if (!canManageLayout()) return;
+  if (!canManageLayout()) return;
 
-    const wIdx = waitingState.waiting.findIndex((w) => w.id === waitingId);
-    const seat = eventState.seats.find((s) => s.id === seatId);
-    if (wIdx < 0 || !seat) return;
+  const wIdx = waitingState.waiting.findIndex((w) => w.id === waitingId);
+  const seat = eventState.seats.find((s) => s.id === seatId);
+  if (wIdx < 0 || !seat) return;
 
-    const w = waitingState.waiting[wIdx];
-    const prevUid = String(seat.personUid || "").trim();
+  const w = waitingState.waiting[wIdx];
 
-    if (!isEmptyPerson(seat.person)) {
-      returnPersonToWaiting(seat.person, seat.personUid || "", seat.personEmail || "");
-    }
+  const prevName = String(seat.person || "").trim();
+  const prevUid = String(seat.personUid || "").trim();
+  const prevEmail = String(seat.personEmail || "").trim();
 
-    seat.person = w.name;
-    seat.personUid = w.uid || "";
-    seat.personEmail = w.email || "";
-    seat.seatedAt = Date.now();
+  seat.person = w.name;
+  seat.personUid = w.uid || "";
+  seat.personEmail = w.email || "";
+  seat.seatedAt = Date.now();
 
-    waitingState.waiting.splice(wIdx, 1);
-    ui.selectedWaitingId = null;
+  waitingState.waiting.splice(wIdx, 1);
+  ui.selectedWaitingId = null;
 
-    if (prevUid && prevUid !== seat.personUid) {
-      await clearUserSeatNotification(prevUid, "seat_reassigned");
-    }
-
-    touchWaiting();
-    touchEvent();
-    render();
-
-    if (w.uid) {
-      const seatLabel = String(seat.label ?? seat.no ?? "").trim();
-      const eventTitle = getCurrentEventTitle();
-      const tournamentId = getCurrentTournamentId();
-
-      await writeUserNotification({
-        uid: w.uid,
-        type: "seat_assigned",
-        acknowledged: false,
-        createdAt: Date.now(),
-        tournamentId,
-        eventId: EVENT_ID,
-        eventTitle,
-        boxId: BOX_ID,
-        seatId: seat.id,
-        seatLabel,
-        targetUrl: buildSeatTargetUrl(EVENT_ID, BOX_ID, seat.id),
-        message: `${eventTitle} / Seat ${seatLabel}에 배치되었습니다.`
-      });
-    }
+  if (prevUid && prevUid !== seat.personUid) {
+    await clearUserSeatNotification(prevUid, "seat_reassigned");
   }
+
+  touchWaiting();
+  touchEvent();
+  render();
+
+  if (prevUid && prevName && prevUid !== seat.personUid) {
+    await moveDealerToWaiting({
+      uid: prevUid,
+      email: prevEmail,
+      name: prevName
+    });
+  }
+
+  if (w.uid && w.name) {
+    await moveDealerToAssigned({
+      uid: w.uid || "",
+      email: w.email || "",
+      name: w.name || "",
+      seatId: seat.id,
+      seatLabel: seat.label ?? seat.no ?? "",
+      eventId: EVENT_ID,
+      boxId: BOX_ID
+    });
+  }
+
+  if (w.uid) {
+    const seatLabel = String(seat.label ?? seat.no ?? "").trim();
+    const eventTitle = getCurrentEventTitle();
+    const tournamentId = getCurrentTournamentId();
+
+    await writeUserNotification({
+      uid: w.uid,
+      type: "seat_assigned",
+      acknowledged: false,
+      createdAt: Date.now(),
+      tournamentId,
+      eventId: EVENT_ID,
+      eventTitle,
+      boxId: BOX_ID,
+      seatId: seat.id,
+      seatLabel,
+      targetUrl: buildSeatTargetUrl(EVENT_ID, BOX_ID, seat.id),
+      message: `${eventTitle} / Seat ${seatLabel}에 배치되었습니다.`
+    });
+  }
+}
 
   function render() {
     app.innerHTML = "";
