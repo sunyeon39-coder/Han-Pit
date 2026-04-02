@@ -39,6 +39,15 @@ const topbarTournamentName = document.getElementById("topbarTournamentName");
 
 const eventAdminBtn = document.getElementById("eventAdminBtn");
 const attendanceLogBtn = document.getElementById("attendanceLogBtn");
+const attendanceLogModal = document.getElementById("attendanceLogModal");
+const closeAttendanceLogBtn = document.getElementById("closeAttendanceLogBtn");
+const attendanceLogSearch = document.getElementById("attendanceLogSearch");
+const attendanceLogActionFilter = document.getElementById("attendanceLogActionFilter");
+const attendanceLogSummary = document.getElementById("attendanceLogSummary");
+const attendanceLogList = document.getElementById("attendanceLogList");
+const clearAttendanceLogsBtn = document.getElementById("clearAttendanceLogsBtn");
+const deleteSelectedAttendanceLogsBtn = document.getElementById("deleteSelectedAttendanceLogsBtn");
+
 const seatMapEditBtn = document.getElementById("seatMapEditBtn");
 const eventAdminModal = document.getElementById("eventAdminModal");
 const closeEventAdminBtn = document.getElementById("closeEventAdminBtn");
@@ -59,6 +68,16 @@ const dealerOpsMount = document.getElementById("dealerOpsMount");
 
 let stopDealerAttendanceWatch = null;
 let stopDealerSeatWatch = null;
+let stopAttendanceLogsWatch = null;
+let attendanceLogEventsBound = false;
+
+const attendanceLogUi = {
+  search: "",
+  action: "all",
+  selectedIds: new Set()
+};
+
+let attendanceLogs = [];
 
 let dealerAttendanceMap = new Map();
 let dealerSeatMap = new Map();
@@ -365,11 +384,15 @@ async function updateMyAttendanceStatus(nextStatus) {
   await setDoc(getAttendanceRef(tournamentId, user.uid), payload, { merge: true });
 
   await writeAttendanceLog({
-    uid: user.uid,
-    nickname: payload.nickname,
-    action: nextStatus,
-    tournamentId
-  });
+  uid: user.uid,
+  nickname: String(currentUserProfile.nickname || user.displayName || "").trim(),
+  action: nextStatus,
+  tournamentId,
+  eventId: current?.currentEventId || "",
+  boxId: current?.currentBoxId || "",
+  seatId: current?.currentSeatId || "",
+  seatLabel: current?.currentSeatLabel || ""
+});
 }
 
 async function updateAdminAttendanceStatus(uid, nextStatus) {
@@ -400,11 +423,298 @@ async function updateAdminAttendanceStatus(uid, nextStatus) {
   await setDoc(getAttendanceRef(tournamentId, uid), payload, { merge: true });
 
   await writeAttendanceLog({
-    uid,
-    nickname: payload.nickname || "",
-    action: `admin_${nextStatus}`,
-    tournamentId
+  uid,
+  nickname: String(current.nickname || "").trim(),
+  action: nextStatus,
+  tournamentId,
+  eventId: current?.currentEventId || "",
+  boxId: current?.currentBoxId || "",
+  seatId: current?.currentSeatId || "",
+  seatLabel: current?.currentSeatLabel || ""
+});
+}
+
+function getAttendanceActionLabel(action) {
+  if (action === "checked_in") return "출근";
+  if (action === "waiting") return "대기";
+  if (action === "assigned") return "배치";
+  if (action === "break") return "휴식";
+  if (action === "checked_out") return "퇴근";
+  return action || "기타";
+}
+
+function escapeAttr(str) {
+  return String(str ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function formatLogDateTime(ts) {
+  if (!ts) return "-";
+  const d = new Date(ts);
+  return d.toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
   });
+}
+
+function getAttendanceLogDescription(log) {
+  const actionLabel = getAttendanceActionLabel(log.action);
+  const nickname = String(log.nickname || "이름 없음").trim();
+  const seatLabel = String(log.seatLabel || "").trim();
+  const eventId = String(log.eventId || "").trim();
+  const boxId = String(log.boxId || "").trim();
+
+  const parts = [`${nickname} · ${actionLabel}`];
+
+  if (seatLabel) parts.push(`Seat ${seatLabel}`);
+  if (eventId) parts.push(`Event ${eventId}`);
+  if (boxId) parts.push(`Box ${boxId}`);
+
+  return parts.join(" / ");
+}
+
+function getFilteredAttendanceLogs() {
+  const tournamentId = getTournamentId();
+  const keyword = String(attendanceLogUi.search || "").trim().toLowerCase();
+  const actionFilter = String(attendanceLogUi.action || "all").trim();
+
+  return attendanceLogs.filter((log) => {
+    const sameTournament =
+      !tournamentId || String(log.tournamentId || "").trim() === tournamentId;
+
+    const haystack = [
+      log.nickname || "",
+      log.action || "",
+      log.eventId || "",
+      log.boxId || "",
+      log.seatLabel || "",
+      log.uid || ""
+    ].join(" ").toLowerCase();
+
+    const matchedKeyword = !keyword || haystack.includes(keyword);
+    const matchedAction = actionFilter === "all" || String(log.action || "") === actionFilter;
+
+    return sameTournament && matchedKeyword && matchedAction;
+  });
+}
+
+function updateAttendanceLogSummary() {
+  if (!attendanceLogSummary) return;
+
+  const filtered = getFilteredAttendanceLogs();
+  const total = filtered.length;
+  const selected = filtered.filter((log) => attendanceLogUi.selectedIds.has(log.id)).length;
+
+  attendanceLogSummary.textContent =
+    total === 0
+      ? "최근 로그 0건"
+      : `최근 로그 ${total}건${selected > 0 ? ` · 선택 ${selected}건` : ""}`;
+}
+
+function renderAttendanceLogs() {
+  if (!attendanceLogList) return;
+
+  const filtered = getFilteredAttendanceLogs();
+
+  updateAttendanceLogSummary();
+
+  if (!filtered.length) {
+    attendanceLogList.innerHTML = `
+      <div class="attendance-log-empty">
+        표시할 운영 로그가 없습니다.
+      </div>
+    `;
+    return;
+  }
+
+  attendanceLogList.innerHTML = filtered.map((log) => {
+    const id = String(log.id || "");
+    const checked = attendanceLogUi.selectedIds.has(id);
+    const action = String(log.action || "").trim();
+    const nickname = escapeHtml(log.nickname || "이름 없음");
+    const timeText = formatLogDateTime(log.createdAt);
+    const desc = escapeHtml(getAttendanceLogDescription(log));
+
+    const meta = [];
+
+    meta.push(
+      `<span class="attendance-log-pill strong">${escapeHtml(getAttendanceActionLabel(action))}</span>`
+    );
+
+    if (log.eventId) {
+      meta.push(`<span class="attendance-log-pill">Event ${escapeHtml(log.eventId)}</span>`);
+    }
+
+    if (log.boxId) {
+      meta.push(`<span class="attendance-log-pill">Box ${escapeHtml(log.boxId)}</span>`);
+    }
+
+    if (log.seatLabel) {
+      meta.push(`<span class="attendance-log-pill">Seat ${escapeHtml(log.seatLabel)}</span>`);
+    }
+
+    return `
+      <div class="attendance-log-item action-${escapeAttr(action)}" data-log-id="${escapeAttr(id)}">
+        <div class="attendance-log-top">
+          <div class="attendance-log-top-left">
+            <input
+              class="attendance-log-check"
+              type="checkbox"
+              data-log-check="${escapeAttr(id)}"
+              ${checked ? "checked" : ""}
+            />
+            <div class="attendance-log-name">${nickname}</div>
+          </div>
+          <div class="attendance-log-time">${escapeHtml(timeText)}</div>
+        </div>
+
+        <div class="attendance-log-meta">
+          ${meta.join("")}
+        </div>
+
+        <div class="attendance-log-desc">${desc}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+function bindAttendanceLogsRealtime() {
+  if (stopAttendanceLogsWatch) {
+    stopAttendanceLogsWatch();
+    stopAttendanceLogsWatch = null;
+  }
+
+  stopAttendanceLogsWatch = onSnapshot(
+    collection(db, "dealer_attendance_logs"),
+    (snap) => {
+      attendanceLogs = snap.docs
+        .map((d) => ({
+          id: d.id,
+          ...(d.data() || {})
+        }))
+        .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+
+      const validIds = new Set(attendanceLogs.map((log) => String(log.id || "")));
+      attendanceLogUi.selectedIds.forEach((id) => {
+        if (!validIds.has(id)) {
+          attendanceLogUi.selectedIds.delete(id);
+        }
+      });
+
+      renderAttendanceLogs();
+    },
+    (err) => {
+      console.error("bindAttendanceLogsRealtime error:", err);
+    }
+  );
+}
+
+function openAttendanceLogModal() {
+  renderAttendanceLogs();
+  openModal(attendanceLogModal);
+}
+
+function closeAttendanceLogModal() {
+  closeModal(attendanceLogModal);
+}
+
+async function deleteSelectedAttendanceLogs() {
+  const ids = Array.from(attendanceLogUi.selectedIds);
+  if (!ids.length) {
+    alert("선택된 로그가 없습니다.");
+    return;
+  }
+
+  const ok = confirm(`선택한 로그 ${ids.length}건을 삭제할까요?`);
+  if (!ok) return;
+
+  try {
+    await Promise.all(
+      ids.map((id) => deleteDoc(doc(db, "dealer_attendance_logs", id)))
+    );
+
+    attendanceLogUi.selectedIds.clear();
+  } catch (err) {
+    console.error("deleteSelectedAttendanceLogs error:", err);
+    alert("선택 로그 삭제에 실패했습니다.");
+  }
+}
+
+async function clearAttendanceLogs() {
+  const filtered = getFilteredAttendanceLogs();
+  if (!filtered.length) {
+    alert("삭제할 로그가 없습니다.");
+    return;
+  }
+
+  const ok = confirm(`현재 보이는 로그 ${filtered.length}건을 전체 삭제할까요?`);
+  if (!ok) return;
+
+  try {
+    await Promise.all(
+      filtered.map((log) => deleteDoc(doc(db, "dealer_attendance_logs", log.id)))
+    );
+
+    attendanceLogUi.selectedIds.clear();
+  } catch (err) {
+    console.error("clearAttendanceLogs error:", err);
+    alert("전체 로그 초기화에 실패했습니다.");
+  }
+}
+
+function setupAttendanceLogEvents() {
+  if (attendanceLogEventsBound) return;
+  attendanceLogEventsBound = true;
+
+  attendanceLogBtn?.addEventListener("click", () => {
+    const isAdmin = getIsAdmin(auth.currentUser, currentUserProfile);
+    if (!isAdmin) return;
+    openAttendanceLogModal();
+  });
+
+  closeAttendanceLogBtn?.addEventListener("click", closeAttendanceLogModal);
+
+  attendanceLogModal?.addEventListener("click", (e) => {
+    if (e.target === attendanceLogModal) {
+      closeAttendanceLogModal();
+    }
+  });
+
+  attendanceLogSearch?.addEventListener("input", (e) => {
+    attendanceLogUi.search = String(e.target.value || "");
+    renderAttendanceLogs();
+  });
+
+  attendanceLogActionFilter?.addEventListener("change", (e) => {
+    attendanceLogUi.action = String(e.target.value || "all");
+    renderAttendanceLogs();
+  });
+
+  attendanceLogList?.addEventListener("change", (e) => {
+    const checkbox = e.target.closest("[data-log-check]");
+    if (!checkbox) return;
+
+    const id = String(checkbox.getAttribute("data-log-check") || "").trim();
+    if (!id) return;
+
+    if (checkbox.checked) {
+      attendanceLogUi.selectedIds.add(id);
+    } else {
+      attendanceLogUi.selectedIds.delete(id);
+    }
+
+    updateAttendanceLogSummary();
+  });
+
+  deleteSelectedAttendanceLogsBtn?.addEventListener("click", deleteSelectedAttendanceLogs);
+  clearAttendanceLogsBtn?.addEventListener("click", clearAttendanceLogs);
 }
 
 function getWorkingMs(item) {
@@ -1531,6 +1841,9 @@ dealerOpsMount?.addEventListener("click", async (e) => {
     const user = auth.currentUser;
     const isAdmin = getIsAdmin(user, currentUserProfile);
 
+    // =========================
+    // ADMIN ACTION
+    // =========================
     if (isAdmin) {
       const adminBtn = e.target.closest("[data-admin-action]");
       if (adminBtn) {
@@ -1539,37 +1852,65 @@ dealerOpsMount?.addEventListener("click", async (e) => {
 
         if (!action || !uid) return;
 
-        await updateAdminAttendanceStatus(uid, action);
-        await loadDealerAttendanceOnce();
-        renderDealerOps();
-        return;
+        if (action === "checked_out") {
+          // admin 강제 퇴근:
+          // 1) attendance를 checked_out으로 변경
+          // 2) shared waiting 에서 제거
+          const target = getAdminAttendanceList().find((item) => String(item.uid || "").trim() === uid);
+          if (!target) return;
+
+          await updateAdminAttendanceStatus(uid, "checked_out");
+
+          await removeFromSharedWaitingOnCheckOut({
+            uid,
+            email: target.email || "",
+            displayName: target.nickname || "",
+            nickname: target.nickname || ""
+          });
+
+          await loadDealerAttendanceOnce();
+          renderDealerOps();
+          return;
+        }
       }
+
+      return;
     }
 
+    // =========================
+    // USER SELF ACTION
+    // =========================
     const selfBtn = e.target.closest("[data-self-action]");
-    if (!selfBtn) return;
+    if (!selfBtn || !user) return;
 
-    const nextStatus = String(selfBtn.getAttribute("data-self-action") || "").trim();
-    if (!nextStatus) return;
+    const action = String(selfBtn.getAttribute("data-self-action") || "").trim();
+    if (!action) return;
 
-    if (nextStatus === "waiting") {
+    if (action === "waiting") {
+      // 출근하기
+      // 1) attendance 상태를 waiting으로 변경
+      // 2) shared waiting에 등록
       await updateMyAttendanceStatus("waiting");
-      await joinSharedWaitingOnCheckIn(auth.currentUser);
+      await joinSharedWaitingOnCheckIn(user);
+
       await loadDealerAttendanceOnce();
       renderDealerOps();
       return;
     }
 
-    if (nextStatus === "checked_out") {
+    if (action === "checked_out") {
+      // 퇴근하기
+      // 1) shared waiting에서 제거
+      // 2) attendance 상태를 checked_out으로 변경
+      await removeFromSharedWaitingOnCheckOut(user);
       await updateMyAttendanceStatus("checked_out");
-      await removeFromSharedWaitingOnCheckOut(auth.currentUser);
+
       await loadDealerAttendanceOnce();
       renderDealerOps();
       return;
     }
   } catch (err) {
     console.error("dealerOps click error:", err);
-    alert("처리 중 오류가 발생했습니다.");
   }
 });
 
@@ -1586,6 +1927,9 @@ async function init() {
   bindLayoutSeatSummaryRealtime();
   await loadDealerAttendanceOnce();
   bindDealerSeatRealtime();
+
+  setupAttendanceLogEvents();
+  bindAttendanceLogsRealtime();
 }
 
 onAuthStateChanged(auth, async (user) => {
@@ -1643,6 +1987,8 @@ window.addEventListener("beforeunload", () => {
   if (stopDealerAttendanceWatch) stopDealerAttendanceWatch();
 if (stopDealerSeatWatch) stopDealerSeatWatch();
 });
+
+
 /* ===============================
    SEAT MAP (ADD ONLY)
 =============================== */
