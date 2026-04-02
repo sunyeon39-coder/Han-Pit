@@ -1,7 +1,9 @@
 import { db, auth, getMessagingSafe } from "./firebase.js";
 import {
+  collection,
   doc,
   getDoc,
+  getDocs,
   setDoc,
   onSnapshot,
   serverTimestamp
@@ -10,12 +12,19 @@ import {
   onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import {
-  getToken,
-  onMessage
+  getToken
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js";
 
 (() => {
   "use strict";
+
+  const ADMIN_EMAILS = [
+  "sunyeon9501@gmail.com"
+];
+
+function isAdminEmail(email = "") {
+  return ADMIN_EMAILS.includes(String(email).trim().toLowerCase());
+}
 
   const app = document.getElementById("app");
   const menuBtn = document.getElementById("menuBtn");
@@ -42,21 +51,54 @@ import {
   const EVENT_DOC_ID = `${EVENT_ID}__${BOX_ID}`;
   const EVENT_REF = doc(db, "layout_events", EVENT_DOC_ID);
   const WAITING_REF = doc(db, "layout_shared", "global_waiting");
+  const LAYOUT_EVENTS_REF = collection(db, "layout_events");
+
+  const VAPID_KEY = "BAZXsr3GQtq_nPLrF7C89mr3ejM7DbS-cBBfWNZzHfcHggNier7C2fbIG0uex3DZl8ykVxbqrli54cCdLkena94";
+  const ALERT_VOLUME = 0.4;
+  const SOUND_ENABLED_KEY = "boxboard_sound_enabled_v1";
 
   let currentUser = null;
   let currentUserProfile = null;
   let isAdminUser = false;
   let hasInitialized = false;
   let myNotificationRef = null;
+
   let audioUnlocked = false;
-let audioRepeatTimer = null;
-let audioCtx = null;
-const ALERT_VOLUME = 0.12;
-let soundPromptShown = false;
+  let audioRepeatTimer = null;
+  let audioCtx = null;
+  let soundPromptShown = false;
   let activeNotificationId = "";
-    const VAPID_KEY = "BAZXsr3GQtq_nPLrF7C89mr3ejM7DbS-cBBfWNZzHfcHggNier7C2fbIG0uex3DZl8ykVxbqrli54cCdLkena94";
-  let pushInitStarted = false;
-  let messagingForegroundBound = false;
+  let timerHandle = null;
+
+  let globalSeatOccupancy = [];
+
+  const eventState = {
+    version: 2,
+    eventId: EVENT_ID,
+    boxId: BOX_ID,
+    nextSeatNo: 1,
+    nextSeatOrder: 1,
+    seats: [],
+    updatedAt: Date.now()
+  };
+
+  const waitingState = {
+    version: 2,
+    waiting: [],
+    updatedAt: Date.now()
+  };
+
+  const ui = {
+    activeTab: "wait",
+    selectedSeatId: FOCUS_SEAT_ID || null,
+    selectedWaitingId: null,
+    dragging: null
+  };
+
+  const MIN = 60 * 1000;
+  const TH_30 = 30 * MIN;
+  const TH_60 = 60 * MIN;
+  const TH_90 = 90 * MIN;
 
   function clone(obj) {
     return JSON.parse(JSON.stringify(obj));
@@ -64,6 +106,131 @@ let soundPromptShown = false;
 
   function makeUid(prefix = "id") {
     return `${prefix}_${Math.random().toString(36).slice(2, 9)}_${Date.now().toString(36)}`;
+  }
+
+  function escapeHtml(str) {
+    return String(str ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function isEmptyPerson(p) {
+    return !p || p === "비어있음";
+  }
+
+  function timerClass(ms) {
+    if (ms < TH_30) return "t-green";
+    if (ms < TH_60) return "t-yellow";
+    if (ms < TH_90) return "t-orange";
+    return "t-red";
+  }
+
+  function fmtElapsed(ms) {
+    ms = Math.max(0, ms | 0);
+    const totalSec = Math.floor(ms / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+
+  function hasSavedSoundPreference() {
+    try {
+      return localStorage.getItem(SOUND_ENABLED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  }
+
+  function saveSoundPreference(enabled) {
+    try {
+      if (enabled) {
+        localStorage.setItem(SOUND_ENABLED_KEY, "1");
+      } else {
+        localStorage.removeItem(SOUND_ENABLED_KEY);
+      }
+    } catch (err) {
+      console.error("saveSoundPreference error:", err);
+    }
+  }
+
+  function getCurrentTournamentId() {
+    return (
+      new URLSearchParams(location.search).get("tournamentId") ||
+      sessionStorage.getItem("tournamentId") ||
+      ""
+    );
+  }
+
+  function getCurrentEventTitle() {
+    const hint = document.querySelector(".hint-pill");
+    if (hint?.textContent) {
+      return hint.textContent.replace(/^EVENT:\s*/i, "").trim();
+    }
+    return EVENT_ID || "이벤트";
+  }
+
+  function buildSeatTargetUrl(eventId, boxId, seatId = "") {
+    const tournamentId = getCurrentTournamentId();
+    const params = new URLSearchParams();
+
+    if (tournamentId) params.set("tournamentId", tournamentId);
+    if (eventId) params.set("eventId", eventId);
+    if (boxId) params.set("boxId", boxId);
+    if (seatId) params.set("focusSeatId", seatId);
+
+    return `./layout.html?${params.toString()}`;
+  }
+
+  function canManageLayout() {
+    return isAdminUser === true;
+  }
+
+  function buildGlobalSeatOccupancy(items) {
+    const list = [];
+
+    items.forEach((item) => {
+      const data = typeof item.data === "function" ? (item.data() || {}) : (item || {});
+      const seats = Array.isArray(data.seats) ? data.seats : [];
+      const eventId = String(data.eventId || "").trim();
+      const boxId = String(data.boxId || "").trim();
+
+      seats.forEach((seat) => {
+        const person = String(seat?.person || "").trim();
+        if (!person || person === "비어있음") return;
+
+        const label = seat.label ?? seat.no ?? "?";
+        const seatedAt = Number(seat.seatedAt || 0) || Date.now();
+
+        list.push({
+          name: person,
+          uid: seat.personUid || "",
+          email: seat.personEmail || "",
+          eventId,
+          boxId,
+          seatLabel: String(label),
+          seatId: String(seat.id || ""),
+          seatedAt
+        });
+      });
+    });
+
+    list.sort((a, b) => a.name.localeCompare(b.name, "ko"));
+    return list;
+  }
+
+  async function loadGlobalSeatOccupancy() {
+    try {
+      const snap = await getDocs(LAYOUT_EVENTS_REF);
+      globalSeatOccupancy = buildGlobalSeatOccupancy(snap.docs);
+      renderPanel();
+      updateTimers();
+    } catch (err) {
+      console.error("loadGlobalSeatOccupancy error:", err);
+    }
   }
 
   async function loadMyUserProfile() {
@@ -77,10 +244,6 @@ let soundPromptShown = false;
       console.error("loadMyUserProfile error:", err);
       return null;
     }
-  }
-
-  function canManageLayout() {
-    return isAdminUser === true;
   }
 
   async function loadEventStateRemote() {
@@ -120,6 +283,7 @@ let soundPromptShown = false;
       console.error("saveEventState error:", err);
     }
   }
+  
 
   async function saveWaitingState() {
     try {
@@ -138,105 +302,68 @@ let soundPromptShown = false;
   }
 
   async function writeUserNotification(payload) {
-  if (!payload?.uid) return;
+    if (!payload?.uid) return;
 
-  try {
-    await setDoc(
-      doc(db, "layout_notifications", payload.uid),
-      {
-        ...payload,
-        updatedAt: Date.now(),
-        updatedAtServer: serverTimestamp()
-      },
-      { merge: true }
-    );
-  } catch (err) {
-    console.error("writeUserNotification error:", err);
+    try {
+      await setDoc(
+        doc(db, "layout_notifications", payload.uid),
+        {
+          ...payload,
+          updatedAt: Date.now(),
+          updatedAtServer: serverTimestamp()
+        },
+        { merge: true }
+      );
+    } catch (err) {
+      console.error("writeUserNotification error:", err);
+    }
   }
-}
+
+  async function clearUserSeatNotification(uid, reason = "seat_cleared") {
+    if (!uid) return;
+
+    try {
+      await setDoc(
+        doc(db, "layout_notifications", uid),
+        {
+          type: reason,
+          acknowledged: true,
+          seatId: "",
+          seatLabel: "",
+          eventId: "",
+          eventTitle: "",
+          boxId: "",
+          targetUrl: "",
+          message: "",
+          updatedAt: Date.now(),
+          updatedAtServer: serverTimestamp()
+        },
+        { merge: true }
+      );
+    } catch (err) {
+      console.error("clearUserSeatNotification error:", err);
+    }
+  }
 
   async function acknowledgeMyNotification() {
-  if (!currentUser) return;
+    if (!currentUser) return;
 
-  try {
-    await setDoc(
-      doc(db, "layout_notifications", currentUser.uid),
-      {
-        acknowledged: true,
-        acknowledgedAt: Date.now(),
-        updatedAt: Date.now(),
-        updatedAtServer: serverTimestamp()
-      },
-      { merge: true }
-    );
-  } catch (err) {
-    console.error("acknowledgeMyNotification error:", err);
-  }
-}
-  function getSeatTargetUrl(seatId = "") {
-    const params = new URLSearchParams();
-    if (TOURNAMENT_ID) params.set("tournamentId", TOURNAMENT_ID);
-    if (EVENT_ID) params.set("eventId", EVENT_ID);
-    if (BOX_ID) params.set("boxId", BOX_ID);
-    if (seatId) params.set("focusSeatId", seatId);
-    return `./layout.html?${params.toString()}`;
+    try {
+      await setDoc(
+        doc(db, "layout_notifications", currentUser.uid),
+        {
+          acknowledged: true,
+          acknowledgedAt: Date.now(),
+          updatedAt: Date.now(),
+          updatedAtServer: serverTimestamp()
+        },
+        { merge: true }
+      );
+    } catch (err) {
+      console.error("acknowledgeMyNotification error:", err);
+    }
   }
 
-  async function registerPushForCurrentUser() {
-  if (!currentUser) return;
-  if (!("serviceWorker" in navigator)) return;
-  if (!("Notification" in window)) return;
-
-  try {
-    if (Notification.permission === "denied") {
-      alert("알림이 차단되어 있습니다. iPhone 설정에서 다시 허용해주세요.");
-      return;
-    }
-
-    let permission = Notification.permission;
-
-    if (permission !== "granted") {
-      permission = await Notification.requestPermission();
-    }
-
-    if (permission !== "granted") {
-      console.log("push permission not granted");
-      return;
-    }
-
-    const swReg = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
-
-    const messaging = await getMessagingSafe();
-    if (!messaging) return;
-
-    const token = await getToken(messaging, {
-      vapidKey: VAPID_KEY,
-      serviceWorkerRegistration: swReg
-    });
-
-    if (!token) {
-      console.warn("FCM token not available");
-      return;
-    }
-
-    await setDoc(
-      doc(db, "users", currentUser.uid),
-      {
-        fcmWebToken: token,
-        pushEnabled: true,
-        pushUpdatedAt: Date.now(),
-        pushUpdatedAtServer: serverTimestamp()
-      },
-      { merge: true }
-    );
-
-    alert("알림이 활성화되었습니다.");
-    console.log("FCM token saved:", token);
-  } catch (err) {
-    console.error("registerPushForCurrentUser error:", err);
-    alert("알림 활성화 중 오류가 발생했습니다.");
-  }
-}
   function touchEvent() {
     eventState.updatedAt = Date.now();
     void saveEventState();
@@ -247,222 +374,83 @@ let soundPromptShown = false;
     void saveWaitingState();
   }
 
-  const eventState = {
-    version: 2,
-    eventId: EVENT_ID,
-    boxId: BOX_ID,
-    nextSeatNo: 1,
-    nextSeatOrder: 1,
-    seats: [],
-    updatedAt: Date.now()
-  };
+  function ensureAudioContext() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return null;
 
-  const waitingState = {
-    version: 2,
-    waiting: [],
-    updatedAt: Date.now()
-  };
+      if (!audioCtx) {
+        audioCtx = new AudioCtx();
+      }
 
-  const ui = {
-    activeTab: "wait",
-    selectedSeatId: FOCUS_SEAT_ID || null,
-    selectedWaitingId: null,
-    dragging: null
-  };
-
-  const MIN = 60 * 1000;
-  const TH_30 = 30 * MIN;
-  const TH_60 = 60 * MIN;
-  const TH_90 = 90 * MIN;
-
-  function timerClass(ms) {
-    if (ms < TH_30) return "t-green";
-    if (ms < TH_60) return "t-yellow";
-    if (ms < TH_90) return "t-orange";
-    return "t-red";
+      return audioCtx;
+    } catch (err) {
+      console.error("ensureAudioContext error:", err);
+      return null;
+    }
   }
 
-  function fmtElapsed(ms) {
-    ms = Math.max(0, ms | 0);
-    const totalSec = Math.floor(ms / 1000);
-    const h = Math.floor(totalSec / 3600);
-    const m = Math.floor((totalSec % 3600) / 60);
-    const s = totalSec % 60;
-    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  async function unlockAudio() {
+    if (audioUnlocked) return true;
+
+    const ctx = ensureAudioContext();
+    if (!ctx) return false;
+
+    try {
+      if (ctx.state === "suspended") {
+        await ctx.resume();
+      }
+
+      audioUnlocked = true;
+      saveSoundPreference(true);
+      playBeep(0.12);
+      return true;
+    } catch (err) {
+      console.error("unlockAudio error:", err);
+      return false;
+    }
   }
 
-  function escapeHtml(str) {
-    return String(str)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
+  function playBeep(duration = 0.25) {
+    if (!audioUnlocked) return;
+
+    const ctx = ensureAudioContext();
+    if (!ctx) return;
+
+    try {
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      oscillator.type = "sine";
+      oscillator.frequency.value = 880;
+      gain.gain.setValueAtTime(ALERT_VOLUME, ctx.currentTime);
+
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+
+      oscillator.start();
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+      oscillator.stop(ctx.currentTime + duration);
+    } catch (err) {
+      console.error("playBeep error:", err);
+    }
   }
 
-  function isEmptyPerson(p) {
-    return !p || p === "비어있음";
-  }
-
-  function ensureAlertUi() {
-  if (document.getElementById("seatAlertOverlay")) return;
-
-  const overlay = document.createElement("div");
-  overlay.id = "seatAlertOverlay";
-  overlay.style.cssText = `
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,.58);
-    display: none;
-    align-items: center;
-    justify-content: center;
-    z-index: 99999;
-    padding: 20px;
-  `;
-
-  overlay.innerHTML = `
-    <div style="
-      width:min(92vw,420px);
-      background:#0f172a;
-      color:#fff;
-      border-radius:20px;
-      padding:24px;
-      box-shadow:0 24px 60px rgba(0,0,0,.35);
-      border:1px solid rgba(255,255,255,.08);
-    ">
-      <div style="font-size:22px;font-weight:900;margin-bottom:10px;">자리 배치 알림</div>
-      <div id="seatAlertMessage" style="font-size:16px;line-height:1.5;margin-bottom:18px;"></div>
-      <button id="seatAlertConfirmBtn" style="
-        width:100%;
-        border:none;
-        border-radius:12px;
-        padding:14px 16px;
-        background:#f59e0b;
-        color:#111;
-        font-size:15px;
-        font-weight:900;
-        cursor:pointer;
-      ">확인</button>
-    </div>
-  `;
-
-  document.body.appendChild(overlay);
-
-  const btn = document.getElementById("seatAlertConfirmBtn");
-  btn?.addEventListener("click", async () => {
+  function playAlertSoundLoop() {
     stopAlertSoundLoop();
-    hideSeatAlert();
-    await acknowledgeMyNotification();
-  });
-}
+    playBeep(0.35);
 
-function showSeatAlert(message) {
-  ensureAlertUi();
-
-  const overlay = document.getElementById("seatAlertOverlay");
-  const msg = document.getElementById("seatAlertMessage");
-
-  if (msg) {
-    msg.textContent = message || "Seat에 배치되었습니다.";
+    audioRepeatTimer = setInterval(() => {
+      playBeep(0.2);
+    }, 1000);
   }
 
-  if (overlay) {
-    overlay.style.display = "flex";
+  function stopAlertSoundLoop() {
+    if (audioRepeatTimer) {
+      clearInterval(audioRepeatTimer);
+      audioRepeatTimer = null;
+    }
   }
-
-  if (!audioUnlocked) {
-    showSoundPrompt();
-    return;
-  }
-
-  playAlertSoundLoop();
-}
-
-function hideSeatAlert() {
-  const overlay = document.getElementById("seatAlertOverlay");
-  if (overlay) {
-    overlay.style.display = "none";
-  }
-}
-
-function ensureSoundPromptUi() {
-  if (document.getElementById("soundPromptOverlay")) return;
-
-  const overlay = document.createElement("div");
-  overlay.id = "soundPromptOverlay";
-  overlay.style.cssText = `
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,.55);
-    display: none;
-    align-items: center;
-    justify-content: center;
-    z-index: 99998;
-    padding: 20px;
-  `;
-
-  overlay.innerHTML = `
-    <div style="
-      width:min(92vw,420px);
-      background:#0f172a;
-      color:#fff;
-      border-radius:20px;
-      padding:24px;
-      box-shadow:0 24px 60px rgba(0,0,0,.35);
-      border:1px solid rgba(255,255,255,.08);
-    ">
-      <div style="font-size:22px;font-weight:900;margin-bottom:10px;">알림음 활성화</div>
-      <div style="font-size:16px;line-height:1.55;margin-bottom:18px;">
-        자리 배치 알림이 왔을 때 소리가 나도록 하려면 아래 버튼을 한 번 눌러주세요.
-      </div>
-      <button id="enableSoundBtn" style="
-        width:100%;
-        border:none;
-        border-radius:12px;
-        padding:14px 16px;
-        background:#f59e0b;
-        color:#111;
-        font-size:15px;
-        font-weight:900;
-        cursor:pointer;
-      ">알림음 활성화</button>
-    </div>
-  `;
-
-  document.body.appendChild(overlay);
-
-  const btn = document.getElementById("enableSoundBtn");
-btn?.addEventListener("click", async () => {
-  const ok = await unlockAudio();
-
-  if (!ok) {
-    alert("브라우저에서 알림음 활성화에 실패했습니다.");
-    return;
-  }
-
-  hideSoundPrompt();
-
-  // 이미 자리 배치 알림이 떠 있는 상태면 즉시 소리 시작
-  const alertOpen = document.getElementById("seatAlertOverlay")?.style.display === "flex";
-  if (alertOpen) {
-    playAlertSoundLoop();
-  } else {
-    playBeep(0.2);
-  }
-});
-}
-
-function showSoundPrompt() {
-  ensureSoundPromptUi();
-  const overlay = document.getElementById("soundPromptOverlay");
-  if (overlay) overlay.style.display = "flex";
-}
-
-function hideSoundPrompt() {
-  const overlay = document.getElementById("soundPromptOverlay");
-  if (overlay) overlay.style.display = "none";
-}
-
 
   function hideSeatAlert() {
     const overlay = document.getElementById("seatAlertOverlay");
@@ -471,82 +459,247 @@ function hideSoundPrompt() {
     }
   }
 
- function ensureAudioContext() {
-  try {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return null;
+  function ensureSoundPromptUi() {
+    if (document.getElementById("soundPromptOverlay")) return;
 
-    if (!audioCtx) {
-      audioCtx = new AudioCtx();
+    const overlay = document.createElement("div");
+    overlay.id = "soundPromptOverlay";
+    overlay.style.cssText = `
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.55);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 99998;
+      padding: 20px;
+    `;
+
+    overlay.innerHTML = `
+      <div style="
+        width:min(92vw,420px);
+        background:#0f172a;
+        color:#fff;
+        border-radius:20px;
+        padding:24px;
+        box-shadow:0 24px 60px rgba(0,0,0,.35);
+        border:1px solid rgba(255,255,255,.08);
+      ">
+        <div style="font-size:22px;font-weight:900;margin-bottom:10px;">알림음 활성화</div>
+        <div style="font-size:16px;line-height:1.55;margin-bottom:18px;">
+          자리 배치 알림이 왔을 때 소리가 나도록 하려면 아래 버튼을 한 번 눌러주세요.
+        </div>
+        <button id="enableSoundBtn" style="
+          width:100%;
+          border:none;
+          border-radius:12px;
+          padding:14px 16px;
+          background:#f59e0b;
+          color:#111;
+          font-size:15px;
+          font-weight:900;
+          cursor:pointer;
+        ">알림음 활성화</button>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const btn = document.getElementById("enableSoundBtn");
+    btn?.addEventListener("click", async () => {
+      const ok = await unlockAudio();
+
+      if (!ok) {
+        alert("브라우저에서 알림음 활성화에 실패했습니다.");
+        return;
+      }
+
+      hideSoundPrompt();
+
+      const alertOpen = document.getElementById("seatAlertOverlay")?.style.display === "flex";
+      if (alertOpen) {
+        playAlertSoundLoop();
+      } else {
+        playBeep(0.2);
+      }
+    });
+  }
+
+  function showSoundPrompt() {
+    ensureSoundPromptUi();
+    const overlay = document.getElementById("soundPromptOverlay");
+    if (overlay) overlay.style.display = "flex";
+  }
+
+  function hideSoundPrompt() {
+    const overlay = document.getElementById("soundPromptOverlay");
+    if (overlay) overlay.style.display = "none";
+  }
+
+  function ensureAlertUi() {
+    if (document.getElementById("seatAlertOverlay")) return;
+
+    const overlay = document.createElement("div");
+    overlay.id = "seatAlertOverlay";
+    overlay.style.cssText = `
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.58);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 99999;
+      padding: 20px;
+    `;
+
+    overlay.innerHTML = `
+      <div style="
+        width:min(92vw,420px);
+        background:#0f172a;
+        color:#fff;
+        border-radius:20px;
+        padding:24px;
+        box-shadow:0 24px 60px rgba(0,0,0,.35);
+        border:1px solid rgba(255,255,255,.08);
+      ">
+        <div style="font-size:22px;font-weight:900;margin-bottom:10px;">자리 배치 알림</div>
+        <div id="seatAlertMessage" style="font-size:16px;line-height:1.5;margin-bottom:18px;"></div>
+
+        <div style="display:flex;gap:10px;flex-direction:column;">
+          <button id="seatAlertGoBtn" style="
+            width:100%;
+            border:none;
+            border-radius:12px;
+            padding:14px 16px;
+            background:#22c55e;
+            color:#07111f;
+            font-size:15px;
+            font-weight:900;
+            cursor:pointer;
+          ">자리로 이동</button>
+
+          <button id="seatAlertConfirmBtn" style="
+            width:100%;
+            border:none;
+            border-radius:12px;
+            padding:14px 16px;
+            background:#f59e0b;
+            color:#111;
+            font-size:15px;
+            font-weight:900;
+            cursor:pointer;
+          ">확인</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const confirmBtn = document.getElementById("seatAlertConfirmBtn");
+    confirmBtn?.addEventListener("click", async () => {
+      stopAlertSoundLoop();
+      hideSeatAlert();
+      await acknowledgeMyNotification();
+    });
+
+    const goBtn = document.getElementById("seatAlertGoBtn");
+    goBtn?.addEventListener("click", async () => {
+      if (!currentUser) return;
+
+      try {
+        const snap = await getDoc(doc(db, "layout_notifications", currentUser.uid));
+        const data = snap.exists() ? (snap.data() || {}) : null;
+        const targetUrl = data?.targetUrl || buildSeatTargetUrl(EVENT_ID, BOX_ID);
+
+        stopAlertSoundLoop();
+        hideSeatAlert();
+        await acknowledgeMyNotification();
+
+        location.href = targetUrl;
+      } catch (err) {
+        console.error("seatAlertGoBtn error:", err);
+      }
+    });
+  }
+
+  function showSeatAlert(message) {
+    ensureAlertUi();
+
+    const overlay = document.getElementById("seatAlertOverlay");
+    const msg = document.getElementById("seatAlertMessage");
+
+    if (msg) {
+      msg.textContent = message || "Seat에 배치되었습니다.";
     }
 
-    return audioCtx;
-  } catch (err) {
-    console.error("ensureAudioContext error:", err);
-    return null;
-  }
-}
-
-async function unlockAudio() {
-  if (audioUnlocked) return true;
-
-  const ctx = ensureAudioContext();
-  if (!ctx) return false;
-
-  try {
-    if (ctx.state === "suspended") {
-      await ctx.resume();
+    if (overlay) {
+      overlay.style.display = "flex";
     }
 
-    audioUnlocked = true;
-    playBeep(0.12);
-    return true;
-  } catch (err) {
-    console.error("unlockAudio error:", err);
-    return false;
+    if (!audioUnlocked) {
+      if (!hasSavedSoundPreference()) {
+        showSoundPrompt();
+      }
+      return;
+    }
+
+    playAlertSoundLoop();
   }
-}
 
-function playBeep(duration = 0.25) {
-  if (!audioUnlocked) return;
+  async function registerPushForCurrentUser() {
+    if (!currentUser) return;
+    if (!("serviceWorker" in navigator)) return;
+    if (!("Notification" in window)) return;
 
-  const ctx = ensureAudioContext();
-  if (!ctx) return;
+    try {
+      if (Notification.permission === "denied") {
+        alert("알림이 차단되어 있습니다. iPhone 설정에서 다시 허용해주세요.");
+        return;
+      }
 
-  try {
-    const oscillator = ctx.createOscillator();
-    const gain = ctx.createGain();
+      let permission = Notification.permission;
 
-    oscillator.type = "sine";
-    oscillator.frequency.value = 880;
-    gain.gain.setValueAtTime(ALERT_VOLUME, ctx.currentTime);
+      if (permission !== "granted") {
+        permission = await Notification.requestPermission();
+      }
 
-    oscillator.connect(gain);
-    gain.connect(ctx.destination);
+      if (permission !== "granted") {
+        console.log("push permission not granted");
+        return;
+      }
 
-    oscillator.start();
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
-    oscillator.stop(ctx.currentTime + duration);
-  } catch (err) {
-    console.error("playBeep error:", err);
+      const swReg = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
+      const messaging = await getMessagingSafe();
+      if (!messaging) return;
+
+      const token = await getToken(messaging, {
+        vapidKey: VAPID_KEY,
+        serviceWorkerRegistration: swReg
+      });
+
+      if (!token) {
+        console.warn("FCM token not available");
+        return;
+      }
+
+      await setDoc(
+        doc(db, "users", currentUser.uid),
+        {
+          fcmWebToken: token,
+          pushEnabled: true,
+          pushUpdatedAt: Date.now(),
+          pushUpdatedAtServer: serverTimestamp()
+        },
+        { merge: true }
+      );
+
+      alert("알림이 활성화되었습니다.");
+      console.log("FCM token saved:", token);
+    } catch (err) {
+      console.error("registerPushForCurrentUser error:", err);
+      alert("알림 활성화 중 오류가 발생했습니다.");
+    }
   }
-}
-
-function playAlertSoundLoop() {
-  stopAlertSoundLoop();
-  playBeep(0.35);
-
-  audioRepeatTimer = setInterval(() => {
-    playBeep(0.2);
-  }, 1000);
-}
-
-function stopAlertSoundLoop() {
-  if (audioRepeatTimer) {
-    clearInterval(audioRepeatTimer);
-    audioRepeatTimer = null;
-  }
-}
 
   function returnPersonToWaiting(name, personUid = "", personEmail = "") {
     const n = String(name || "").trim();
@@ -570,6 +723,85 @@ function stopAlertSoundLoop() {
 
     touchWaiting();
   }
+  function getAttendanceDocId(tournamentId, uid) {
+  return `${tournamentId}__${uid}`;
+}
+
+function getAttendanceRef(tournamentId, uid) {
+  return doc(db, "dealer_attendance", getAttendanceDocId(tournamentId, uid));
+}
+
+function getCurrentTournamentIdSafe() {
+  return (
+    new URLSearchParams(location.search).get("tournamentId") ||
+    sessionStorage.getItem("tournamentId") ||
+    ""
+  );
+}
+
+async function setDealerStatus(uid, patch = {}) {
+  const tournamentId = getCurrentTournamentIdSafe();
+  if (!tournamentId || !uid) return;
+
+  try {
+    await setDoc(
+      getAttendanceRef(tournamentId, uid),
+      {
+        uid: String(uid).trim(),
+        tournamentId,
+        updatedAt: Date.now(),
+        ...patch
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    console.error("setDealerStatus error:", err);
+  }
+}
+
+async function moveDealerToWaiting({ uid = "", email = "", name = "" }) {
+  if (!uid || !name) return;
+
+  returnPersonToWaiting(name, uid, email);
+
+  await setDealerStatus(uid, {
+    email: String(email || "").trim(),
+    nickname: String(name || "").trim(),
+    status: "waiting",
+    currentEventId: "",
+    currentBoxId: "",
+    currentSeatId: "",
+    currentSeatLabel: ""
+  });
+}
+
+async function moveDealerToAssigned({
+  uid = "",
+  email = "",
+  name = "",
+  seatId = "",
+  seatLabel = "",
+  eventId = "",
+  boxId = ""
+}) {
+  if (!uid || !name) return;
+
+  waitingState.waiting = waitingState.waiting.filter((w) => {
+    if (!w || typeof w !== "object") return false;
+    return String(w.uid || "").trim() !== String(uid).trim();
+  });
+  touchWaiting();
+
+  await setDealerStatus(uid, {
+    email: String(email || "").trim(),
+    nickname: String(name || "").trim(),
+    status: "assigned",
+    currentEventId: String(eventId || "").trim(),
+    currentBoxId: String(boxId || "").trim(),
+    currentSeatId: String(seatId || "").trim(),
+    currentSeatLabel: String(seatLabel || "").trim()
+  });
+}
 
   function getCanvasRectForSeatPlacement() {
     const canvas = document.querySelector(".pc-canvas");
@@ -613,32 +845,6 @@ function stopAlertSoundLoop() {
     y = Math.max(PAD, Math.min(y, maxY));
 
     return { x, y };
-  }
-
-  function scanAllSeatOccupancy() {
-    const items = [];
-
-    eventState.seats.forEach((seat) => {
-      const person = seat && seat.person ? String(seat.person) : "";
-      if (!person || person === "비어있음") return;
-
-      const label = seat.label ?? seat.no ?? "?";
-      const seatedAt = Number(seat.seatedAt || 0) || Date.now();
-
-      items.push({
-        name: person,
-        uid: seat.personUid || "",
-        email: seat.personEmail || "",
-        eventId: EVENT_ID,
-        boxId: BOX_ID,
-        seatLabel: String(label),
-        seatId: String(seat.id || ""),
-        seatedAt
-      });
-    });
-
-    items.sort((a, b) => a.name.localeCompare(b.name, "ko"));
-    return items;
   }
 
   function promptSeatLabel(defaultLabel) {
@@ -702,43 +908,68 @@ function stopAlertSoundLoop() {
   }
 
   function deleteSeat(seatId) {
-    if (!canManageLayout()) return;
+  if (!canManageLayout()) return;
 
-    const idx = eventState.seats.findIndex((s) => s.id === seatId);
-    if (idx < 0) return;
+  const idx = eventState.seats.findIndex((s) => s.id === seatId);
+  if (idx < 0) return;
 
-    const seat = eventState.seats[idx];
+  const seat = eventState.seats[idx];
+  const prevName = String(seat.person || "").trim();
+  const prevUid = String(seat.personUid || "").trim();
+  const prevEmail = String(seat.personEmail || "").trim();
 
-    if (!isEmptyPerson(seat.person)) {
-      returnPersonToWaiting(seat.person, seat.personUid || "", seat.personEmail || "");
-    }
+  eventState.seats.splice(idx, 1);
 
-    eventState.seats.splice(idx, 1);
+  if (ui.selectedSeatId === seatId) ui.selectedSeatId = null;
 
-    if (ui.selectedSeatId === seatId) ui.selectedSeatId = null;
+  if (prevUid) {
+    void clearUserSeatNotification(prevUid, "seat_deleted");
+  }
 
+  touchEvent();
+  render();
+
+  if (prevUid && prevName) {
+    void moveDealerToWaiting({
+      uid: prevUid,
+      email: prevEmail,
+      name: prevName
+    });
+  }
     touchEvent();
     render();
   }
 
   function clearSeat(seatId) {
-    if (!canManageLayout()) return;
+  if (!canManageLayout()) return;
 
-    const s = eventState.seats.find((x) => x.id === seatId);
-    if (!s) return;
+  const s = eventState.seats.find((x) => x.id === seatId);
+  if (!s) return;
 
-    if (!isEmptyPerson(s.person)) {
-      returnPersonToWaiting(s.person, s.personUid || "", s.personEmail || "");
-    }
+  const prevName = String(s.person || "").trim();
+  const prevUid = String(s.personUid || "").trim();
+  const prevEmail = String(s.personEmail || "").trim();
 
-    s.person = "비어있음";
-    s.personUid = "";
-    s.personEmail = "";
-    s.seatedAt = null;
+  s.person = "비어있음";
+  s.personUid = "";
+  s.personEmail = "";
+  s.seatedAt = null;
 
-    touchEvent();
-    render();
+  if (prevUid) {
+    void clearUserSeatNotification(prevUid, "seat_cleared");
   }
+
+  touchEvent();
+  render();
+
+  if (prevUid && prevName) {
+    void moveDealerToWaiting({
+      uid: prevUid,
+      email: prevEmail,
+      name: prevName
+    });
+  }
+}
 
   function addWaiting(name, personUid = "", personEmail = "") {
     if (!canManageLayout()) return;
@@ -779,821 +1010,985 @@ function stopAlertSoundLoop() {
   }
 
   async function assignWaitingToSeat(waitingId, seatId) {
-    if (!canManageLayout()) return;
-
-    const wIdx = waitingState.waiting.findIndex((w) => w.id === waitingId);
-    const seat = eventState.seats.find((s) => s.id === seatId);
-    if (wIdx < 0 || !seat) return;
-
-    const w = waitingState.waiting[wIdx];
-
-    if (!isEmptyPerson(seat.person)) {
-      returnPersonToWaiting(seat.person, seat.personUid || "", seat.personEmail || "");
-    }
-
-    seat.person = w.name;
-    seat.personUid = w.uid || "";
-    seat.personEmail = w.email || "";
-    seat.seatedAt = Date.now();
-
-    waitingState.waiting.splice(wIdx, 1);
-    ui.selectedWaitingId = null;
-
-    touchWaiting();
-    touchEvent();
-    render();
-
-if (w.uid) {
-  await writeUserNotification({
-    uid: w.uid,
-    type: "seat_assigned",
-    tournamentId: TOURNAMENT_ID,
-    eventId: EVENT_ID,
-    boxId: BOX_ID,
-    seatId: seat.id,
-    seatLabel: seat.label ?? seat.no ?? "",
-    message: `Seat ${seat.label ?? seat.no}에 배치되었습니다.`,
-    targetUrl: getSeatTargetUrl(seat.id),
-    acknowledged: false,
-    createdAt: Date.now()
-  });
-}
-  }
-
-  function render() {
-  app.innerHTML = "";
-
-  if (isMobile()) {
-    renderMobile();
-  } else {
-    renderPC();
-  }
-
-  renderPanel();
-  updateTimers();
-}
-
-function renderPC() {
-  const canvas = document.createElement("div");
-  canvas.className = "canvas pc-canvas";
-  canvas.innerHTML = `
-    <div class="canvas-hint">
-      <div class="hint-pill">EVENT: ${escapeHtml(EVENT_ID)}</div>
-      <div class="hint-pill">BOX: ${escapeHtml(BOX_ID)}</div>
-    </div>
-  `;
-
-  app.appendChild(canvas);
-
-  const BOX_W = 180;
-  const BOX_H = 84;
-  const PAD = 10;
-
-  eventState.seats.forEach((seat) => {
-    const maxX = Math.max(PAD, canvas.clientWidth - BOX_W - PAD);
-    const maxY = Math.max(PAD, canvas.clientHeight - BOX_H - PAD);
-
-    seat.x = Math.max(PAD, Math.min(Number(seat.x ?? PAD), maxX));
-    seat.y = Math.max(PAD, Math.min(Number(seat.y ?? PAD), maxY));
-
-    const el = document.createElement("div");
-    el.className = "seat-box" + (ui.selectedSeatId === seat.id ? " selected" : "");
-    el.style.left = `${seat.x}px`;
-    el.style.top = `${seat.y}px`;
-    el.dataset.seatid = seat.id;
-
-    const hasPerson = !isEmptyPerson(seat.person);
-    const start = hasPerson ? (seat.seatedAt || Date.now()) : null;
-
-    el.innerHTML = `
-      <div class="seat-title">Seat ${escapeHtml(seat.label ?? seat.no)}</div>
-      <div class="seat-person">
-        ${escapeHtml(seat.person)}
-        ${
-          hasPerson
-            ? `<span class="time-chip" data-timer="seat" data-start="${start}" data-target="seat:${seat.id}">00:00:00</span>`
-            : ``
-        }
-      </div>
-    `;
-
-    el.addEventListener("click", (e) => {
-      e.stopPropagation();
-      ui.selectedSeatId = seat.id;
-
-      if (ui.selectedWaitingId && canManageLayout()) {
-        void assignWaitingToSeat(ui.selectedWaitingId, seat.id);
-        return;
-      }
-
-      render();
-    });
-
-    el.addEventListener("dblclick", (e) => {
-      e.stopPropagation();
-      if (!canManageLayout()) return;
-      clearSeat(seat.id);
-    });
-
-    el.addEventListener("pointerdown", (e) => {
-      if (!canManageLayout()) return;
-      if (e.button !== 0) return;
-
-      e.stopPropagation();
-
-      const rect = canvas.getBoundingClientRect();
-      const pointerX = e.clientX - rect.left;
-      const pointerY = e.clientY - rect.top;
-
-      ui.dragging = {
-        id: seat.id,
-        offsetX: pointerX - seat.x,
-        offsetY: pointerY - seat.y
-      };
-
-      el.setPointerCapture(e.pointerId);
-    });
-
-    el.addEventListener("pointermove", (e) => {
-      if (!canManageLayout()) return;
-      if (!ui.dragging || ui.dragging.id !== seat.id) return;
-
-      const rect = canvas.getBoundingClientRect();
-      const pointerX = e.clientX - rect.left;
-      const pointerY = e.clientY - rect.top;
-
-      const s = eventState.seats.find((x) => x.id === seat.id);
-      if (!s) return;
-
-      let nextX = pointerX - ui.dragging.offsetX;
-      let nextY = pointerY - ui.dragging.offsetY;
-
-      nextX = Math.max(PAD, Math.min(nextX, canvas.clientWidth - BOX_W - PAD));
-      nextY = Math.max(PAD, Math.min(nextY, canvas.clientHeight - BOX_H - PAD));
-
-      s.x = nextX;
-      s.y = nextY;
-
-      el.style.left = `${s.x}px`;
-      el.style.top = `${s.y}px`;
-    });
-
-    const endDrag = () => {
-      if (!canManageLayout()) return;
-      if (!ui.dragging || ui.dragging.id !== seat.id) return;
-      ui.dragging = null;
-      touchEvent();
-    };
-
-    el.addEventListener("pointerup", endDrag);
-    el.addEventListener("pointercancel", endDrag);
-
-    canvas.appendChild(el);
-  });
-
-  canvas.addEventListener("click", () => {
-    ui.selectedSeatId = null;
-    render();
-  });
-}
-
-function renderMobile() {
-  const wrap = document.createElement("div");
-  wrap.className = "mobile";
-
-  const selectedWaiting = waitingState.waiting.find(
-    (w) => w.id === ui.selectedWaitingId
-  ) || null;
-
-  const seatCard = document.createElement("div");
-  seatCard.className = "card";
-  seatCard.innerHTML = `
-    <div class="mobile-section-head">
-      <h3>Seat 목록</h3>
-      ${
-        canManageLayout()
-          ? `<button id="mobileAddSeatInline" class="btn primary">+ Seat 추가</button>`
-          : ``
-      }
-    </div>
-  `;
-
-  if (canManageLayout() && selectedWaiting) {
-    seatCard.innerHTML += `
-      <div class="mobile-selection-banner">
-        <span class="badge sel">선택된 대기</span>
-        <strong>${escapeHtml(selectedWaiting.name)}</strong>
-      </div>
-    `;
-  }
-
-  if (eventState.seats.length === 0) {
-    seatCard.innerHTML += `
-      <div class="row">
-        <div>Seat</div>
-        <div class="muted">없음</div>
-      </div>
-    `;
-  } else {
-    eventState.seats
-      .slice()
-      .sort((a, b) => (a.order ?? a.no) - (b.order ?? b.no))
-      .forEach((s) => {
-        const hasPerson = !isEmptyPerson(s.person);
-        const start = hasPerson ? (s.seatedAt || Date.now()) : null;
-        const isSel = ui.selectedSeatId === s.id;
-
-        seatCard.innerHTML += `
-  <div class="mobile-seat-row compact ${isSel ? "selected" : ""}" data-mobile-seat="${s.id}">
-    <div class="mobile-seat-mainline">
-      <div class="mobile-seat-inline">
-        <div class="mobile-seat-name ${isEmptyPerson(s.person) ? "is-empty" : ""}">
-          ${escapeHtml(s.person)}
-        </div>
-
-        ${
-          canManageLayout()
-            ? `
-            <div class="mobile-seat-inline-actions">
-              <button class="mobile-pill-btn ${isSel ? "active" : ""}" data-mobile-seat-select="${s.id}">
-                ${isSel ? "선택됨" : "Seat 선택"}
-              </button>
-
-              <button class="mobile-pill-btn danger" data-del="${s.id}">
-                삭제
-              </button>
-
-              ${
-                selectedWaiting
-                  ? `<button class="mobile-pill-btn primary" data-mobile-assign="${s.id}">
-                      ${escapeHtml(selectedWaiting.name)} 배치
-                    </button>`
-                  : ``
-              }
-            </div>
-            `
-            : ``
-        }
-      </div>
-
-      <div class="mobile-seat-right">
-        ${
-          hasPerson
-            ? `<span class="time-chip" data-timer="seat" data-start="${start}" data-target="seat:${s.id}">00:00:00</span>`
-            : `<span class="mobile-empty-dash">—</span>`
-        }
-      </div>
-    </div>
-  </div>
-`;
-      });
-  }
-
-  const waitCard = document.createElement("div");
-  waitCard.className = "card";
-  waitCard.innerHTML = `
-    <div class="mobile-section-head">
-      <h3>대기 (공유)</h3>
-      ${
-        canManageLayout()
-          ? `<button id="mobileAddWaitingInline" class="btn primary">+ 대기 추가</button>`
-          : ``
-      }
-    </div>
-  `;
-
-  const sortedWaiting = [...waitingState.waiting].sort((a, b) => {
-    const aTime = Number(a?.addedAt || 0);
-    const bTime = Number(b?.addedAt || 0);
-    return aTime - bTime;
-  });
-
-  if (sortedWaiting.length === 0) {
-    waitCard.innerHTML += `
-      <div class="row">
-        <div>대기</div>
-        <div class="muted">없음</div>
-      </div>
-    `;
-  } else {
-    sortedWaiting.forEach((w, index) => {
-  const start = w.addedAt || Date.now();
-  const isSel = ui.selectedWaitingId === w.id;
-
-  waitCard.innerHTML += `
-    <div class="mobile-wait-row compact ${isSel ? "selected" : ""}" data-mobile-wait="${w.id}">
-      <div class="mobile-wait-mainline">
-        <div class="mobile-wait-inline">
-          <div class="mobile-wait-name">
-            ${escapeHtml(w.name)}
-          </div>
-
-          ${
-            canManageLayout()
-              ? `
-              <div class="mobile-wait-inline-actions">
-                <button class="mobile-pill-btn ${isSel ? "active" : ""}" data-mobile-wait-select="${w.id}">
-                  ${isSel ? "선택됨" : "대기 선택"}
-                </button>
-
-                <button class="mobile-pill-btn danger" data-del-w="${w.id}">
-                  삭제
-                </button>
-              </div>
-              `
-              : ``
-          }
-        </div>
-
-        <div class="mobile-wait-right">
-          <span class="time-chip" data-timer="wait" data-start="${start}" data-target="wait:${w.id}">
-            00:00:00
-          </span>
-        </div>
-      </div>
-    </div>
-  `;
-});
-  }
-
-  if (canManageLayout()) {
-    waitCard.innerHTML += `
-      <div class="mobile-selection-status">
-        ${
-          ui.selectedWaitingId
-            ? `<div class="badge sel">대기 선택됨</div>`
-            : `<div class="badge">선택된 대기 없음</div>`
-        }
-        ${
-          ui.selectedSeatId
-            ? `<div class="badge sel">Seat 선택됨</div>`
-            : `<div class="badge">선택된 Seat 없음</div>`
-        }
-      </div>
-    `;
-  }
-
-  wrap.append(seatCard, waitCard);
-  app.appendChild(wrap);
-
   if (!canManageLayout()) return;
 
-  const addSeatBtn = document.getElementById("mobileAddSeatInline");
-  if (addSeatBtn) {
-    addSeatBtn.onclick = () => addSeat();
+  const wIdx = waitingState.waiting.findIndex((w) => w.id === waitingId);
+  const seat = eventState.seats.find((s) => s.id === seatId);
+  if (wIdx < 0 || !seat) return;
+
+  const w = waitingState.waiting[wIdx];
+
+  const prevName = String(seat.person || "").trim();
+  const prevUid = String(seat.personUid || "").trim();
+  const prevEmail = String(seat.personEmail || "").trim();
+
+  seat.person = w.name;
+  seat.personUid = w.uid || "";
+  seat.personEmail = w.email || "";
+  seat.seatedAt = Date.now();
+
+  waitingState.waiting.splice(wIdx, 1);
+  ui.selectedWaitingId = null;
+
+  if (prevUid && prevUid !== seat.personUid) {
+    await clearUserSeatNotification(prevUid, "seat_reassigned");
   }
 
-  const addWaitBtn = document.getElementById("mobileAddWaitingInline");
-  if (addWaitBtn) {
-    addWaitBtn.onclick = () => {
-      const name = prompt("대기자 이름");
-      if (name) addWaiting(name);
-    };
+  touchWaiting();
+  touchEvent();
+  render();
+
+  if (prevUid && prevName && prevUid !== seat.personUid) {
+    await moveDealerToWaiting({
+      uid: prevUid,
+      email: prevEmail,
+      name: prevName
+    });
   }
 
-  wrap.querySelectorAll("[data-mobile-seat]").forEach((row) => {
-    row.addEventListener("click", (e) => {
-      if (
-        e.target.closest("[data-mobile-seat-select]") ||
-        e.target.closest("[data-rename]") ||
-        e.target.closest("[data-del]") ||
-        e.target.closest("[data-mobile-assign]")
-      ) {
-        return;
-      }
-
-      const sid = row.getAttribute("data-mobile-seat");
-      ui.selectedSeatId = ui.selectedSeatId === sid ? null : sid;
-      render();
+  if (w.uid && w.name) {
+    await moveDealerToAssigned({
+      uid: w.uid || "",
+      email: w.email || "",
+      name: w.name || "",
+      seatId: seat.id,
+      seatLabel: seat.label ?? seat.no ?? "",
+      eventId: EVENT_ID,
+      boxId: BOX_ID
     });
-  });
+  }
 
-  wrap.querySelectorAll("[data-mobile-wait]").forEach((row) => {
-    row.addEventListener("click", (e) => {
-      if (
-        e.target.closest("[data-mobile-wait-select]") ||
-        e.target.closest("[data-del-w]")
-      ) {
-        return;
-      }
+  if (w.uid) {
+    const seatLabel = String(seat.label ?? seat.no ?? "").trim();
+    const eventTitle = getCurrentEventTitle();
+    const tournamentId = getCurrentTournamentId();
 
-      const wid = row.getAttribute("data-mobile-wait");
-      ui.selectedWaitingId = ui.selectedWaitingId === wid ? null : wid;
-      render();
+    await writeUserNotification({
+      uid: w.uid,
+      type: "seat_assigned",
+      acknowledged: false,
+      createdAt: Date.now(),
+      tournamentId,
+      eventId: EVENT_ID,
+      eventTitle,
+      boxId: BOX_ID,
+      seatId: seat.id,
+      seatLabel,
+      targetUrl: buildSeatTargetUrl(EVENT_ID, BOX_ID, seat.id),
+      message: `${eventTitle} / Seat ${seatLabel}에 배치되었습니다.`
     });
-  });
+  }
+}
 
-  wrap.querySelectorAll("[data-mobile-seat-select]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const sid = btn.getAttribute("data-mobile-seat-select");
-      ui.selectedSeatId = ui.selectedSeatId === sid ? null : sid;
-      render();
+  function render() {
+    app.innerHTML = "";
+
+    if (isMobile()) {
+      renderMobile();
+    } else {
+      renderPC();
+    }
+
+    renderPanel();
+    updateTimers();
+  }
+
+  function renderPC() {
+    const canvas = document.createElement("div");
+    canvas.className = "canvas pc-canvas";
+   canvas.innerHTML = ``;
+
+    app.appendChild(canvas);
+
+    const BOX_W = 180;
+    const BOX_H = 84;
+    const PAD = 10;
+
+    eventState.seats.forEach((seat) => {
+      const maxX = Math.max(PAD, canvas.clientWidth - BOX_W - PAD);
+      const maxY = Math.max(PAD, canvas.clientHeight - BOX_H - PAD);
+
+      seat.x = Math.max(PAD, Math.min(Number(seat.x ?? PAD), maxX));
+      seat.y = Math.max(PAD, Math.min(Number(seat.y ?? PAD), maxY));
+
+      const el = document.createElement("div");
+      el.className = "seat-box" + (ui.selectedSeatId === seat.id ? " selected" : "");
+      el.style.left = `${seat.x}px`;
+      el.style.top = `${seat.y}px`;
+      el.dataset.seatid = seat.id;
+
+      el.innerHTML = `
+        <div class="seat-title">Seat ${escapeHtml(seat.label ?? seat.no)}</div>
+        <div class="seat-person">
+          ${escapeHtml(seat.person)}
+        </div>
+      `;
+
+            let pointerMoved = false;
+      let pointerStartX = 0;
+      let pointerStartY = 0;
+      let pointerType = "";
+      let isPointerDragging = false;
+      let lastTouchTapAt = 0;
+
+      el.addEventListener("click", async (e) => {
+        e.stopPropagation();
+
+        if (pointerType === "touch" || pointerType === "pen") {
+          return;
+        }
+
+        ui.selectedSeatId = seat.id;
+
+        if (ui.selectedWaitingId && canManageLayout()) {
+          await assignWaitingToSeat(ui.selectedWaitingId, seat.id);
+          ui.selectedSeatId = null;
+          render();
+          return;
+        }
+
+        render();
+      });
+
+      el.addEventListener("pointerdown", (e) => {
+        if (!canManageLayout()) return;
+        if (e.pointerType === "mouse" && e.button !== 0) return;
+
+        e.stopPropagation();
+
+        pointerType = e.pointerType || "mouse";
+        pointerMoved = false;
+        isPointerDragging = false;
+        pointerStartX = e.clientX;
+        pointerStartY = e.clientY;
+
+        const rect = canvas.getBoundingClientRect();
+        const pointerX = e.clientX - rect.left;
+        const pointerY = e.clientY - rect.top;
+
+        ui.dragging = {
+          id: seat.id,
+          offsetX: pointerX - seat.x,
+          offsetY: pointerY - seat.y
+        };
+
+        el.setPointerCapture(e.pointerId);
+      });
+
+      el.addEventListener("pointermove", (e) => {
+        if (!canManageLayout()) return;
+        if (!ui.dragging || ui.dragging.id !== seat.id) return;
+
+        const dx = Math.abs(e.clientX - pointerStartX);
+        const dy = Math.abs(e.clientY - pointerStartY);
+
+        if (dx > 8 || dy > 8) {
+          pointerMoved = true;
+        }
+
+        const shouldDrag = e.pointerType === "mouse" || pointerMoved;
+        if (!shouldDrag) return;
+
+        isPointerDragging = true;
+
+        const rect = canvas.getBoundingClientRect();
+        const pointerX = e.clientX - rect.left;
+        const pointerY = e.clientY - rect.top;
+
+        const s = eventState.seats.find((x) => x.id === seat.id);
+        if (!s) return;
+
+        let nextX = pointerX - ui.dragging.offsetX;
+        let nextY = pointerY - ui.dragging.offsetY;
+
+        nextX = Math.max(PAD, Math.min(nextX, canvas.clientWidth - BOX_W - PAD));
+        nextY = Math.max(PAD, Math.min(nextY, canvas.clientHeight - BOX_H - PAD));
+
+        s.x = nextX;
+        s.y = nextY;
+
+        el.style.left = `${s.x}px`;
+        el.style.top = `${s.y}px`;
+      });
+
+            el.addEventListener("pointerup", async (e) => {
+        if (!canManageLayout()) return;
+        if (!ui.dragging || ui.dragging.id !== seat.id) return;
+
+        const wasTap = !isPointerDragging && !pointerMoved;
+        ui.dragging = null;
+
+        if (isPointerDragging) {
+          touchEvent();
+          return;
+        }
+
+        if ((e.pointerType === "touch" || e.pointerType === "pen") && wasTap) {
+          e.stopPropagation();
+
+          const seatObj = eventState.seats.find((x) => x.id === seat.id);
+          const occupied = seatObj && !isEmptyPerson(seatObj.person);
+          const now = Date.now();
+
+          // 1) 대기자 선택 상태 + 빈 seat => 한 번 터치로 즉시 배치
+          if (ui.selectedWaitingId && !occupied) {
+            ui.selectedSeatId = seat.id;
+            await assignWaitingToSeat(ui.selectedWaitingId, seat.id);
+            ui.selectedSeatId = null;
+            lastTouchTapAt = 0;
+            render();
+            return;
+          }
+
+          // 2) 이미 사람이 있는 seat => 더블터치로 비우기
+          if (occupied) {
+            if (now - lastTouchTapAt < 320) {
+              lastTouchTapAt = 0;
+              await clearSeat(seat.id);
+              ui.selectedSeatId = null;
+              render();
+              return;
+            }
+
+            lastTouchTapAt = now;
+            ui.selectedSeatId = seat.id;
+            render();
+            return;
+          }
+
+          // 3) 그 외는 그냥 선택
+          lastTouchTapAt = now;
+          ui.selectedSeatId = seat.id;
+          render();
+          return;
+        }
+
+        render();
+      });
+
+      el.addEventListener("pointercancel", () => {
+        if (!canManageLayout()) return;
+        if (!ui.dragging || ui.dragging.id !== seat.id) return;
+        ui.dragging = null;
+      });
+
+      canvas.appendChild(el);
     });
-  });
 
-  wrap.querySelectorAll("[data-mobile-wait-select]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const wid = btn.getAttribute("data-mobile-wait-select");
-      ui.selectedWaitingId = ui.selectedWaitingId === wid ? null : wid;
-      render();
-    });
-  });
-
-  wrap.querySelectorAll("[data-mobile-assign]").forEach((btn) => {
-    btn.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      const sid = btn.getAttribute("data-mobile-assign");
-
-      if (!ui.selectedWaitingId) {
-        alert("먼저 대기자를 선택하세요.");
-        return;
-      }
-
-      await assignWaitingToSeat(ui.selectedWaitingId, sid);
+    canvas.addEventListener("click", () => {
       ui.selectedSeatId = null;
       render();
     });
-  });
-
-  wrap.querySelectorAll("[data-rename]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      renameSeat(btn.getAttribute("data-rename"));
-    });
-  });
-
-  wrap.querySelectorAll("[data-del]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      deleteSeat(btn.getAttribute("data-del"));
-    });
-  });
-
-  wrap.querySelectorAll("[data-del-w]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      deleteWaiting(btn.getAttribute("data-del-w"));
-    });
-  });
-}
-
-function renderPanel() {
-  if (isMobile()) return;
-
-  tabs.forEach((t) => {
-    t.classList.toggle("active", t.dataset.tab === ui.activeTab);
-  });
-
-  if (ui.activeTab === "wait") {
-    renderWaitPanel();
-  } else if (ui.activeTab === "seat") {
-    renderSeatPanel();
-  } else {
-    renderBoxPanel();
-  }
-}
-
-function renderWaitPanel() {
-  const selected = ui.selectedWaitingId;
-  const html = [];
-
-  html.push(`<div class="panel-title">대기 관리 (공유)</div>`);
-
-  if (canManageLayout()) {
-    html.push(`<input id="waitNameInput" placeholder="대기자 이름 입력" />`);
-    html.push(`<button id="addWaitBtn" class="btn primary" style="width:100%; margin-bottom:12px;">+ 대기 추가</button>`);
-  } else {
-    html.push(`<div class="badge" style="margin-bottom:12px;">관리 권한은 admin만 가능합니다</div>`);
   }
 
-  if (waitingState.waiting.length === 0) {
-    html.push(`
-      <div class="row">
-        <div class="left">
-          <div>대기자 없음</div>
-          <div class="badge">오래 기다린 순으로 자동 정렬됩니다</div>
-        </div>
+  function renderMobile() {
+    const wrap = document.createElement("div");
+    wrap.className = "mobile";
+
+    const selectedWaiting = waitingState.waiting.find(
+      (w) => w.id === ui.selectedWaitingId
+    ) || null;
+
+    const seatCard = document.createElement("div");
+    seatCard.className = "card";
+    seatCard.innerHTML = `
+      <div class="mobile-section-head">
+        <h3>Seat</h3>
+        ${
+          canManageLayout()
+            ? `<button id="mobileAddSeatInline" class="btn primary">+ Seat 추가</button>`
+            : ``
+        }
       </div>
-    `);
-  } else {
+    `;
+
+    if (canManageLayout() && selectedWaiting) {
+      seatCard.innerHTML += `
+        <div class="mobile-selection-banner">
+          <span class="badge sel">선택된 대기</span>
+          <strong>${escapeHtml(selectedWaiting.name)}</strong>
+        </div>
+      `;
+    }
+
+    if (eventState.seats.length === 0) {
+      seatCard.innerHTML += `
+        <div class="row">
+          <div>Seat</div>
+          <div class="muted">없음</div>
+        </div>
+      `;
+    } else {
+      eventState.seats
+        .slice()
+        .sort((a, b) => (a.order ?? a.no) - (b.order ?? b.no))
+        .forEach((s) => {
+          const hasPerson = !isEmptyPerson(s.person);
+          const start = hasPerson ? (s.seatedAt || Date.now()) : null;
+          const isSel = ui.selectedSeatId === s.id;
+
+          seatCard.innerHTML += `
+            <div class="mobile-seat-row compact ${isSel ? "selected" : ""}" data-mobile-seat="${s.id}">
+              <div class="mobile-seat-mainline">
+                <div class="mobile-seat-inline">
+  <div class="mobile-seat-leftpack">
+    <div class="mobile-seat-no-pill">
+      ${escapeHtml(s.label ?? s.no)}
+    </div>
+
+    <div class="mobile-seat-name ${isEmptyPerson(s.person) ? "is-empty" : ""}">
+      ${
+        isEmptyPerson(s.person)
+          ? `Empty`
+          : escapeHtml(s.person)
+      }
+    </div>
+  </div>
+
+  ${
+    canManageLayout()
+      ? `
+      <div class="mobile-seat-inline-actions">
+        ${
+          hasPerson
+            ? `<button class="mobile-pill-btn warn" data-clear-seat="${s.id}">
+                비우기
+              </button>`
+            : ``
+        }
+
+        <button class="mobile-pill-btn danger" data-del="${s.id}">
+          삭제
+        </button>
+
+        ${
+          selectedWaiting
+            ? `<button class="mobile-pill-btn primary" data-mobile-assign="${s.id}">
+                ${escapeHtml(selectedWaiting.name)} 배치
+              </button>`
+            : ``
+        }
+      </div>
+      `
+      : ``
+  }
+</div>
+
+                <div class="mobile-seat-right">
+                  ${
+                    hasPerson
+                      ? `<span class="time-chip" data-timer="seat" data-start="${start}" data-target="seat:${s.id}">00:00:00</span>`
+                      : `<span class="mobile-empty-dash">—</span>`
+                  }
+                </div>
+              </div>
+            </div>
+          `;
+        });
+    }
+
+    const waitCard = document.createElement("div");
+    waitCard.className = "card";
+    waitCard.innerHTML = `
+      <div class="mobile-section-head">
+        <h3>대기</h3>
+        ${
+          canManageLayout()
+            ? `<button id="mobileAddWaitingInline" class="btn primary">+ 대기 추가</button>`
+            : ``
+        }
+      </div>
+    `;
+
     const sortedWaiting = [...waitingState.waiting].sort((a, b) => {
       const aTime = Number(a?.addedAt || 0);
       const bTime = Number(b?.addedAt || 0);
       return aTime - bTime;
     });
 
-    sortedWaiting.forEach((w, index) => {
-      const isSel = selected === w.id;
-      const start = w.addedAt || Date.now();
-      const waitingNo = index + 1;
+    if (sortedWaiting.length === 0) {
+      waitCard.innerHTML += `
+        <div class="row">
+          <div>대기</div>
+          <div class="muted">없음</div>
+        </div>
+      `;
+    } else {
+      sortedWaiting.forEach((w) => {
+        const start = w.addedAt || Date.now();
+        const isSel = ui.selectedWaitingId === w.id;
 
-      html.push(`
-        <div class="row" data-wid="${w.id}" style="cursor:pointer; align-items:center;">
-          <div style="display:flex; align-items:center; gap:10px; flex:1; min-width:0;">
+        waitCard.innerHTML += `
+          <div class="mobile-wait-row compact ${isSel ? "selected" : ""}" data-mobile-wait="${w.id}">
+            <div class="mobile-wait-mainline">
+              <div class="mobile-wait-inline">
+                <div class="mobile-wait-name">
+                  ${escapeHtml(w.name)}
+                </div>
 
-            <div class="wait-name-line" style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;">
-              <div class="wait-name-text">
-                ${escapeHtml(w.name)}
+                ${
+                  canManageLayout()
+                    ? `
+                    <div class="mobile-wait-inline-actions">
+                     
+
+                      <button class="mobile-pill-btn danger" data-del-w="${w.id}">
+                        삭제
+                      </button>
+                    </div>
+                    `
+                    : ``
+                }
               </div>
 
-              <div class="badge ${isSel ? "sel" : ""}">
-                ${isSel ? "선택됨" : "클릭"}
+              <div class="mobile-wait-right">
+                <span class="time-chip" data-timer="wait" data-start="${start}" data-target="wait:${w.id}">
+                  00:00:00
+                </span>
               </div>
-
-              <span
-                class="time-chip"
-                data-timer="wait"
-                data-start="${start}"
-                data-target="wait:${w.id}">
-                00:00:00
-              </span>
             </div>
           </div>
+        `;
+      });
+    }
 
+    if (canManageLayout()) {
+      waitCard.innerHTML += `
+        <div class="mobile-selection-status">
           ${
-            canManageLayout()
-              ? `<button class="btn small danger" data-del-w="${w.id}">삭제</button>`
-              : ``
+            ui.selectedWaitingId
+              ? `<div class="badge sel">대기 선택됨</div>`
+              : `<div class="badge">선택된 대기 없음</div>`
+          }
+          ${
+            ui.selectedSeatId
+              ? `<div class="badge sel">Seat 선택됨</div>`
+              : `<div class="badge">선택된 Seat 없음</div>`
           }
         </div>
-      `);
-    });
-  }
+      `;
+    }
 
-  panelContent.innerHTML = html.join("");
+    wrap.append(seatCard, waitCard);
+    app.appendChild(wrap);
 
-  const input = document.getElementById("waitNameInput");
-  const addBtn = document.getElementById("addWaitBtn");
+    if (!canManageLayout()) return;
 
-  if (addBtn && input) {
-    addBtn.onclick = () => {
-      addWaiting(input.value);
-      input.value = "";
-      input.focus();
-    };
+    const addSeatBtn = document.getElementById("mobileAddSeatInline");
+    if (addSeatBtn) {
+      addSeatBtn.onclick = () => addSeat();
+    }
 
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") addBtn.click();
-    });
-  }
+    const addWaitBtn = document.getElementById("mobileAddWaitingInline");
+    if (addWaitBtn) {
+      addWaitBtn.onclick = () => {
+        const name = prompt("대기자 이름");
+        if (name) addWaiting(name);
+      };
+    }
 
-  panelContent.querySelectorAll("[data-wid]").forEach((el) => {
-    el.addEventListener("click", (e) => {
-      if (e.target && e.target.matches("[data-del-w]")) return;
+          let lastSeatTap = 0;
+    let lastSeatTapId = "";
 
-      const wid = el.getAttribute("data-wid");
-      ui.selectedWaitingId = ui.selectedWaitingId === wid ? null : wid;
-      ui.selectedSeatId = null;
-      render();
-    });
-  });
-
-  panelContent.querySelectorAll("[data-del-w]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      deleteWaiting(btn.getAttribute("data-del-w"));
-    });
-  });
-}
-
-function renderSeatPanel() {
-  const html = [];
-  const seatedAll = scanAllSeatOccupancy();
-  const waitingAll = waitingState.waiting || [];
-
-  const left = [];
-  left.push(`<div class="panel-title">Seat 관리 (이벤트별)</div>`);
-
-  if (canManageLayout()) {
-    left.push(`<button id="addSeatBtn" class="btn primary" style="width:100%; margin-bottom:12px;">+ Seat 추가</button>`);
-  } else {
-    left.push(`<div class="badge" style="margin-bottom:12px;">Seat 관리는 admin만 가능합니다</div>`);
-  }
-
-  if (eventState.seats.length === 0) {
-    left.push(`
-      <div class="row">
-        <div class="left">
-          <div>Seat 없음</div>
-          <div class="badge">현재 이벤트(${escapeHtml(EVENT_ID)})에만 생성됩니다</div>
-        </div>
-      </div>
-    `);
-  } else {
-    eventState.seats
-      .slice()
-      .sort((a, b) => (a.order ?? a.no) - (b.order ?? b.no))
-      .forEach((s) => {
-        const isSel = ui.selectedSeatId === s.id;
-        const hasPerson = !isEmptyPerson(s.person);
-        const start = hasPerson ? (s.seatedAt || Date.now()) : null;
-
- left.push(`
-  <div class="seat-manage-row ${isSel ? "selected" : ""}" data-sid="${s.id}" style="cursor:pointer;">
-    <div class="seat-manage-main">
-      <div class="seat-manage-inline">
-        <div class="seat-manage-name ${isEmptyPerson(s.person) ? "is-empty" : ""}">
-          ${escapeHtml(s.person)}
-        </div>
-
-        ${
-          canManageLayout()
-            ? `
-              <div class="seat-inline-actions">
-                <button class="pill-inline ${isSel ? "active" : ""}" type="button">
-                  ${isSel ? "선택됨" : "선택"}
-                </button>
-
-                <button class="pill-inline" type="button" data-rename="${s.id}">
-                  라벨
-                </button>
-
-                <button class="pill-inline danger" type="button" data-del="${s.id}">
-                  삭제
-                </button>
-              </div>
-            `
-            : ``
+    wrap.querySelectorAll("[data-mobile-seat]").forEach((row) => {
+      row.addEventListener("click", async (e) => {
+        if (
+          e.target.closest("[data-mobile-seat-select]") ||
+          e.target.closest("[data-del]") ||
+          e.target.closest("[data-mobile-assign]") ||
+          e.target.closest("[data-clear-seat]")
+        ) {
+          return;
         }
-      </div>
 
-      <div class="seat-manage-timer">
-        ${
-          hasPerson
-            ? `<span class="time-chip"
-                data-timer="seat"
-                data-start="${start}"
-                data-target="seat:${s.id}">
-                00:00:00
-              </span>`
-            : `<span class="seat-manage-empty-dash">—</span>`
+        const sid = row.getAttribute("data-mobile-seat");
+        if (!sid) return;
+
+        const seatObj = eventState.seats.find((x) => x.id === sid);
+        const occupied = seatObj && !isEmptyPerson(seatObj.person);
+        const now = Date.now();
+
+        // 1) 대기자 선택 상태 + 빈 seat => 한 번 터치 배치
+        if (ui.selectedWaitingId && canManageLayout() && !occupied) {
+          ui.selectedSeatId = sid;
+          await assignWaitingToSeat(ui.selectedWaitingId, sid);
+          ui.selectedSeatId = null;
+          lastSeatTap = 0;
+          lastSeatTapId = "";
+          render();
+          return;
         }
-      </div>
-    </div>
-  </div>
-`);
+
+        // 2) 사람 있는 seat => 같은 seat 더블터치 시 비우기
+        if (occupied && canManageLayout()) {
+          if (lastSeatTapId === sid && now - lastSeatTap < 320) {
+            lastSeatTap = 0;
+            lastSeatTapId = "";
+            await clearSeat(sid);
+            ui.selectedSeatId = null;
+            render();
+            return;
+          }
+
+          lastSeatTap = now;
+          lastSeatTapId = sid;
+          ui.selectedSeatId = sid;
+          render();
+          return;
+        }
+
+        // 3) 나머지는 선택만
+        lastSeatTap = now;
+        lastSeatTapId = sid;
+        ui.selectedSeatId = sid;
+        render();
       });
-  }
-
-  const right = [];
-  right.push(`<div class="panel-box">`);
-  right.push(`<h4>전역 현황 (대기/배치)</h4>`);
-  right.push(`<div class="badge" style="margin-bottom:8px;">대기: ${waitingAll.length}명</div>`);
-
-  if (waitingAll.length === 0) {
-    right.push(`
-      <div class="mini-row">
-        <div class="mini-left">
-          <div class="mini-name">대기자 없음</div>
-          <div class="mini-loc">—</div>
-        </div>
-      </div>
-    `);
-  } else {
-    const sortedWaitingAll = [...waitingAll].sort((a, b) => {
-      const aTime = Number(a?.addedAt || 0);
-      const bTime = Number(b?.addedAt || 0);
-      return aTime - bTime;
     });
 
-    sortedWaitingAll.forEach((w, index) => {
-      const start = w.addedAt || Date.now();
-      const waitingNo = index + 1;
+    wrap.querySelectorAll("[data-mobile-wait]").forEach((row) => {
+      row.addEventListener("click", (e) => {
+        if (
+          e.target.closest("[data-mobile-wait-select]") ||
+          e.target.closest("[data-del-w]")
+        ) {
+          return;
+        }
 
-      right.push(`
-        <div class="global-wait-row">
-          <div class="global-wait-left">
-            <div class="global-wait-order">${waitingNo}</div>
-            <div class="global-wait-name">${escapeHtml(w.name)}</div>
-            <div class="global-wait-status">대기(공유)</div>
+        const wid = row.getAttribute("data-mobile-wait");
+        ui.selectedWaitingId = ui.selectedWaitingId === wid ? null : wid;
+        render();
+      });
+    });
+
+    wrap.querySelectorAll("[data-mobile-seat-select]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const sid = btn.getAttribute("data-mobile-seat-select");
+        ui.selectedSeatId = ui.selectedSeatId === sid ? null : sid;
+        render();
+      });
+    });
+
+    wrap.querySelectorAll("[data-mobile-wait-select]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const wid = btn.getAttribute("data-mobile-wait-select");
+        ui.selectedWaitingId = ui.selectedWaitingId === wid ? null : wid;
+        render();
+      });
+    });
+
+    wrap.querySelectorAll("[data-mobile-assign]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const sid = btn.getAttribute("data-mobile-assign");
+
+        if (!ui.selectedWaitingId) {
+          alert("먼저 대기자를 선택하세요.");
+          return;
+        }
+
+        await assignWaitingToSeat(ui.selectedWaitingId, sid);
+        ui.selectedSeatId = null;
+        render();
+      });
+    });
+
+    wrap.querySelectorAll("[data-del]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteSeat(btn.getAttribute("data-del"));
+      });
+    });
+
+    wrap.querySelectorAll("[data-del-w]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteWaiting(btn.getAttribute("data-del-w"));
+      });
+    });
+
+    wrap.querySelectorAll("[data-clear-seat]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        clearSeat(btn.getAttribute("data-clear-seat"));
+      });
+    });
+  }
+
+  function renderPanel() {
+    if (isMobile()) return;
+
+    tabs.forEach((t) => {
+      t.classList.toggle("active", t.dataset.tab === ui.activeTab);
+    });
+
+    if (ui.activeTab === "wait") {
+      renderWaitPanel();
+    } else if (ui.activeTab === "seat") {
+      renderSeatPanel();
+    } else {
+      renderBoxPanel();
+    }
+  }
+
+  function renderWaitPanel() {
+    const selected = ui.selectedWaitingId;
+    const html = [];
+
+    html.push(`<div class="panel-title">대기 관리 (공유)</div>`);
+
+    if (canManageLayout()) {
+      html.push(`<input id="waitNameInput" placeholder="대기자 이름 입력" />`);
+      html.push(`<button id="addWaitBtn" class="btn primary" style="width:100%; margin-bottom:12px;">+ 대기 추가</button>`);
+    } else {
+      html.push(`<div class="badge" style="margin-bottom:12px;">관리 권한은 admin만 가능합니다</div>`);
+    }
+
+    if (waitingState.waiting.length === 0) {
+      html.push(`
+        <div class="row">
+          <div class="left">
+            <div>대기자 없음</div>
+            <div class="badge">오래 기다린 순으로 자동 정렬됩니다</div>
           </div>
-
-          <span
-            class="time-chip"
-            data-timer="wait"
-            data-start="${start}"
-            data-target="wait:${w.id}">
-            00:00:00
-          </span>
         </div>
       `);
-    });
-  }
+    } else {
+      const sortedWaitingAll = [...waitingState.waiting].sort((a, b) => {
+        const aTime = Number(a?.addedAt || 0);
+        const bTime = Number(b?.addedAt || 0);
+        return aTime - bTime;
+      });
 
-  right.push(`<div class="badge" style="margin:12px 0 8px;">배치: ${seatedAll.length}명</div>`);
+      sortedWaitingAll.forEach((w) => {
+        const isSel = selected === w.id;
+        const start = w.addedAt || Date.now();
 
-  if (seatedAll.length === 0) {
-    right.push(`
-      <div class="mini-row">
-        <div class="mini-left">
-          <div class="mini-name">배치된 사람 없음</div>
-          <div class="mini-loc">—</div>
-        </div>
-      </div>
-    `);
-  } else {
-    seatedAll.forEach((x) => {
-      const start = x.seatedAt || Date.now();
+        html.push(`
+          <div class="wait-manage-row ${isSel ? "selected" : ""}" data-wid="${w.id}" style="cursor:pointer;">
+            <div class="wait-manage-main">
+              <div class="wait-manage-inline">
+                <div class="wait-manage-name">
+                  ${escapeHtml(w.name)}
+                </div>
 
-      right.push(`
-        <div
-          class="global-wait-row seat-jump-row"
-          data-jump-event="${escapeHtml(x.eventId)}"
-          data-jump-box="${escapeHtml(x.boxId)}"
-          data-jump-seat="${escapeHtml(x.seatId)}"
-          style="cursor:pointer;"
-        >
-          <div class="global-wait-left">
-            <div class="global-wait-order">●</div>
-            <div class="global-wait-name">${escapeHtml(x.name)}</div>
-            <div class="global-wait-status">
-              ${escapeHtml(x.eventId)} / ${escapeHtml(x.boxId)} / Seat ${escapeHtml(x.seatLabel)}
+                ${
+                  canManageLayout()
+                    ? `
+                    <div class="wait-inline-actions">
+                      
+
+                      <button class="pill-inline danger" type="button" data-del-w="${w.id}">
+                        삭제
+                      </button>
+                    </div>
+                    `
+                    : ``
+                }
+              </div>
+
+              <div class="wait-manage-timer">
+                <span
+                  class="time-chip"
+                  data-timer="wait"
+                  data-start="${start}"
+                  data-target="wait:${w.id}">
+                  00:00:00
+                </span>
+              </div>
             </div>
           </div>
+        `);
+      });
+    }
 
-          <span
-            class="time-chip"
-            data-timer="seat"
-            data-start="${start}"
-            data-target="seat-global:${escapeHtml(x.eventId)}:${escapeHtml(x.boxId)}:${escapeHtml(x.seatId)}">
-            00:00:00
-          </span>
+    panelContent.innerHTML = html.join("");
+
+    const input = document.getElementById("waitNameInput");
+    const addBtn = document.getElementById("addWaitBtn");
+
+    if (addBtn && input) {
+      addBtn.onclick = () => {
+        addWaiting(input.value);
+        input.value = "";
+        input.focus();
+      };
+
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") addBtn.click();
+      });
+    }
+
+    panelContent.querySelectorAll("[data-wid]").forEach((el) => {
+      el.addEventListener("click", (e) => {
+        if (e.target && e.target.matches("[data-del-w]")) return;
+
+        const wid = el.getAttribute("data-wid");
+        ui.selectedWaitingId = ui.selectedWaitingId === wid ? null : wid;
+        ui.selectedSeatId = null;
+        render();
+      });
+    });
+
+    panelContent.querySelectorAll("[data-del-w]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteWaiting(btn.getAttribute("data-del-w"));
+      });
+    });
+  }
+
+  function renderSeatPanel() {
+    const html = [];
+    const seatedAll = globalSeatOccupancy;
+    const waitingAll = waitingState.waiting || [];
+
+    const left = [];
+    left.push(`<div class="panel-title">Seat 관리 (이벤트별)</div>`);
+
+    if (canManageLayout()) {
+      left.push(`<button id="addSeatBtn" class="btn primary" style="width:100%; margin-bottom:12px;">+ Seat 추가</button>`);
+    } else {
+      left.push(`<div class="badge" style="margin-bottom:12px;">Seat 관리는 admin만 가능합니다</div>`);
+    }
+
+    if (eventState.seats.length === 0) {
+      left.push(`
+        <div class="row">
+          <div class="left">
+            <div>Seat 없음</div>
+            <div class="badge">현재 이벤트(${escapeHtml(EVENT_ID)})에만 생성됩니다</div>
+          </div>
         </div>
       `);
+    } else {
+      eventState.seats
+        .slice()
+        .sort((a, b) => (a.order ?? a.no) - (b.order ?? b.no))
+        .forEach((s) => {
+          const isSel = ui.selectedSeatId === s.id;
+          const hasPerson = !isEmptyPerson(s.person);
+          const start = hasPerson ? (s.seatedAt || Date.now()) : null;
+
+          left.push(`
+            <div class="seat-manage-row ${isSel ? "selected" : ""}" data-sid="${s.id}" style="cursor:pointer;">
+              <div class="seat-manage-main">
+                <div class="seat-manage-inline">
+                  <div class="seat-manage-texts">
+                    <div class="seat-manage-title">
+                      Seat ${escapeHtml(s.label ?? s.no)}
+                    </div>
+
+                    <div class="seat-manage-name ${isEmptyPerson(s.person) ? "is-empty" : ""}">
+                      ${escapeHtml(s.person)}
+                    </div>
+                  </div>
+
+                  ${
+                    canManageLayout()
+                      ? `
+                      <div class="seat-inline-actions">
+                        <button class="pill-inline" type="button">
+                          선택
+                        </button>
+
+                        ${
+                          hasPerson
+                            ? `<button class="pill-inline warn" data-clear-seat="${s.id}">
+                                비우기
+                              </button>`
+                            : ``
+                        }
+
+                        <button class="pill-inline danger" type="button" data-del="${s.id}">
+                          삭제
+                        </button>
+                      </div>
+                      `
+                      : ``
+                  }
+                </div>
+
+                <div class="seat-manage-timer">
+                  ${
+                    hasPerson
+                      ? `<span class="time-chip"
+                          data-timer="seat"
+                          data-start="${start}"
+                          data-target="seat:${s.id}">
+                          00:00:00
+                        </span>`
+                      : `<span class="seat-manage-empty-dash">—</span>`
+                  }
+                </div>
+              </div>
+            </div>
+          `);
+        });
+    }
+
+    const right = [];
+    right.push(`<div class="panel-box">`);
+    right.push(`<h4>전역 현황 (대기/배치)</h4>`);
+    right.push(`<div class="badge" style="margin-bottom:8px;">대기: ${waitingAll.length}명</div>`);
+
+    if (waitingAll.length === 0) {
+      right.push(`
+        <div class="mini-row">
+          <div class="mini-left">
+            <div class="mini-name">대기자 없음</div>
+            <div class="mini-loc">—</div>
+          </div>
+        </div>
+      `);
+    } else {
+      const sortedWaitingAll = [...waitingAll].sort((a, b) => {
+        const aTime = Number(a?.addedAt || 0);
+        const bTime = Number(b?.addedAt || 0);
+        return aTime - bTime;
+      });
+
+      sortedWaitingAll.forEach((w, index) => {
+        const start = w.addedAt || Date.now();
+        const waitingNo = index + 1;
+
+        right.push(`
+          <div class="global-wait-row">
+            <div class="global-wait-left">
+              <div class="global-wait-order">${waitingNo}</div>
+              <div class="global-wait-name">${escapeHtml(w.name)}</div>
+              <div class="global-wait-status">대기(공유)</div>
+            </div>
+
+            <span
+              class="time-chip"
+              data-timer="wait"
+              data-start="${start}"
+              data-target="wait:${w.id}">
+              00:00:00
+            </span>
+          </div>
+        `);
+      });
+    }
+
+    right.push(`<div class="badge" style="margin:12px 0 8px;">배치: ${seatedAll.length}명</div>`);
+
+    if (seatedAll.length === 0) {
+      right.push(`
+        <div class="mini-row">
+          <div class="mini-left">
+            <div class="mini-name">배치된 사람 없음</div>
+            <div class="mini-loc">—</div>
+          </div>
+        </div>
+      `);
+    } else {
+      seatedAll.forEach((x) => {
+        const start = x.seatedAt || Date.now();
+
+        right.push(`
+          <div
+            class="global-wait-row seat-jump-row"
+            data-jump-event="${escapeHtml(x.eventId)}"
+            data-jump-box="${escapeHtml(x.boxId)}"
+            data-jump-seat="${escapeHtml(x.seatId)}"
+            style="cursor:pointer;"
+          >
+            <div class="global-wait-left">
+              <div class="global-wait-order">●</div>
+              <div class="global-wait-name">${escapeHtml(x.name)}</div>
+              <div class="global-wait-status">
+                ${escapeHtml(x.eventId)} / ${escapeHtml(x.boxId)} / Seat ${escapeHtml(x.seatLabel)}
+              </div>
+            </div>
+
+            <span
+              class="time-chip"
+              data-timer="seat"
+              data-start="${start}"
+              data-target="seat-global:${escapeHtml(x.eventId)}:${escapeHtml(x.boxId)}:${escapeHtml(x.seatId)}">
+              00:00:00
+            </span>
+          </div>
+        `);
+      });
+    }
+
+    right.push(`</div>`);
+
+    html.push(`<div class="panel-split">`);
+    html.push(`<div>${left.join("")}</div>`);
+    html.push(`${right.join("")}`);
+    html.push(`</div>`);
+
+    panelContent.innerHTML = html.join("");
+
+    const addSeatBtn = document.getElementById("addSeatBtn");
+    if (addSeatBtn) {
+      addSeatBtn.onclick = addSeat;
+    }
+
+    panelContent.querySelectorAll("[data-sid]").forEach((el) => {
+  el.addEventListener("click", (e) => {
+    if (
+      e.target &&
+      (
+        e.target.closest("[data-del]") ||
+        e.target.closest("[data-clear-seat]") ||
+        e.target.closest(".pill-inline")
+      )
+    ) return;
+
+    const sid = el.getAttribute("data-sid");
+    ui.selectedSeatId = ui.selectedSeatId === sid ? null : sid;
+    ui.selectedWaitingId = null;
+    render();
+  });
+});
+
+    panelContent.querySelectorAll("[data-del]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteSeat(btn.getAttribute("data-del"));
+      });
+    });
+
+    panelContent.querySelectorAll("[data-clear-seat]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        clearSeat(btn.getAttribute("data-clear-seat"));
+      });
+    });
+
+    panelContent.querySelectorAll(".seat-jump-row").forEach((row) => {
+      row.addEventListener("click", () => {
+        const jumpEventId = row.getAttribute("data-jump-event") || "";
+        const jumpBoxId = row.getAttribute("data-jump-box") || "";
+        const jumpSeatId = row.getAttribute("data-jump-seat") || "";
+
+        sessionStorage.setItem("eventId", jumpEventId);
+        sessionStorage.setItem("boxId", jumpBoxId);
+        sessionStorage.setItem("focusSeatId", jumpSeatId);
+
+        location.href =
+          `./layout.html?eventId=${encodeURIComponent(jumpEventId)}&boxId=${encodeURIComponent(jumpBoxId)}&focusSeatId=${encodeURIComponent(jumpSeatId)}`;
+      });
     });
   }
 
-  right.push(`</div>`);
-
-  html.push(`<div class="panel-split">`);
-  html.push(`<div>${left.join("")}</div>`);
-  html.push(`${right.join("")}`);
-  html.push(`</div>`);
-
-  panelContent.innerHTML = html.join("");
-
-  const addSeatBtn = document.getElementById("addSeatBtn");
-  if (addSeatBtn) {
-    addSeatBtn.onclick = addSeat;
-  }
-
-  panelContent.querySelectorAll("[data-sid]").forEach((el) => {
-    el.addEventListener("click", (e) => {
-      if (
-        e.target &&
-        (e.target.closest("[data-del]") || e.target.closest("[data-rename]"))
-      ) return;
-
-      const sid = el.getAttribute("data-sid");
-      ui.selectedSeatId = ui.selectedSeatId === sid ? null : sid;
-      ui.selectedWaitingId = null;
-      render();
-    });
-  });
-
-  panelContent.querySelectorAll("[data-rename]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      renameSeat(btn.getAttribute("data-rename"));
-    });
-  });
-
-  panelContent.querySelectorAll("[data-del]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      deleteSeat(btn.getAttribute("data-del"));
-    });
-  });
-
-  panelContent.querySelectorAll(".seat-jump-row").forEach((row) => {
-    row.addEventListener("click", () => {
-      const jumpEventId = row.getAttribute("data-jump-event") || "";
-      const jumpBoxId = row.getAttribute("data-jump-box") || "";
-      const jumpSeatId = row.getAttribute("data-jump-seat") || "";
-
-      sessionStorage.setItem("eventId", jumpEventId);
-      sessionStorage.setItem("boxId", jumpBoxId);
-      sessionStorage.setItem("focusSeatId", jumpSeatId);
-
-      location.href =
-        `./layout.html?eventId=${encodeURIComponent(jumpEventId)}&boxId=${encodeURIComponent(jumpBoxId)}&focusSeatId=${encodeURIComponent(jumpSeatId)}`;
-    });
-  });
-}
-
-function renderBoxPanel() {
-  panelContent.innerHTML = `
-    <div class="panel-title">박스</div>
-    <div class="row">
-      <div class="left">
-        <div style="font-weight:900;">준비중</div>
-        <div class="badge">여기는 나중에 Box 기능 붙이면 됩니다</div>
+  function renderBoxPanel() {
+    panelContent.innerHTML = `
+      <div class="panel-title">박스</div>
+      <div class="row">
+        <div class="left">
+          <div style="font-weight:900;">준비중</div>
+          <div class="badge">여기는 나중에 Box 기능 붙이면 됩니다</div>
+        </div>
       </div>
-    </div>
-  `;
-}
+    `;
+  }
 
   function updateTimers() {
     const now = Date.now();
@@ -1626,7 +2021,6 @@ function renderBoxPanel() {
     });
   }
 
-  let timerHandle = null;
   function startTick() {
     if (timerHandle) clearInterval(timerHandle);
     timerHandle = setInterval(updateTimers, 1000);
@@ -1679,135 +2073,58 @@ function renderBoxPanel() {
       }
     );
 
-if (currentUser && !isAdminUser) {
-  myNotificationRef = doc(db, "layout_notifications", currentUser.uid);
-
-  onSnapshot(
-    myNotificationRef,
-    (snap) => {
-      if (!snap.exists()) {
-        hideSeatAlert();
-        stopAlertSoundLoop();
-        activeNotificationId = "";
-        return;
+    onSnapshot(
+      LAYOUT_EVENTS_REF,
+      (snap) => {
+        globalSeatOccupancy = buildGlobalSeatOccupancy(snap.docs);
+        renderPanel();
+        updateTimers();
+      },
+      (err) => {
+        console.error("LAYOUT_EVENTS_REF snapshot error:", err);
       }
+    );
 
-      const data = snap.data() || {};
-      const shouldShow =
-        data.type === "seat_assigned" &&
-        data.acknowledged === false &&
-        data.uid === currentUser.uid;
+    if (currentUser && !isAdminUser) {
+      myNotificationRef = doc(db, "layout_notifications", currentUser.uid);
 
-      if (!shouldShow) {
-        hideSeatAlert();
-        stopAlertSoundLoop();
-        activeNotificationId = "";
-        return;
-      }
+      onSnapshot(
+        myNotificationRef,
+        (snap) => {
+          if (!snap.exists()) {
+            hideSeatAlert();
+            stopAlertSoundLoop();
+            activeNotificationId = "";
+            return;
+          }
 
-      const notificationKey = `${data.uid}_${data.createdAt || ""}_${data.seatId || ""}`;
+          const data = snap.data() || {};
+          const shouldShow =
+            data.type === "seat_assigned" &&
+            data.acknowledged === false;
 
-      if (activeNotificationId !== notificationKey) {
-        activeNotificationId = notificationKey;
-        showSeatAlert(
-          data.message || `Seat ${data.seatLabel || ""}에 배치되었습니다.`
-        );
-      }
-    },
-    (err) => {
-      console.error("MY_NOTIFICATION snapshot error:", err);
+          if (!shouldShow) {
+            hideSeatAlert();
+            stopAlertSoundLoop();
+            activeNotificationId = "";
+            return;
+          }
+
+          const notificationKey = `${currentUser.uid}_${data.createdAt || ""}_${data.seatId || ""}`;
+
+          if (activeNotificationId !== notificationKey) {
+            activeNotificationId = notificationKey;
+            showSeatAlert(
+              data.message || `Seat ${data.seatLabel || ""}에 배치되었습니다.`
+            );
+          }
+        },
+        (err) => {
+          console.error("MY_NOTIFICATION snapshot error:", err);
+        }
+      );
     }
-  );
-}
   }
-
-  menuBtn.onclick = () => {
-  if (isMobile()) {
-    pcPanel?.classList.remove("open");
-    mobileSheet?.classList.toggle("open");
-  } else {
-    mobileSheet?.classList.remove("open");
-    pcPanel?.classList.toggle("open");
-  }
-};
-window.addEventListener("resize", () => {
-  if (isMobile()) {
-    pcPanel?.classList.remove("open");
-  } else {
-    mobileSheet?.classList.remove("open");
-  }
-  render();
-});
-
-  if (backBtn) {
-    backBtn.onclick = () => {
-      if (TOURNAMENT_ID) {
-        sessionStorage.setItem("tournamentId", TOURNAMENT_ID);
-        location.href = `./index.html?eventId=${encodeURIComponent(TOURNAMENT_ID)}`;
-        return;
-      }
-
-      sessionStorage.setItem("eventId", EVENT_ID);
-      sessionStorage.setItem("boxId", BOX_ID);
-      location.href = `./index.html?eventId=${encodeURIComponent(EVENT_ID)}&boxId=${encodeURIComponent(BOX_ID)}`;
-    };
-  }
-
-  tabs.forEach((t) => {
-    t.addEventListener("click", () => {
-      ui.activeTab = t.dataset.tab;
-      ui.selectedWaitingId = null;
-      renderPanel();
-      updateTimers();
-    });
-  });
-
-  if (mobileAddSeatBtn) {
-    mobileAddSeatBtn.style.display = canManageLayout() ? "" : "none";
-    mobileAddSeatBtn.onclick = () => {
-      if (!canManageLayout()) return;
-      addSeat();
-      mobileSheet.classList.remove("open");
-    };
-  }
-
-  if (mobileAddWaitingBtn) {
-    mobileAddWaitingBtn.style.display = canManageLayout() ? "" : "none";
-    mobileAddWaitingBtn.onclick = () => {
-      if (!canManageLayout()) return;
-      const name = prompt("대기자 이름");
-      if (name) addWaiting(name);
-      mobileSheet.classList.remove("open");
-    };
-  }
-
-  window.addEventListener("keydown", (e) => {
-    if (!canManageLayout()) return;
-    if (e.key !== "Delete" && e.key !== "Backspace") return;
-
-    const tag = (document.activeElement && document.activeElement.tagName) || "";
-    if (tag === "INPUT" || tag === "TEXTAREA") return;
-
-    if (ui.selectedWaitingId) {
-      deleteWaiting(ui.selectedWaitingId);
-      return;
-    }
-
-    if (ui.selectedSeatId) {
-      deleteSeat(ui.selectedSeatId);
-      return;
-    }
-  });
-
-  ["click", "touchstart", "keydown"].forEach((evt) => {
-  window.addEventListener(
-    evt,
-    () => {
-      void unlockAudio();
-    },
-    { once: true }
-  );
-});
 
   async function init() {
     if (hasInitialized) return;
@@ -1854,63 +2171,139 @@ window.addEventListener("resize", () => {
       await saveWaitingState();
     }
 
-  bindRealtime();
-render();
-startTick();
+    await loadGlobalSeatOccupancy();
 
-if (!isAdminUser && !audioUnlocked && !soundPromptShown) {
-  soundPromptShown = true;
-  showSoundPrompt();
-}
+    bindRealtime();
+    render();
+    startTick();
 
-if (FOCUS_SEAT_ID) {
-  sessionStorage.removeItem("focusSeatId");
-}
+    if (!isAdminUser && !audioUnlocked && !soundPromptShown && !hasSavedSoundPreference()) {
+      soundPromptShown = true;
+      showSoundPrompt();
+    }
+
+    if (FOCUS_SEAT_ID) {
+      sessionStorage.removeItem("focusSeatId");
+    }
   }
 
-  onAuthStateChanged(auth, async (user) => {
-    currentUser = user || null;
+  if (menuBtn) {
+    menuBtn.onclick = () => {
+      if (isMobile()) {
+        pcPanel?.classList.remove("open");
+        mobileSheet?.classList.toggle("open");
+      } else {
+        mobileSheet?.classList.remove("open");
+        pcPanel?.classList.toggle("open");
+      }
+    };
+  }
 
-    if (!user) {
-      location.href = "./login.html";
+  window.addEventListener("resize", () => {
+    if (isMobile()) {
+      pcPanel?.classList.remove("open");
+    } else {
+      mobileSheet?.classList.remove("open");
+    }
+    render();
+  });
+
+  if (backBtn) {
+    backBtn.onclick = () => {
+      if (TOURNAMENT_ID) {
+        sessionStorage.setItem("tournamentId", TOURNAMENT_ID);
+        location.href = `./index.html?eventId=${encodeURIComponent(TOURNAMENT_ID)}`;
+        return;
+      }
+
+      sessionStorage.setItem("eventId", EVENT_ID);
+      sessionStorage.setItem("boxId", BOX_ID);
+      location.href = `./index.html?eventId=${encodeURIComponent(EVENT_ID)}&boxId=${encodeURIComponent(BOX_ID)}`;
+    };
+  }
+
+  tabs.forEach((t) => {
+    t.addEventListener("click", () => {
+      ui.activeTab = t.dataset.tab;
+      ui.selectedWaitingId = null;
+      renderPanel();
+      updateTimers();
+    });
+  });
+
+  if (mobileAddSeatBtn) {
+    mobileAddSeatBtn.style.display = canManageLayout() ? "" : "none";
+    mobileAddSeatBtn.onclick = () => {
+      if (!canManageLayout()) return;
+      addSeat();
+      mobileSheet?.classList.remove("open");
+    };
+  }
+
+  if (mobileAddWaitingBtn) {
+    mobileAddWaitingBtn.style.display = canManageLayout() ? "" : "none";
+    mobileAddWaitingBtn.onclick = () => {
+      if (!canManageLayout()) return;
+      const name = prompt("대기자 이름");
+      if (name) addWaiting(name);
+      mobileSheet?.classList.remove("open");
+    };
+  }
+
+  window.addEventListener("keydown", (e) => {
+    if (!canManageLayout()) return;
+    if (e.key !== "Delete" && e.key !== "Backspace") return;
+
+    const tag = (document.activeElement && document.activeElement.tagName) || "";
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+
+    if (ui.selectedWaitingId) {
+      deleteWaiting(ui.selectedWaitingId);
       return;
     }
 
-    currentUserProfile = await loadMyUserProfile();
-    isAdminUser = currentUserProfile?.role === "admin";
-
-    const enablePushBtn = document.getElementById("enablePushBtn");
-
-if (enablePushBtn) {
-  enablePushBtn.addEventListener("click", async () => {
-    await registerPushForCurrentUser();
-  });
-}
-
-    if (!hasInitialized) {
-      hasInitialized = true;
-
-      const remoteEvent = await loadEventStateRemote();
-      if (remoteEvent) {
-        eventState.version = remoteEvent.version || 2;
-        eventState.eventId = remoteEvent.eventId || EVENT_ID;
-        eventState.boxId = remoteEvent.boxId || BOX_ID;
-        eventState.nextSeatNo = remoteEvent.nextSeatNo || 1;
-        eventState.nextSeatOrder = remoteEvent.nextSeatOrder || 1;
-        eventState.seats = Array.isArray(remoteEvent.seats) ? remoteEvent.seats : [];
-        eventState.updatedAt = Number(remoteEvent.updatedAt || Date.now());
-      }
-
-      const remoteWaiting = await loadWaitingStateRemote();
-      if (remoteWaiting) {
-        waitingState.version = remoteWaiting.version || 2;
-        waitingState.waiting = Array.isArray(remoteWaiting.waiting) ? remoteWaiting.waiting : [];
-        waitingState.updatedAt = Number(remoteWaiting.updatedAt || Date.now());
-      }
-
-      bindRealtime();
-      render();
-      startTick();
+    if (ui.selectedSeatId) {
+      deleteSeat(ui.selectedSeatId);
+      return;
     }
   });
+
+  ["click", "touchstart", "keydown"].forEach((evt) => {
+    window.addEventListener(
+      evt,
+      () => {
+        void unlockAudio();
+      },
+      { once: true }
+    );
+  });
+
+  onAuthStateChanged(auth, async (user) => {
+  if (!user) {
+    location.replace("./login.html");
+    return;
+  }
+
+  currentUser = user;
+  currentUserProfile = await loadMyUserProfile();
+  isAdminUser =
+  currentUserProfile?.role === "admin" ||
+  isAdminEmail(user.email || "");
+
+  console.log("[LAYOUT AUTH]", {
+    uid: user.uid,
+    email: user.email || "",
+    profile: currentUserProfile,
+    isAdminUser,
+    isMobile: isMobile()
+  });
+
+  if (!hasInitialized) {
+    await init();
+  }
+
+  render();
+  renderPanel();
+  updateTimers();
+});
 })();
