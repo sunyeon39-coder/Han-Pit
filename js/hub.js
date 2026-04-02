@@ -14,8 +14,19 @@ import {
   deleteDoc,
   collection,
   deleteField,
-  onSnapshot
+  onSnapshot,
+  query,
+  where,
+  writeBatch
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+const ADMIN_EMAILS = [
+  "sunyeon9501@gmail.com"
+];
+
+function isAdminEmail(email = "") {
+  return ADMIN_EMAILS.includes(String(email).trim().toLowerCase());
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -84,10 +95,6 @@ const fallbackTournaments = [
   }
 ];
 
-/* ===============================
-   LOCAL STORAGE KEYS
-=============================== */
-const GLOBAL_WAITING_KEY = "boxboard_waiting_global_v2";
 
 /* ===============================
    HELPERS
@@ -109,39 +116,139 @@ function escapeHtml(text = "") {
     .replaceAll("'", "&#039;");
 }
 
-function safeParse(raw) {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
+const LAYOUT_EVENTS_REF = collection(db, "layout_events");
+const GLOBAL_WAITING_REF = doc(db, "layout_shared", "global_waiting");
+
+async function removeUserFromEventWaiting(user, eventId = "") {
+  if (!user) return 0;
+
+  const targetUid = String(user.uid || "").trim();
+  const targetName = String(user.nickname || "").trim();
+
+  if (!targetUid && !targetName) return 0;
+
+  const snap = await getDoc(GLOBAL_WAITING_REF);
+  if (!snap.exists()) return 0;
+
+  const data = snap.data() || {};
+  const waiting = Array.isArray(data.waiting) ? data.waiting : [];
+  if (!waiting.length) return 0;
+
+  let removedCount = 0;
+
+  const nextWaiting = waiting.filter((item) => {
+    if (!item || typeof item !== "object") return false;
+
+    const itemUid = String(item.uid || "").trim();
+    const itemName = String(item.name || "").trim();
+    const itemEventId = String(item.eventId || "").trim();
+
+    if (eventId && itemEventId && itemEventId !== eventId) {
+      return true;
+    }
+
+    if (targetUid && itemUid && itemUid === targetUid) {
+      removedCount += 1;
+      return false;
+    }
+
+    if (targetName && itemName === targetName) {
+      removedCount += 1;
+      return false;
+    }
+
+    return true;
+  });
+
+  if (removedCount > 0) {
+    await setDoc(
+      GLOBAL_WAITING_REF,
+      {
+        ...data,
+        waiting: nextWaiting,
+        updatedAt: Date.now()
+      },
+      { merge: true }
+    );
   }
+
+  return removedCount;
 }
 
-function loadGlobalWaitingState() {
-  const raw = localStorage.getItem(GLOBAL_WAITING_KEY);
-  const parsed = raw ? safeParse(raw) : null;
+async function removeUserFromAllSeats(user, eventId = "") {
+  if (!user) return 0;
 
-  if (!parsed || typeof parsed !== "object") {
-    return {
-      version: 2,
-      waiting: [],
-      updatedAt: Date.now()
-    };
+  const targetUid = String(user.uid || "").trim();
+  const targetName = String(user.nickname || "").trim();
+
+  if (!targetUid && !targetName) return 0;
+
+  let removedCount = 0;
+
+  const q = eventId
+    ? query(LAYOUT_EVENTS_REF, where("eventId", "==", eventId))
+    : LAYOUT_EVENTS_REF;
+
+  const snap = await getDocs(q);
+  if (snap.empty) return 0;
+
+  const batch = writeBatch(db);
+
+  snap.forEach((d) => {
+    const data = d.data() || {};
+    const seats = Array.isArray(data.seats) ? data.seats : [];
+    let changed = false;
+
+    const nextSeats = seats.map((seat) => {
+      if (!seat || typeof seat !== "object") return seat;
+
+      const person = String(seat.person || "").trim();
+      const personUid = String(seat.personUid || "").trim();
+
+      const uidMatched = targetUid && personUid && personUid === targetUid;
+      const nameMatched = targetName && person === targetName;
+
+      if (!uidMatched && !nameMatched) return seat;
+
+      removedCount += 1;
+      changed = true;
+
+      return {
+        ...seat,
+        person: "비어있음",
+        personUid: "",
+        personEmail: "",
+        seatedAt: null
+      };
+    });
+
+    if (changed) {
+      batch.set(
+        d.ref,
+        {
+          seats: nextSeats,
+          updatedAt: Date.now()
+        },
+        { merge: true }
+      );
+    }
+  });
+
+  if (removedCount > 0) {
+    await batch.commit();
   }
 
-  if (!Array.isArray(parsed.waiting)) {
-    parsed.waiting = [];
-  }
-
-  return parsed;
+  return removedCount;
 }
 
-function saveGlobalWaitingState(state) {
-  try {
-    localStorage.setItem(GLOBAL_WAITING_KEY, JSON.stringify(state));
-  } catch (err) {
-    console.error("saveGlobalWaitingState error:", err);
-  }
+async function cleanupUserFromLayoutState(user, eventId = "") {
+  const waitingRemoved = await removeUserFromEventWaiting(user, eventId);
+  const seatRemoved = await removeUserFromAllSeats(user, eventId);
+
+  return {
+    waitingRemoved,
+    seatRemoved
+  };
 }
 
 function hasEventAccess(userProfile, tournament) {
@@ -195,109 +302,13 @@ function normalizeUserDoc(d) {
 }
 
 function sortTournaments(list) {
-  return [...list].sort((a, b) => a.name.localeCompare(b.name));
+  return [...list].sort((a, b) => a.name.localeCompare(b.name, "ko"));
 }
 
 function routeToTournament(tournamentId) {
   if (!tournamentId) return;
   sessionStorage.setItem("tournamentId", tournamentId);
   location.href = `./index.html?tournamentId=${encodeURIComponent(tournamentId)}`;
-}
-
-/* ===============================
-   WAITING / SEAT CLEANUP
-=============================== */
-function removeUserFromGlobalWaiting(user) {
-  if (!user) return 0;
-
-  const waitingState = loadGlobalWaitingState();
-  const before = waitingState.waiting.length;
-
-  const targetUid = String(user.uid || "").trim();
-  const targetName = String(user.nickname || "").trim();
-
-  waitingState.waiting = waitingState.waiting.filter((item) => {
-    if (!item || typeof item !== "object") return false;
-
-    const itemUid = String(item.uid || "").trim();
-    const itemName = String(item.name || "").trim();
-
-    if (targetUid && itemUid && itemUid === targetUid) return false;
-    if (targetName && itemName === targetName) return false;
-
-    return true;
-  });
-
-  const removedCount = before - waitingState.waiting.length;
-
-  if (removedCount > 0) {
-    waitingState.updatedAt = Date.now();
-    saveGlobalWaitingState(waitingState);
-  }
-
-  return removedCount;
-}
-
-function removeUserFromAllSeats(user) {
-  if (!user) return 0;
-
-  const targetName = String(user.nickname || "").trim();
-  if (!targetName) return 0;
-
-  let removedCount = 0;
-
-  for (let i = 0; i < localStorage.length; i += 1) {
-    const key = localStorage.key(i);
-    if (!key) continue;
-    if (!key.startsWith("boxboard_event_")) continue;
-    if (!key.endsWith("_v2")) continue;
-
-    const raw = localStorage.getItem(key);
-    const parsed = raw ? safeParse(raw) : null;
-
-    if (!parsed || !Array.isArray(parsed.seats)) continue;
-
-    let changed = false;
-
-    parsed.seats = parsed.seats.map((seat) => {
-      if (!seat || typeof seat !== "object") return seat;
-
-      const person = String(seat.person || "").trim();
-
-      if (!person || person === "비어있음") return seat;
-      if (person !== targetName) return seat;
-
-      removedCount += 1;
-      changed = true;
-
-      return {
-        ...seat,
-        person: "비어있음",
-        seatedAt: null
-      };
-    });
-
-    if (changed) {
-      parsed.updatedAt = Date.now();
-      try {
-        localStorage.setItem(key, JSON.stringify(parsed));
-      } catch (err) {
-        console.error("removeUserFromAllSeats save error:", err);
-      }
-    }
-  }
-
-  return removedCount;
-}
-
-function cleanupUserFromLayoutState(user) {
-  const waitingRemoved = removeUserFromGlobalWaiting(user);
-  const seatRemoved = removeUserFromAllSeats(user);
-
-  return {
-    waitingRemoved,
-    seatRemoved
-  };
 }
 
 /* ===============================
@@ -455,10 +466,21 @@ function bindUsersRealtime() {
         };
       }
 
+      console.log("[HUB USERS REALTIME]", {
+  uid: currentUser?.uid || "",
+  email: currentUser?.email || "",
+  profile: currentUserProfile,
+  isAdmin: currentUserProfile?.role === "admin"
+});
+
       renderTournaments(tournamentsCache, currentUserProfile);
 
-      if (currentUserProfile?.role === "admin") {
-        adminBtn?.classList.remove("hidden");
+      const isAdmin =
+  currentUserProfile?.role === "admin" ||
+  isAdminEmail(currentUser?.email || "");
+
+if (isAdmin) {
+  adminBtn?.classList.remove("hidden");
 
         if (adminModal?.classList.contains("show")) {
           renderAdminUserList();
@@ -757,9 +779,21 @@ async function revokeEventDirectly(uid, eventId) {
 
     let cleaned = { waitingRemoved: 0, seatRemoved: 0 };
 
-    if (user && !userStillHasAccessToSelectedEvent(user)) {
-      cleaned = cleanupUserFromLayoutState(user);
-    }
+    const stillAllowed =
+  user?.role === "admin" ||
+  user?.allowedEvents?.[eventId] === true ||
+  (
+    String(user?.accessCode || "").trim() &&
+    String(
+      tournamentsCache.find((t) => t.id === eventId)?.requiredCode || ""
+    ).trim() &&
+    String(user?.accessCode || "").trim() ===
+      String(tournamentsCache.find((t) => t.id === eventId)?.requiredCode || "").trim()
+  );
+
+if (user && !stillAllowed) {
+  cleaned = await cleanupUserFromLayoutState(user, eventId);
+}
 
     renderAdminUserList();
 
@@ -816,9 +850,11 @@ async function removeUserCode(uid) {
 
     let cleaned = { waitingRemoved: 0, seatRemoved: 0 };
 
-    if (user && !userStillHasAccessToSelectedEvent(user)) {
-      cleaned = cleanupUserFromLayoutState(user);
-    }
+    const selectedEventId = adminEventSelect?.value || "";
+
+if (user && !userStillHasAccessToSelectedEvent(user)) {
+  cleaned = await cleanupUserFromLayoutState(user, selectedEventId);
+}
 
     renderAdminUserList();
 
@@ -865,7 +901,11 @@ profileBtn?.addEventListener("click", () => {
 });
 
 adminBtn?.addEventListener("click", async () => {
-  if (currentUserProfile?.role !== "admin") return;
+  const isAdmin =
+    currentUserProfile?.role === "admin" ||
+    isAdminEmail(currentUser?.email || "");
+
+  if (!isAdmin) return;
 
   if (!tournamentsCache.length) {
     await loadTournaments();
@@ -981,13 +1021,24 @@ onAuthStateChanged(auth, async (user) => {
     currentUserProfile = await loadUserProfile(user.uid);
     tournamentsCache = await loadTournaments();
 
-    if (currentUserProfile?.role === "admin") {
-      usersCache = await loadAllUsers();
-      adminBtn?.classList.remove("hidden");
-      bindUsersRealtime();
-    } else {
-      adminBtn?.classList.add("hidden");
-    }
+    console.log("[HUB AUTH]", {
+  uid: user.uid,
+  email: user.email || "",
+  profile: currentUserProfile,
+  isAdmin: currentUserProfile?.role === "admin"
+});
+
+    const isAdmin =
+  currentUserProfile?.role === "admin" ||
+  isAdminEmail(user.email || "");
+
+if (isAdmin) {
+  usersCache = await loadAllUsers();
+  adminBtn?.classList.remove("hidden");
+  bindUsersRealtime();
+} else {
+  adminBtn?.classList.add("hidden");
+}
 
     renderTournaments(tournamentsCache, currentUserProfile);
     bindTournamentsRealtime();

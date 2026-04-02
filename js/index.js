@@ -16,6 +16,21 @@ import {
 
 console.log("🔥 index.js loaded");
 
+const ADMIN_EMAILS = [
+  "sunyeon9501@gmail.com"
+];
+
+function isAdminEmail(email = "") {
+  return ADMIN_EMAILS.includes(String(email).trim().toLowerCase());
+}
+
+function getIsAdmin(user, profile) {
+  return (
+    profile?.role === "admin" ||
+    isAdminEmail(user?.email || "")
+  );
+}
+
 const APP_TIME_ZONE = "Asia/Seoul";
 
 const root = document.getElementById("indexRoot");
@@ -23,6 +38,8 @@ const backBtn = document.getElementById("backBtn");
 const topbarTournamentName = document.getElementById("topbarTournamentName");
 
 const eventAdminBtn = document.getElementById("eventAdminBtn");
+const attendanceLogBtn = document.getElementById("attendanceLogBtn");
+const seatMapEditBtn = document.getElementById("seatMapEditBtn");
 const eventAdminModal = document.getElementById("eventAdminModal");
 const closeEventAdminBtn = document.getElementById("closeEventAdminBtn");
 
@@ -478,8 +495,8 @@ function getFilteredAdminAttendanceList() {
 function renderDealerOps() {
   if (!dealerOpsMount) return;
 
-  const isAdmin = currentUserProfile?.role === "admin";
-  const user = auth.currentUser;
+const user = auth.currentUser;
+const isAdmin = getIsAdmin(user, currentUserProfile);
   const me = user ? getDerivedAttendance(user) : null;
 
   const myStatus = me?.status || "off";
@@ -491,7 +508,7 @@ function renderDealerOps() {
 
   let adminHtml = "";
 
-  if (currentUserProfile?.role === "admin") {
+  if (isAdmin) {
     const list = getFilteredAdminAttendanceList();
 const totalList = getAdminAttendanceList();
 
@@ -650,7 +667,7 @@ async function loadDealerAttendanceOnce() {
   if (!tournamentId || !user) return;
 
   try {
-    if (currentUserProfile?.role === "admin") {
+    if (getIsAdmin(user, currentUserProfile)) {
       const snap = await getDocs(collection(db, "dealer_attendance"));
 
       snap.docs.forEach((d) => {
@@ -1511,7 +1528,8 @@ dealerOpsMount?.addEventListener("click", async (e) => {
       return;
     }
 
-    const isAdmin = currentUserProfile?.role === "admin";
+    const user = auth.currentUser;
+    const isAdmin = getIsAdmin(user, currentUserProfile);
 
     if (isAdmin) {
       const adminBtn = e.target.closest("[data-admin-action]");
@@ -1582,15 +1600,29 @@ onAuthStateChanged(auth, async (user) => {
   const userSnap = await getDoc(userRef);
   currentUserProfile = userSnap.exists() ? (userSnap.data() || {}) : null;
 
+  const isAdmin = getIsAdmin(auth.currentUser, currentUserProfile);
+
+  console.log("[INDEX AUTH]", {
+    uid: user.uid,
+    email: user.email || "",
+    profile: currentUserProfile,
+    isAdmin
+  });
+
   renderDealerOps();
 
-  if (currentUserProfile?.role === "admin") {
+  if (isAdmin) {
     eventAdminBtn?.classList.remove("hidden");
+    attendanceLogBtn?.classList.remove("hidden");
     seatMapEditBtn?.classList.remove("hidden");
+  } else {
+    eventAdminBtn?.classList.add("hidden");
+    attendanceLogBtn?.classList.add("hidden");
+    seatMapEditBtn?.classList.add("hidden");
   }
 
-await initTournamentPeriodWatch();
-await init();
+  await initTournamentPeriodWatch();
+  await init();
 });
 
 setInterval(() => {
@@ -1821,7 +1853,6 @@ enableSeatDrag();
    MAP EDITOR
 =============================== */
 
-const seatMapEditBtn = document.getElementById("seatMapEditBtn");
 const seatMapEditorModal = document.getElementById("seatMapEditorModal");
 const seatMapEditorCloseBtn = document.getElementById("seatMapEditorCloseBtn");
 const seatMapEditorCanvas = document.getElementById("seatMapEditorCanvas");

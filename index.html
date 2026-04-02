@@ -23,16 +23,48 @@
     </div>
 
     <div class="topbar-right">
-      <button id="eventAdminBtn" class="manage-btn hidden" type="button">카드 관리</button>
-      <button id="seatMapBtn" class="manage-btn alt" type="button">전체 배치도</button>
-      <button id="seatMapEditBtn" class="manage-btn hidden" type="button">맵 편집</button>
-    </div>
+  <button id="eventAdminBtn" class="manage-btn hidden" type="button">카드 관리</button>
+  <button id="attendanceLogBtn" class="manage-btn hidden" type="button">운영 로그</button>
+  <button id="seatMapBtn" class="manage-btn alt" type="button">전체 배치도</button>
+  <button id="seatMapEditBtn" class="manage-btn hidden" type="button">맵 편집</button>
+</div>
   </header>
 
   <main class="index-page">
   <section id="dealerOpsMount" class="dealer-ops-mount"></section>
   <div id="indexRoot" class="index-root"></div>
 </main>
+<div id="attendanceLogModal" class="modal-backdrop">
+  <div class="modal-card attendance-log-card">
+    <div class="attendance-log-head">
+      <h2>운영 로그</h2>
+      <button id="closeAttendanceLogBtn" class="mini-btn" type="button">닫기</button>
+    </div>
+
+    <div class="attendance-log-toolbar">
+  <input id="attendanceLogSearch" type="text" placeholder="이름 / 액션 검색" />
+
+  <select id="attendanceLogActionFilter">
+    <option value="all">전체</option>
+    <option value="waiting">대기</option>
+    <option value="assigned">배치중</option>
+    <option value="checked_out">퇴근</option>
+    <option value="break">휴식</option>
+  </select>
+
+  <button id="deleteSelectedAttendanceLogsBtn" class="mini-btn danger" type="button">
+    선택 삭제
+  </button>
+
+  <button id="clearAttendanceLogsBtn" class="mini-btn danger" type="button">
+    전체 초기화
+  </button>
+</div>
+
+    <div id="attendanceLogSummary" class="attendance-log-summary">최근 로그 0건</div>
+    <div id="attendanceLogList" class="attendance-log-list"></div>
+  </div>
+</div>
 
   <!-- Event Admin Modal -->
   <div id="eventAdminModal" class="modal-backdrop">

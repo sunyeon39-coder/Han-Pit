@@ -18,6 +18,14 @@ import {
 (() => {
   "use strict";
 
+  const ADMIN_EMAILS = [
+  "sunyeon9501@gmail.com"
+];
+
+function isAdminEmail(email = "") {
+  return ADMIN_EMAILS.includes(String(email).trim().toLowerCase());
+}
+
   const app = document.getElementById("app");
   const menuBtn = document.getElementById("menuBtn");
   const backBtn = document.getElementById("backBtn");
@@ -1116,29 +1124,42 @@ async function moveDealerToAssigned({
         </div>
       `;
 
-      el.addEventListener("click", (e) => {
+            let pointerMoved = false;
+      let pointerStartX = 0;
+      let pointerStartY = 0;
+      let pointerType = "";
+      let isPointerDragging = false;
+
+      el.addEventListener("click", async (e) => {
         e.stopPropagation();
+
+        if (pointerType === "touch" || pointerType === "pen") {
+          return;
+        }
+
         ui.selectedSeatId = seat.id;
 
         if (ui.selectedWaitingId && canManageLayout()) {
-          void assignWaitingToSeat(ui.selectedWaitingId, seat.id);
+          await assignWaitingToSeat(ui.selectedWaitingId, seat.id);
+          ui.selectedSeatId = null;
+          render();
           return;
         }
 
         render();
       });
 
-      el.addEventListener("dblclick", (e) => {
-        e.stopPropagation();
-        if (!canManageLayout()) return;
-        clearSeat(seat.id);
-      });
-
       el.addEventListener("pointerdown", (e) => {
         if (!canManageLayout()) return;
-        if (e.button !== 0) return;
+        if (e.pointerType === "mouse" && e.button !== 0) return;
 
         e.stopPropagation();
+
+        pointerType = e.pointerType || "mouse";
+        pointerMoved = false;
+        isPointerDragging = false;
+        pointerStartX = e.clientX;
+        pointerStartY = e.clientY;
 
         const rect = canvas.getBoundingClientRect();
         const pointerX = e.clientX - rect.left;
@@ -1156,6 +1177,18 @@ async function moveDealerToAssigned({
       el.addEventListener("pointermove", (e) => {
         if (!canManageLayout()) return;
         if (!ui.dragging || ui.dragging.id !== seat.id) return;
+
+        const dx = Math.abs(e.clientX - pointerStartX);
+        const dy = Math.abs(e.clientY - pointerStartY);
+
+        if (dx > 8 || dy > 8) {
+          pointerMoved = true;
+        }
+
+        const shouldDrag = e.pointerType === "mouse" || pointerMoved;
+        if (!shouldDrag) return;
+
+        isPointerDragging = true;
 
         const rect = canvas.getBoundingClientRect();
         const pointerX = e.clientX - rect.left;
@@ -1177,15 +1210,40 @@ async function moveDealerToAssigned({
         el.style.top = `${s.y}px`;
       });
 
-      const endDrag = () => {
+      el.addEventListener("pointerup", async (e) => {
+        if (!canManageLayout()) return;
+        if (!ui.dragging || ui.dragging.id !== seat.id) return;
+
+        const wasTap = !isPointerDragging && !pointerMoved;
+
+        ui.dragging = null;
+
+        if (isPointerDragging) {
+          touchEvent();
+          return;
+        }
+
+        if ((e.pointerType === "touch" || e.pointerType === "pen") && wasTap) {
+          e.stopPropagation();
+          ui.selectedSeatId = seat.id;
+
+          if (ui.selectedWaitingId) {
+            await assignWaitingToSeat(ui.selectedWaitingId, seat.id);
+            ui.selectedSeatId = null;
+          }
+
+          render();
+          return;
+        }
+
+        render();
+      });
+
+      el.addEventListener("pointercancel", () => {
         if (!canManageLayout()) return;
         if (!ui.dragging || ui.dragging.id !== seat.id) return;
         ui.dragging = null;
-        touchEvent();
-      };
-
-      el.addEventListener("pointerup", endDrag);
-      el.addEventListener("pointercancel", endDrag);
+      });
 
       canvas.appendChild(el);
     });
@@ -1402,32 +1460,29 @@ async function moveDealerToAssigned({
       };
     }
 
-    let lastSeatTap = 0;
-
-    wrap.querySelectorAll("[data-mobile-seat]").forEach((row) => {
-      row.addEventListener("click", (e) => {
+           wrap.querySelectorAll("[data-mobile-seat]").forEach((row) => {
+      row.addEventListener("click", async (e) => {
         if (
           e.target.closest("[data-mobile-seat-select]") ||
           e.target.closest("[data-del]") ||
-          e.target.closest("[data-mobile-assign]")
+          e.target.closest("[data-mobile-assign]") ||
+          e.target.closest("[data-clear-seat]")
         ) {
           return;
         }
 
         const sid = row.getAttribute("data-mobile-seat");
-        const now = Date.now();
+        if (!sid) return;
 
-        if (now - lastSeatTap < 300) {
-          const seatObj = eventState.seats.find((x) => x.id === sid);
-          if (seatObj && !isEmptyPerson(seatObj.person) && canManageLayout()) {
-            clearSeat(sid);
-            lastSeatTap = 0;
-            return;
-          }
+        ui.selectedSeatId = sid;
+
+        if (ui.selectedWaitingId && canManageLayout()) {
+          await assignWaitingToSeat(ui.selectedWaitingId, sid);
+          ui.selectedSeatId = null;
+          render();
+          return;
         }
 
-        lastSeatTap = now;
-        ui.selectedSeatId = ui.selectedSeatId === sid ? null : sid;
         render();
       });
     });
@@ -2166,23 +2221,31 @@ async function moveDealerToAssigned({
   });
 
   onAuthStateChanged(auth, async (user) => {
-    currentUser = user || null;
+  if (!user) {
+    location.replace("./login.html");
+    return;
+  }
 
-    if (!user) {
-      location.href = "./login.html";
-      return;
-    }
+  currentUser = user;
+  currentUserProfile = await loadMyUserProfile();
+  isAdminUser =
+  currentUserProfile?.role === "admin" ||
+  isAdminEmail(user.email || "");
 
-    currentUserProfile = await loadMyUserProfile();
-    isAdminUser = currentUserProfile?.role === "admin";
-
-    const enablePushBtn = document.getElementById("enablePushBtn");
-    if (enablePushBtn) {
-      enablePushBtn.addEventListener("click", async () => {
-        await registerPushForCurrentUser();
-      });
-    }
-
-    await init();
+  console.log("[LAYOUT AUTH]", {
+    uid: user.uid,
+    email: user.email || "",
+    profile: currentUserProfile,
+    isAdminUser,
+    isMobile: isMobile()
   });
+
+  if (!hasInitialized) {
+    await init();
+  }
+
+  render();
+  renderPanel();
+  updateTimers();
+});
 })();
