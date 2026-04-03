@@ -19,15 +19,37 @@ const googleBtn = document.getElementById("googleLogin");
 const signupModal = document.getElementById("signupModal");
 const signupConfirm = document.getElementById("signupConfirm");
 
+const nicknameInput = document.getElementById("nicknameInput");
+const phoneInput = document.getElementById("phoneInput");
+
 let selectedGender = "none";
 
 const ADMIN_EMAILS = [
-  "YOUR_ADMIN_EMAIL@gmail.com"
+  "sunyeon9501@gmail.com"
   // "SECOND_ADMIN_EMAIL@gmail.com"
 ];
 
 function isAdminEmail(email = "") {
   return ADMIN_EMAILS.includes(String(email).trim().toLowerCase());
+}
+
+function openSignupModal(profile = null) {
+  if (nicknameInput) {
+    nicknameInput.value = String(profile?.nickname || "").trim();
+  }
+
+  if (phoneInput) {
+    phoneInput.value = String(profile?.phone || "").trim();
+  }
+
+  selectedGender = String(profile?.gender || "none").trim() || "none";
+
+  document.querySelectorAll(".gender-btn").forEach((btn) => {
+    const gender = String(btn.dataset.gender || "none").trim();
+    btn.classList.toggle("active", gender === selectedGender);
+  });
+
+  signupModal?.classList.remove("hidden");
 }
 
 document.querySelectorAll(".gender-btn").forEach((btn) => {
@@ -45,6 +67,44 @@ provider.setCustomParameters({
   prompt: "select_account"
 });
 
+async function ensureUserDoc(user) {
+  if (!user) return null;
+
+  const uid = user.uid;
+  const userRef = doc(db, "users", uid);
+  const snap = await getDoc(userRef);
+
+  const email = String(user.email || "").trim().toLowerCase();
+  const role = isAdminEmail(email) ? "admin" : "user";
+
+  if (!snap.exists()) {
+    await setDoc(
+      userRef,
+      {
+        email: user.email || "",
+        nickname: String(user.displayName || "").trim(),
+        phone: "",
+        gender: "none",
+        role,
+        accessCode: "",
+        allowedEvents: {},
+        createdAt: serverTimestamp(),
+        lastLogin: serverTimestamp()
+      },
+      { merge: true }
+    );
+
+    return { created: true, role };
+  }
+
+  await updateDoc(userRef, {
+    email: user.email || "",
+    lastLogin: serverTimestamp()
+  });
+
+  return { created: false, role };
+}
+
 async function ensureUserRole(user) {
   if (!user) return;
 
@@ -57,7 +117,7 @@ async function ensureUserRole(user) {
 
   const data = snap.data() || {};
   const currentRole = String(data.role || "user").trim();
-  const nextRole = shouldBeAdmin ? "admin" : currentRole || "user";
+  const nextRole = shouldBeAdmin ? "admin" : "user";
 
   if (currentRole !== nextRole) {
     await updateDoc(userRef, {
@@ -78,21 +138,29 @@ async function handleLoggedInUser(user) {
 
   const uid = user.uid;
   const userRef = doc(db, "users", uid);
+
+  await ensureUserDoc(user);
+  await ensureUserRole(user);
+
   const snap = await getDoc(userRef);
+  const data = snap.exists() ? (snap.data() || {}) : null;
 
   console.log("[LOGIN OK]", {
     uid: user.uid,
     email: user.email || "",
     hasProfile: snap.exists(),
+    profile: data,
     isAdminEmail: isAdminEmail(user.email || "")
   });
 
-  if (!snap.exists()) {
-    signupModal.classList.remove("hidden");
+  const nickname = String(data?.nickname || "").trim();
+
+  // users 문서는 이미 생성된 상태에서 추가 정보만 보완
+  if (!nickname || nickname.length < 2) {
+    openSignupModal(data);
     return;
   }
 
-  await ensureUserRole(user);
   location.href = "./hub.html";
 }
 
@@ -127,8 +195,8 @@ async function login() {
 
 async function saveProfile() {
   try {
-    const nickname = document.getElementById("nicknameInput").value.trim();
-    const phone = document.getElementById("phoneInput").value.trim();
+    const nickname = String(nicknameInput?.value || "").trim();
+    const phone = String(phoneInput?.value || "").trim();
 
     if (nickname.length < 2 || nickname.length > 7) {
       alert("닉네임은 2~7자로 입력해주세요.");
@@ -145,22 +213,26 @@ async function saveProfile() {
     const email = String(user.email || "").trim().toLowerCase();
     const role = isAdminEmail(email) ? "admin" : "user";
 
-    await setDoc(doc(db, "users", uid), {
-      email: user.email || "",
-      nickname,
-      phone,
-      gender: selectedGender,
-      role,
-      accessCode: "",
-      allowedEvents: {},
-      createdAt: serverTimestamp(),
-      lastLogin: serverTimestamp()
-    });
+    await setDoc(
+      doc(db, "users", uid),
+      {
+        email: user.email || "",
+        nickname,
+        phone,
+        gender: selectedGender,
+        role,
+        accessCode: "",
+        allowedEvents: {},
+        lastLogin: serverTimestamp()
+      },
+      { merge: true }
+    );
 
-    console.log("[PROFILE CREATED]", {
+    console.log("[PROFILE SAVED]", {
       uid: user.uid,
       email: user.email || "",
-      role
+      role,
+      nickname
     });
 
     location.href = "./hub.html";
