@@ -76,6 +76,7 @@ async function findLegacyUserDocByEmail(user) {
   if (!user?.email) return null;
 
   const email = String(user.email || "").trim().toLowerCase();
+  console.log("[findLegacyUserDocByEmail] start", email);
 
   const q = query(
     collection(db, "users"),
@@ -84,6 +85,8 @@ async function findLegacyUserDocByEmail(user) {
   );
 
   const snap = await getDocs(q);
+  console.log("[findLegacyUserDocByEmail] empty?", snap.empty, "size:", snap.size);
+
   if (snap.empty) return null;
 
   const legacyDoc = snap.docs[0];
@@ -98,18 +101,28 @@ async function ensureUserDoc(user) {
 
   const uid = user.uid;
   const userRef = doc(db, "users", uid);
+
+  console.log("[ensureUserDoc] start", {
+    uid,
+    email: user.email || ""
+  });
+
   const snap = await getDoc(userRef);
+  console.log("[ensureUserDoc] current uid doc exists?", snap.exists());
 
   const email = String(user.email || "").trim().toLowerCase();
   const role = isAdminEmail(email) ? "admin" : "user";
 
-  // 현재 uid 문서가 이미 있으면 최소 정보만 갱신
   if (snap.exists()) {
+    console.log("[ensureUserDoc] update existing uid doc");
+
     await updateDoc(userRef, {
       email: user.email || "",
       photoURL: String(user.photoURL || "").trim(),
       lastLogin: serverTimestamp()
     });
+
+    console.log("[ensureUserDoc] update existing uid doc success");
 
     return {
       created: false,
@@ -118,12 +131,15 @@ async function ensureUserDoc(user) {
     };
   }
 
-  // legacy 구조(users/{randomId}) 복구
+  console.log("[ensureUserDoc] searching legacy doc by email");
   const legacy = await findLegacyUserDocByEmail(user);
+  console.log("[ensureUserDoc] legacy result", legacy);
 
   if (legacy) {
     const legacyData = legacy.data || {};
     const legacyRole = String(legacyData.role || "user").trim();
+
+    console.log("[ensureUserDoc] migrating legacy doc to uid doc");
 
     await setDoc(
       userRef,
@@ -142,6 +158,8 @@ async function ensureUserDoc(user) {
       { merge: true }
     );
 
+    console.log("[ensureUserDoc] migrate success");
+
     return {
       created: true,
       migrated: true,
@@ -149,7 +167,8 @@ async function ensureUserDoc(user) {
     };
   }
 
-  // 완전 신규 유저
+  console.log("[ensureUserDoc] creating brand new uid doc");
+
   await setDoc(
     userRef,
     {
@@ -167,6 +186,8 @@ async function ensureUserDoc(user) {
     { merge: true }
   );
 
+  console.log("[ensureUserDoc] create success");
+
   return {
     created: true,
     migrated: false,
@@ -178,15 +199,27 @@ async function ensureUserRole(user) {
   if (!user) return;
 
   const userRef = doc(db, "users", user.uid);
+  console.log("[ensureUserRole] start", { uid: user.uid, email: user.email || "" });
+
   const snap = await getDoc(userRef);
+  console.log("[ensureUserRole] uid doc exists?", snap.exists());
+
   const email = String(user.email || "").trim().toLowerCase();
   const shouldBeAdmin = isAdminEmail(email);
 
-  if (!snap.exists()) return;
+  if (!snap.exists()) {
+    console.log("[ensureUserRole] skipped because uid doc does not exist");
+    return;
+  }
 
   const data = snap.data() || {};
   const currentRole = String(data.role || "user").trim();
   const nextRole = shouldBeAdmin ? "admin" : "user";
+
+  console.log("[ensureUserRole] role check", {
+    currentRole,
+    nextRole
+  });
 
   await updateDoc(userRef, {
     role: nextRole,
@@ -194,6 +227,8 @@ async function ensureUserRole(user) {
     photoURL: String(user.photoURL || "").trim(),
     lastLogin: serverTimestamp()
   });
+
+  console.log("[ensureUserRole] update success");
 
   return currentRole !== nextRole;
 }
@@ -207,11 +242,18 @@ async function syncUserProfile(user) {
   }
 
   try {
+    console.log("[syncUserProfile] start");
+
     const ensureResult = await ensureUserDoc(user);
+    console.log("[syncUserProfile] ensureUserDoc success", ensureResult);
+
     await ensureUserRole(user);
+    console.log("[syncUserProfile] ensureUserRole success");
 
     const userRef = doc(db, "users", user.uid);
     const snap = await getDoc(userRef);
+    console.log("[syncUserProfile] final getDoc success", snap.exists());
+
     const data = snap.exists() ? (snap.data() || {}) : null;
 
     return {
@@ -220,7 +262,7 @@ async function syncUserProfile(user) {
       profile: data
     };
   } catch (error) {
-    console.error("syncUserProfile error:", error);
+    console.error("[syncUserProfile] error", error);
     return {
       ok: false,
       error
@@ -231,6 +273,11 @@ async function syncUserProfile(user) {
 async function finalizeLoginFlow(user) {
   if (!user) return;
 
+  console.log("[finalizeLoginFlow] start", {
+    uid: user.uid,
+    email: user.email || ""
+  });
+
   const syncResult = await syncUserProfile(user);
 
   console.log("[LOGIN FLOW]", {
@@ -240,7 +287,6 @@ async function finalizeLoginFlow(user) {
     isAdminEmail: isAdminEmail(user.email || "")
   });
 
-  // Firestore 동기화 실패
   if (!syncResult.ok) {
     alert(
       "구글 로그인은 성공했지만 프로필 동기화에 실패했습니다.\n" +
@@ -253,17 +299,26 @@ async function finalizeLoginFlow(user) {
   const profile = syncResult.profile || {};
   const nickname = String(profile.nickname || "").trim();
 
+  console.log("[finalizeLoginFlow] nickname check", {
+    nickname,
+    length: nickname.length
+  });
+
   if (!nickname || nickname.length < 2) {
+    console.log("[finalizeLoginFlow] open signup modal");
     openSignupModal(profile);
     return;
   }
 
+  console.log("[finalizeLoginFlow] redirect to hub");
   location.href = "./hub.html";
 }
 
 async function login() {
   try {
+    console.log("[LOGIN] popup start");
     const result = await signInWithPopup(auth, provider);
+    console.log("[LOGIN] popup success", result?.user?.uid, result?.user?.email);
     await finalizeLoginFlow(result.user);
   } catch (error) {
     console.error("login popup error:", error);
@@ -277,16 +332,17 @@ async function login() {
 
     if (fallbackCodes.includes(error?.code)) {
       try {
+        console.log("[LOGIN] redirect fallback start");
         await signInWithRedirect(auth, provider);
         return;
       } catch (redirectError) {
         console.error("login redirect error:", redirectError);
-        alert(`로그인 실패: ${redirectError?.message || redirectError}`);
+        alert(`로그인 실패: ${redirectError?.code || ""} ${redirectError?.message || redirectError}`);
         return;
       }
     }
 
-    alert(`로그인 실패: ${error?.message || error}`);
+    alert(`로그인 실패: ${error?.code || ""} ${error?.message || error}`);
   }
 }
 
@@ -294,6 +350,12 @@ async function saveProfile() {
   try {
     const nickname = String(nicknameInput?.value || "").trim();
     const phone = String(phoneInput?.value || "").trim();
+
+    console.log("[saveProfile] start", {
+      nickname,
+      phone,
+      selectedGender
+    });
 
     if (nickname.length < 2 || nickname.length > 7) {
       alert("닉네임은 2~7자로 입력해주세요.");
@@ -326,7 +388,7 @@ async function saveProfile() {
       { merge: true }
     );
 
-    console.log("[PROFILE SAVED]", {
+    console.log("[saveProfile] success", {
       uid: user.uid,
       email: user.email || "",
       role,
@@ -342,12 +404,14 @@ async function saveProfile() {
 
 getRedirectResult(auth)
   .then(async (result) => {
+    console.log("[LOGIN] redirect result", result);
     if (result?.user) {
       await finalizeLoginFlow(result.user);
     }
   })
   .catch((error) => {
     console.error("redirect result error:", error);
+    alert(`redirect result error: ${error?.code || ""} ${error?.message || error}`);
   });
 
 googleBtn?.addEventListener("click", login);
