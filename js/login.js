@@ -12,7 +12,12 @@ import {
   getDoc,
   setDoc,
   updateDoc,
-  serverTimestamp
+  serverTimestamp,
+  collection,
+  query,
+  where,
+  getDocs,
+  limit
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const googleBtn = document.getElementById("googleLogin");
@@ -67,6 +72,27 @@ provider.setCustomParameters({
   prompt: "select_account"
 });
 
+async function findLegacyUserDocByEmail(user) {
+  if (!user?.email) return null;
+
+  const email = String(user.email || "").trim().toLowerCase();
+
+  const q = query(
+    collection(db, "users"),
+    where("email", "==", email),
+    limit(1)
+  );
+
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+
+  const legacyDoc = snap.docs[0];
+  return {
+    id: legacyDoc.id,
+    data: legacyDoc.data() || {}
+  };
+}
+
 async function ensureUserDoc(user) {
   if (!user) return null;
 
@@ -77,32 +103,75 @@ async function ensureUserDoc(user) {
   const email = String(user.email || "").trim().toLowerCase();
   const role = isAdminEmail(email) ? "admin" : "user";
 
-  if (!snap.exists()) {
+  // 1) 이미 현재 uid 문서가 있으면 갱신만
+  if (snap.exists()) {
+    await updateDoc(userRef, {
+      email: user.email || "",
+      photoURL: String(user.photoURL || "").trim(),
+      lastLogin: serverTimestamp()
+    });
+
+    return {
+      created: false,
+      migrated: false,
+      role
+    };
+  }
+
+  // 2) 예전 구조 문서(email 기준) 찾아서 현재 uid 문서로 복구
+  const legacy = await findLegacyUserDocByEmail(user);
+
+  if (legacy) {
+    const legacyData = legacy.data || {};
+    const legacyRole = String(legacyData.role || "user").trim();
+
     await setDoc(
       userRef,
       {
         email: user.email || "",
-        nickname: String(user.displayName || "").trim(),
-        phone: "",
-        gender: "none",
-        role,
-        accessCode: "",
-        allowedEvents: {},
-        createdAt: serverTimestamp(),
+        nickname: String(legacyData.nickname || user.displayName || "").trim(),
+        phone: String(legacyData.phone || "").trim(),
+        gender: String(legacyData.gender || "none").trim(),
+        photoURL: String(legacyData.photoURL || user.photoURL || "").trim(),
+        role: isAdminEmail(email) ? "admin" : (legacyRole || "user"),
+        accessCode: legacyData.accessCode || "",
+        allowedEvents: legacyData.allowedEvents || {},
+        createdAt: legacyData.createdAt || serverTimestamp(),
         lastLogin: serverTimestamp()
       },
       { merge: true }
     );
 
-    return { created: true, role };
+    return {
+      created: true,
+      migrated: true,
+      role: isAdminEmail(email) ? "admin" : (legacyRole || "user")
+    };
   }
 
-  await updateDoc(userRef, {
-    email: user.email || "",
-    lastLogin: serverTimestamp()
-  });
+  // 3) 완전 신규 유저 생성
+  await setDoc(
+    userRef,
+    {
+      email: user.email || "",
+      nickname: String(user.displayName || "").trim(),
+      phone: "",
+      gender: "none",
+      photoURL: String(user.photoURL || "").trim(),
+      role,
+      accessCode: "",
+      allowedEvents: {},
+      createdAt: serverTimestamp(),
+      lastLogin: serverTimestamp()
+    },
+    { merge: true }
+  );
 
-  return { created: false, role };
+  return {
+    created: true,
+    migrated: false,
+    role
+  };
 }
 
 async function ensureUserRole(user) {
@@ -123,11 +192,13 @@ async function ensureUserRole(user) {
     await updateDoc(userRef, {
       role: nextRole,
       email: user.email || "",
+      photoURL: String(user.photoURL || "").trim(),
       lastLogin: serverTimestamp()
     });
   } else {
     await updateDoc(userRef, {
       email: user.email || "",
+      photoURL: String(user.photoURL || "").trim(),
       lastLogin: serverTimestamp()
     });
   }
@@ -139,7 +210,7 @@ async function handleLoggedInUser(user) {
   const uid = user.uid;
   const userRef = doc(db, "users", uid);
 
-  await ensureUserDoc(user);
+  const ensureResult = await ensureUserDoc(user);
   await ensureUserRole(user);
 
   const snap = await getDoc(userRef);
@@ -150,12 +221,14 @@ async function handleLoggedInUser(user) {
     email: user.email || "",
     hasProfile: snap.exists(),
     profile: data,
+    ensureResult,
     isAdminEmail: isAdminEmail(user.email || "")
   });
 
   const nickname = String(data?.nickname || "").trim();
 
-  // users 문서는 이미 생성된 상태에서 추가 정보만 보완
+  // 문서는 이미 생성/복구된 상태
+  // 닉네임이 부족하면 추가 정보만 입력받음
   if (!nickname || nickname.length < 2) {
     openSignupModal(data);
     return;
@@ -184,12 +257,12 @@ async function login() {
         return;
       } catch (redirectError) {
         console.error("login redirect error:", redirectError);
-        alert("로그인 실패");
+        alert(`로그인 실패: ${redirectError?.message || redirectError}`);
         return;
       }
     }
 
-    alert("로그인 실패");
+    alert(`로그인 실패: ${error?.message || error}`);
   }
 }
 
@@ -220,6 +293,7 @@ async function saveProfile() {
         nickname,
         phone,
         gender: selectedGender,
+        photoURL: String(user.photoURL || "").trim(),
         role,
         accessCode: "",
         allowedEvents: {},
@@ -238,7 +312,7 @@ async function saveProfile() {
     location.href = "./hub.html";
   } catch (error) {
     console.error("save profile error:", error);
-    alert("회원 정보 저장 실패");
+    alert(`회원 정보 저장 실패: ${error?.message || error}`);
   }
 }
 
