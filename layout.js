@@ -88,12 +88,18 @@ function isAdminEmail(email = "") {
     updatedAt: Date.now()
   };
 
-  const ui = {
-    activeTab: "wait",
-    selectedSeatId: FOCUS_SEAT_ID || null,
-    selectedWaitingId: null,
-    dragging: null
-  };
+    const ui = {
+  activeTab: "wait",
+  selectedSeatId: FOCUS_SEAT_ID || null,
+  selectedWaitingId: null,
+  dragging: null,
+  lastTouchTapAt: 0,
+  lastTouchSeatId: "",
+  lastMobileTapAt: 0,
+  lastMobileSeatId: "",
+  lastMouseClickAt: 0,
+  lastMouseSeatId: ""
+};
 
   const MIN = 60 * 1000;
   const TH_30 = 30 * MIN;
@@ -1129,26 +1135,50 @@ async function moveDealerToAssigned({
       let pointerStartY = 0;
       let pointerType = "";
       let isPointerDragging = false;
-      let lastTouchTapAt = 0;
 
       el.addEventListener("click", async (e) => {
-        e.stopPropagation();
+  e.stopPropagation();
 
-        if (pointerType === "touch" || pointerType === "pen") {
-          return;
-        }
+  if (pointerType === "touch" || pointerType === "pen") {
+    return;
+  }
 
-        ui.selectedSeatId = seat.id;
+  const now = Date.now();
+  const seatObj = eventState.seats.find((x) => x.id === seat.id);
+  const occupied = seatObj && !isEmptyPerson(seatObj.person);
 
-        if (ui.selectedWaitingId && canManageLayout()) {
-          await assignWaitingToSeat(ui.selectedWaitingId, seat.id);
-          ui.selectedSeatId = null;
-          render();
-          return;
-        }
+  // 마우스 더블클릭 대체: 같은 seat를 짧은 시간 안에 두 번 클릭
+  if (
+    canManageLayout() &&
+    occupied &&
+    ui.lastMouseSeatId === seat.id &&
+    now - ui.lastMouseClickAt < 380
+  ) {
+    ui.lastMouseClickAt = 0;
+    ui.lastMouseSeatId = "";
+    clearSeat(seat.id);
+    ui.selectedSeatId = null;
+    render();
+    return;
+  }
 
-        render();
-      });
+  ui.lastMouseClickAt = now;
+  ui.lastMouseSeatId = seat.id;
+
+  ui.selectedSeatId = seat.id;
+
+  if (ui.selectedWaitingId && canManageLayout()) {
+    await assignWaitingToSeat(ui.selectedWaitingId, seat.id);
+    ui.selectedSeatId = null;
+    ui.lastMouseClickAt = 0;
+    ui.lastMouseSeatId = "";
+    render();
+    return;
+  }
+
+  render();
+});
+
 
       el.addEventListener("pointerdown", (e) => {
         if (!canManageLayout()) return;
@@ -1211,60 +1241,65 @@ async function moveDealerToAssigned({
         el.style.top = `${s.y}px`;
       });
 
-            el.addEventListener("pointerup", async (e) => {
-        if (!canManageLayout()) return;
-        if (!ui.dragging || ui.dragging.id !== seat.id) return;
+      el.addEventListener("pointerup", async (e) => {
+  if (!canManageLayout()) return;
+  if (!ui.dragging || ui.dragging.id !== seat.id) return;
 
-        const wasTap = !isPointerDragging && !pointerMoved;
-        ui.dragging = null;
+  const wasTap = !isPointerDragging && !pointerMoved;
+  ui.dragging = null;
 
-        if (isPointerDragging) {
-          touchEvent();
-          return;
-        }
+  if (isPointerDragging) {
+    touchEvent();
+    return;
+  }
 
-        if ((e.pointerType === "touch" || e.pointerType === "pen") && wasTap) {
-          e.stopPropagation();
+  // 마우스 탭은 click 이벤트가 처리하게 둔다.
+  // 여기서 render() 하면 DOM이 갈려서 2클릭 판정이 깨진다.
+  if (e.pointerType === "mouse" && wasTap) {
+    return;
+  }
 
-          const seatObj = eventState.seats.find((x) => x.id === seat.id);
-          const occupied = seatObj && !isEmptyPerson(seatObj.person);
-          const now = Date.now();
+  if ((e.pointerType === "touch" || e.pointerType === "pen") && wasTap) {
+    e.stopPropagation();
 
-          // 1) 대기자 선택 상태 + 빈 seat => 한 번 터치로 즉시 배치
-          if (ui.selectedWaitingId && !occupied) {
-            ui.selectedSeatId = seat.id;
-            await assignWaitingToSeat(ui.selectedWaitingId, seat.id);
-            ui.selectedSeatId = null;
-            lastTouchTapAt = 0;
-            render();
-            return;
-          }
+    const seatObj = eventState.seats.find((x) => x.id === seat.id);
+    const occupied = seatObj && !isEmptyPerson(seatObj.person);
+    const now = Date.now();
 
-          // 2) 이미 사람이 있는 seat => 더블터치로 비우기
-          if (occupied) {
-            if (now - lastTouchTapAt < 320) {
-              lastTouchTapAt = 0;
-              await clearSeat(seat.id);
-              ui.selectedSeatId = null;
-              render();
-              return;
-            }
+    if (ui.selectedWaitingId && !occupied) {
+      ui.selectedSeatId = seat.id;
+      await assignWaitingToSeat(ui.selectedWaitingId, seat.id);
+      ui.selectedSeatId = null;
+      ui.lastTouchTapAt = 0;
+      ui.lastTouchSeatId = "";
+      render();
+      return;
+    }
 
-            lastTouchTapAt = now;
-            ui.selectedSeatId = seat.id;
-            render();
-            return;
-          }
-
-          // 3) 그 외는 그냥 선택
-          lastTouchTapAt = now;
-          ui.selectedSeatId = seat.id;
-          render();
-          return;
-        }
-
+    if (occupied) {
+      if (ui.lastTouchSeatId === seat.id && now - ui.lastTouchTapAt < 380) {
+        ui.lastTouchTapAt = 0;
+        ui.lastTouchSeatId = "";
+        clearSeat(seat.id);
+        ui.selectedSeatId = null;
         render();
-      });
+        return;
+      }
+
+      ui.lastTouchTapAt = now;
+      ui.lastTouchSeatId = seat.id;
+      ui.selectedSeatId = seat.id;
+      render();
+      return;
+    }
+
+    ui.lastTouchTapAt = now;
+    ui.lastTouchSeatId = seat.id;
+    ui.selectedSeatId = seat.id;
+    render();
+    return;
+  }
+});
 
       el.addEventListener("pointercancel", () => {
         if (!canManageLayout()) return;
@@ -1487,9 +1522,6 @@ async function moveDealerToAssigned({
       };
     }
 
-          let lastSeatTap = 0;
-    let lastSeatTapId = "";
-
     wrap.querySelectorAll("[data-mobile-seat]").forEach((row) => {
       row.addEventListener("click", async (e) => {
         if (
@@ -1509,37 +1541,36 @@ async function moveDealerToAssigned({
         const now = Date.now();
 
         // 1) 대기자 선택 상태 + 빈 seat => 한 번 터치 배치
-        if (ui.selectedWaitingId && canManageLayout() && !occupied) {
-          ui.selectedSeatId = sid;
-          await assignWaitingToSeat(ui.selectedWaitingId, sid);
-          ui.selectedSeatId = null;
-          lastSeatTap = 0;
-          lastSeatTapId = "";
-          render();
-          return;
-        }
+                  if (ui.selectedWaitingId && !occupied) {
+  ui.selectedSeatId = sid;
+  await assignWaitingToSeat(ui.selectedWaitingId, sid);
+  ui.selectedSeatId = null;
+  ui.lastMobileTapAt = 0;
+  ui.lastMobileSeatId = "";
+  render();
+  return;
+}
 
         // 2) 사람 있는 seat => 같은 seat 더블터치 시 비우기
-        if (occupied && canManageLayout()) {
-          if (lastSeatTapId === sid && now - lastSeatTap < 320) {
-            lastSeatTap = 0;
-            lastSeatTapId = "";
-            await clearSeat(sid);
+                if (occupied && canManageLayout()) {
+          if (ui.lastMobileSeatId === sid && now - ui.lastMobileTapAt < 380) {
+            ui.lastMobileTapAt = 0;
+            ui.lastMobileSeatId = "";
+            clearSeat(sid);
             ui.selectedSeatId = null;
             render();
             return;
           }
 
-          lastSeatTap = now;
-          lastSeatTapId = sid;
+          ui.lastMobileTapAt = now;
+          ui.lastMobileSeatId = sid;
           ui.selectedSeatId = sid;
           render();
           return;
         }
 
-        // 3) 나머지는 선택만
-        lastSeatTap = now;
-        lastSeatTapId = sid;
+        ui.lastMobileTapAt = now;
+        ui.lastMobileSeatId = sid;
         ui.selectedSeatId = sid;
         render();
       });
