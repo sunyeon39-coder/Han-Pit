@@ -11,18 +11,14 @@ import {
   getDocs,
   setDoc,
   deleteDoc,
-  onSnapshot
+  onSnapshot,
+  runTransaction,
+  writeBatch
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 console.log("🔥 index.js loaded");
 
-const ADMIN_EMAILS = [
-  "sunyeon9501@gmail.com"
-];
-
-function isAdminEmail(email = "") {
-  return ADMIN_EMAILS.includes(String(email).trim().toLowerCase());
-}
+import { isAdminEmail, APP_TIME_ZONE } from "./app_config.js";
 
 function getIsAdmin(user, profile) {
   return (
@@ -30,8 +26,6 @@ function getIsAdmin(user, profile) {
     isAdminEmail(user?.email || "")
   );
 }
-
-const APP_TIME_ZONE = "Asia/Seoul";
 
 const root = document.getElementById("indexRoot");
 const backBtn = document.getElementById("backBtn");
@@ -88,6 +82,15 @@ const dealerAdminUi = {
   sort: "name"
 };
 
+let dealerOpsRenderTimer = null;
+
+function scheduleRenderDealerOps() {
+  if (dealerOpsRenderTimer) clearTimeout(dealerOpsRenderTimer);
+  dealerOpsRenderTimer = setTimeout(() => {
+    renderDealerOps();
+  }, 50);
+}
+
 let events = [];
 let currentTournament = null;
 let currentUserProfile = null;
@@ -109,10 +112,56 @@ function getTournamentId() {
   return (
     params.get("tournamentId") ||
     sessionStorage.getItem("tournamentId") ||
-    params.get("eventId") ||
-    sessionStorage.getItem("eventId") ||
     ""
   );
+}
+
+function ensureTournamentContextOrAlert() {
+  const tournamentId = getTournamentId();
+  if (tournamentId) return tournamentId;
+  alert("대회 정보가 없어 허브로 이동합니다.");
+  location.replace("./hub.html");
+  return "";
+}
+
+function isValidDocId(id = "") {
+  const value = String(id || "").trim();
+  return !!value && !value.includes("/");
+}
+
+function chunkArray(list = [], size = 200) {
+  const safe = Array.isArray(list) ? list : [];
+  const chunkSize = Math.max(1, Number(size || 1));
+  const chunks = [];
+  for (let i = 0; i < safe.length; i += chunkSize) {
+    chunks.push(safe.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
+function sleep(ms = 0) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, Math.max(0, Number(ms || 0)));
+  });
+}
+
+async function commitBatchWithRetry(batch, options = {}) {
+  const maxRetries = Math.max(0, Number(options.maxRetries ?? 1));
+  const retryDelayMs = Math.max(0, Number(options.retryDelayMs ?? 250));
+  let lastError = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try {
+      await batch.commit();
+      return true;
+    } catch (err) {
+      lastError = err;
+      if (attempt >= maxRetries) break;
+      await sleep(retryDelayMs * (attempt + 1));
+    }
+  }
+
+  throw lastError;
 }
 
 /* ===============================
@@ -396,7 +445,7 @@ async function updateMyAttendanceStatus(nextStatus) {
 }
 
 async function updateAdminAttendanceStatus(uid, nextStatus) {
-  const tournamentId = getTournamentId();
+  const tournamentId = ensureTournamentContextOrAlert();
   if (!uid || !tournamentId) return;
 
   const current = dealerAttendanceMap.get(getAttendanceDocId(tournamentId, uid));
@@ -1023,9 +1072,226 @@ async function loadDealerAttendanceOnce() {
       }
     }
 
-    renderDealerOps();
+    scheduleRenderDealerOps();
   } catch (err) {
     console.error("loadDealerAttendanceOnce error:", err);
+  }
+}
+
+async function ensureMyState() {
+  const user = auth.currentUser;
+  if (!user) return;
+
+  const uid = String(user.uid || "").trim();
+  if (!uid) return;
+
+  const seatInfo = dealerSeatMap.get(uid);
+
+  const waitingRef = doc(db, "layout_shared", "global_waiting");
+  const snap = await getDoc(waitingRef);
+
+  let waitingList = [];
+  if (snap.exists()) {
+    const data = snap.data() || {};
+    waitingList = Array.isArray(data.waiting) ? data.waiting : [];
+  }
+
+  const inWaiting = waitingList.some(
+    (w) => String(w.uid || "").trim() === uid
+  );
+
+  // seat에도 없고 waiting에도 없으면 복구
+  if (!seatInfo && !inWaiting) {
+    const nickname =
+      String(currentUserProfile?.nickname || user.displayName || "").trim() ||
+      String(user.email || "").trim() ||
+      "Dealer";
+
+    waitingList.push({
+      id: `auto_${uid}`,
+      uid,
+      email: String(user.email || "").trim(),
+      name: nickname,
+      addedAt: Date.now()
+    });
+
+    await setDoc(
+      waitingRef,
+      {
+        waiting: waitingList,
+        updatedAt: Date.now()
+      },
+      { merge: true }
+    );
+  }
+}
+
+function normalizeAttendanceDoc(data = {}) {
+  return {
+    uid: String(data.uid || "").trim(),
+    nickname: String(data.nickname || "").trim(),
+    email: String(data.email || "").trim(),
+    tournamentId: String(data.tournamentId || "").trim(),
+    status: String(data.status || "off").trim(),
+    checkedInAt: Number(data.checkedInAt || 0) || null,
+    checkedOutAt: Number(data.checkedOutAt || 0) || null,
+    breakStartedAt: Number(data.breakStartedAt || 0) || null,
+    totalBreakMs: Number(data.totalBreakMs || 0) || 0,
+    currentEventId: String(data.currentEventId || "").trim(),
+    currentBoxId: String(data.currentBoxId || "").trim(),
+    currentSeatId: String(data.currentSeatId || "").trim(),
+    currentSeatLabel: String(data.currentSeatLabel || "").trim(),
+    updatedAt: Number(data.updatedAt || 0) || 0
+  };
+}
+
+function bindDealerAttendanceRealtime() {
+  const tournamentId = getTournamentId();
+  const user = auth.currentUser;
+  if (!tournamentId || !user) return;
+
+  if (stopDealerAttendanceWatch) {
+    stopDealerAttendanceWatch();
+    stopDealerAttendanceWatch = null;
+  }
+
+  if (getIsAdmin(user, currentUserProfile)) {
+    stopDealerAttendanceWatch = onSnapshot(
+      collection(db, "dealer_attendance"),
+      (snap) => {
+        dealerAttendanceMap.clear();
+
+        snap.docs.forEach((d) => {
+          const data = normalizeAttendanceDoc(d.data() || {});
+          if (data.tournamentId !== tournamentId) return;
+          dealerAttendanceMap.set(d.id, data);
+        });
+
+        renderDealerOps();
+      },
+      (err) => {
+        console.error("bindDealerAttendanceRealtime(admin) error:", err);
+      }
+    );
+    return;
+  }
+
+  stopDealerAttendanceWatch = onSnapshot(
+    getAttendanceRef(tournamentId, user.uid),
+    (snap) => {
+      dealerAttendanceMap.delete(getAttendanceDocId(tournamentId, user.uid));
+
+      if (snap.exists()) {
+        const data = normalizeAttendanceDoc(snap.data() || {});
+        dealerAttendanceMap.set(snap.id, data);
+      }
+
+      renderDealerOps();
+    },
+    (err) => {
+      console.error("bindDealerAttendanceRealtime(user) error:", err);
+    }
+  );
+}
+
+function getMySeatInfo(uid) {
+  return dealerSeatMap.get(uid) || null;
+}
+
+async function getSharedWaitingState() {
+  const waitingRef = doc(db, "layout_shared", "global_waiting");
+  const snap = await getDoc(waitingRef);
+
+  if (!snap.exists()) {
+    return {
+      ref: waitingRef,
+      state: { version: 2, waiting: [], updatedAt: Date.now() }
+    };
+  }
+
+  const data = snap.data() || {};
+  return {
+    ref: waitingRef,
+    state: {
+      ...data,
+      version: 2,
+      waiting: Array.isArray(data.waiting) ? data.waiting : [],
+      updatedAt: Number(data.updatedAt || Date.now())
+    }
+  };
+}
+
+async function ensureMeRecovered(user) {
+  const tournamentId = getTournamentId();
+  if (!user || !tournamentId) return;
+
+  const me = getDerivedAttendance(user);
+  const seatInfo = getMySeatInfo(user.uid);
+
+  const { ref: waitingRef, state: waitingStateDoc } = await getSharedWaitingState();
+  const waitingList = Array.isArray(waitingStateDoc.waiting) ? waitingStateDoc.waiting : [];
+
+  const inWaiting = waitingList.some((item) => {
+    if (!item || typeof item !== "object") return false;
+    return String(item.uid || "").trim() === String(user.uid).trim();
+  });
+
+  // assigned인데 실제 seat 없음 -> waiting 복구
+  if (me?.status === "assigned" && !seatInfo) {
+    const nickname =
+      String(currentUserProfile?.nickname || user.displayName || "").trim() ||
+      String(user.email || "").trim();
+
+    await setDoc(
+      getAttendanceRef(tournamentId, user.uid),
+      {
+        uid: user.uid,
+        tournamentId,
+        email: String(currentUserProfile?.email || user.email || "").trim(),
+        nickname,
+        status: "waiting",
+        currentEventId: "",
+        currentBoxId: "",
+        currentSeatId: "",
+        currentSeatLabel: "",
+        updatedAt: Date.now()
+      },
+      { merge: true }
+    );
+
+    if (!inWaiting) {
+      waitingList.push({
+        id: `w_${user.uid}`,
+        uid: user.uid,
+        email: String(currentUserProfile?.email || user.email || "").trim(),
+        name: nickname,
+        addedAt: Date.now(),
+        source: "auto_recover_assigned",
+        tournamentId
+      });
+
+      await setDoc(
+        waitingRef,
+        {
+          ...waitingStateDoc,
+          version: 2,
+          waiting: waitingList,
+          updatedAt: Date.now()
+        },
+        { merge: true }
+      );
+    }
+
+    await loadDealerAttendanceOnce();
+    renderDealerOps();
+    return;
+  }
+
+  // waiting / checked_in인데 실제 waiting도 seat도 없음 -> waiting 재생성
+  if ((me?.status === "waiting" || me?.status === "checked_in") && !inWaiting && !seatInfo) {
+    await joinSharedWaitingOnCheckIn(user);
+    await loadDealerAttendanceOnce();
+    renderDealerOps();
   }
 }
 
@@ -1151,6 +1417,171 @@ function bindMySeatAssignment(user) {
     stopMySeatNotificationWatch = null;
   }
 
+  const SOUND_ENABLED_KEY = "boxboard_sound_enabled_v1";
+  let seatModalAudioCtx = null;
+  let seatModalAudioUnlocked = false;
+  let seatModalAudioTimer = null;
+
+  function stopSeatModalSoundLoop() {
+    if (seatModalAudioTimer) {
+      clearInterval(seatModalAudioTimer);
+      seatModalAudioTimer = null;
+    }
+  }
+
+  function hasSavedSoundPreference() {
+    try {
+      return localStorage.getItem(SOUND_ENABLED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  }
+
+  function ensureSeatModalAudioContext() {
+    if (seatModalAudioCtx) return seatModalAudioCtx;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return null;
+    seatModalAudioCtx = new AudioCtx();
+    return seatModalAudioCtx;
+  }
+
+  async function unlockSeatModalAudio() {
+    if (seatModalAudioUnlocked) return true;
+    const ctx = ensureSeatModalAudioContext();
+    if (!ctx) return false;
+    try {
+      if (ctx.state === "suspended") {
+        await ctx.resume();
+      }
+      seatModalAudioUnlocked = true;
+      return true;
+    } catch (err) {
+      console.error("unlockSeatModalAudio error:", err);
+      return false;
+    }
+  }
+
+  function playSeatModalBeep() {
+    const ctx = ensureSeatModalAudioContext();
+    if (!ctx) return false;
+    try {
+      const now = ctx.currentTime;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.linearRampToValueAtTime(0.35, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+      gain.connect(ctx.destination);
+
+      const osc = ctx.createOscillator();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(1046.5, now);
+      osc.connect(gain);
+      osc.start(now);
+      osc.stop(now + 0.36);
+      return true;
+    } catch (err) {
+      console.error("playSeatModalBeep error:", err);
+      return false;
+    }
+  }
+
+  async function startSeatModalSoundLoop() {
+    const ok = await unlockSeatModalAudio();
+    if (!ok) return;
+    playSeatModalBeep();
+    if (!hasSavedSoundPreference()) return;
+    stopSeatModalSoundLoop();
+    seatModalAudioTimer = setInterval(() => {
+      playSeatModalBeep();
+    }, 1000);
+  }
+
+  ["click", "touchstart", "keydown"].forEach((evt) => {
+    window.addEventListener(
+      evt,
+      () => {
+        void unlockSeatModalAudio();
+      },
+      { once: true }
+    );
+  });
+
+  function hideSeatAssignmentModal() {
+    const overlay = document.getElementById("seatAssignmentModal");
+    overlay?.classList.remove("show");
+    stopSeatModalSoundLoop();
+  }
+
+  function ensureSeatAssignmentModalUi() {
+  let overlay = document.getElementById("seatAssignmentModal");
+
+  if (overlay) return overlay;
+
+  overlay = document.createElement("div");
+  overlay.id = "seatAssignmentModal";
+  overlay.className = "modal-backdrop";
+  overlay.innerHTML = `
+    <div class="modal-card">
+      <h2>배치 알림</h2>
+      <p id="seatAssignmentMessage" style="line-height:1.6; margin:0 0 18px;"></p>
+      <div class="modal-actions">
+        <button id="seatAssignmentGoBtn" class="btn primary" type="button">이동</button>
+        <button id="seatAssignmentOkBtn" class="btn ghost" type="button">확인</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  return overlay;
+}
+
+async function showSeatAssignmentModal({ message = "", targetUrl = "", uid = "" }) {
+  const overlay = ensureSeatAssignmentModalUi();
+  const msg = document.getElementById("seatAssignmentMessage");
+  const goBtn = document.getElementById("seatAssignmentGoBtn");
+  const okBtn = document.getElementById("seatAssignmentOkBtn");
+
+  if (msg) {
+    msg.textContent = message || "Seat에 배치되었습니다.";
+  }
+
+  overlay.classList.add("show");
+  void startSeatModalSoundLoop();
+
+  const acknowledge = async () => {
+    if (!uid) return;
+    try {
+      await setDoc(
+        doc(db, "layout_notifications", uid),
+        {
+          acknowledged: true,
+          acknowledgedAt: Date.now(),
+          updatedAt: Date.now()
+        },
+        { merge: true }
+      );
+    } catch (err) {
+      console.error("ack seat notification error:", err);
+    }
+  };
+
+  if (okBtn) {
+    okBtn.onclick = async () => {
+      hideSeatAssignmentModal();
+      await acknowledge();
+      render();
+      refreshCardStatuses();
+    };
+  }
+
+  if (goBtn) {
+    goBtn.onclick = () => {
+      hideSeatAssignmentModal();
+      location.href = targetUrl || "./layout.html";
+    };
+  }
+}
+
   const ref = doc(db, "layout_notifications", user.uid);
 
   stopMySeatNotificationWatch = onSnapshot(
@@ -1158,6 +1589,7 @@ function bindMySeatAssignment(user) {
     (snap) => {
       if (!snap.exists()) {
         currentSeatAssignment = null;
+        hideSeatAssignmentModal();
         render();
         refreshCardStatuses();
         return;
@@ -1166,6 +1598,7 @@ function bindMySeatAssignment(user) {
       const data = snap.data() || {};
       if (data.type !== "seat_assigned") {
         currentSeatAssignment = null;
+        hideSeatAssignmentModal();
         render();
         refreshCardStatuses();
         return;
@@ -1183,6 +1616,18 @@ function bindMySeatAssignment(user) {
 
       render();
       refreshCardStatuses();
+
+      if (data.acknowledged !== true) {
+        showSeatAssignmentModal({
+          message:
+            String(data.message || "").trim() ||
+            `${String(data.eventTitle || "").trim()} / Seat ${String(data.seatLabel || "").trim()}에 배치되었습니다.`,
+          targetUrl: String(data.targetUrl || "").trim(),
+          uid: user.uid
+        });
+      } else {
+        hideSeatAssignmentModal();
+      }
     },
     (err) => {
       console.error("bindMySeatAssignment error:", err);
@@ -1455,13 +1900,12 @@ function bindDealerSeatRealtime() {
             eventId,
             boxId,
             seatId: String(seat?.id || "").trim(),
-            seatLabel: String(seat?.label ?? seat?.no ?? "").trim()
+            seatLabel: String(seat?.label ?? seat?.no ?? "")
           });
         });
       });
 
-      
-
+      void ensureMeRecovered(auth.currentUser);
       renderDealerOps();
     },
     (err) => {
@@ -1474,6 +1918,10 @@ function bindDealerSeatRealtime() {
    SAVE / DELETE EVENT CARD
 =============================== */
 async function saveEventCard() {
+  const tournamentId = ensureTournamentContextOrAlert();
+  if (!tournamentId) return;
+  if (!getIsAdmin(auth.currentUser, currentUserProfile)) return;
+
   const id = eventCardId.value.trim();
 
   if (!id) {
@@ -1481,11 +1929,22 @@ async function saveEventCard() {
     return;
   }
 
+  if (!isValidDocId(id)) {
+    alert("카드 ID에는 '/' 문자를 사용할 수 없습니다.");
+    return;
+  }
+
+  const boxId = eventCardBoxId.value.trim();
+  if (!boxId || !isValidDocId(boxId)) {
+    alert("유효한 Box ID를 입력하세요. '/' 문자는 사용할 수 없습니다.");
+    return;
+  }
+
   try {
     await setDoc(
       getEventDocRef(id),
       {
-        boxId: eventCardBoxId.value.trim(),
+        boxId,
         date: normalizeDateString(eventCardDate.value.trim()),
         title: eventCardTitle.value.trim(),
         start: eventCardStart.value.trim(),
@@ -1501,7 +1960,171 @@ async function saveEventCard() {
   }
 }
 
+async function getLayoutEventDocByEventAndBox(eventId, boxId) {
+  const snap = await getDocs(collection(db, "layout_events"));
+
+  for (const docSnap of snap.docs) {
+    const data = docSnap.data() || {};
+    const sameEvent = String(data.eventId || "").trim() === String(eventId || "").trim();
+    const sameBox = String(data.boxId || "").trim() === String(boxId || "").trim();
+
+    if (sameEvent && sameBox) {
+      return {
+        ref: docSnap.ref,
+        id: docSnap.id,
+        data
+      };
+    }
+  }
+
+  return null;
+}
+
+async function removeUsersFromSharedWaitingByUids(targetUids = []) {
+  const uidSet = new Set(
+    (Array.isArray(targetUids) ? targetUids : [])
+      .map((uid) => String(uid || "").trim())
+      .filter(Boolean)
+  );
+
+  if (!uidSet.size) return;
+
+  const waitingRef = doc(db, "layout_shared", "global_waiting");
+  const snap = await getDoc(waitingRef);
+
+  if (!snap.exists()) return;
+
+  const data = snap.data() || {};
+  const waiting = Array.isArray(data.waiting) ? data.waiting : [];
+
+  const nextWaiting = waiting.filter((item) => {
+    if (!item || typeof item !== "object") return false;
+    const uid = String(item.uid || "").trim();
+    return !uidSet.has(uid);
+  });
+
+  if (nextWaiting.length === waiting.length) return;
+
+  await setDoc(
+    waitingRef,
+    {
+      ...data,
+      version: 2,
+      waiting: nextWaiting,
+      updatedAt: Date.now()
+    },
+    { merge: true }
+  );
+}
+
+async function forceCheckOutUsersForDeletedEvent({ eventId = "", boxId = "" }) {
+  const tournamentId = ensureTournamentContextOrAlert();
+  if (!tournamentId) return { affectedUsers: [] };
+  if (!getIsAdmin(auth.currentUser, currentUserProfile)) return { affectedUsers: [] };
+
+  const layoutDoc = await getLayoutEventDocByEventAndBox(eventId, boxId);
+  if (!layoutDoc) return { affectedUsers: [] };
+
+  const data = layoutDoc.data || {};
+  const seats = Array.isArray(data.seats) ? data.seats : [];
+
+  const affectedUsers = seats
+    .filter((seat) => seat && typeof seat === "object")
+    .map((seat) => ({
+      uid: String(seat.personUid || "").trim(),
+      nickname: String(seat.person || "").trim(),
+      email: String(seat.personEmail || "").trim(),
+      seatId: String(seat.id || "").trim(),
+      seatLabel: String(seat.label ?? seat.no ?? "").trim()
+    }))
+    .filter((user) => user.uid);
+
+  const now = Date.now();
+
+  // 핵심 상태 변경(출퇴근/알림)은 배치 커밋으로 묶어 부분 실패 전파를 줄인다.
+  for (const usersChunk of chunkArray(affectedUsers, 200)) {
+    const batch = writeBatch(db);
+
+    usersChunk.forEach((user) => {
+      batch.set(
+        getAttendanceRef(tournamentId, user.uid),
+        {
+          uid: user.uid,
+          tournamentId,
+          nickname: user.nickname,
+          email: user.email,
+          status: "checked_out",
+          checkedOutAt: now,
+          currentEventId: "",
+          currentBoxId: "",
+          currentSeatId: "",
+          currentSeatLabel: "",
+          updatedAt: now
+        },
+        { merge: true }
+      );
+
+      batch.set(
+        doc(db, "layout_notifications", user.uid),
+        {
+          type: "event_deleted",
+          acknowledged: true,
+          seatId: "",
+          seatLabel: "",
+          eventId: "",
+          eventTitle: "",
+          boxId: "",
+          targetUrl: "",
+          message: "",
+          updatedAt: now
+        },
+        { merge: true }
+      );
+    });
+
+    await commitBatchWithRetry(batch, { maxRetries: 1, retryDelayMs: 250 });
+  }
+
+  // 운영 로그는 부가 정보이므로 best-effort로 기록(개별 실패가 전체 롤백을 유발하지 않음)
+  await Promise.allSettled(
+    affectedUsers.map((user) => writeAttendanceLog({
+      uid: user.uid,
+      nickname: user.nickname,
+      action: "checked_out",
+      tournamentId,
+      eventId,
+      boxId,
+      seatId: user.seatId,
+      seatLabel: user.seatLabel
+    }))
+  );
+
+  await removeUsersFromSharedWaitingByUids(affectedUsers.map((u) => u.uid));
+
+  await setDoc(
+    layoutDoc.ref,
+    {
+      ...data,
+      seats: seats.map((seat) => ({
+        ...seat,
+        person: "비어있음",
+        personUid: "",
+        personEmail: "",
+        seatedAt: null
+      })),
+      updatedAt: now
+    },
+    { merge: true }
+  );
+
+  return { affectedUsers };
+}
+
 async function deleteEventCardCurrent() {
+  const tournamentId = ensureTournamentContextOrAlert();
+  if (!tournamentId) return;
+  if (!getIsAdmin(auth.currentUser, currentUserProfile)) return;
+
   const id = eventCardId.value.trim();
 
   if (!id) {
@@ -1509,12 +2132,29 @@ async function deleteEventCardCurrent() {
     return;
   }
 
-  const ok = confirm(`"${id}" 카드를 삭제할까요?`);
+  if (!isValidDocId(id)) {
+    alert("유효하지 않은 카드 ID입니다.");
+    return;
+  }
+
+  const boxId = eventCardBoxId.value.trim();
+
+  const ok = confirm(`"${id}" 카드를 삭제할까요?\n배치 중인 딜러는 강제 퇴근 처리됩니다.`);
   if (!ok) return;
 
   try {
+    const { affectedUsers } = await forceCheckOutUsersForDeletedEvent({
+      eventId: id,
+      boxId
+    });
+
     await deleteDoc(getEventDocRef(id));
-    alert("카드가 삭제되었습니다.");
+
+    alert(
+      affectedUsers.length
+        ? `카드가 삭제되었습니다.\n배치 중이던 ${affectedUsers.length}명은 강제 퇴근 처리되었습니다.`
+        : "카드가 삭제되었습니다."
+    );
   } catch (err) {
     console.error(err);
     alert("카드 삭제에 실패했습니다.");
@@ -1630,106 +2270,255 @@ async function isUserAlreadySeated(userUid) {
 
 async function joinSharedWaitingOnCheckIn(user) {
   const tournamentId = getTournamentId();
-  if (!user || !tournamentId) return;
+  if (!user || !tournamentId) return false;
 
   try {
     const userRef = doc(db, "users", user.uid);
     const userSnap = await getDoc(userRef);
-    if (!userSnap.exists()) return;
+    if (!userSnap.exists()) return false;
 
     const userProfile = userSnap.data() || {};
     currentUserProfile = userProfile;
 
-    if (userProfile.role === "admin") return;
+    if (getIsAdmin(user, userProfile)) return false;
 
     const nickname = String(userProfile.nickname || "").trim();
     const email = String(userProfile.email || user.email || "").trim();
-    if (!nickname) return;
+    if (!nickname) {
+      alert("닉네임이 없어서 출근할 수 없습니다. 프로필에서 닉네임을 확인해주세요.");
+      return false;
+    }
+
+    const alreadySeated = await isUserAlreadySeated(user.uid);
+    if (alreadySeated) return true;
 
     const waitingRef = doc(db, "layout_shared", "global_waiting");
-    const alreadySeated = await isUserAlreadySeated(user.uid);
-    if (alreadySeated) return;
 
-    const waitingSnap = await getDoc(waitingRef);
-    const waitingState = waitingSnap.exists()
-      ? (waitingSnap.data() || {})
-      : { version: 2, waiting: [], updatedAt: Date.now() };
+    await runTransaction(db, async (tx) => {
+      const waitingSnap = await tx.get(waitingRef);
+      const waitingState = waitingSnap.exists()
+        ? (waitingSnap.data() || {})
+        : { version: 2, waiting: [], updatedAt: Date.now() };
 
-    const waitingList = Array.isArray(waitingState.waiting)
-      ? waitingState.waiting
-      : [];
+      const waitingList = Array.isArray(waitingState.waiting)
+        ? [...waitingState.waiting]
+        : [];
 
-    const alreadyInWaiting = waitingList.some((item) => {
-      if (!item || typeof item !== "object") return false;
-      return item.uid && item.uid === user.uid;
+      const alreadyInWaiting = waitingList.some((item) => {
+        if (!item || typeof item !== "object") return false;
+        return String(item.uid || "").trim() === String(user.uid).trim();
+      });
+
+      if (alreadyInWaiting) return;
+
+      waitingList.push({
+        id: `w_${user.uid}`,
+        uid: user.uid,
+        email,
+        name: nickname,
+        addedAt: Date.now(),
+        source: "checkin",
+        tournamentId
+      });
+
+      tx.set(
+        waitingRef,
+        {
+          ...waitingState,
+          version: 2,
+          waiting: waitingList,
+          updatedAt: Date.now()
+        },
+        { merge: true }
+      );
     });
 
-    if (alreadyInWaiting) return;
-
-    waitingList.push({
-      id: `w_${user.uid}`,
-      uid: user.uid,
-      email,
-      name: nickname,
-      addedAt: Date.now(),
-      source: "checkin",
-      tournamentId
-    });
-
-    await setDoc(
-      waitingRef,
-      {
-        ...waitingState,
-        version: 2,
-        waiting: waitingList,
-        updatedAt: Date.now()
-      },
-      { merge: true }
-    );
+    return true;
   } catch (error) {
     console.error("❌ joinSharedWaitingOnCheckIn error:", error);
+    alert("출근 처리 중 오류가 발생했습니다.");
+    return false;
   }
 }
 
 async function removeFromSharedWaitingOnCheckOut(user) {
   const tournamentId = getTournamentId();
-  if (!user || !tournamentId) return;
+  if (!user || !tournamentId) return false;
 
   try {
     const waitingRef = doc(db, "layout_shared", "global_waiting");
-    const waitingSnap = await getDoc(waitingRef);
-    if (!waitingSnap.exists()) return;
 
-    const waitingState = waitingSnap.data() || {};
-    const waitingList = Array.isArray(waitingState.waiting)
-      ? waitingState.waiting
-      : [];
+    await runTransaction(db, async (tx) => {
+      const waitingSnap = await tx.get(waitingRef);
+      if (!waitingSnap.exists()) return;
 
-    const nextWaiting = waitingList.filter((item) => {
-      if (!item || typeof item !== "object") return false;
+      const waitingState = waitingSnap.data() || {};
+      const waitingList = Array.isArray(waitingState.waiting)
+        ? waitingState.waiting
+        : [];
 
-      const itemUid = String(item.uid || "").trim();
-      const itemTournamentId = String(item.tournamentId || "").trim();
+      const nextWaiting = waitingList.filter((item) => {
+        if (!item || typeof item !== "object") return false;
 
-      if (itemUid !== user.uid) return true;
-      if (itemTournamentId && itemTournamentId !== tournamentId) return true;
+        const itemUid = String(item.uid || "").trim();
+        const itemTournamentId = String(item.tournamentId || "").trim();
 
-      return false;
+        if (itemUid !== String(user.uid || "").trim()) return true;
+        if (itemTournamentId && itemTournamentId !== tournamentId) return true;
+
+        return false;
+      });
+
+      tx.set(
+        waitingRef,
+        {
+          ...waitingState,
+          version: 2,
+          waiting: nextWaiting,
+          updatedAt: Date.now()
+        },
+        { merge: true }
+      );
     });
 
+    return true;
+  } catch (error) {
+    console.error("❌ removeFromSharedWaitingOnCheckOut error:", error);
+    alert("퇴근 처리 중 오류가 발생했습니다.");
+    return false;
+  }
+}
+
+async function removeUserFromAllSeatsGlobal(user) {
+  if (!user?.uid) return 0;
+
+  try {
+    const snap = await getDocs(collection(db, "layout_events"));
+    let removedCount = 0;
+
+    await Promise.all(
+      snap.docs.map(async (docSnap) => {
+        const data = docSnap.data() || {};
+        const seats = Array.isArray(data.seats) ? data.seats : [];
+        let changed = false;
+
+        const nextSeats = seats.map((seat) => {
+          if (!seat || typeof seat !== "object") return seat;
+
+          const personUid = String(seat.personUid || "").trim();
+          if (personUid !== String(user.uid).trim()) return seat;
+
+          changed = true;
+          removedCount += 1;
+
+          return {
+            ...seat,
+            person: "비어있음",
+            personUid: "",
+            personEmail: "",
+            seatedAt: null
+          };
+        });
+
+        if (!changed) return;
+
+        await setDoc(
+          docSnap.ref,
+          {
+            ...data,
+            seats: nextSeats,
+            updatedAt: Date.now()
+          },
+          { merge: true }
+        );
+      })
+    );
+
+    return removedCount;
+  } catch (error) {
+    console.error("❌ removeUserFromAllSeatsGlobal error:", error);
+    return 0;
+  }
+}
+
+async function clearUserSeatNotification(uid) {
+  if (!uid) return;
+
+  try {
     await setDoc(
-      waitingRef,
+      doc(db, "layout_notifications", uid),
       {
-        ...waitingState,
-        version: 2,
-        waiting: nextWaiting,
+        type: "seat_cleared",
+        acknowledged: true,
+        seatId: "",
+        seatLabel: "",
+        eventId: "",
+        eventTitle: "",
+        boxId: "",
+        targetUrl: "",
+        message: "",
         updatedAt: Date.now()
       },
       { merge: true }
     );
   } catch (error) {
-    console.error("❌ removeFromSharedWaitingOnCheckOut error:", error);
+    console.error("❌ clearUserSeatNotification error:", error);
   }
+}
+
+async function forceAdminCheckedOut(target) {
+  if (!target?.uid) return;
+
+  await removeUserFromAllSeatsGlobal({ uid: target.uid });
+  await removeFromSharedWaitingOnCheckOut({
+    uid: target.uid,
+    email: target.email || "",
+    displayName: target.nickname || "",
+    nickname: target.nickname || ""
+  });
+  await updateAdminAttendanceStatus(target.uid, "checked_out");
+  await setDoc(
+    getAttendanceRef(getTournamentId(), target.uid),
+    {
+      currentEventId: "",
+      currentBoxId: "",
+      currentSeatId: "",
+      currentSeatLabel: "",
+      updatedAt: Date.now()
+    },
+    { merge: true }
+  );
+  await clearUserSeatNotification(target.uid);
+}
+
+async function forceSelfCheckedOut(user) {
+  if (!user?.uid) return;
+
+  const targetProfile = currentUserProfile || {};
+
+  await removeUserFromAllSeatsGlobal({ uid: user.uid });
+  await removeFromSharedWaitingOnCheckOut({
+    uid: user.uid,
+    email: String(targetProfile.email || user.email || "").trim(),
+    displayName: String(targetProfile.nickname || user.displayName || "").trim(),
+    nickname: String(targetProfile.nickname || user.displayName || "").trim()
+  });
+
+  await updateMyAttendanceStatus("checked_out");
+
+  await setDoc(
+    getAttendanceRef(getTournamentId(), user.uid),
+    {
+      currentEventId: "",
+      currentBoxId: "",
+      currentSeatId: "",
+      currentSeatLabel: "",
+      updatedAt: Date.now()
+    },
+    { merge: true }
+  );
+
+  await clearUserSeatNotification(user.uid);
 }
 
 /* ===============================
@@ -1853,25 +2642,14 @@ dealerOpsMount?.addEventListener("click", async (e) => {
         if (!action || !uid) return;
 
         if (action === "checked_out") {
-          // admin 강제 퇴근:
-          // 1) attendance를 checked_out으로 변경
-          // 2) shared waiting 에서 제거
-          const target = getAdminAttendanceList().find((item) => String(item.uid || "").trim() === uid);
-          if (!target) return;
+  const target = getAdminAttendanceList().find((item) => String(item.uid || "").trim() === uid);
+  if (!target) return;
 
-          await updateAdminAttendanceStatus(uid, "checked_out");
-
-          await removeFromSharedWaitingOnCheckOut({
-            uid,
-            email: target.email || "",
-            displayName: target.nickname || "",
-            nickname: target.nickname || ""
-          });
-
-          await loadDealerAttendanceOnce();
-          renderDealerOps();
-          return;
-        }
+  await forceAdminCheckedOut(target);
+  await loadDealerAttendanceOnce();
+  renderDealerOps();
+  return;
+}
       }
 
       return;
@@ -1886,29 +2664,25 @@ dealerOpsMount?.addEventListener("click", async (e) => {
     const action = String(selfBtn.getAttribute("data-self-action") || "").trim();
     if (!action) return;
 
-    if (action === "waiting") {
-      // 출근하기
-      // 1) attendance 상태를 waiting으로 변경
-      // 2) shared waiting에 등록
-      await updateMyAttendanceStatus("waiting");
-      await joinSharedWaitingOnCheckIn(user);
+     if (action === "waiting") {
+  const ok = await joinSharedWaitingOnCheckIn(user);
+  if (!ok) return;
 
-      await loadDealerAttendanceOnce();
-      renderDealerOps();
-      return;
-    }
+  await updateMyAttendanceStatus("waiting");
+  await loadDealerAttendanceOnce();
+  renderDealerOps();
+  return;
+}
 
-    if (action === "checked_out") {
-      // 퇴근하기
-      // 1) shared waiting에서 제거
-      // 2) attendance 상태를 checked_out으로 변경
-      await removeFromSharedWaitingOnCheckOut(user);
-      await updateMyAttendanceStatus("checked_out");
+if (action === "checked_out") {
+  const removed = await removeFromSharedWaitingOnCheckOut(user);
+  if (removed === false) return;
 
-      await loadDealerAttendanceOnce();
-      renderDealerOps();
-      return;
-    }
+  await forceSelfCheckedOut(user);
+  await loadDealerAttendanceOnce();
+  renderDealerOps();
+  return;
+}
   } catch (err) {
     console.error("dealerOps click error:", err);
   }
@@ -1920,13 +2694,19 @@ dealerOpsMount?.addEventListener("click", async (e) => {
 =============================== */
 async function init() {
   await loadEvents();
+
+  bindEventsRealtime();
+  bindLayoutSeatSummaryRealtime();
+
+  await loadDealerAttendanceOnce();
+  bindDealerAttendanceRealtime();
+  bindDealerSeatRealtime();
+
+  await ensureMeRecovered(auth.currentUser);
+
   render();
   renderDealerOps();
   refreshCardStatuses();
-  bindEventsRealtime();
-  bindLayoutSeatSummaryRealtime();
-  await loadDealerAttendanceOnce();
-  bindDealerSeatRealtime();
 
   setupAttendanceLogEvents();
   bindAttendanceLogsRealtime();
@@ -1934,39 +2714,59 @@ async function init() {
 
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
+    if (stopMySeatNotificationWatch) {
+      stopMySeatNotificationWatch();
+      stopMySeatNotificationWatch = null;
+    }
     location.replace("./login.html");
     return;
   }
 
   bindMySeatAssignment(user);
 
-  const userRef = doc(db, "users", user.uid);
-  const userSnap = await getDoc(userRef);
-  currentUserProfile = userSnap.exists() ? (userSnap.data() || {}) : null;
+  try {
+    const userRef = doc(db, "users", user.uid);
+    const userSnap = await getDoc(userRef);
+    currentUserProfile = userSnap.exists() ? (userSnap.data() || {}) : null;
 
-  const isAdmin = getIsAdmin(auth.currentUser, currentUserProfile);
+    if (!currentUserProfile) {
+      currentUserProfile = {
+        email: user.email || "",
+        nickname: user.displayName || "",
+        role: isAdminEmail(user.email || "") ? "admin" : "user",
+        accessCode: "",
+        allowedEvents: {}
+      };
+      await setDoc(userRef, currentUserProfile, { merge: true });
+    }
 
-  console.log("[INDEX AUTH]", {
-    uid: user.uid,
-    email: user.email || "",
-    profile: currentUserProfile,
-    isAdmin
-  });
+    const isAdmin = getIsAdmin(auth.currentUser, currentUserProfile);
 
-  renderDealerOps();
+    console.log("[INDEX AUTH]", {
+      uid: user.uid,
+      email: user.email || "",
+      profile: currentUserProfile,
+      isAdmin
+    });
 
-  if (isAdmin) {
-    eventAdminBtn?.classList.remove("hidden");
-    attendanceLogBtn?.classList.remove("hidden");
-    seatMapEditBtn?.classList.remove("hidden");
-  } else {
-    eventAdminBtn?.classList.add("hidden");
-    attendanceLogBtn?.classList.add("hidden");
-    seatMapEditBtn?.classList.add("hidden");
+    renderDealerOps();
+
+    if (isAdmin) {
+      eventAdminBtn?.classList.remove("hidden");
+      attendanceLogBtn?.classList.remove("hidden");
+      seatMapEditBtn?.classList.remove("hidden");
+    } else {
+      eventAdminBtn?.classList.add("hidden");
+      attendanceLogBtn?.classList.add("hidden");
+      seatMapEditBtn?.classList.add("hidden");
+    }
+
+    await initTournamentPeriodWatch();
+    await init();
+  } catch (err) {
+    console.error("index auth init error:", err);
+    alert("인덱스 데이터를 불러오지 못했습니다.");
   }
-
-  await initTournamentPeriodWatch();
-  await init();
 });
 
 setInterval(() => {
@@ -2326,3 +3126,4 @@ seatMapEditBtn?.addEventListener("click", async () => {
 seatMapEditorCloseBtn?.addEventListener("click", () => {
   closeModal(seatMapEditorModal);
 });
+

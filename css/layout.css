@@ -1137,13 +1137,6 @@ main{
   box-shadow: 0 14px 28px rgba(0,0,0,.18);
 }
 
-.seat-box.selected{
-  border-color: #60a5fa;
-  box-shadow:
-    0 0 0 1px rgba(96,165,250,.30) inset,
-    0 18px 42px rgba(0,0,0,.26),
-    0 0 0 4px rgba(96,165,250,.16);
-}
 
 .pc-panel{
   top:70px;
@@ -1265,4 +1258,100 @@ input:focus{
   #mobileSheet{
     background: rgba(8,14,28,.96);
   }
+}
+
+
+/* ===== 대기 선택 표시 (맨 아래에 추가) ===== */
+.row.selected,
+.mobile-wait-row.selected,
+.global-wait-row.selected {
+  border: 2px solid #4da3ff;
+  box-shadow: 0 0 0 3px rgba(77, 163, 255, 0.18);
+  background: rgba(77, 163, 255, 0.08);
+}
+
+.row[data-wid],
+.mobile-wait-row[data-mobile-wait] {
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.row[data-wid]:hover,
+.mobile-wait-row[data-mobile-wait]:hover {
+  border-color: rgba(77, 163, 255, 0.45);
+}
+
+/* ===== PC 배치(Seat) 선택 표시 강화 ===== */
+.seat-box.selected{
+  border: 2px solid #4da3ff !important;
+  background: rgba(77,163,255,.12) !important;
+  box-shadow:
+    0 0 0 2px rgba(77,163,255,.28),
+    0 10px 28px rgba(0,0,0,.28) !important;
+  z-index: 5;
+}
+
+/* 좌석 안 글자도 조금 더 또렷하게 */
+.seat-box.selected .seat-title,
+.seat-box.selected .seat-person{
+  color: #eef6ff;
+}
+
+/* Index modal 1:1 for layout seat alert */
+#seatAlertOverlay.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(3, 7, 17, 0.74);
+  backdrop-filter: blur(12px);
+  z-index: 1000;
+  padding: 16px;
+}
+
+#seatAlertOverlay .modal-card {
+  width: min(92vw, 430px);
+  border-radius: 26px;
+  padding: 24px;
+  border: 1px solid var(--line-soft);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
+    linear-gradient(160deg, rgba(9, 15, 29, 0.98), rgba(17, 26, 44, 0.96));
+  color: var(--text-1);
+  box-shadow: var(--shadow-float);
+}
+
+#seatAlertOverlay .modal-card h2 {
+  margin: 0 0 18px;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+#seatAlertOverlay .modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+#seatAlertOverlay .btn {
+  flex: 1;
+  min-height: 48px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 13px 14px;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-1);
+}
+
+#seatAlertOverlay .btn.primary {
+  border-color: rgba(239, 208, 141, 0.28);
+  background: linear-gradient(135deg, rgba(239, 208, 141, 0.18), rgba(214, 178, 94, 0.08));
+  color: #fff4d6;
+}
+
+#seatAlertOverlay .btn.ghost {
+  color: var(--text-2);
 }

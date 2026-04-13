@@ -3,6 +3,7 @@ import { auth, db } from "./firebase.js";
 import {
   onAuthStateChanged,
   signOut
+  
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
 import {
@@ -17,16 +18,11 @@ import {
   onSnapshot,
   query,
   where,
-  writeBatch
+  writeBatch,
+  runTransaction
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-const ADMIN_EMAILS = [
-  "sunyeon9501@gmail.com"
-];
-
-function isAdminEmail(email = "") {
-  return ADMIN_EMAILS.includes(String(email).trim().toLowerCase());
-}
+import { isAdminEmail } from "./app_config.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -83,6 +79,7 @@ let usersCache = [];
 let selectedManageUid = null;
 let stopTournamentsWatch = null;
 let stopUsersWatch = null;
+let adminActionInFlight = false;
 
 const fallbackTournaments = [
   {
@@ -119,83 +116,97 @@ function escapeHtml(text = "") {
 const LAYOUT_EVENTS_REF = collection(db, "layout_events");
 const GLOBAL_WAITING_REF = doc(db, "layout_shared", "global_waiting");
 
-async function removeUserFromEventWaiting(user, eventId = "") {
+async function removeUserFromEventWaiting(user, selectedTournamentId = "") {
   if (!user) return 0;
 
   const targetUid = String(user.uid || "").trim();
   const targetName = String(user.nickname || "").trim();
+  const tournamentId = String(selectedTournamentId || "").trim();
 
   if (!targetUid && !targetName) return 0;
 
-  const snap = await getDoc(GLOBAL_WAITING_REF);
-  if (!snap.exists()) return 0;
+  try {
+    let removedCount = 0;
 
-  const data = snap.data() || {};
-  const waiting = Array.isArray(data.waiting) ? data.waiting : [];
-  if (!waiting.length) return 0;
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(GLOBAL_WAITING_REF);
+      if (!snap.exists()) return;
 
-  let removedCount = 0;
+      const data = snap.data() || {};
+      const waiting = Array.isArray(data.waiting) ? data.waiting : [];
+      if (!waiting.length) return;
 
-  const nextWaiting = waiting.filter((item) => {
-    if (!item || typeof item !== "object") return false;
+      const nextWaiting = waiting.filter((item) => {
+        if (!item || typeof item !== "object") return false;
 
-    const itemUid = String(item.uid || "").trim();
-    const itemName = String(item.name || "").trim();
-    const itemEventId = String(item.eventId || "").trim();
+        const itemUid = String(item.uid || "").trim();
+        const itemName = String(item.name || "").trim();
+        const itemTournamentId = String(item.tournamentId || "").trim();
 
-    if (eventId && itemEventId && itemEventId !== eventId) {
-      return true;
-    }
+        if (tournamentId && itemTournamentId && itemTournamentId !== tournamentId) {
+          return true;
+        }
 
-    if (targetUid && itemUid && itemUid === targetUid) {
-      removedCount += 1;
-      return false;
-    }
+        if (targetUid && itemUid && itemUid === targetUid) {
+          removedCount += 1;
+          return false;
+        }
 
-    if (targetName && itemName === targetName) {
-      removedCount += 1;
-      return false;
-    }
+        if (!targetUid && targetName && itemName === targetName) {
+          removedCount += 1;
+          return false;
+        }
 
-    return true;
-  });
+        return true;
+      });
 
-  if (removedCount > 0) {
-    await setDoc(
-      GLOBAL_WAITING_REF,
-      {
-        ...data,
-        waiting: nextWaiting,
-        updatedAt: Date.now()
-      },
-      { merge: true }
-    );
+      if (removedCount > 0) {
+        tx.set(
+          GLOBAL_WAITING_REF,
+          {
+            ...data,
+            version: 2,
+            waiting: nextWaiting,
+            updatedAt: Date.now()
+          },
+          { merge: true }
+        );
+      }
+    });
+
+    return removedCount;
+  } catch (err) {
+    console.error("removeUserFromEventWaiting error:", err);
+    return 0;
   }
-
-  return removedCount;
 }
 
-async function removeUserFromAllSeats(user, eventId = "") {
+async function removeUserFromAllSeats(user, selectedTournamentId = "") {
   if (!user) return 0;
 
   const targetUid = String(user.uid || "").trim();
   const targetName = String(user.nickname || "").trim();
+  const tournamentId = String(selectedTournamentId || "").trim();
 
   if (!targetUid && !targetName) return 0;
 
   let removedCount = 0;
 
-  const q = eventId
-    ? query(LAYOUT_EVENTS_REF, where("eventId", "==", eventId))
-    : LAYOUT_EVENTS_REF;
-
-  const snap = await getDocs(q);
+  const snap = await getDocs(LAYOUT_EVENTS_REF);
   if (snap.empty) return 0;
 
   const batch = writeBatch(db);
 
   snap.forEach((d) => {
     const data = d.data() || {};
+
+    if (tournamentId) {
+      const itemTournamentId = String(data.tournamentId || "").trim();
+      if (itemTournamentId && itemTournamentId !== tournamentId) {
+        return;
+      }
+    }
+
     const seats = Array.isArray(data.seats) ? data.seats : [];
     let changed = false;
 
@@ -206,7 +217,7 @@ async function removeUserFromAllSeats(user, eventId = "") {
       const personUid = String(seat.personUid || "").trim();
 
       const uidMatched = targetUid && personUid && personUid === targetUid;
-      const nameMatched = targetName && person === targetName;
+      const nameMatched = !targetUid && targetName && person === targetName;
 
       if (!uidMatched && !nameMatched) return seat;
 
@@ -241,9 +252,9 @@ async function removeUserFromAllSeats(user, eventId = "") {
   return removedCount;
 }
 
-async function cleanupUserFromLayoutState(user, eventId = "") {
-  const waitingRemoved = await removeUserFromEventWaiting(user, eventId);
-  const seatRemoved = await removeUserFromAllSeats(user, eventId);
+async function cleanupUserFromLayoutState(user, tournamentId = "") {
+  const waitingRemoved = await removeUserFromEventWaiting(user, tournamentId);
+  const seatRemoved = await removeUserFromAllSeats(user, tournamentId);
 
   return {
     waitingRemoved,
@@ -251,9 +262,9 @@ async function cleanupUserFromLayoutState(user, eventId = "") {
   };
 }
 
-function hasEventAccess(userProfile, tournament) {
+function hasEventAccess(userProfile, tournament, user = currentUser) {
   if (!userProfile) return false;
-  if (userProfile.role === "admin") return true;
+  if (userProfile.role === "admin" || isAdminEmail(user?.email || "")) return true;
 
   const allowedEvents = userProfile.allowedEvents || {};
   if (allowedEvents[tournament.id] === true) return true;
@@ -266,15 +277,63 @@ function hasEventAccess(userProfile, tournament) {
   return false;
 }
 
+function getIsAdminUser(user = currentUser, profile = currentUserProfile) {
+  return (
+    profile?.role === "admin" ||
+    isAdminEmail(user?.email || "")
+  );
+}
+
 function getSelectedTournament() {
   const selectedId = adminEventSelect?.value || "";
   return tournamentsCache.find((t) => t.id === selectedId) || null;
 }
 
+function getTournamentById(tournamentId = "") {
+  const id = String(tournamentId || "").trim();
+  if (!id) return null;
+  return tournamentsCache.find((t) => t.id === id) || null;
+}
+
+function isValidDocId(id = "") {
+  const value = String(id || "").trim();
+  return !!value && !value.includes("/");
+}
+
+function setAdminControlsBusy(busy) {
+  const controls = [
+    saveTournamentBtn,
+    deleteTournamentBtn,
+    manageAllowBtn,
+    manageRevokeBtn,
+    manageAssignCodeBtn,
+    manageRemoveCodeBtn
+  ];
+
+  controls.forEach((btn) => {
+    if (!btn) return;
+    btn.disabled = busy;
+    btn.setAttribute("aria-busy", busy ? "true" : "false");
+  });
+}
+
+async function runAdminAction(task) {
+  if (adminActionInFlight) return false;
+  adminActionInFlight = true;
+  setAdminControlsBusy(true);
+  try {
+    await task();
+    return true;
+  } finally {
+    adminActionInFlight = false;
+    setAdminControlsBusy(false);
+  }
+}
+
 function userStillHasAccessToSelectedEvent(user) {
   const tournament = getSelectedTournament();
   if (!user || !tournament) return false;
-  return hasEventAccess(user, tournament);
+  return hasEventAccess(user, tournament, currentUser);
 }
 
 function normalizeTournamentDoc(d) {
@@ -314,13 +373,13 @@ function routeToTournament(tournamentId) {
 /* ===============================
    TOURNAMENT RENDER
 =============================== */
-function renderTournaments(tournaments, userProfile) {
+function renderTournaments(tournaments, userProfile, user = currentUser) {
   if (!eventListEl) return;
 
   eventListEl.innerHTML = "";
 
   tournaments.forEach((tournament) => {
-    const enabled = hasEventAccess(userProfile, tournament);
+    const enabled = hasEventAccess(userProfile, tournament, user);
 
     const card = document.createElement("article");
     card.className = `event-card ${enabled ? "is-enabled" : "is-locked"}`;
@@ -425,7 +484,7 @@ function bindTournamentsRealtime() {
 
       renderTournaments(tournamentsCache, currentUserProfile);
 
-      if (currentUserProfile?.role === "admin" && adminModal?.classList.contains("show")) {
+      if (getIsAdminUser() && adminModal?.classList.contains("show")) {
         const selectedId = adminTournamentId?.value?.trim() || adminEventSelect?.value || "";
         populateTournamentSelect();
 
@@ -475,9 +534,7 @@ function bindUsersRealtime() {
 
       renderTournaments(tournamentsCache, currentUserProfile);
 
-      const isAdmin =
-  currentUserProfile?.role === "admin" ||
-  isAdminEmail(currentUser?.email || "");
+      const isAdmin = getIsAdminUser();
 
 if (isAdmin) {
   adminBtn?.classList.remove("hidden");
@@ -661,7 +718,11 @@ async function saveNickname() {
   }
 
   try {
-    await updateDoc(doc(db, "users", currentUser.uid), { nickname });
+    await setDoc(
+      doc(db, "users", currentUser.uid),
+      { nickname },
+      { merge: true }
+    );
 
     if (currentUserProfile) {
       currentUserProfile.nickname = nickname;
@@ -686,7 +747,7 @@ async function saveNickname() {
    TOURNAMENT CRUD
 =============================== */
 async function saveTournament() {
-  if (currentUserProfile?.role !== "admin") return;
+  if (!getIsAdminUser()) return;
 
   const id = adminTournamentId.value.trim();
   const name = adminTournamentName.value.trim();
@@ -697,6 +758,11 @@ async function saveTournament() {
 
   if (!id || !name) {
     alert("대회 ID와 대회명을 입력해주세요.");
+    return;
+  }
+
+  if (!isValidDocId(id)) {
+    alert("대회 ID에는 '/' 문자를 사용할 수 없습니다.");
     return;
   }
 
@@ -715,11 +781,16 @@ async function saveTournament() {
 }
 
 async function deleteTournamentCurrent() {
-  if (currentUserProfile?.role !== "admin") return;
+  if (!getIsAdminUser()) return;
 
   const id = adminTournamentId.value.trim();
   if (!id) {
     alert("삭제할 대회가 없습니다.");
+    return;
+  }
+
+  if (!isValidDocId(id)) {
+    alert("유효하지 않은 대회 ID입니다.");
     return;
   }
 
@@ -739,6 +810,13 @@ async function deleteTournamentCurrent() {
    ACCESS / CODE ACTIONS
 =============================== */
 async function grantEventDirectly(uid, eventId) {
+  if (!getIsAdminUser()) return;
+  if (!uid || !eventId) return;
+  if (!getTournamentById(eventId)) {
+    alert("유효한 대회를 먼저 선택해주세요.");
+    return;
+  }
+
   try {
     await setDoc(
       doc(db, "users", uid),
@@ -767,6 +845,14 @@ async function grantEventDirectly(uid, eventId) {
 }
 
 async function revokeEventDirectly(uid, eventId) {
+  if (!getIsAdminUser()) return;
+  if (!uid || !eventId) return;
+  const tournament = getTournamentById(eventId);
+  if (!tournament) {
+    alert("유효한 대회를 먼저 선택해주세요.");
+    return;
+  }
+
   try {
     await updateDoc(doc(db, "users", uid), {
       [`allowedEvents.${eventId}`]: deleteField()
@@ -779,17 +865,12 @@ async function revokeEventDirectly(uid, eventId) {
 
     let cleaned = { waitingRemoved: 0, seatRemoved: 0 };
 
+    const requiredCode = String(tournament.requiredCode || "").trim();
+    const userCode = String(user?.accessCode || "").trim();
     const stillAllowed =
-  user?.role === "admin" ||
-  user?.allowedEvents?.[eventId] === true ||
-  (
-    String(user?.accessCode || "").trim() &&
-    String(
-      tournamentsCache.find((t) => t.id === eventId)?.requiredCode || ""
-    ).trim() &&
-    String(user?.accessCode || "").trim() ===
-      String(tournamentsCache.find((t) => t.id === eventId)?.requiredCode || "").trim()
-  );
+      user?.role === "admin" ||
+      user?.allowedEvents?.[eventId] === true ||
+      (userCode && requiredCode && userCode === requiredCode);
 
 if (user && !stillAllowed) {
   cleaned = await cleanupUserFromLayoutState(user, eventId);
@@ -811,8 +892,15 @@ if (user && !stillAllowed) {
 }
 
 async function assignEventCodeToUser(uid, eventId) {
+  if (!getIsAdminUser()) return;
+  if (!uid || !eventId) return;
+
   try {
-    const tournament = tournamentsCache.find((t) => t.id === eventId);
+    const tournament = getTournamentById(eventId);
+    if (!tournament) {
+      alert("유효한 대회를 먼저 선택해주세요.");
+      return;
+    }
     const requiredCode = String(tournament?.requiredCode || "").trim();
 
     if (!requiredCode) {
@@ -838,6 +926,9 @@ async function assignEventCodeToUser(uid, eventId) {
 }
 
 async function removeUserCode(uid) {
+  if (!getIsAdminUser()) return;
+  if (!uid) return;
+
   try {
     await updateDoc(doc(db, "users", uid), {
       accessCode: ""
@@ -849,12 +940,11 @@ async function removeUserCode(uid) {
     }
 
     let cleaned = { waitingRemoved: 0, seatRemoved: 0 };
+    const selectedEventId = String(adminEventSelect?.value || "").trim();
 
-    const selectedEventId = adminEventSelect?.value || "";
-
-if (user && !userStillHasAccessToSelectedEvent(user)) {
-  cleaned = await cleanupUserFromLayoutState(user, selectedEventId);
-}
+    if (selectedEventId && user && !userStillHasAccessToSelectedEvent(user)) {
+      cleaned = await cleanupUserFromLayoutState(user, selectedEventId);
+    }
 
     renderAdminUserList();
 
@@ -901,9 +991,7 @@ profileBtn?.addEventListener("click", () => {
 });
 
 adminBtn?.addEventListener("click", async () => {
-  const isAdmin =
-    currentUserProfile?.role === "admin" ||
-    isAdminEmail(currentUser?.email || "");
+  const isAdmin = getIsAdminUser();
 
   if (!isAdmin) return;
 
@@ -929,8 +1017,12 @@ newTournamentBtn?.addEventListener("click", () => {
   adminTournamentId.focus();
 });
 
-saveTournamentBtn?.addEventListener("click", saveTournament);
-deleteTournamentBtn?.addEventListener("click", deleteTournamentCurrent);
+saveTournamentBtn?.addEventListener("click", () => {
+  void runAdminAction(saveTournament);
+});
+deleteTournamentBtn?.addEventListener("click", () => {
+  void runAdminAction(deleteTournamentCurrent);
+});
 
 adminEventSelect?.addEventListener("change", () => {
   syncSelectedTournamentForm();
@@ -967,24 +1059,30 @@ closeUserManageBtn?.addEventListener("click", closeUserManageModal);
 closeUserManageFooterBtn?.addEventListener("click", closeUserManageModal);
 
 manageAllowBtn?.addEventListener("click", async () => {
-  const eventId = adminEventSelect?.value || "";
-  if (!selectedManageUid || !eventId) return;
-  await grantEventDirectly(selectedManageUid, eventId);
-  renderUserManageModal(selectedManageUid);
+  await runAdminAction(async () => {
+    const eventId = adminEventSelect?.value || "";
+    if (!selectedManageUid || !eventId) return;
+    await grantEventDirectly(selectedManageUid, eventId);
+    renderUserManageModal(selectedManageUid);
+  });
 });
 
 manageRevokeBtn?.addEventListener("click", async () => {
-  const eventId = adminEventSelect?.value || "";
-  if (!selectedManageUid || !eventId) return;
-  await revokeEventDirectly(selectedManageUid, eventId);
-  renderUserManageModal(selectedManageUid);
+  await runAdminAction(async () => {
+    const eventId = adminEventSelect?.value || "";
+    if (!selectedManageUid || !eventId) return;
+    await revokeEventDirectly(selectedManageUid, eventId);
+    renderUserManageModal(selectedManageUid);
+  });
 });
 
 manageAssignCodeBtn?.addEventListener("click", async () => {
-  const eventId = adminEventSelect?.value || "";
-  if (!selectedManageUid || !eventId) return;
-  await assignEventCodeToUser(selectedManageUid, eventId);
-  renderUserManageModal(selectedManageUid);
+  await runAdminAction(async () => {
+    const eventId = adminEventSelect?.value || "";
+    if (!selectedManageUid || !eventId) return;
+    await assignEventCodeToUser(selectedManageUid, eventId);
+    renderUserManageModal(selectedManageUid);
+  });
 });
 
 manageRemoveCodeBtn?.addEventListener("click", async () => {
@@ -993,8 +1091,10 @@ manageRemoveCodeBtn?.addEventListener("click", async () => {
   const ok = confirm("이 유저의 코드를 제거할까요?");
   if (!ok) return;
 
-  await removeUserCode(selectedManageUid);
-  renderUserManageModal(selectedManageUid);
+  await runAdminAction(async () => {
+    await removeUserCode(selectedManageUid);
+    renderUserManageModal(selectedManageUid);
+  });
 });
 
 manageViewCodeBtn?.addEventListener("click", () => {
@@ -1019,6 +1119,18 @@ onAuthStateChanged(auth, async (user) => {
 
   try {
     currentUserProfile = await loadUserProfile(user.uid);
+    if (!currentUserProfile) {
+      const fallbackProfile = {
+        email: user.email || "",
+        nickname: user.displayName || "",
+        role: isAdminEmail(user.email || "") ? "admin" : "user",
+        accessCode: "",
+        allowedEvents: {}
+      };
+
+      await setDoc(doc(db, "users", user.uid), fallbackProfile, { merge: true });
+      currentUserProfile = fallbackProfile;
+    }
     tournamentsCache = await loadTournaments();
 
     console.log("[HUB AUTH]", {
@@ -1028,9 +1140,7 @@ onAuthStateChanged(auth, async (user) => {
   isAdmin: currentUserProfile?.role === "admin"
 });
 
-    const isAdmin =
-  currentUserProfile?.role === "admin" ||
-  isAdminEmail(user.email || "");
+    const isAdmin = getIsAdminUser(user, currentUserProfile);
 
 if (isAdmin) {
   usersCache = await loadAllUsers();

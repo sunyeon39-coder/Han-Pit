@@ -29,14 +29,7 @@ const phoneInput = document.getElementById("phoneInput");
 
 let selectedGender = "none";
 
-const ADMIN_EMAILS = [
-  "sunyeon9501@gmail.com"
-  // "SECOND_ADMIN_EMAIL@gmail.com"
-];
-
-function isAdminEmail(email = "") {
-  return ADMIN_EMAILS.includes(String(email).trim().toLowerCase());
-}
+import { isAdminEmail } from "./app_config.js";
 
 function openSignupModal(profile = null) {
   if (nicknameInput) {
@@ -103,7 +96,6 @@ async function ensureUserDoc(user) {
   const email = String(user.email || "").trim().toLowerCase();
   const role = isAdminEmail(email) ? "admin" : "user";
 
-  // 1) 이미 현재 uid 문서가 있으면 최소 정보 갱신
   if (currentSnap.exists()) {
     await updateDoc(userRef, {
       email: user.email || "",
@@ -118,7 +110,6 @@ async function ensureUserDoc(user) {
     };
   }
 
-  // 2) 예전 구조(users/{randomDocId}) 복구 시도
   const legacy = await findLegacyUserDocByEmail(user);
 
   if (legacy) {
@@ -149,7 +140,6 @@ async function ensureUserDoc(user) {
     };
   }
 
-  // 3) 완전 신규 유저 생성
   await setDoc(
     userRef,
     {
@@ -312,8 +302,6 @@ async function saveProfile() {
         gender: selectedGender,
         photoURL: String(user.photoURL || "").trim(),
         role,
-        accessCode: "",
-        allowedEvents: {},
         lastLogin: serverTimestamp()
       },
       { merge: true }
