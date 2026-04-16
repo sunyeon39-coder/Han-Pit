@@ -27,8 +27,63 @@ html, body {
 
 .pc-panel .global-meta {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 12px;
+  flex-wrap: nowrap;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02));
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.16);
+}
+
+.global-meta-left {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.global-meta-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.global-meta-actions.hidden {
+  display: none !important;
+}
+
+.pc-panel .global-meta-actions .seat-meta-btn {
+  min-height: 32px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+/* 되돌리기: 보조 텍스트 버튼 (추가 버튼과 대비) */
+.pc-panel .global-meta-actions .seat-meta-btn--undo {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  padding: 0 12px;
+  color: rgba(255, 255, 255, 0.82);
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.pc-panel .global-meta-actions .seat-meta-btn--undo:not(:disabled):hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.pc-panel .global-meta-actions .seat-meta-btn--undo:not(:disabled):active {
+  transform: translateY(1px);
 }
 
 .global-form {
@@ -46,8 +101,88 @@ html, body {
   grid-column: 1 / -1;
 }
 
+.global-form-hint {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  opacity: 0.78;
+  line-height: 1.4;
+  margin: 0 0 2px 0;
+}
+
+.global-form-hint-compact {
+  margin: 0 0 6px 0;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+/* 통합 배치도 · Seat 추가 입력 (상단 메타 바와 동일 카드 톤) */
+.pc-panel .global-form-seat-add {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.018));
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+}
+
+.seat-add-one-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.seat-add-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.seat-add-inline:first-of-type {
+  flex: 1.35 1 72px;
+}
+
+.seat-add-label {
+  font-size: 10px;
+  font-weight: 700;
+  opacity: 0.62;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.seat-add-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 36px;
+  font-size: 14px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.28);
+  color: inherit;
+}
+
+.seat-add-input::placeholder {
+  opacity: 0.45;
+}
+
+.seat-add-input:focus {
+  outline: none;
+  border-color: rgba(77, 163, 255, 0.8);
+  box-shadow: 0 0 0 2px rgba(77, 163, 255, 0.22);
+}
+
+#globalUndoToolbarBtn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  color: rgba(255, 255, 255, 0.38);
+}
+
 .global-list {
-  max-height: calc(100vh - 70px - 240px);
+  max-height: calc(100vh - 70px - 260px);
   overflow: auto;
   padding-right: 4px;
 }
@@ -55,7 +190,7 @@ html, body {
 .seat-sort-row {
   display: flex;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .seat-sort-row .pill-inline.active {

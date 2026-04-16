@@ -40,11 +40,33 @@ let suppressSeatClickUntil = 0;
 let seatSortMode = "seat";
 let timerHandle = null;
 let panelOpen = false;
+let lastGlobalUndo = null;
 let waitListScrollTop = 0;
 let seatListScrollTop = 0;
 
 function updateTabUi() {
   tabs.forEach((t) => t.classList.toggle("active", t.dataset.tab === activeTab));
+}
+
+function getUndoStackHint() {
+  if (!lastGlobalUndo) return "되돌릴 작업이 없습니다";
+  const k = lastGlobalUndo.kind;
+  if (k === "add_seat") return "마지막 작업: Seat 추가 — 클릭하면 취소";
+  if (k === "assign") return "마지막 작업: 대기 → 배치 — 클릭하면 취소";
+  if (k === "delete_seat") return "마지막 작업: Seat 삭제 — 클릭하면 복구";
+  if (k === "remove_waiting") return "마지막 작업: 대기 삭제 — 클릭하면 복구";
+  return "마지막 작업 되돌리기";
+}
+
+function updateGlobalMetaToolbar() {
+  const wrap = document.getElementById("globalMetaSeatActions");
+  const undoBtn = document.getElementById("globalUndoToolbarBtn");
+  if (!wrap || !undoBtn) return;
+  const show = isAdminUser && activeTab === "seat";
+  wrap.classList.toggle("hidden", !show);
+  wrap.setAttribute("aria-hidden", show ? "false" : "true");
+  undoBtn.disabled = !lastGlobalUndo;
+  undoBtn.title = getUndoStackHint();
 }
 
 function getIsAdmin(user, profile) {
@@ -200,6 +222,151 @@ function getSeatById(seatId = "") {
   const id = String(seatId || "").trim();
   if (!id) return null;
   return globalSeats.find((s) => String(s.seatId || "").trim() === id) || null;
+}
+
+/** index에서 이벤트 카드 선택 후 오면 sessionStorage, 없으면 기존 좌석이 많은 event/box, 마지막으로 1/1 */
+function getDefaultEventBoxForNewSeat() {
+  const se = String(sessionStorage.getItem("eventId") || "").trim();
+  const sb = String(sessionStorage.getItem("boxId") || "").trim();
+  if (se && sb) return { eventId: se, boxId: sb };
+
+  const counts = new Map();
+  globalSeats.forEach((s) => {
+    const e = String(s.currentEventId || s.mappedEventId || "").trim();
+    const b = String(s.boxId || "").trim();
+    if (!e || !b) return;
+    const k = `${e}\t${b}`;
+    counts.set(k, (counts.get(k) || 0) + 1);
+  });
+  let bestKey = "";
+  let best = 0;
+  counts.forEach((n, k) => {
+    if (n > best) {
+      best = n;
+      bestKey = k;
+    }
+  });
+  if (bestKey) {
+    const [e, b] = bestKey.split("\t");
+    return { eventId: e, boxId: b };
+  }
+  return { eventId: "1", boxId: "1" };
+}
+
+async function undoAssignPayload(payload) {
+  const waitingRef = doc(db, "layout_shared", "global_waiting");
+  const seatRef = doc(
+    db,
+    "tournaments",
+    tournamentId,
+    "global_seats",
+    buildGlobalSeatDocId(payload.eventId, payload.boxId, payload.targetSeatId)
+  );
+  const now = Date.now();
+  const waitingRow = payload.waiting && typeof payload.waiting === "object" ? payload.waiting : null;
+  if (!waitingRow) throw new Error("undo_assign_missing_waiting");
+
+  await runTransaction(db, async (tx) => {
+    const wSnap = await tx.get(waitingRef);
+    const wData = wSnap.exists() ? wSnap.data() || {} : {};
+    const arr = Array.isArray(wData.waiting) ? [...wData.waiting] : [];
+    const wid = String(waitingRow.id || "").trim();
+    const filtered = wid ? arr.filter((w) => String(w?.id || "").trim() !== wid) : arr;
+    filtered.push(waitingRow);
+
+    tx.set(
+      seatRef,
+      {
+        person: "비어있음",
+        personUid: "",
+        personEmail: "",
+        seatedAt: null,
+        status: "empty",
+        updatedAt: now,
+        updatedAtServer: serverTimestamp()
+      },
+      { merge: true }
+    );
+
+    tx.set(
+      waitingRef,
+      {
+        ...wData,
+        version: 2,
+        waiting: filtered,
+        updatedAt: now,
+        updatedAtServer: serverTimestamp()
+      },
+      { merge: true }
+    );
+
+    const uid = String(waitingRow.uid || "").trim();
+    if (uid) {
+      tx.set(
+        getAttendanceRef(tournamentId, uid),
+        {
+          uid,
+          email: String(waitingRow.email || "").trim(),
+          name: String(waitingRow.name || "").trim(),
+          tournamentId,
+          status: "waiting",
+          statusChangedAt: now,
+          updatedAt: now,
+          updatedAtServer: serverTimestamp()
+        },
+        { merge: true }
+      );
+    }
+  });
+
+  await syncLayoutProjection(payload.eventId, payload.boxId);
+}
+
+async function undoLastGlobalAction() {
+  if (!isAdminUser || !lastGlobalUndo) return;
+  const snap = lastGlobalUndo;
+  lastGlobalUndo = null;
+  try {
+    if (snap.kind === "add_seat") {
+      await deleteDoc(
+        doc(
+          db,
+          "tournaments",
+          tournamentId,
+          "global_seats",
+          buildGlobalSeatDocId(snap.eventId, snap.boxId, snap.seatId)
+        )
+      );
+      await syncLayoutProjection(snap.eventId, snap.boxId);
+    } else if (snap.kind === "assign") {
+      await undoAssignPayload(snap);
+    } else if (snap.kind === "delete_seat") {
+      const d = snap.seatDoc && typeof snap.seatDoc === "object" ? snap.seatDoc : {};
+      const sid = String(snap.seatId || d.seatId || "").trim();
+      const eid = String(snap.eventId || d.currentEventId || d.mappedEventId || "").trim();
+      const bid = String(snap.boxId || d.boxId || "").trim();
+      if (!sid || !eid || !bid) throw new Error("undo_delete_bad_ref");
+      await setDoc(
+        doc(db, "tournaments", tournamentId, "global_seats", buildGlobalSeatDocId(eid, bid, sid)),
+        d,
+        { merge: true }
+      );
+      await syncLayoutProjection(eid, bid);
+    } else if (snap.kind === "remove_waiting") {
+      await updateGlobalWaiting(Array.isArray(snap.snapshotBefore) ? snap.snapshotBefore : []);
+    } else {
+      throw new Error("undo_unknown_kind");
+    }
+  } catch (err) {
+    console.error("undoLastGlobalAction error:", err);
+    lastGlobalUndo = snap;
+    alert("되돌리기에 실패했습니다.");
+    updateGlobalMetaToolbar();
+    return;
+  }
+
+  if (activeTab === "seat") renderSeatPanel();
+  else renderWaiting(getCurrentTournamentWaiting());
 }
 
 async function saveSeatPosition(seatId = "", x = 0, y = 0) {
@@ -442,6 +609,7 @@ function renderWaiting(waiting = []) {
     </div>
   `;
   restorePanelScroll();
+  updateGlobalMetaToolbar();
 }
 
 function renderSeatPanel() {
@@ -493,12 +661,28 @@ function renderSeatPanel() {
     `;
   }).join("");
 
+  const defEb = getDefaultEventBoxForNewSeat();
+  const seatAddTitle = `비우면 event ${defEb.eventId} / box ${defEb.boxId} 사용 · index에서 카드 선택 시 자동 입력`;
+
   panelContent.innerHTML = `
-    <div class="global-form admin-only ${isAdminUser ? "" : "hidden"}">
-      <input id="seatLabelInput" placeholder="Seat 라벨 (예: 1, A1)" autocomplete="off" />
-      <input id="seatEventInput" placeholder="eventId" autocomplete="off" />
-      <input id="seatBoxInput" placeholder="boxId" autocomplete="off" />
-      <button id="addSeatBtn" class="pill-inline full" type="button">+ Seat 추가</button>
+    <div
+      class="global-form-seat-add admin-only ${isAdminUser ? "" : "hidden"}"
+      title="${escapeHtml(seatAddTitle)}"
+    >
+      <div class="seat-add-one-row">
+        <label class="seat-add-inline">
+          <span class="seat-add-label">라벨</span>
+          <input id="seatLabelInput" class="seat-add-input" type="text" placeholder="1, A1" autocomplete="off" />
+        </label>
+        <label class="seat-add-inline">
+          <span class="seat-add-label">event</span>
+          <input id="seatEventInput" class="seat-add-input" type="text" placeholder="id" value="${escapeHtml(defEb.eventId)}" autocomplete="off" />
+        </label>
+        <label class="seat-add-inline">
+          <span class="seat-add-label">box</span>
+          <input id="seatBoxInput" class="seat-add-input" type="text" placeholder="id" value="${escapeHtml(defEb.boxId)}" autocomplete="off" />
+        </label>
+      </div>
     </div>
     <div class="seat-sort-row">
       <button id="sortSeatOrderBtn" class="pill-inline ${seatSortMode === "seat" ? "active" : ""}" type="button">Seat순</button>
@@ -509,6 +693,7 @@ function renderSeatPanel() {
     </div>
   `;
   restorePanelScroll();
+  updateGlobalMetaToolbar();
 }
 
 async function updateGlobalWaiting(nextWaiting = []) {
@@ -687,12 +872,21 @@ async function assignSelectedWaitingToSeat(seatId = "") {
 
   selectedWaitingId = "";
   selectedSeatId = targetSeatId;
-  await syncLayoutProjection(seat.currentEventId, seat.boxId);
+  const ev = String(seat.currentEventId || seat.mappedEventId || "").trim();
+  const bx = String(seat.boxId || "").trim();
+  lastGlobalUndo = {
+    kind: "assign",
+    targetSeatId,
+    eventId: ev,
+    boxId: bx,
+    waiting: JSON.parse(JSON.stringify(waiting))
+  };
+  await syncLayoutProjection(ev, bx);
   await Promise.all(
     Array.from(touchedProjectionKeys).map(async (k) => {
       const [e, b] = String(k || "").split("__");
       if (!e || !b) return;
-      if (e === seat.currentEventId && b === seat.boxId) return;
+      if (e === ev && b === bx) return;
       await syncLayoutProjection(e, b);
     })
   );
@@ -831,6 +1025,7 @@ async function clearSeat(seatId = "") {
   });
 
   await syncLayoutProjection(seat.currentEventId, seat.boxId);
+  lastGlobalUndo = null;
 }
 
 async function deleteGlobalSeat(seatId = "") {
@@ -841,10 +1036,13 @@ async function deleteGlobalSeat(seatId = "") {
   const eventId = String(seat.currentEventId || seat.mappedEventId || "").trim();
   const boxId = String(seat.boxId || "").trim();
   if (!eventId || !boxId) return;
-  await deleteDoc(
-    doc(db, "tournaments", tournamentId, "global_seats", buildGlobalSeatDocId(eventId, boxId, targetSeatId))
-  );
+  const ref = doc(db, "tournaments", tournamentId, "global_seats", buildGlobalSeatDocId(eventId, boxId, targetSeatId));
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const seatDoc = snap.data() || {};
+  await deleteDoc(ref);
   if (selectedSeatId === targetSeatId) selectedSeatId = "";
+  lastGlobalUndo = { kind: "delete_seat", seatId: targetSeatId, eventId, boxId, seatDoc };
   await syncLayoutProjection(eventId, boxId);
 }
 
@@ -853,10 +1051,15 @@ async function addGlobalSeat() {
   const seatEventInput = document.getElementById("seatEventInput");
   const seatBoxInput = document.getElementById("seatBoxInput");
   const label = String(seatLabelInput?.value || "").trim();
-  const eventId = String(seatEventInput?.value || "").trim();
-  const boxId = String(seatBoxInput?.value || "").trim();
-  if (!label || !eventId || !boxId) {
-    alert("Seat 라벨 / eventId / boxId를 모두 입력하세요.");
+  const fallbackEb = getDefaultEventBoxForNewSeat();
+  const eventId = String(seatEventInput?.value || "").trim() || fallbackEb.eventId;
+  const boxId = String(seatBoxInput?.value || "").trim() || fallbackEb.boxId;
+  if (!label) {
+    alert("Seat 라벨을 입력하세요.");
+    return;
+  }
+  if (!eventId || !boxId) {
+    alert("eventId와 boxId를 입력하거나, index에서 이벤트 카드를 선택한 뒤 다시 시도하세요.");
     return;
   }
 
@@ -896,7 +1099,12 @@ async function addGlobalSeat() {
   );
 
   await syncLayoutProjection(eventId, boxId);
+  sessionStorage.setItem("eventId", eventId);
+  sessionStorage.setItem("boxId", boxId);
+  lastGlobalUndo = { kind: "add_seat", seatId, eventId, boxId };
   seatLabelInput.value = "";
+  if (seatEventInput) seatEventInput.value = eventId;
+  if (seatBoxInput) seatBoxInput.value = boxId;
 }
 
 async function addManualWaiting() {
@@ -927,9 +1135,10 @@ async function addManualWaiting() {
 async function removeManualWaiting(waitingId = "") {
   const wid = String(waitingId || "").trim();
   if (!wid) return;
-  const current = getCurrentTournamentWaiting();
-  const next = current.filter((w) => String(w?.id || "") !== wid);
+  const snapshotBefore = JSON.parse(JSON.stringify(getCurrentTournamentWaiting()));
+  const next = snapshotBefore.filter((w) => String(w?.id || "") !== wid);
   await updateGlobalWaiting(next);
+  lastGlobalUndo = { kind: "remove_waiting", snapshotBefore };
   if (selectedWaitingId === wid) selectedWaitingId = "";
 }
 
@@ -999,10 +1208,9 @@ backBtn?.addEventListener("click", () => {
   location.href = `./index.html?tournamentId=${encodeURIComponent(tournamentId)}`;
 });
 
-panelContent?.addEventListener("click", async (e) => {
-  if (!isAdminUser) return;
-  const addBtn = e.target.closest("#addSeatBtn");
-  if (addBtn) {
+document.getElementById("metaStats")?.addEventListener("click", async (e) => {
+  if (!isAdminUser || activeTab !== "seat") return;
+  if (e.target.closest("#addSeatToolbarBtn")) {
     try {
       await addGlobalSeat();
       renderSeatPanel();
@@ -1016,6 +1224,15 @@ panelContent?.addEventListener("click", async (e) => {
     }
     return;
   }
+  if (e.target.closest("#globalUndoToolbarBtn")) {
+    const btn = e.target.closest("#globalUndoToolbarBtn");
+    if (!lastGlobalUndo || btn?.disabled) return;
+    await undoLastGlobalAction();
+  }
+});
+
+panelContent?.addEventListener("click", async (e) => {
+  if (!isAdminUser) return;
 
   const addWaitBtn = e.target.closest("#addManualWaitingBtn");
   if (addWaitBtn) {
@@ -1299,6 +1516,7 @@ onAuthStateChanged(auth, async (user) => {
     }
     setPanelOpen(false);
     bindRealtime();
+    updateGlobalMetaToolbar();
     if (timerHandle) clearInterval(timerHandle);
     timerHandle = setInterval(() => {
       if (isTypingInPanel()) return;
