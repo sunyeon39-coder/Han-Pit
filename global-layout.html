@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Han Pit - Global Layout</title>
+  <link rel="stylesheet" href="./css/layout.css" />
+  <link rel="stylesheet" href="./css/global-layout.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="top-left">
+      <div class="logo">HAN Pit</div>
+      <button id="menuBtn" class="icon-btn" aria-label="menu">≡</button>
+    </div>
+
+    <div class="top-right">
+      <button id="backBtn" class="pill-btn" type="button">Back</button>
+    </div>
+  </header>
+
+  <main id="app"></main>
+
+  <aside id="pcPanel" class="pc-panel" aria-label="panel">
+    <div class="tabs">
+      <button class="tab active" data-tab="wait">대기</button>
+      <button class="tab" data-tab="seat">배치</button>
+    </div>
+    <div class="panel-body">
+      <div id="metaStats" class="global-meta">
+        <span id="seatCount" class="hint-pill">SEAT: 0</span>
+        <span id="waitingCount" class="hint-pill">WAIT: 0</span>
+      </div>
+      <div id="panelContent"></div>
+    </div>
+  </aside>
+
+  <div id="mobileSheet" class="mobile-sheet" aria-label="mobile sheet">
+    <button class="sheet-btn" type="button" disabled>+ Seat 추가</button>
+    <button class="sheet-btn ghost" type="button" disabled>+ 대기 추가</button>
+  </div>
+
+  <script type="module" src="./js/global-layout.js"></script>
+</body>
+</html>

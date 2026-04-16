@@ -1,0 +1,105 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userDocExists() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isAdmin() {
+      return signedIn() &&
+        userDocExists() &&
+        userDoc().data.role == "admin";
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function roleUnchanged() {
+      return !("role" in request.resource.data) ||
+        !("role" in resource.data) ||
+        request.resource.data.role == resource.data.role;
+    }
+
+    function accessFieldsUnchanged() {
+      return (
+        request.resource.data.accessCode == resource.data.accessCode &&
+        request.resource.data.allowedEvents == resource.data.allowedEvents
+      );
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create: if isSelf(uid);
+      allow update: if isAdmin() ||
+        (
+          isSelf(uid) &&
+          roleUnchanged() &&
+          accessFieldsUnchanged()
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /tournaments/{tournamentId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+
+      match /events/{eventId} {
+        allow read: if signedIn();
+        allow create, update, delete: if isAdmin();
+      }
+
+      // NEW: global integrated seats for admin operations
+      match /global_seats/{seatDocId} {
+        allow read: if signedIn();
+        allow create, update, delete: if isAdmin();
+      }
+    }
+
+    match /layout_events/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /layout_shared/{docId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn();
+      allow delete: if isAdmin();
+    }
+
+    match /layout_notifications/{uid} {
+      allow read: if isSelf(uid) || isAdmin();
+      allow create, update: if isAdmin() ||
+        (
+          isSelf(uid) &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(["acknowledged", "acknowledgedAt", "updatedAt", "updatedAtServer"])
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /dealer_attendance/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+      allow create, update: if signedIn() &&
+        docId.matches('.*__' + request.auth.uid);
+    }
+
+    match /dealer_attendance_logs/{logId} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+  }
+}

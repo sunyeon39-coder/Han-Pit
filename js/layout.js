@@ -6,7 +6,8 @@ import {
   getDocs,
   setDoc,
   onSnapshot,
-  serverTimestamp
+  serverTimestamp,
+  writeBatch
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import {
   onAuthStateChanged
@@ -46,6 +47,9 @@ import { isAdminEmail } from "./app_config.js";
   const EVENT_REF = doc(db, "layout_events", EVENT_DOC_ID);
   const WAITING_REF = doc(db, "layout_shared", "global_waiting");
   const LAYOUT_EVENTS_REF = collection(db, "layout_events");
+  const GLOBAL_SEATS_REF = TOURNAMENT_ID
+    ? collection(db, "tournaments", TOURNAMENT_ID, "global_seats")
+    : null;
 
   const VAPID_KEY = "BAZXsr3GQtq_nPLrF7C89mr3ejM7DbS-cBBfWNZzHfcHggNier7C2fbIG0uex3DZl8ykVxbqrli54cCdLkena94";
   const ALERT_VOLUME = 0.4;
@@ -67,10 +71,15 @@ import { isAdminEmail } from "./app_config.js";
   let saveEventTimer = null;
 let saveWaitingTimer = null;
 let stopGlobalSeatWatch = null;
+let stopGlobalSeatsSourceWatch = null;
 const SAVE_EVENT_DEBOUNCE_MS = 180;
 const SAVE_WAITING_DEBOUNCE_MS = 120;
 
   let globalSeatOccupancy = [];
+  /** seatId -> occupancy from tournaments/{id}/global_seats (current EVENT/BOX only) */
+  let globalSeatBySeatId = new Map();
+  /** getIdentityKey(person) for anyone seated on any global_seat in this tournament (any event/box) */
+  let globalSeatedIdentityKeys = new Set();
 
   const eventState = {
     version: 2,
@@ -320,6 +329,152 @@ const SAVE_WAITING_DEBOUNCE_MS = 120;
     return list;
   }
 
+  function isIdentitySeatedInEvent(identityKey) {
+    if (!identityKey) return false;
+    return eventState.seats.some((s) => {
+      if (isEmptyPerson(s.person)) return false;
+      return getSeatIdentity(s) === identityKey;
+    });
+  }
+
+  /** 다른 이벤트/박스 전역 좌석에만 배치된 사람은 이 화면 대기 목록에서 숨긴다 (global_waiting 공유 혼선 방지). */
+  function isIdentitySeatedAnywhereInTournament(identityKey) {
+    if (!identityKey) return false;
+    if (isIdentitySeatedInEvent(identityKey)) return true;
+    if (TOURNAMENT_ID && globalSeatedIdentityKeys.has(identityKey)) return true;
+    return false;
+  }
+
+  function getWaitingListForDisplay() {
+    return waitingState.waiting.filter((w) => !isIdentitySeatedAnywhereInTournament(getWaitingIdentity(w)));
+  }
+
+  function clearWaitingSelectionIfSeated() {
+    const wid = ui.selectedWaitingId;
+    if (!wid) return;
+    const w = findWaiting(wid);
+    if (!w) return;
+    if (isIdentitySeatedAnywhereInTournament(getWaitingIdentity(w))) {
+      ui.selectedWaitingId = null;
+    }
+  }
+
+  /**
+   * When tournament global_seats is authoritative, merge into layout_events-backed seats
+   * so layout.html matches index / admin even if layout_events projection lags.
+   */
+  function applyGlobalSeatMapToEventSeats() {
+    if (!TOURNAMENT_ID || !EVENT_ID || !BOX_ID) return false;
+    if (!(globalSeatBySeatId instanceof Map)) return false;
+
+    let changed = false;
+
+    for (const seat of eventState.seats) {
+      const sid = String(seat.id || "").trim();
+      if (!sid || !globalSeatBySeatId.has(sid)) continue;
+
+      const g = globalSeatBySeatId.get(sid);
+      const gPerson = String(g?.person || "").trim();
+      const gEmpty = isEmptyPerson(gPerson) || gPerson === "비어있음";
+
+      if (!gEmpty) {
+        const gUid = String(g?.personUid || "").trim();
+        const lUid = String(seat.personUid || "").trim();
+        const lName = String(seat.person || "").trim();
+        if (isEmptyPerson(lName) || lUid !== gUid || lName !== gPerson) {
+          seat.person = gPerson;
+          seat.personUid = gUid;
+          seat.personEmail = String(g?.personEmail || "").trim();
+          seat.seatedAt = g?.seatedAt != null ? Number(g.seatedAt) : Date.now();
+          changed = true;
+        }
+      } else if (!isEmptyPerson(seat.person)) {
+        clearSeatLocally(seat);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      clearWaitingSelectionIfSeated();
+      eventState.updatedAt = Date.now();
+    }
+
+    return changed;
+  }
+
+  function rebuildGlobalSeatMapFromSnapshot(snap) {
+    const next = new Map();
+    const seatedKeys = new Set();
+
+    if (!snap || !TOURNAMENT_ID) {
+      globalSeatBySeatId = next;
+      globalSeatedIdentityKeys = seatedKeys;
+      return;
+    }
+
+    snap.docs.forEach((d) => {
+      const data = d.data() || {};
+      const person = String(data.person || "").trim();
+      if (!isEmptyPerson(person) && person !== "비어있음") {
+        const key = getIdentityKey({
+          uid: String(data.personUid || "").trim(),
+          email: String(data.personEmail || "").trim(),
+          name: person
+        });
+        if (key) seatedKeys.add(key);
+      }
+
+      if (!EVENT_ID || !BOX_ID) return;
+      const eid = String(data.currentEventId || data.mappedEventId || "").trim();
+      const bid = String(data.boxId || "").trim();
+      if (eid !== EVENT_ID || bid !== BOX_ID) return;
+
+      const seatId = String(data.seatId || "").trim();
+      if (!seatId) return;
+
+      next.set(seatId, {
+        person,
+        personUid: String(data.personUid || "").trim(),
+        personEmail: String(data.personEmail || "").trim(),
+        seatedAt: data.seatedAt != null ? Number(data.seatedAt) : null
+      });
+    });
+
+    globalSeatBySeatId = next;
+    globalSeatedIdentityKeys = seatedKeys;
+  }
+
+  function bindTournamentGlobalSeatsMerge() {
+    if (stopGlobalSeatsSourceWatch) {
+      stopGlobalSeatsSourceWatch();
+      stopGlobalSeatsSourceWatch = null;
+    }
+
+    globalSeatBySeatId = new Map();
+    globalSeatedIdentityKeys = new Set();
+
+    if (!TOURNAMENT_ID || !GLOBAL_SEATS_REF || !hasValidLayoutRouteContext()) {
+      return;
+    }
+
+    stopGlobalSeatsSourceWatch = onSnapshot(
+      GLOBAL_SEATS_REF,
+      (snap) => {
+        rebuildGlobalSeatMapFromSnapshot(snap);
+        const merged = applyGlobalSeatMapToEventSeats();
+        if (merged) {
+          void healAndPersistState("global_seats_merge");
+        }
+        render();
+        updateTimers();
+        renderPanel();
+      },
+      (err) => {
+        console.error("bindTournamentGlobalSeatsMerge error:", err);
+      }
+    );
+  }
+
  function bindGlobalSeatOccupancyRealtime() {
   if (stopGlobalSeatWatch) {
     stopGlobalSeatWatch();
@@ -374,6 +529,81 @@ const SAVE_WAITING_DEBOUNCE_MS = 120;
     }
   }
 
+  function buildGlobalSeatDocId(seatId = "") {
+    return `${EVENT_ID}__${BOX_ID}__${String(seatId || "").trim()}`;
+  }
+
+  function mapSeatToGlobalSeatDoc(seat = {}) {
+    const safeSeat = seat && typeof seat === "object" ? seat : {};
+    return {
+      seatId: String(safeSeat.id || "").trim(),
+      label: String(safeSeat.label ?? safeSeat.no ?? "").trim(),
+      no: Number(safeSeat.no || 0) || 0,
+      order: Number(safeSeat.order || safeSeat.no || 0) || 0,
+      x: Number(safeSeat.x || 0) || 0,
+      y: Number(safeSeat.y || 0) || 0,
+      person: String(safeSeat.person || "").trim(),
+      personUid: String(safeSeat.personUid || "").trim(),
+      personEmail: String(safeSeat.personEmail || "").trim(),
+      seatedAt: safeSeat.seatedAt ? Number(safeSeat.seatedAt) : null,
+      status: isEmptyPerson(safeSeat.person) ? "empty" : "occupied",
+      tournamentId: TOURNAMENT_ID,
+      mappedEventId: EVENT_ID,
+      currentEventId: EVENT_ID,
+      boxId: BOX_ID,
+      sourceLayoutDocId: EVENT_DOC_ID,
+      updatedAt: Date.now(),
+      updatedAtServer: serverTimestamp()
+    };
+  }
+
+  async function syncGlobalSeatsForCurrentLayout(seats = []) {
+    if (!hasWritableLayoutContext() || !GLOBAL_SEATS_REF) return;
+
+    try {
+      const safeSeats = Array.isArray(seats) ? seats : [];
+      const snap = await getDocs(GLOBAL_SEATS_REF);
+
+      const existingDocs = snap.docs.filter((d) => {
+        const data = d.data() || {};
+        return (
+          String(data.currentEventId || "").trim() === EVENT_ID &&
+          String(data.boxId || "").trim() === BOX_ID
+        );
+      });
+
+      const nextSeatIds = new Set(
+        safeSeats.map((s) => String(s?.id || "").trim()).filter(Boolean)
+      );
+
+      const batch = writeBatch(db);
+
+      safeSeats.forEach((seat) => {
+        const seatId = String(seat?.id || "").trim();
+        if (!seatId) return;
+        const globalSeatRef = doc(
+          db,
+          "tournaments",
+          TOURNAMENT_ID,
+          "global_seats",
+          buildGlobalSeatDocId(seatId)
+        );
+        batch.set(globalSeatRef, mapSeatToGlobalSeatDoc(seat), { merge: true });
+      });
+
+      existingDocs.forEach((d) => {
+        const data = d.data() || {};
+        const seatId = String(data.seatId || "").trim();
+        if (!seatId || nextSeatIds.has(seatId)) return;
+        batch.delete(d.ref);
+      });
+
+      await batch.commit();
+    } catch (err) {
+      console.error("syncGlobalSeatsForCurrentLayout error:", err);
+    }
+  }
+
   async function saveEventState() {
     if (!hasWritableLayoutContext()) return;
     try {
@@ -392,6 +622,7 @@ await setDoc(
   },
   { merge: true }
 );
+      await syncGlobalSeatsForCurrentLayout(sanitizedEventState.seats);
     } catch (err) {
       console.error("saveEventState error:", err);
     }
@@ -1975,9 +2206,11 @@ render();
     const wrap = document.createElement("div");
     wrap.className = "mobile";
 
-    const selectedWaiting = waitingState.waiting.find(
-      (w) => w.id === ui.selectedWaitingId
-    ) || null;
+    const displayWaitingMobile = getWaitingListForDisplay();
+    const selectedWaiting =
+      ui.selectedWaitingId
+        ? displayWaitingMobile.find((w) => w.id === ui.selectedWaitingId) || null
+        : null;
 
     const seatCard = document.createElement("div");
     seatCard.className = "card";
@@ -2091,7 +2324,7 @@ render();
       </div>
     `;
 
-    const sortedWaiting = [...waitingState.waiting].sort((a, b) => {
+    const sortedWaiting = [...displayWaitingMobile].sort((a, b) => {
       const aTime = Number(a?.addedAt || 0);
       const bTime = Number(b?.addedAt || 0);
       return aTime - bTime;
@@ -2322,6 +2555,7 @@ return;
   function renderWaitPanel() {
     const selected = ui.selectedWaitingId;
     const html = [];
+    const displayWaiting = getWaitingListForDisplay();
 
     if (canManageLayout()) {
       html.push(`<input id="waitNameInput" placeholder="대기자 이름 입력" />`);
@@ -2330,7 +2564,7 @@ return;
       html.push(`<div class="badge" style="margin-bottom:12px;">대기 관리는 admin만 가능합니다</div>`);
     }
 
-    if (waitingState.waiting.length === 0) {
+    if (displayWaiting.length === 0) {
       html.push(`
         <div class="row">
           <div class="left">
@@ -2339,7 +2573,7 @@ return;
         </div>
       `);
     } else {
-      sortWaitingAscending(waitingState.waiting).forEach((w, index) => {
+      sortWaitingAscending(displayWaiting).forEach((w, index) => {
         const isSel = selected === w.id;
         const start = w.addedAt || Date.now();
         html.push(`
@@ -2399,7 +2633,7 @@ return;
   function renderSeatPanel() {
     const html = [];
     const seatedAll = globalSeatOccupancy;
-    const waitingAll = waitingState.waiting || [];
+    const waitingAll = getWaitingListForDisplay();
 
     const left = [];
 
@@ -2751,8 +2985,6 @@ if (sortSeatTimeBtn) {
         const next = snap.data() || {};
         const nextUpdatedAt = Number(next.updatedAt || 0);
 
-        if (nextUpdatedAt <= Number(eventState.updatedAt || 0)) return;
-
         eventState.version = next.version || 2;
         eventState.eventId = next.eventId || EVENT_ID;
         eventState.boxId = next.boxId || BOX_ID;
@@ -2760,6 +2992,8 @@ if (sortSeatTimeBtn) {
         eventState.nextSeatOrder = next.nextSeatOrder || 1;
         eventState.seats = Array.isArray(next.seats) ? next.seats : [];
         eventState.updatedAt = nextUpdatedAt || Date.now();
+
+        applyGlobalSeatMapToEventSeats();
 
         render();
         void healAndPersistState("event_snapshot");
@@ -2776,8 +3010,6 @@ if (sortSeatTimeBtn) {
 
         const nextW = snap.data() || {};
         const nextUpdatedAt = Number(nextW.updatedAt || 0);
-
-        if (nextUpdatedAt <= Number(waitingState.updatedAt || 0)) return;
 
         waitingState.version = nextW.version || 2;
         waitingState.waiting = Array.isArray(nextW.waiting) ? nextW.waiting : [];
@@ -2855,6 +3087,9 @@ if (sortSeatTimeBtn) {
 
     bindGlobalSeatOccupancyRealtime();
     await healAndPersistState("init");
+
+    bindTournamentGlobalSeatsMerge();
+    applyGlobalSeatMapToEventSeats();
 
     bindRealtime();
     render();

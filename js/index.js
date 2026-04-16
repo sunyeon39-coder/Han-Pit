@@ -32,6 +32,7 @@ const backBtn = document.getElementById("backBtn");
 const topbarTournamentName = document.getElementById("topbarTournamentName");
 
 const eventAdminBtn = document.getElementById("eventAdminBtn");
+const globalLayoutBtn = document.getElementById("globalLayoutBtn");
 const attendanceLogBtn = document.getElementById("attendanceLogBtn");
 const attendanceLogModal = document.getElementById("attendanceLogModal");
 const closeAttendanceLogBtn = document.getElementById("closeAttendanceLogBtn");
@@ -1221,6 +1222,47 @@ async function getSharedWaitingState() {
   };
 }
 
+const ASSIGNED_RECOVERY_GRACE_MS = 15000;
+
+async function hasRemoteAssignedSeatForUser(attendance = {}, uid = "") {
+  const safeUid = String(uid || "").trim();
+  if (!safeUid) return false;
+
+  const eventId = String(attendance.currentEventId || "").trim();
+  const boxId = String(attendance.currentBoxId || "").trim();
+  const seatId = String(attendance.currentSeatId || "").trim();
+
+  if (!eventId || !boxId) return false;
+
+  try {
+    const layoutDoc = await getLayoutEventDocByEventAndBox(eventId, boxId);
+    if (!layoutDoc) return false;
+
+    const data = layoutDoc.data || {};
+    const seats = Array.isArray(data.seats) ? data.seats : [];
+
+    const foundSeat = seats.find((seat) => {
+      const seatUid = String(seat?.personUid || "").trim();
+      if (!seatUid || seatUid !== safeUid) return false;
+      if (!seatId) return true;
+      return String(seat?.id || "").trim() === seatId;
+    });
+
+    if (!foundSeat) return false;
+
+    dealerSeatMap.set(safeUid, {
+      eventId,
+      boxId,
+      seatId: String(foundSeat?.id || "").trim(),
+      seatLabel: String(foundSeat?.label ?? foundSeat?.no ?? "")
+    });
+    return true;
+  } catch (err) {
+    console.error("hasRemoteAssignedSeatForUser error:", err);
+    return false;
+  }
+}
+
 async function ensureMeRecovered(user) {
   const tournamentId = getTournamentId();
   if (!user || !tournamentId) return;
@@ -1236,8 +1278,22 @@ async function ensureMeRecovered(user) {
     return String(item.uid || "").trim() === String(user.uid).trim();
   });
 
-  // assigned인데 실제 seat 없음 -> waiting 복구
+  // assigned인데 로컬 seat map에 없으면:
+  // 1) 원격 layout_events 재확인
+  // 2) 방금 갱신된 상태면 유예 후 재평가
+  // 그 뒤에도 없을 때만 waiting 복구
   if (me?.status === "assigned" && !seatInfo) {
+    const remoteAssigned = await hasRemoteAssignedSeatForUser(me, user.uid);
+    if (remoteAssigned) {
+      renderDealerOps();
+      return;
+    }
+
+    const updatedAt = Number(me?.updatedAt || 0);
+    if (updatedAt && Date.now() - updatedAt < ASSIGNED_RECOVERY_GRACE_MS) {
+      return;
+    }
+
     const nickname =
       String(currentUserProfile?.nickname || user.displayName || "").trim() ||
       String(user.email || "").trim();
@@ -1373,6 +1429,31 @@ function buildSeatSummaryMap(docs) {
       occupiedSeats,
       emptySeats: Math.max(0, totalSeats - occupiedSeats)
     });
+  });
+
+  return next;
+}
+
+function buildSeatSummaryMapFromGlobalSeats(docs) {
+  const next = new Map();
+
+  docs.forEach((d) => {
+    const data = d.data() || {};
+    const eventId = String(data.currentEventId || data.mappedEventId || "").trim();
+    const boxId = String(data.boxId || "").trim();
+    const seatId = String(data.seatId || "").trim();
+    if (!eventId || !boxId || !seatId) return;
+
+    const key = `${eventId}__${boxId}`;
+    const prev = next.get(key) || { totalSeats: 0, occupiedSeats: 0, emptySeats: 0 };
+    prev.totalSeats += 1;
+
+    const person = String(data.person || "").trim();
+    if (person && person !== "비어있음") {
+      prev.occupiedSeats += 1;
+    }
+    prev.emptySeats = Math.max(0, prev.totalSeats - prev.occupiedSeats);
+    next.set(key, prev);
   });
 
   return next;
@@ -1862,6 +1943,22 @@ function bindLayoutSeatSummaryRealtime() {
     stopLayoutEventsWatch = null;
   }
 
+  const tournamentId = getTournamentId();
+  if (tournamentId) {
+    stopLayoutEventsWatch = onSnapshot(
+      collection(db, "tournaments", tournamentId, "global_seats"),
+      (snap) => {
+        seatSummaryMap = buildSeatSummaryMapFromGlobalSeats(snap.docs);
+        render();
+        refreshCardStatuses();
+      },
+      (err) => {
+        console.error("bindLayoutSeatSummaryRealtime(global) error:", err);
+      }
+    );
+    return;
+  }
+
   stopLayoutEventsWatch = onSnapshot(
     collection(db, "layout_events"),
     (snap) => {
@@ -1870,7 +1967,7 @@ function bindLayoutSeatSummaryRealtime() {
       refreshCardStatuses();
     },
     (err) => {
-      console.error("bindLayoutSeatSummaryRealtime error:", err);
+      console.error("bindLayoutSeatSummaryRealtime(layout_events) error:", err);
     }
   );
 }
@@ -1879,6 +1976,35 @@ function bindDealerSeatRealtime() {
   if (stopDealerSeatWatch) {
     stopDealerSeatWatch();
     stopDealerSeatWatch = null;
+  }
+
+  const tournamentId = getTournamentId();
+  if (tournamentId) {
+    stopDealerSeatWatch = onSnapshot(
+      collection(db, "tournaments", tournamentId, "global_seats"),
+      (snap) => {
+        dealerSeatMap.clear();
+
+        snap.docs.forEach((d) => {
+          const data = d.data() || {};
+          const uid = String(data.personUid || "").trim();
+          if (!uid) return;
+          dealerSeatMap.set(uid, {
+            eventId: String(data.currentEventId || data.mappedEventId || "").trim(),
+            boxId: String(data.boxId || "").trim(),
+            seatId: String(data.seatId || "").trim(),
+            seatLabel: String(data.label || data.no || "").trim()
+          });
+        });
+
+        void ensureMeRecovered(auth.currentUser);
+        renderDealerOps();
+      },
+      (err) => {
+        console.error("bindDealerSeatRealtime(global) error:", err);
+      }
+    );
+    return;
   }
 
   stopDealerSeatWatch = onSnapshot(
@@ -1909,7 +2035,7 @@ function bindDealerSeatRealtime() {
       renderDealerOps();
     },
     (err) => {
-      console.error("bindDealerSeatRealtime error:", err);
+      console.error("bindDealerSeatRealtime(layout_events) error:", err);
     }
   );
 }
@@ -2306,7 +2432,13 @@ async function joinSharedWaitingOnCheckIn(user) {
 
       const alreadyInWaiting = waitingList.some((item) => {
         if (!item || typeof item !== "object") return false;
-        return String(item.uid || "").trim() === String(user.uid).trim();
+        const itemUid = String(item.uid || "").trim();
+        const itemTournamentId = String(item.tournamentId || "").trim();
+        if (itemUid !== String(user.uid).trim()) return false;
+        // Same user can exist in another tournament waiting list.
+        // Block only when this tournament already has the user.
+        if (!itemTournamentId) return true;
+        return itemTournamentId === tournamentId;
       });
 
       if (alreadyInWaiting) return;
@@ -2436,6 +2568,10 @@ async function removeUserFromAllSeatsGlobal(user) {
 
     return removedCount;
   } catch (error) {
+    if (String(error?.code || "").includes("permission-denied")) {
+      // Normal user checkout path can hit admin-only seat docs.
+      return 0;
+    }
     console.error("❌ removeUserFromAllSeatsGlobal error:", error);
     return 0;
   }
@@ -2462,6 +2598,10 @@ async function clearUserSeatNotification(uid) {
       { merge: true }
     );
   } catch (error) {
+    if (String(error?.code || "").includes("permission-denied")) {
+      // layout_notifications write is admin-only except acknowledgement-only updates.
+      return;
+    }
     console.error("❌ clearUserSeatNotification error:", error);
   }
 }
@@ -2555,6 +2695,16 @@ root?.addEventListener("click", (e) => {
 backBtn?.addEventListener("click", () => {
   sessionStorage.removeItem("boxId");
   location.href = "./hub.html";
+});
+
+globalLayoutBtn?.addEventListener("click", () => {
+  const tournamentId = getTournamentId();
+  if (!tournamentId) {
+    alert("대회 정보가 없습니다.");
+    return;
+  }
+  sessionStorage.setItem("tournamentId", tournamentId);
+  location.href = `./global-layout.html?tournamentId=${encodeURIComponent(tournamentId)}`;
 });
 
 /* ===============================
@@ -2752,10 +2902,12 @@ onAuthStateChanged(auth, async (user) => {
     renderDealerOps();
 
     if (isAdmin) {
+      globalLayoutBtn?.classList.remove("hidden");
       eventAdminBtn?.classList.remove("hidden");
       attendanceLogBtn?.classList.remove("hidden");
       seatMapEditBtn?.classList.remove("hidden");
     } else {
+      globalLayoutBtn?.classList.add("hidden");
       eventAdminBtn?.classList.add("hidden");
       attendanceLogBtn?.classList.add("hidden");
       seatMapEditBtn?.classList.add("hidden");
