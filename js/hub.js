@@ -603,6 +603,42 @@ function resetTournamentForm() {
 /* ===============================
    ADMIN USER LIST
 =============================== */
+/** 정렬용 표시명: 닉네임 우선, 없으면 이메일 */
+function getUserDisplayNameForSort(user) {
+  const nick = String(user?.nickname || "").trim();
+  if (nick) return nick;
+  return String(user?.email || user?.uid || "").trim();
+}
+
+/**
+ * 가입 유저 목록: 한글(가나다·ㄱ~ㅎ 계열) 먼저, 그다음 영문 A~Z, 그 외.
+ */
+function getNameSortGroup(str) {
+  const s = String(str || "").trim();
+  if (!s) return 2;
+  const cp = s.codePointAt(0);
+  if (cp >= 0xac00 && cp <= 0xd7a3) return 0;
+  if (cp >= 0x1100 && cp <= 0x11ff) return 0;
+  if (cp >= 0x3130 && cp <= 0x318f) return 0;
+  if ((cp >= 65 && cp <= 90) || (cp >= 97 && cp <= 122)) return 1;
+  return 2;
+}
+
+function compareUsersForAdminList(a, b) {
+  const na = getUserDisplayNameForSort(a);
+  const nb = getUserDisplayNameForSort(b);
+  const ga = getNameSortGroup(na);
+  const gb = getNameSortGroup(nb);
+  if (ga !== gb) return ga - gb;
+  if (ga === 0) return na.localeCompare(nb, "ko", { numeric: true });
+  if (ga === 1) return na.localeCompare(nb, "en", { sensitivity: "base", numeric: true });
+  return na.localeCompare(nb, "ko", { numeric: true });
+}
+
+function sortUsersForAdminList(users) {
+  return [...users].sort(compareUsersForAdminList);
+}
+
 function getFilteredUsers() {
   const keyword = String(adminSearchInput?.value || "").trim().toLowerCase();
   if (!keyword) return usersCache;
@@ -660,7 +696,7 @@ function renderAdminUserList() {
 
   const selectedEventId = adminEventSelect?.value || "";
   const selectedTournament = tournamentsCache.find((t) => t.id === selectedEventId);
-  const users = getFilteredUsers();
+  const users = sortUsersForAdminList(getFilteredUsers());
 
   if (!users.length) {
     adminUserList.innerHTML = `<div class="empty-users">표시할 유저가 없습니다.</div>`;

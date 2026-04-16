@@ -256,11 +256,7 @@ const SAVE_WAITING_DEBOUNCE_MS = 120;
   }
 
   function getCurrentEventTitle() {
-    const hint = document.querySelector(".hint-pill");
-    if (hint?.textContent) {
-      return hint.textContent.replace(/^EVENT:\s*/i, "").trim();
-    }
-    return EVENT_ID || "이벤트";
+    return String(EVENT_ID || "").trim() || "이벤트";
   }
 
   function buildSeatTargetUrl(eventId, boxId, seatId = "") {
@@ -1232,7 +1228,7 @@ function bindMyNotificationWatch() {
     const BOX_H = 90;
     const GAP_X = 16;
     const GAP_Y = 16;
-    const START_Y = 72;
+    const START_Y = 24;
     const cols = Math.max(1, Math.floor((width - PAD * 2 + GAP_X) / (BOX_W + GAP_X)));
 
     const index = eventState.seats.length;
@@ -2057,7 +2053,7 @@ async function assignWaitingToSeat(waitingId, seatId) {
   const pad = 8;
 
   seat.x = Math.max(pad, Math.min((seat.x || 0) + dx, width - boxW - pad));
-  seat.y = Math.max(72, Math.min((seat.y || 0) + dy, height - boxH - pad));
+  seat.y = Math.max(pad, Math.min((seat.y || 0) + dy, height - boxH - pad));
 
   eventState.updatedAt = Date.now();
   render();
@@ -2067,25 +2063,23 @@ async function assignWaitingToSeat(waitingId, seatId) {
     const canvas = document.createElement("div");
     canvas.className = "pc-canvas";
 
-    const hint = document.createElement("div");
-    hint.className = "canvas-hint";
-    hint.innerHTML = `
-      <div class="hint-pill">EVENT: ${escapeHtml(EVENT_ID)}</div>
-      <div class="hint-pill">BOX: ${escapeHtml(BOX_ID)}</div>
-    `;
-    canvas.appendChild(hint);
-
     eventState.seats.forEach((seat) => {
       const box = document.createElement("div");
       const hasPerson = !isEmptyPerson(seat.person);
       const isSel = ui.selectedSeatId === seat.id;
-      box.className = `seat-box ${isSel ? "selected" : ""}`;
+      const seatedAtMs = hasPerson ? Number(seat.seatedAt || 0) : 0;
+      const elapsedMs = hasPerson ? (seatedAtMs > 0 ? Date.now() - seatedAtMs : 0) : 0;
+      const timerCls = hasPerson ? timerClass(elapsedMs) : "";
+      box.className = ["seat-box", hasPerson ? "is-occupied" : "", timerCls, isSel ? "selected" : ""]
+        .filter(Boolean)
+        .join(" ");
       box.dataset.seatid = seat.id;
       box.style.left = `${seat.x || 0}px`;
       box.style.top = `${seat.y || 0}px`;
+      const personClass = hasPerson ? "seat-person" : "seat-person is-empty";
       box.innerHTML = `
         <div class="seat-title">${escapeHtml(getSeatTitle(seat))}</div>
-        <div class="seat-person">${escapeHtml(hasPerson ? seat.person : "Empty")}</div>
+        <div class="${personClass}">${escapeHtml(hasPerson ? seat.person : "-")}</div>
       `;
       canvas.appendChild(box);
 

@@ -132,7 +132,7 @@ function getAttendanceRef(tid = "", uid = "") {
 function getSeatPosition(index = 0) {
   const col = index % 6;
   const row = Math.floor(index / 6);
-  return { x: 28 + col * 150, y: 86 + row * 120 };
+  return { x: 28 + col * 150, y: 28 + row * 120 };
 }
 
 const MIN = 60 * 1000;
@@ -145,6 +145,27 @@ function timerClass(ms) {
   if (ms < TH_60) return "t-yellow";
   if (ms < TH_90) return "t-orange";
   return "t-red";
+}
+
+/** 캔버스 좌석 카드: 배치 경과 시간에 따른 t-green~t-red (1초 틱에서 갱신) */
+function updateCanvasSeatTimerClasses() {
+  if (!app) return;
+  const root = app.querySelector(".pc-canvas");
+  if (!root) return;
+  const now = Date.now();
+  root.querySelectorAll(".seat-box[data-seat-id]").forEach((box) => {
+    const id = String(box.getAttribute("data-seat-id") || "").trim();
+    const s = globalSeats.find((x) => String(x.seatId || "").trim() === id);
+    if (!s || isEmptyPerson(String(s.person || "").trim())) {
+      box.classList.remove("t-green", "t-yellow", "t-orange", "t-red");
+      return;
+    }
+    const seatedAtMs = toMillis(s.seatedAt || 0);
+    const elapsed = seatedAtMs > 0 ? now - seatedAtMs : 0;
+    const cls = timerClass(elapsed);
+    box.classList.remove("t-green", "t-yellow", "t-orange", "t-red");
+    box.classList.add(cls);
+  });
 }
 
 function fmtElapsed(ms) {
@@ -496,26 +517,13 @@ async function syncLayoutProjection(eventId = "", boxId = "") {
   );
 }
 
-function getCanvasHintEventBox(seats = []) {
-  const first = seats.find((s) => s && typeof s === "object");
-  if (!first) return { event: "—", box: "—" };
-  const event = String(first.currentEventId || first.mappedEventId || "—").trim() || "—";
-  const box = String(first.boxId || "—").trim() || "—";
-  return { event, box };
-}
-
 function renderSeats(seats = []) {
   if (!app) return;
-  const hint = getCanvasHintEventBox(seats);
   if (!seats.length) {
     app.innerHTML = `
       <div class="canvas pc-canvas">
         <div class="canvas-inner">
-          <div class="canvas-hint">
-            <div class="hint-pill">EVENT: ${escapeHtml(hint.event)}</div>
-            <div class="hint-pill">BOX: ${escapeHtml(hint.box)}</div>
-          </div>
-          <div class="empty-panel" style="position:absolute;left:24px;top:84px;width:260px;">
+          <div class="empty-panel" style="position:absolute;left:24px;top:24px;width:260px;">
             아직 생성된 전역 좌석이 없습니다.
           </div>
         </div>
@@ -531,14 +539,21 @@ function renderSeats(seats = []) {
     const label = s.label || s.no || s.seatId || "-";
     const occupied = !isEmptyPerson(String(s.person || "").trim());
     const name = occupied ? String(s.person || "").trim() : "-";
+    const personClass = occupied ? "seat-person" : "seat-person is-empty";
     const seatId = String(s.seatId || "").trim();
     const selectedClass = selectedSeatId === seatId ? "selected" : "";
     const x = Number.isFinite(Number(s.x)) ? Number(s.x) : getSeatPosition(idx).x;
     const y = Number.isFinite(Number(s.y)) ? Number(s.y) : getSeatPosition(idx).y;
+    const seatedAtMs = occupied ? toMillis(s.seatedAt || 0) : 0;
+    const elapsedMs = occupied ? (seatedAtMs > 0 ? Date.now() - seatedAtMs : 0) : 0;
+    const timerCls = occupied ? timerClass(elapsedMs) : "";
+    const seatBoxClass = ["seat-box", occupied ? "is-occupied" : "", timerCls, selectedClass]
+      .filter(Boolean)
+      .join(" ");
     return `
-      <div class="seat-box ${selectedClass}" data-seat-id="${escapeHtml(seatId)}" style="left:${x}px;top:${y}px;">
+      <div class="${seatBoxClass}" data-seat-id="${escapeHtml(seatId)}" style="left:${x}px;top:${y}px;">
         <div class="seat-title">Seat ${escapeHtml(label)}</div>
-        <div class="seat-person">${escapeHtml(name)}</div>
+        <div class="${personClass}">${escapeHtml(name)}</div>
       </div>
     `;
   }).join("");
@@ -546,14 +561,11 @@ function renderSeats(seats = []) {
   app.innerHTML = `
     <div class="canvas pc-canvas">
       <div class="canvas-inner">
-        <div class="canvas-hint">
-          <div class="hint-pill">EVENT: ${escapeHtml(hint.event)}</div>
-          <div class="hint-pill">BOX: ${escapeHtml(hint.box)}</div>
-        </div>
         ${seatHtml}
       </div>
     </div>
   `;
+  updateCanvasSeatTimerClasses();
 }
 
 function renderWaiting(waiting = []) {
@@ -1520,6 +1532,7 @@ onAuthStateChanged(auth, async (user) => {
     if (timerHandle) clearInterval(timerHandle);
     timerHandle = setInterval(() => {
       if (isTypingInPanel()) return;
+      updateCanvasSeatTimerClasses();
       if (activeTab === "seat") {
         renderSeatPanel();
       } else {

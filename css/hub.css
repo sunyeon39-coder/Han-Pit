@@ -468,16 +468,6 @@ body {
   background: #111827;
   color: #fff;
 }
-.user-row {
-  border: 1px solid #e5e7eb;
-  border-radius: 16px;
-  padding: 14px;
-  background: #fff;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 12px;
-  align-items: center;
-}
 
 .user-manage-trigger {
   min-width: 96px;
@@ -592,6 +582,124 @@ body {
   border: 1px dashed #d1d5db;
   border-radius: 14px;
   background: #fff;
+}
+
+/* 접근 허용 관리 — 허브 메인과 동일한 다크·골드 톤 */
+.modal-card.admin-modal-card {
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(214, 178, 94, 0.14), transparent 38%),
+    linear-gradient(165deg, rgba(17, 24, 50, 0.98), rgba(8, 14, 28, 0.99));
+  color: #f1f5ff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.5);
+}
+
+.modal-card.admin-modal-card h2 {
+  color: #fff;
+  letter-spacing: -0.02em;
+}
+
+.modal-card.admin-modal-card .admin-block {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.modal-card.admin-modal-card .admin-block h3 {
+  color: #fff;
+}
+
+.modal-card.admin-modal-card .form-group label {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.modal-card.admin-modal-card .form-group input,
+.modal-card.admin-modal-card .form-group select {
+  background: rgba(0, 0, 0, 0.3);
+  color: #f7f8fc;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.modal-card.admin-modal-card .form-group input:focus,
+.modal-card.admin-modal-card .form-group select:focus {
+  border-color: rgba(239, 208, 141, 0.45);
+  box-shadow: 0 0 0 2px rgba(239, 208, 141, 0.12);
+}
+
+.modal-card.admin-modal-card .form-group input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.modal-card.admin-modal-card .btn.primary {
+  background: linear-gradient(135deg, rgba(212, 166, 42, 0.95), rgba(168, 128, 28, 0.92));
+  color: #111;
+  border: 1px solid rgba(239, 208, 141, 0.35);
+}
+
+.modal-card.admin-modal-card .btn.ghost {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.modal-card.admin-modal-card .btn.danger {
+  background: rgba(220, 38, 38, 0.88);
+  border: 1px solid rgba(252, 165, 165, 0.25);
+}
+
+.modal-card.admin-modal-card .mini-btn {
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.modal-card.admin-modal-card .user-row {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18);
+}
+
+.modal-card.admin-modal-card .user-name {
+  color: #fff;
+}
+
+.modal-card.admin-modal-card .user-email {
+  color: rgba(255, 255, 255, 0.52);
+}
+
+.modal-card.admin-modal-card .meta-pill {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modal-card.admin-modal-card .meta-pill.ok {
+  background: rgba(34, 197, 94, 0.16);
+  color: #bbf7d0;
+  border-color: rgba(34, 197, 94, 0.32);
+}
+
+.modal-card.admin-modal-card .meta-pill.lock {
+  background: rgba(248, 113, 113, 0.14);
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.28);
+}
+
+.modal-card.admin-modal-card .user-manage-trigger {
+  background: linear-gradient(135deg, rgba(212, 166, 42, 0.28), rgba(168, 128, 28, 0.14));
+  color: #fff4d6;
+  border: 1px solid rgba(239, 208, 141, 0.38);
+}
+
+.modal-card.admin-modal-card .empty-users {
+  color: rgba(255, 255, 255, 0.5);
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.modal-card.admin-modal-card .admin-footer {
+  background: linear-gradient(180deg, transparent, rgba(8, 14, 28, 0.92));
 }
 
 /* ===============================
