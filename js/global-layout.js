@@ -5,6 +5,7 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   runTransaction,
   setDoc,
@@ -14,6 +15,8 @@ import { isAdminEmail } from "./app_config.js";
 
 const params = new URLSearchParams(location.search);
 const tournamentId = params.get("tournamentId") || sessionStorage.getItem("tournamentId") || "";
+const urlEventId = String(params.get("eventId") || "").trim();
+const urlBoxId = String(params.get("boxId") || "").trim();
 
 const app = document.getElementById("app");
 const menuBtn = document.getElementById("menuBtn");
@@ -82,6 +85,17 @@ function escapeHtml(str) {
     .replaceAll("'", "&#039;");
 }
 
+/** 캔버스 좌석: "Seat" 없이 숫자만 (라벨·no에서 숫자 추출, 없으면 —) */
+function seatCanvasDigitsOnly(label, no) {
+  const l = String(label ?? "").trim();
+  const nStr = no != null && no !== "" ? String(no).trim() : "";
+  const fromLabel = l.replace(/\D/g, "");
+  if (fromLabel) return fromLabel;
+  const fromNo = nStr.replace(/\D/g, "");
+  if (fromNo) return fromNo;
+  return "—";
+}
+
 function isEmptyPerson(name = "") {
   const v = String(name || "").trim();
   return !v || v === "비어있음";
@@ -94,6 +108,41 @@ function makeUid(prefix = "id") {
 function isValidSeatLabel(label = "") {
   const value = String(label || "").trim();
   return /^[A-Za-z0-9][A-Za-z0-9 _-]{0,15}$/.test(value);
+}
+
+/** layout_events 문서 ID 구간 — layout.html 쿼리와 동일해야 함 */
+function isValidLayoutRouteIdPart(id = "") {
+  const value = String(id || "").trim();
+  return !!value && !value.includes("/") && !value.includes("__");
+}
+
+/** 카드 제목만 넣은 경우(한글만 등) layout doc id 와 불일치하는 실수 방지 */
+function looksLikeDisplayTitleNotId(id = "") {
+  const value = String(id || "").trim();
+  if (!value) return false;
+  if (/[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(value) && !/[A-Za-z0-9]/.test(value)) return true;
+  return false;
+}
+
+const tournamentEventTitleCache = new Map();
+
+/** index 카드 문서의 title — 사용자 알림 문구용 */
+async function resolveTournamentEventTitle(eventId = "") {
+  const eid = String(eventId || "").trim();
+  if (!eid || !tournamentId) return eid || "이벤트";
+  const key = `${tournamentId}\t${eid}`;
+  if (tournamentEventTitleCache.has(key)) return tournamentEventTitleCache.get(key);
+  try {
+    const snap = await getDoc(doc(db, "tournaments", tournamentId, "events", eid));
+    const title = snap.exists() ? String((snap.data() || {}).title || "").trim() : "";
+    const label = title || eid;
+    tournamentEventTitleCache.set(key, label);
+    return label;
+  } catch (err) {
+    console.error("resolveTournamentEventTitle error:", err);
+    tournamentEventTitleCache.set(key, eid);
+    return eid;
+  }
 }
 
 function buildGlobalSeatDocId(eventId = "", boxId = "", seatId = "") {
@@ -121,6 +170,56 @@ function getProjectionDocId(eventId = "", boxId = "") {
   return `${String(eventId || "").trim()}__${String(boxId || "").trim()}`;
 }
 
+/**
+ * layout.html 저장본과 구분: syncLayoutProjection만으로 생긴 문서에는 nextSeatNo/nextSeatOrder가 없다.
+ * @param {{ requireSeatId?: string }} [opts]
+ */
+async function validateLayoutEventForGlobalOps(eventId = "", boxId = "", opts = {}) {
+  const e = String(eventId || "").trim();
+  const b = String(boxId || "").trim();
+  if (!e || !b) {
+    return { ok: false, message: "eventId와 boxId가 필요합니다." };
+  }
+  let snap;
+  try {
+    snap = await getDoc(doc(db, "layout_events", getProjectionDocId(e, b)));
+  } catch (err) {
+    console.error("validateLayoutEventForGlobalOps getDoc error:", err);
+    return { ok: false, message: "layout_events 확인 중 오류가 났습니다." };
+  }
+  if (!snap.exists()) {
+    return {
+      ok: false,
+      message: `event ${e} / box ${b} 는 layout_events에 없습니다.\n\n※ index「카드 관리」에서 이 카드 ID·Box ID로 카드를 저장하면 자동으로 생성됩니다. 값이 카드와 다르지 않은지 확인하거나, layout.html에서 한 번 저장해 주세요.`
+    };
+  }
+  const data = snap.data() || {};
+  const docTid = String(data.tournamentId || "").trim();
+  if (docTid && tournamentId && docTid !== tournamentId) {
+    return { ok: false, message: "이 event/box는 현재 대회와 연결되어 있지 않습니다." };
+  }
+  const hasNextNo = typeof data.nextSeatNo === "number" && Number.isFinite(data.nextSeatNo);
+  const hasNextOrder = typeof data.nextSeatOrder === "number" && Number.isFinite(data.nextSeatOrder);
+  if (!hasNextNo && !hasNextOrder) {
+    return {
+      ok: false,
+      message: `event ${e} / box ${b} 는 layout에서 저장된 구성이 아닙니다. index·layout에서 실제 박스를 연 뒤 저장해 주세요.`
+    };
+  }
+  const requireSeatId = String(opts.requireSeatId || "").trim();
+  if (requireSeatId) {
+    const seats = Array.isArray(data.seats) ? data.seats : [];
+    const found = seats.some((s) => String(s?.id || "").trim() === requireSeatId);
+    if (!found) {
+      return {
+        ok: false,
+        message: "이 Seat은 배치도에 등록된 좌석이 아닙니다. 잠시 후 다시 시도하거나, layout에서 해당 Seat이 있는지 확인하세요."
+      };
+    }
+  }
+  return { ok: true };
+}
+
 function getAttendanceDocId(tid = "", uid = "") {
   return `${String(tid || "").trim()}__${String(uid || "").trim()}`;
 }
@@ -139,7 +238,6 @@ const MIN = 60 * 1000;
 const TH_30 = 30 * MIN;
 const TH_60 = 60 * MIN;
 const TH_90 = 90 * MIN;
-
 function timerClass(ms) {
   if (ms < TH_30) return "t-green";
   if (ms < TH_60) return "t-yellow";
@@ -245,8 +343,10 @@ function getSeatById(seatId = "") {
   return globalSeats.find((s) => String(s.seatId || "").trim() === id) || null;
 }
 
-/** index에서 이벤트 카드 선택 후 오면 sessionStorage, 없으면 기존 좌석이 많은 event/box, 마지막으로 1/1 */
+/** URL → sessionStorage → 기존 좌석 비율 → 1/1 (layout.html 과 동일한 eventId·boxId 문자열) */
 function getDefaultEventBoxForNewSeat() {
+  if (urlEventId && urlBoxId) return { eventId: urlEventId, boxId: urlBoxId };
+
   const se = String(sessionStorage.getItem("eventId") || "").trim();
   const sb = String(sessionStorage.getItem("boxId") || "").trim();
   if (se && sb) return { eventId: se, boxId: sb };
@@ -481,9 +581,24 @@ function getCurrentTournamentWaiting() {
 async function syncLayoutProjection(eventId = "", boxId = "") {
   const e = String(eventId || "").trim();
   const b = String(boxId || "").trim();
-  if (!e || !b) return;
+  if (!e || !b || !tournamentId) return;
 
-  const seats = globalSeats
+  /**
+   * 메모리의 globalSeats는 onSnapshot보다 늦게 갱신될 수 있다.
+   * setDoc 직후에 여기서 globalSeats만 쓰면 새 좌석이 빠진 채 layout_events가 덮어써지고,
+   * layout.html 저장 시 syncGlobalSeatsForCurrentLayout이 그 좌석 global 문서를 삭제한다.
+   * 항상 서버에서 최신 global_seats를 읽어 투영한다.
+   */
+  let liveRows = [];
+  try {
+    const snap = await getDocs(collection(db, "tournaments", tournamentId, "global_seats"));
+    liveRows = snap.docs.map((d) => d.data() || {});
+  } catch (err) {
+    console.error("syncLayoutProjection getDocs error:", err);
+    liveRows = globalSeats;
+  }
+
+  const seats = liveRows
     .filter((s) => {
       const eid = String(s.currentEventId || s.mappedEventId || "").trim();
       return eid === e && String(s.boxId || "").trim() === b;
@@ -550,9 +665,10 @@ function renderSeats(seats = []) {
     const seatBoxClass = ["seat-box", occupied ? "is-occupied" : "", timerCls, selectedClass]
       .filter(Boolean)
       .join(" ");
+    const canvasLabel = String(s.label ?? s.no ?? "").trim() || "—";
     return `
       <div class="${seatBoxClass}" data-seat-id="${escapeHtml(seatId)}" style="left:${x}px;top:${y}px;">
-        <div class="seat-title">Seat ${escapeHtml(label)}</div>
+        <div class="seat-title">SEAT ${escapeHtml(canvasLabel)}</div>
         <div class="${personClass}">${escapeHtml(name)}</div>
       </div>
     `;
@@ -579,7 +695,7 @@ function renderWaiting(waiting = []) {
     return;
   }
 
-  const waitingRows = waiting.map((w, idx) => {
+    const waitingRows = waiting.map((w, idx) => {
     const wid = String(w.id || "");
     const selected = selectedWaitingId === wid;
     const joinedAt = toMillis(
@@ -588,6 +704,8 @@ function renderWaiting(waiting = []) {
       w.joinedAtServer ||
       w.updatedAtServer ||
       w.updatedAt ||
+      w.addedAt ||
+      w.carryStartedAt ||
       0
     ) || Date.now();
     const elapsed = Date.now() - joinedAt;
@@ -603,7 +721,6 @@ function renderWaiting(waiting = []) {
         </div>
         <div class="seat-inline-actions">
           <span class="time-chip ${tClass}">${fmtElapsed(elapsed)}</span>
-          <button class="pill-inline" type="button">${selected ? "선택됨" : "선택"}</button>
           <button class="pill-inline danger" data-delete-wid="${escapeHtml(wid)}" type="button">삭제</button>
         </div>
       </div>
@@ -637,7 +754,6 @@ function renderSeatPanel() {
     return (a.order || 0) - (b.order || 0);
   });
   const rows = sorted.map((s) => {
-    const label = s.label || s.no || s.seatId || "-";
     const eventId = s.currentEventId || s.mappedEventId || "-";
     const boxId = s.boxId || "-";
     const occupied = !isEmptyPerson(String(s.person || "").trim());
@@ -649,12 +765,12 @@ function renderSeatPanel() {
     const tClass = timerClass(elapsed);
     return `
       <div class="seat-manage-row ${selectedRowClass}" data-select-seat="${escapeHtml(seatId)}">
-        <div class="seat-manage-main">
-          <div class="seat-manage-inline">
-            <div class="seat-manage-texts">
-              <div class="seat-manage-title">Seat ${escapeHtml(label)}</div>
-              <div class="seat-manage-name ${occupied ? "" : "is-empty"}">${escapeHtml(name)}</div>
-              <div class="meta-line">event: ${escapeHtml(eventId)} / box: ${escapeHtml(boxId)}</div>
+        <div class="seat-manage-main seat-manage-main--oneline">
+          <div class="seat-manage-namewrap seat-manage-namewrap--with-num">
+            <span class="seat-manage-num">${escapeHtml(seatCanvasDigitsOnly(s.label, s.no))}</span>
+            <div class="seat-manage-namecol">
+              <span class="seat-manage-name ${occupied ? "" : "is-empty"}">${escapeHtml(name)}</span>
+              <span class="meta-line seat-manage-submeta">event: ${escapeHtml(eventId)} / box: ${escapeHtml(boxId)}</span>
             </div>
           </div>
           <div class="seat-inline-actions">
@@ -662,10 +778,11 @@ function renderSeatPanel() {
             ${
               isAdminUser
                 ? (!occupied
-                  ? `<button class="pill-inline" data-assign-seat="${escapeHtml(seatId)}">선택 배치</button>`
+                  ? `<button class="pill-inline" data-assign-seat="${escapeHtml(seatId)}">여기 배치</button>`
                   : ``)
                 : ``
             }
+            ${isAdminUser ? `<button class="pill-inline" type="button" data-rename-seat="${escapeHtml(seatId)}">수정</button>` : ``}
             ${isAdminUser ? `<button class="pill-inline danger" data-delete-seat="${escapeHtml(seatId)}">삭제</button>` : ``}
           </div>
         </div>
@@ -674,7 +791,7 @@ function renderSeatPanel() {
   }).join("");
 
   const defEb = getDefaultEventBoxForNewSeat();
-  const seatAddTitle = `비우면 event ${defEb.eventId} / box ${defEb.boxId} 사용 · index에서 카드 선택 시 자동 입력`;
+  const seatAddTitle = `카드 제목이 아니라 index「카드 관리」의 카드 ID·Box ID (layout.html URL의 eventId·boxId)와 동일해야 합니다. 비우면 ${defEb.eventId} / ${defEb.boxId} 사용.`;
 
   panelContent.innerHTML = `
     <div
@@ -682,18 +799,40 @@ function renderSeatPanel() {
       title="${escapeHtml(seatAddTitle)}"
     >
       <div class="seat-add-one-row">
-        <label class="seat-add-inline">
-          <span class="seat-add-label">라벨</span>
-          <input id="seatLabelInput" class="seat-add-input" type="text" placeholder="1, A1" autocomplete="off" />
-        </label>
-        <label class="seat-add-inline">
-          <span class="seat-add-label">event</span>
-          <input id="seatEventInput" class="seat-add-input" type="text" placeholder="id" value="${escapeHtml(defEb.eventId)}" autocomplete="off" />
-        </label>
-        <label class="seat-add-inline">
-          <span class="seat-add-label">box</span>
-          <input id="seatBoxInput" class="seat-add-input" type="text" placeholder="id" value="${escapeHtml(defEb.boxId)}" autocomplete="off" />
-        </label>
+        <input
+          id="seatLabelInput"
+          class="seat-add-input seat-add-input--label"
+          type="text"
+          placeholder="라벨 · 예: 1, A1"
+          autocomplete="off"
+          aria-label="Seat 라벨"
+        />
+        <input
+          id="seatEventInput"
+          class="seat-add-input seat-add-input--meta"
+          type="text"
+          placeholder="카드 ID"
+          value="${escapeHtml(defEb.eventId)}"
+          autocomplete="off"
+          aria-label="이벤트 카드 ID (layout eventId)"
+        />
+        <input
+          id="seatBoxInput"
+          class="seat-add-input seat-add-input--meta"
+          type="text"
+          placeholder="Box ID"
+          value="${escapeHtml(defEb.boxId)}"
+          autocomplete="off"
+          aria-label="Box ID (layout boxId)"
+        />
+        <button
+          type="button"
+          id="addSeatToolbarBtn"
+          class="pill-inline primary seat-meta-btn seat-add-action-btn"
+          title="+ Seat 추가"
+        >
+          추가
+        </button>
       </div>
     </div>
     <div class="seat-sort-row">
@@ -728,12 +867,24 @@ async function assignSelectedWaitingToSeat(seatId = "") {
   const seat = globalSeats.find((s) => String(s.seatId || "").trim() === targetSeatId);
   if (!seat) return;
 
+  const ev0 = String(seat.currentEventId || seat.mappedEventId || "").trim();
+  const bx0 = String(seat.boxId || "").trim();
+  const layoutGate = await validateLayoutEventForGlobalOps(ev0, bx0, { requireSeatId: targetSeatId });
+  if (!layoutGate.ok) {
+    alert(layoutGate.message);
+    return;
+  }
+
   const waitingList = getCurrentTournamentWaiting();
   const waiting = waitingList.find((w) => String(w.id || "") === String(selectedWaitingId || ""));
   if (!waiting) {
-    alert("배치할 대기자를 먼저 선택하세요.");
+    alert("먼저 대기 행을 눌러 배치할 사람을 지정하세요.");
     return;
   }
+
+  const evForMsg = String(seat.currentEventId || seat.mappedEventId || "").trim();
+  const eventDisplayTitle = await resolveTournamentEventTitle(evForMsg);
+
   const now = Date.now();
   const seatRef = doc(
     db,
@@ -868,12 +1019,12 @@ async function assignSelectedWaitingToSeat(seatId = "") {
           createdAt: now,
           tournamentId,
           eventId: seat.currentEventId || "",
-          eventTitle: seat.currentEventId || "",
+          eventTitle: eventDisplayTitle,
           boxId: seat.boxId || "",
           seatId: seat.seatId || "",
           seatLabel: seat.label || seat.no || "",
           targetUrl: `./layout.html?tournamentId=${encodeURIComponent(tournamentId)}&eventId=${encodeURIComponent(seat.currentEventId || "")}&boxId=${encodeURIComponent(seat.boxId || "")}&focusSeatId=${encodeURIComponent(seat.seatId || "")}`,
-          message: `${seat.currentEventId || ""} / Seat ${seat.label || seat.no || ""}에 배치되었습니다.`,
+          message: `${eventDisplayTitle} / Seat ${seat.label || seat.no || ""}에 배치되었습니다.`,
           updatedAt: now,
           updatedAtServer: serverTimestamp()
         },
@@ -1058,6 +1209,98 @@ async function deleteGlobalSeat(seatId = "") {
   await syncLayoutProjection(eventId, boxId);
 }
 
+async function renameGlobalSeat(seatId = "") {
+  const targetSeatId = String(seatId || "").trim();
+  if (!targetSeatId) return;
+  const seat = getSeatById(targetSeatId);
+  if (!seat) return;
+
+  const eventId = String(seat.currentEventId || seat.mappedEventId || "").trim();
+  const boxId = String(seat.boxId || "").trim();
+  if (!eventId || !boxId) return;
+
+  const prevLabel = String(seat.label ?? seat.no ?? "").trim();
+  const msg = `Seat 라벨을 입력하세요 (영문/숫자, 공백·_- 허용, 최대 16자)\n현재: ${prevLabel}`;
+  const input = window.prompt(msg, prevLabel);
+  if (input === null) return;
+
+  const nextLabel = String(input).trim();
+  if (!nextLabel || nextLabel === prevLabel) return;
+
+  if (!isValidSeatLabel(nextLabel)) {
+    alert("Seat 라벨은 영문/숫자 기준으로 입력해주세요. (예: 1, A1, VIP_1)");
+    return;
+  }
+
+  const layoutGate = await validateLayoutEventForGlobalOps(eventId, boxId, { requireSeatId: targetSeatId });
+  if (!layoutGate.ok) {
+    alert(layoutGate.message);
+    return;
+  }
+
+  const eventDisplayTitle = await resolveTournamentEventTitle(eventId);
+
+  const now = Date.now();
+  const ref = doc(db, "tournaments", tournamentId, "global_seats", buildGlobalSeatDocId(eventId, boxId, targetSeatId));
+
+  await setDoc(
+    ref,
+    {
+      label: nextLabel,
+      updatedAt: now,
+      updatedAtServer: serverTimestamp()
+    },
+    { merge: true }
+  );
+
+  const uid = String(seat.personUid || "").trim();
+  if (uid) {
+    await setDoc(
+      getAttendanceRef(tournamentId, uid),
+      {
+        uid,
+        tournamentId,
+        currentSeatLabel: nextLabel,
+        currentEventId: eventId,
+        currentBoxId: boxId,
+        currentSeatId: targetSeatId,
+        updatedAt: now,
+        updatedAtServer: serverTimestamp()
+      },
+      { merge: true }
+    );
+
+    await setDoc(
+      doc(db, "layout_notifications", uid),
+      {
+        type: "seat_assigned",
+        acknowledged: false,
+        createdAt: now,
+        tournamentId,
+        eventId,
+        eventTitle: eventDisplayTitle,
+        boxId,
+        seatId: targetSeatId,
+        seatLabel: nextLabel,
+        targetUrl: `./layout.html?tournamentId=${encodeURIComponent(tournamentId)}&eventId=${encodeURIComponent(eventId)}&boxId=${encodeURIComponent(boxId)}&focusSeatId=${encodeURIComponent(targetSeatId)}`,
+        message: `${eventDisplayTitle} / Seat ${nextLabel} 라벨이 변경되었습니다.`,
+        updatedAt: now,
+        updatedAtServer: serverTimestamp()
+      },
+      { merge: true }
+    );
+  }
+
+  await syncLayoutProjection(eventId, boxId);
+
+  const idx = globalSeats.findIndex((s) => String(s.seatId || "").trim() === targetSeatId);
+  if (idx >= 0) {
+    globalSeats[idx] = { ...globalSeats[idx], label: nextLabel };
+  }
+  if (activeTab === "seat") renderSeatPanel();
+  renderSeats(globalSeats);
+}
+
 async function addGlobalSeat() {
   const seatLabelInput = document.getElementById("seatLabelInput");
   const seatEventInput = document.getElementById("seatEventInput");
@@ -1072,6 +1315,24 @@ async function addGlobalSeat() {
   }
   if (!eventId || !boxId) {
     alert("eventId와 boxId를 입력하거나, index에서 이벤트 카드를 선택한 뒤 다시 시도하세요.");
+    return;
+  }
+  if (!isValidLayoutRouteIdPart(eventId) || !isValidLayoutRouteIdPart(boxId)) {
+    alert(
+      "카드 ID / Box ID 형식이 올바르지 않습니다. (비어 있지 않고, / 나 __ 는 사용할 수 없습니다.)\nindex「카드 관리」에 표시된 값과 layout.html 주소창의 eventId·boxId를 확인하세요."
+    );
+    return;
+  }
+  if (looksLikeDisplayTitleNotId(eventId)) {
+    alert(
+      "EVENT 칸에는 카드 제목이 아니라 카드 ID(예: 숫자·event_1)를 넣어야 합니다.\nindex「카드 관리」에서 해당 카드를 선택하면 카드 ID·Box ID가 보입니다."
+    );
+    return;
+  }
+
+  const layoutGate = await validateLayoutEventForGlobalOps(eventId, boxId);
+  if (!layoutGate.ok) {
+    alert(layoutGate.message);
     return;
   }
 
@@ -1222,6 +1483,16 @@ backBtn?.addEventListener("click", () => {
 
 document.getElementById("metaStats")?.addEventListener("click", async (e) => {
   if (!isAdminUser || activeTab !== "seat") return;
+  if (e.target.closest("#globalUndoToolbarBtn")) {
+    const btn = e.target.closest("#globalUndoToolbarBtn");
+    if (!lastGlobalUndo || btn?.disabled) return;
+    await undoLastGlobalAction();
+  }
+});
+
+panelContent?.addEventListener("click", async (e) => {
+  if (!isAdminUser) return;
+
   if (e.target.closest("#addSeatToolbarBtn")) {
     try {
       await addGlobalSeat();
@@ -1236,15 +1507,6 @@ document.getElementById("metaStats")?.addEventListener("click", async (e) => {
     }
     return;
   }
-  if (e.target.closest("#globalUndoToolbarBtn")) {
-    const btn = e.target.closest("#globalUndoToolbarBtn");
-    if (!lastGlobalUndo || btn?.disabled) return;
-    await undoLastGlobalAction();
-  }
-});
-
-panelContent?.addEventListener("click", async (e) => {
-  if (!isAdminUser) return;
 
   const addWaitBtn = e.target.closest("#addManualWaitingBtn");
   if (addWaitBtn) {
@@ -1270,6 +1532,19 @@ panelContent?.addEventListener("click", async (e) => {
     return;
   }
 
+  const renameSeatBtn = e.target.closest("[data-rename-seat]");
+  if (renameSeatBtn) {
+    const sid = String(renameSeatBtn.getAttribute("data-rename-seat") || "");
+    if (!sid) return;
+    try {
+      await renameGlobalSeat(sid);
+    } catch (err) {
+      console.error("renameGlobalSeat error:", err);
+      alert("Seat 라벨 변경에 실패했습니다.");
+    }
+    return;
+  }
+
   const assignBtn = e.target.closest("[data-assign-seat]");
   if (assignBtn) {
     const sid = String(assignBtn.getAttribute("data-assign-seat") || "");
@@ -1284,7 +1559,7 @@ panelContent?.addEventListener("click", async (e) => {
       if (String(err?.message || "").includes("seat_already_occupied")) {
         alert("이미 배치된 Seat입니다. 목록을 새로 확인해주세요.");
       } else if (String(err?.message || "").includes("waiting_not_found")) {
-        alert("선택한 대기자가 이미 처리되었습니다.");
+        alert("해당 대기자가 이미 처리되었습니다.");
       } else {
         console.error("assignSelectedWaitingToSeat error:", err);
         alert("대기 배치에 실패했습니다.");
@@ -1297,7 +1572,7 @@ panelContent?.addEventListener("click", async (e) => {
   if (deleteSeatBtn) {
     const sid = String(deleteSeatBtn.getAttribute("data-delete-seat") || "");
     if (!sid) return;
-    if (!confirm("선택한 좌석을 삭제하시겠습니까?")) return;
+    if (!confirm("이 좌석을 삭제하시겠습니까?")) return;
     try {
       await deleteGlobalSeat(sid);
       if (activeTab === "seat") renderSeatPanel();
@@ -1309,7 +1584,10 @@ panelContent?.addEventListener("click", async (e) => {
   }
 
   const selectSeatRow = e.target.closest("[data-select-seat]");
-  if (selectSeatRow && !e.target.closest("[data-assign-seat],[data-clear-seat],[data-delete-seat]")) {
+  if (
+    selectSeatRow &&
+    !e.target.closest("[data-assign-seat],[data-clear-seat],[data-delete-seat],[data-rename-seat]")
+  ) {
     const sid = String(selectSeatRow.getAttribute("data-select-seat") || "");
     if (sid) {
       selectedSeatId = selectedSeatId === sid ? "" : sid;
@@ -1474,7 +1752,7 @@ app?.addEventListener("click", async (e) => {
       if (String(err?.message || "").includes("seat_already_occupied")) {
         alert("이미 배치된 Seat입니다.");
       } else if (String(err?.message || "").includes("waiting_not_found")) {
-        alert("선택한 대기자가 이미 처리되었습니다.");
+        alert("해당 대기자가 이미 처리되었습니다.");
       } else {
         console.error("canvas assignSelectedWaitingToSeat error:", err);
         alert("대기 배치에 실패했습니다.");
@@ -1525,6 +1803,10 @@ onAuthStateChanged(auth, async (user) => {
       alert("관리자만 접근할 수 있습니다.");
       location.replace("./index.html");
       return;
+    }
+    if (urlEventId && urlBoxId) {
+      sessionStorage.setItem("eventId", urlEventId);
+      sessionStorage.setItem("boxId", urlBoxId);
     }
     setPanelOpen(false);
     bindRealtime();

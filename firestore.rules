@@ -15,10 +15,18 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
-    function isAdmin() {
+    // app_config.js 의 ADMIN_EMAILS 와 동기화 (Firestore 는 JS 모듈을 import 할 수 없음)
+    function isAdminEmailToken() {
       return signedIn() &&
-        userDocExists() &&
-        userDoc().data.role == "admin";
+        request.auth.token.email != null &&
+        request.auth.token.email.lower() == "sunyeon9501@gmail.com";
+    }
+
+    function isAdmin() {
+      return signedIn() && (
+        isAdminEmailToken() ||
+        (userDocExists() && userDoc().data.role == "admin")
+      );
     }
 
     function isSelf(uid) {
@@ -90,9 +98,12 @@ service cloud.firestore {
 
     match /dealer_attendance/{docId} {
       allow read: if signedIn();
-      allow create, update, delete: if isAdmin();
-      allow create, update: if signedIn() &&
-        docId.matches('.*__' + request.auth.uid);
+      allow delete: if isAdmin();
+      allow create, update: if isAdmin() ||
+        (
+          signedIn() &&
+          docId.matches('.*__' + request.auth.uid)
+        );
     }
 
     match /dealer_attendance_logs/{logId} {

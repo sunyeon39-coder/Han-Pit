@@ -24,10 +24,9 @@ messaging.onBackgroundMessage((payload) => {
 
   const targetUrl = payload?.data?.targetUrl || "./layout.html";
 
+  // icon 경로 없이 표시 (repo에 ./icons 미포함 시 404로 알림 실패 방지)
   self.registration.showNotification(title, {
     body,
-    icon: "./icons/icon-192.png",
-    badge: "./icons/icon-192.png",
     data: {
       targetUrl
     }
@@ -42,8 +41,10 @@ self.addEventListener("notificationclick", (event) => {
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
+        if (typeof client.navigate === "function") {
+          return client.navigate(targetUrl).then(() => client.focus());
+        }
         if ("focus" in client) {
-          client.navigate(targetUrl);
           return client.focus();
         }
       }

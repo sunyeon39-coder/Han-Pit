@@ -4,7 +4,7 @@ html, body {
 }
 
 #app {
-  height: calc(100vh - 70px);
+  height: calc(100vh - var(--topbar-h));
   padding: 14px;
   padding-right: 14px;
 }
@@ -30,9 +30,9 @@ html, body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   flex-wrap: nowrap;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02));
@@ -117,62 +117,81 @@ html, body {
 
 /* 통합 배치도 · Seat 추가 입력 (상단 메타 바와 동일 카드 톤) */
 .pc-panel .global-form-seat-add {
-  margin-bottom: 12px;
-  padding: 10px 12px;
-  border-radius: 14px;
+  margin-bottom: 8px;
+  padding: 4px 6px;
+  border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.018));
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12);
 }
 
 .seat-add-one-row {
   display: flex;
   flex-wrap: nowrap;
-  align-items: flex-end;
-  gap: 8px;
-}
-
-.seat-add-inline {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  flex: 1 1 0;
-  min-width: 0;
-}
-
-.seat-add-inline:first-of-type {
-  flex: 1.35 1 72px;
-}
-
-.seat-add-label {
-  font-size: 10px;
-  font-weight: 700;
-  opacity: 0.62;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  white-space: nowrap;
+  align-items: center;
+  gap: 6px;
 }
 
 .seat-add-input {
-  width: 100%;
   box-sizing: border-box;
-  min-height: 36px;
-  font-size: 14px;
-  padding: 8px 10px;
-  border-radius: 10px;
+  height: 30px;
+  min-height: 30px;
+  max-height: 30px;
+  font-size: 13px;
+  padding: 0 8px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(0, 0, 0, 0.28);
   color: inherit;
 }
 
+/* 라벨 / EVENT / BOX 동일 너비 */
+.pc-panel .global-form-seat-add .seat-add-input--label,
+.pc-panel .global-form-seat-add .seat-add-input--meta {
+  flex: 1 1 0;
+  min-width: 0;
+  width: 0;
+}
+
+.pc-panel .global-form-seat-add .seat-add-input--label {
+  text-align: left;
+}
+
+.pc-panel .global-form-seat-add .seat-add-input--meta {
+  text-align: center;
+}
+
 .seat-add-input::placeholder {
   opacity: 0.45;
+  text-align: left;
+}
+
+.seat-add-input--meta::placeholder {
+  text-align: center;
 }
 
 .seat-add-input:focus {
   outline: none;
   border-color: rgba(77, 163, 255, 0.8);
   box-shadow: 0 0 0 2px rgba(77, 163, 255, 0.22);
+}
+
+.pc-panel .global-form-seat-add .seat-add-action-btn.seat-meta-btn {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  height: 30px;
+  min-height: 30px !important;
+  max-height: 30px;
+  margin: 0;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 #globalUndoToolbarBtn:disabled {
@@ -182,7 +201,7 @@ html, body {
 }
 
 .global-list {
-  max-height: calc(100vh - 70px - 260px);
+  max-height: calc(100vh - var(--topbar-h) - 260px);
   overflow: auto;
   padding-right: 4px;
 }
@@ -211,20 +230,21 @@ html, body {
 .meta-line {
   font-size: 12px;
   opacity: 0.76;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.meta-line.seat-manage-submeta {
+  font-size: 11px;
+  opacity: 0.62;
+  line-height: 1.25;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .wait-name-text {
-  max-width: 170px;
-}
-
-.seat-manage-name {
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: none;
 }
 
 .empty-panel {

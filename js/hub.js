@@ -1154,7 +1154,8 @@ onAuthStateChanged(auth, async (user) => {
   currentUser = user;
 
   try {
-    currentUserProfile = await loadUserProfile(user.uid);
+    const [profile] = await Promise.all([loadUserProfile(user.uid), loadTournaments()]);
+    currentUserProfile = profile;
     if (!currentUserProfile) {
       const fallbackProfile = {
         email: user.email || "",
@@ -1167,7 +1168,6 @@ onAuthStateChanged(auth, async (user) => {
       await setDoc(doc(db, "users", user.uid), fallbackProfile, { merge: true });
       currentUserProfile = fallbackProfile;
     }
-    tournamentsCache = await loadTournaments();
 
     console.log("[HUB AUTH]", {
   uid: user.uid,

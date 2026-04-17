@@ -46,7 +46,6 @@ import { isAdminEmail } from "./app_config.js";
   const EVENT_DOC_ID = `${EVENT_ID}__${BOX_ID}`;
   const EVENT_REF = doc(db, "layout_events", EVENT_DOC_ID);
   const WAITING_REF = doc(db, "layout_shared", "global_waiting");
-  const LAYOUT_EVENTS_REF = collection(db, "layout_events");
   const GLOBAL_SEATS_REF = TOURNAMENT_ID
     ? collection(db, "tournaments", TOURNAMENT_ID, "global_seats")
     : null;
@@ -70,12 +69,10 @@ import { isAdminEmail } from "./app_config.js";
   let timerHandle = null;
   let saveEventTimer = null;
 let saveWaitingTimer = null;
-let stopGlobalSeatWatch = null;
 let stopGlobalSeatsSourceWatch = null;
-const SAVE_EVENT_DEBOUNCE_MS = 180;
-const SAVE_WAITING_DEBOUNCE_MS = 120;
+const SAVE_EVENT_DEBOUNCE_MS = 90;
+  const SAVE_WAITING_DEBOUNCE_MS = 55;
 
-  let globalSeatOccupancy = [];
   /** seatId -> occupancy from tournaments/{id}/global_seats (current EVENT/BOX only) */
   let globalSeatBySeatId = new Map();
   /** getIdentityKey(person) for anyone seated on any global_seat in this tournament (any event/box) */
@@ -90,6 +87,9 @@ const SAVE_WAITING_DEBOUNCE_MS = 120;
     seats: [],
     updatedAt: Date.now()
   };
+
+  /** tournaments/.../events/{EVENT_ID} 의 title — 알림 문구용 */
+  let cachedEventCardTitle = "";
 
   const waitingState = {
     version: 2,
@@ -256,7 +256,22 @@ const SAVE_WAITING_DEBOUNCE_MS = 120;
   }
 
   function getCurrentEventTitle() {
+    const t = String(cachedEventCardTitle || "").trim();
+    if (t) return t;
     return String(EVENT_ID || "").trim() || "이벤트";
+  }
+
+  async function refreshCachedEventCardTitle() {
+    cachedEventCardTitle = "";
+    if (!TOURNAMENT_ID || !EVENT_ID) return;
+    try {
+      const snap = await getDoc(doc(db, "tournaments", TOURNAMENT_ID, "events", EVENT_ID));
+      if (!snap.exists()) return;
+      const title = String((snap.data() || {}).title || "").trim();
+      if (title) cachedEventCardTitle = title;
+    } catch (err) {
+      console.error("refreshCachedEventCardTitle error:", err);
+    }
   }
 
   function buildSeatTargetUrl(eventId, boxId, seatId = "") {
@@ -290,39 +305,6 @@ const SAVE_WAITING_DEBOUNCE_MS = 120;
 
   function hasWritableLayoutContext() {
     return !!(TOURNAMENT_ID && EVENT_ID && BOX_ID);
-  }
-
-  function buildGlobalSeatOccupancy(items) {
-    const list = [];
-
-    items.forEach((item) => {
-      const data = typeof item.data === "function" ? (item.data() || {}) : (item || {});
-      const seats = Array.isArray(data.seats) ? data.seats : [];
-      const eventId = String(data.eventId || "").trim();
-      const boxId = String(data.boxId || "").trim();
-
-      seats.forEach((seat) => {
-        const person = String(seat?.person || "").trim();
-        if (!person || person === "비어있음") return;
-
-        const label = seat.label ?? seat.no ?? "?";
-        const seatedAt = Number(seat.seatedAt || 0) || Date.now();
-
-        list.push({
-          name: person,
-          uid: seat.personUid || "",
-          email: seat.personEmail || "",
-          eventId,
-          boxId,
-          seatLabel: String(label),
-          seatId: String(seat.id || ""),
-          seatedAt
-        });
-      });
-    });
-
-    list.sort((a, b) => a.name.localeCompare(b.name, "ko"));
-    return list;
   }
 
   function isIdentitySeatedInEvent(identityKey) {
@@ -470,25 +452,6 @@ const SAVE_WAITING_DEBOUNCE_MS = 120;
       }
     );
   }
-
- function bindGlobalSeatOccupancyRealtime() {
-  if (stopGlobalSeatWatch) {
-    stopGlobalSeatWatch();
-    stopGlobalSeatWatch = null;
-  }
-
-  stopGlobalSeatWatch = onSnapshot(
-    LAYOUT_EVENTS_REF,
-    (snap) => {
-      globalSeatOccupancy = buildGlobalSeatOccupancy(snap.docs);
-      renderPanel();
-      updateTimers();
-    },
-    (err) => {
-      console.error("bindGlobalSeatOccupancyRealtime error:", err);
-    }
-  );
-}
 
   async function loadMyUserProfile() {
     if (!auth.currentUser) return null;
@@ -1134,8 +1097,49 @@ function bindMyNotificationWatch() {
     return "Dealer";
   }
 
-  function getSeatTitle(seat) {
-    return `Seat ${seat.label ?? seat.no ?? "?"}`;
+  /** 캔버스 좌석: "Seat" 없이 숫자만 */
+  function seatCanvasDigitsOnly(label, no) {
+    const l = String(label ?? "").trim();
+    const nStr = no != null && no !== "" ? String(no).trim() : "";
+    const fromLabel = l.replace(/\D/g, "");
+    if (fromLabel) return fromLabel;
+    const fromNo = nStr.replace(/\D/g, "");
+    if (fromNo) return fromNo;
+    return "—";
+  }
+
+  /** 통합 배치도(global-layout)와 동일: 대기 경과 시간 기준 시각 */
+  function millisFromWaitingTimeField(v) {
+    if (v == null || v === "") return 0;
+    if (typeof v === "number") {
+      if (!Number.isFinite(v) || v <= 0) return 0;
+      return v < 1e11 ? Math.floor(v * 1000) : Math.floor(v);
+    }
+    if (v instanceof Date) return v.getTime();
+    if (typeof v?.toMillis === "function") return Number(v.toMillis()) || 0;
+    if (typeof v?.seconds === "number") {
+      return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
+    }
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return n < 1e11 ? Math.floor(n * 1000) : Math.floor(n);
+  }
+
+  function getWaitingTimerStartMs(raw = {}) {
+    const keys = [
+      "joinedAt",
+      "createdAt",
+      "joinedAtServer",
+      "updatedAtServer",
+      "updatedAt",
+      "addedAt",
+      "carryStartedAt"
+    ];
+    for (const k of keys) {
+      const ms = millisFromWaitingTimeField(raw[k]);
+      if (ms > 0) return ms;
+    }
+    return Date.now();
   }
 
   function normalizeWaitingEntry(raw) {
@@ -1151,7 +1155,7 @@ function bindMyNotificationWatch() {
     uid: String(raw.uid || "").trim(),
     email: String(raw.email || "").trim(),
     tournamentId: String(raw.tournamentId || TOURNAMENT_ID || "").trim(),
-    addedAt: Number(raw.addedAt || Date.now()),
+    addedAt: getWaitingTimerStartMs(raw),
     carryStartedAt: raw.carryStartedAt ? Number(raw.carryStartedAt) : null
   };
 }
@@ -1161,7 +1165,7 @@ function bindMyNotificationWatch() {
   }
 
   function sortWaitingAscending(list) {
-    return [...list].sort((a, b) => Number(a?.addedAt || 0) - Number(b?.addedAt || 0));
+    return [...list].sort((a, b) => getWaitingTimerStartMs(a) - getWaitingTimerStartMs(b));
   }
 
   function removeWaitingById(waitingId) {
@@ -1295,52 +1299,6 @@ function bindMyNotificationWatch() {
     render();
   }
 
-  async function renameSeat(seatId) {
-    if (!canManageLayout()) return;
-
-    const s = eventState.seats.find((x) => x.id === seatId);
-    if (!s) return;
-
-    const prevLabel = String(s.label ?? s.no ?? "").trim();
-    const next = promptSeatLabel(prevLabel);
-    if (next === null) return;
-
-    const nextLabel = String(next).trim();
-    if (!nextLabel || nextLabel === prevLabel) return;
-
-    s.label = nextLabel;
-
-    if (s.personUid) {
-      await setDealerStatus(s.personUid, {
-        email: String(s.personEmail || "").trim(),
-        nickname: String(s.person || "").trim(),
-        status: "assigned",
-        currentEventId: String(EVENT_ID || "").trim(),
-        currentBoxId: String(BOX_ID || "").trim(),
-        currentSeatId: String(s.id || "").trim(),
-        currentSeatLabel: nextLabel
-      });
-
-      await writeUserNotification({
-        uid: s.personUid,
-        type: "seat_assigned",
-        acknowledged: false,
-        createdAt: Date.now(),
-        tournamentId: getCurrentTournamentId(),
-        eventId: EVENT_ID,
-        eventTitle: getCurrentEventTitle(),
-        boxId: BOX_ID,
-        seatId: s.id,
-        seatLabel: nextLabel,
-        targetUrl: buildSeatTargetUrl(EVENT_ID, BOX_ID, s.id),
-        message: `${getCurrentEventTitle()} / Seat ${nextLabel}에 배치되었습니다.`
-      });
-    }
-
-    touchEvent(true);
-    render();
-  }
-
   function deleteSeat(seatId) {
   if (!canManageLayout()) return;
 
@@ -1399,7 +1357,7 @@ function addWaiting(name, meta = {}) {
     carryStartedAt: meta.carryStartedAt ? Number(meta.carryStartedAt) : null
   });
 
-  touchWaiting();
+  touchWaiting(true);
   render();
 }
 
@@ -1410,7 +1368,7 @@ function addWaiting(name, meta = {}) {
 
     removeWaitingById(waitingId);
     if (ui.selectedWaitingId === waitingId) ui.selectedWaitingId = null;
-    touchWaiting();
+    touchWaiting(true);
     render();
   }
 
@@ -1530,7 +1488,7 @@ function addWaiting(name, meta = {}) {
       addedAt: Date.now(),
       carryStartedAt: carryStartedAt || null
     });
-    touchWaiting();
+    touchWaiting(true);
   }
 
   if (uid) {
@@ -1553,11 +1511,16 @@ async function moveDealerToAssigned({
   seatId = "",
   seatLabel = "",
   eventId = "",
-  boxId = ""
+  boxId = "",
+  resolvedDisplayName = null
 }) {
   if (!uid && !name && !email) return;
 
-  const displayName = await getBestDisplayName(uid, email, name);
+  const trimmedResolved =
+    resolvedDisplayName != null ? String(resolvedDisplayName).trim() : "";
+  const displayName = trimmedResolved
+    ? trimmedResolved
+    : await getBestDisplayName(uid, email, name);
   const identityKey = getIdentityKey({
     uid,
     email,
@@ -1573,10 +1536,10 @@ async function moveDealerToAssigned({
     });
   }
 
-  touchWaiting();
+  touchWaiting(true);
 
   if (uid) {
-   await setDealerStatusIfChanged(uid, {
+    await setDealerStatusIfChanged(uid, {
       email: String(email || "").trim(),
       nickname: String(displayName || "").trim(),
       status: "assigned",
@@ -1615,35 +1578,42 @@ async function moveDealerToAssigned({
     });
 
     const allUids = new Set([...waitingByUid.keys(), ...seatByUid.keys()]);
+    const tasks = [];
 
     for (const uid of allUids) {
       const seat = seatByUid.get(uid);
       if (seat) {
-        await setDealerStatusIfChanged(uid, {
-          email: String(seat.personEmail || "").trim(),
-          nickname: String(seat.person || "").trim(),
-          status: "assigned",
-          currentEventId: EVENT_ID,
-          currentBoxId: BOX_ID,
-          currentSeatId: String(seat.id || "").trim(),
-          currentSeatLabel: String(seat.label ?? seat.no ?? "")
-        });
+        tasks.push(
+          setDealerStatusIfChanged(uid, {
+            email: String(seat.personEmail || "").trim(),
+            nickname: String(seat.person || "").trim(),
+            status: "assigned",
+            currentEventId: EVENT_ID,
+            currentBoxId: BOX_ID,
+            currentSeatId: String(seat.id || "").trim(),
+            currentSeatLabel: String(seat.label ?? seat.no ?? "")
+          })
+        );
         continue;
       }
 
       const waiting = waitingByUid.get(uid);
       if (waiting) {
-        await setDealerStatusIfChanged(uid, {
-          email: String(waiting.email || "").trim(),
-          nickname: String(waiting.name || "").trim(),
-          status: "waiting",
-          currentEventId: "",
-          currentBoxId: "",
-          currentSeatId: "",
-          currentSeatLabel: ""
-        });
+        tasks.push(
+          setDealerStatusIfChanged(uid, {
+            email: String(waiting.email || "").trim(),
+            nickname: String(waiting.name || "").trim(),
+            status: "waiting",
+            currentEventId: "",
+            currentBoxId: "",
+            currentSeatId: "",
+            currentSeatLabel: ""
+          })
+        );
       }
     }
+
+    if (tasks.length) await Promise.all(tasks);
   }
 
   function getIdentityKey({ uid = "", email = "", name = "" } = {}) {
@@ -1805,48 +1775,55 @@ async function moveDealerToAssigned({
       });
     });
 
+    const seatTasks = [];
     for (const [, item] of seatKeys) {
       if (!item.uid) continue;
-
-      await setDealerStatusIfChanged(item.uid, {
-        email: item.email,
-        nickname: item.nickname,
-        status: "assigned",
-        currentEventId: EVENT_ID,
-        currentBoxId: BOX_ID,
-        currentSeatId: item.seatId,
-        currentSeatLabel: item.seatLabel
-      });
+      seatTasks.push(
+        setDealerStatusIfChanged(item.uid, {
+          email: item.email,
+          nickname: item.nickname,
+          status: "assigned",
+          currentEventId: EVENT_ID,
+          currentBoxId: BOX_ID,
+          currentSeatId: item.seatId,
+          currentSeatLabel: item.seatLabel
+        })
+      );
     }
 
+    const waitTasks = [];
     for (const [key, item] of waitingKeys) {
       if (seatKeys.has(key)) continue;
       if (!item.uid) continue;
-
-      await setDealerStatusIfChanged(item.uid, {
-        email: item.email,
-        nickname: item.nickname,
-        status: "waiting",
-        currentEventId: "",
-        currentBoxId: "",
-        currentSeatId: "",
-        currentSeatLabel: ""
-      });
+      waitTasks.push(
+        setDealerStatusIfChanged(item.uid, {
+          email: item.email,
+          nickname: item.nickname,
+          status: "waiting",
+          currentEventId: "",
+          currentBoxId: "",
+          currentSeatId: "",
+          currentSeatLabel: ""
+        })
+      );
     }
+
+    await Promise.all([...seatTasks, ...waitTasks]);
   }
 
   async function healAndPersistState(reason = "") {
     const { changedEvent, changedWaiting } = reconcileLocalState();
 
+    const saves = [];
     if (changedEvent) {
       eventState.updatedAt = Date.now();
-      await saveEventState();
+      saves.push(saveEventState());
     }
-
     if (changedWaiting) {
       waitingState.updatedAt = Date.now();
-      await saveWaitingState();
+      saves.push(saveWaitingState());
     }
+    if (saves.length) await Promise.all(saves);
 
     if (changedEvent || changedWaiting) {
       await syncCurrentEventUserTruth();
@@ -1875,8 +1852,7 @@ async function moveDealerToAssigned({
     ui.selectedWaitingId = snap.selectedWaitingId || null;
     ui.lastUndoAction = null;
 
-    await saveEventState();
-    await saveWaitingState();
+    await Promise.all([saveEventState(), saveWaitingState()]);
     await syncStatusesFromCurrentState();
     render();
   }
@@ -1894,11 +1870,10 @@ async function assignWaitingToSeat(waitingId, seatId) {
   const incomingUid = String(waiting.uid || "").trim();
   const incomingEmail = String(waiting.email || "").trim();
 
-  const incomingDisplayName = await getBestDisplayName(
-    incomingUid,
-    incomingEmail,
-    incomingName
-  );
+  const incomingDisplayName =
+    incomingName.length >= 2 && !incomingName.includes("@")
+      ? incomingName
+      : await getBestDisplayName(incomingUid, incomingEmail, incomingName);
 
   const incomingKey = getIdentityKey({
     uid: incomingUid,
@@ -1924,35 +1899,45 @@ async function assignWaitingToSeat(waitingId, seatId) {
   }
 
   if (prevOccupied && prevUid && prevUid !== incomingUid) {
-    await clearUserSeatNotification(prevUid, "seat_reassigned");
-    await moveDealerToWaiting({
-      uid: prevUid,
-      email: prevEmail,
-      nickname: prevName,
-      carryStartedAt: prevSeatedAt || Date.now()
-    });
+    await Promise.all([
+      clearUserSeatNotification(prevUid, "seat_reassigned"),
+      moveDealerToWaiting({
+        uid: prevUid,
+        email: prevEmail,
+        nickname: prevName,
+        carryStartedAt: prevSeatedAt || Date.now()
+      })
+    ]);
   }
 
   seat.person = incomingDisplayName || "비어있음";
   seat.personUid = incomingUid;
   seat.personEmail = incomingEmail;
-  seat.seatedAt = Date.now(); // 배치 시간 무조건 리셋
+  seat.seatedAt = Date.now();
 
   ui.selectedWaitingId = null;
+  ui.selectedSeatId = seat.id;
 
-  touchWaiting();
+  touchWaiting(true);
   touchEvent(true);
+  render();
+  updateTimers();
+
+  const followUps = [];
 
   if (incomingUid || incomingDisplayName) {
-    await moveDealerToAssigned({
-      uid: incomingUid,
-      email: incomingEmail,
-      name: incomingDisplayName,
-      seatId: seat.id,
-      seatLabel: seat.label ?? seat.no ?? "",
-      eventId: EVENT_ID,
-      boxId: BOX_ID
-    });
+    followUps.push(
+      moveDealerToAssigned({
+        uid: incomingUid,
+        email: incomingEmail,
+        name: incomingDisplayName,
+        resolvedDisplayName: incomingDisplayName,
+        seatId: seat.id,
+        seatLabel: seat.label ?? seat.no ?? "",
+        eventId: EVENT_ID,
+        boxId: BOX_ID
+      })
+    );
   }
 
   if (incomingUid) {
@@ -1960,26 +1945,26 @@ async function assignWaitingToSeat(waitingId, seatId) {
     const eventTitle = getCurrentEventTitle();
     const tournamentId = getCurrentTournamentId();
 
-    await writeUserNotification({
-      uid: incomingUid,
-      type: "seat_assigned",
-      acknowledged: false,
-      createdAt: Date.now(),
-      tournamentId,
-      eventId: EVENT_ID,
-      eventTitle,
-      boxId: BOX_ID,
-      seatId: seat.id,
-      seatLabel,
-      targetUrl: buildSeatTargetUrl(EVENT_ID, BOX_ID, seat.id),
-      message: `${eventTitle} / Seat ${seatLabel}에 배치되었습니다.`
-    });
+    followUps.push(
+      writeUserNotification({
+        uid: incomingUid,
+        type: "seat_assigned",
+        acknowledged: false,
+        createdAt: Date.now(),
+        tournamentId,
+        eventId: EVENT_ID,
+        eventTitle,
+        boxId: BOX_ID,
+        seatId: seat.id,
+        seatLabel,
+        targetUrl: buildSeatTargetUrl(EVENT_ID, BOX_ID, seat.id),
+        message: `${eventTitle} / Seat ${seatLabel}에 배치되었습니다.`
+      })
+    );
   }
 
+  if (followUps.length) await Promise.all(followUps);
   await healAndPersistState("assignWaitingToSeat");
-
-  ui.selectedSeatId = seat.id;
-  render();
 }
 
   async function clearSeat(seatId) {
@@ -1999,21 +1984,22 @@ async function assignWaitingToSeat(waitingId, seatId) {
     clearSeatLocally(seat);
 
     if (hadPerson) {
-      await moveDealerToWaiting({
-        uid: prevUid,
-        email: prevEmail,
-        nickname: prevName,
-        carryStartedAt: prevSeatedAt || Date.now()
-      });
-
-      if (prevUid) {
-        await clearUserSeatNotification(prevUid, "seat_cleared");
-      }
+      const rel = [
+        moveDealerToWaiting({
+          uid: prevUid,
+          email: prevEmail,
+          nickname: prevName,
+          carryStartedAt: prevSeatedAt || Date.now()
+        })
+      ];
+      if (prevUid) rel.push(clearUserSeatNotification(prevUid, "seat_cleared"));
+      await Promise.all(rel);
     }
 
     touchEvent(true);
-    await healAndPersistState("clearSeat");
     render();
+    updateTimers();
+    await healAndPersistState("clearSeat");
   }
 
   
@@ -2077,8 +2063,9 @@ async function assignWaitingToSeat(waitingId, seatId) {
       box.style.left = `${seat.x || 0}px`;
       box.style.top = `${seat.y || 0}px`;
       const personClass = hasPerson ? "seat-person" : "seat-person is-empty";
+      const seatLabel = String(seat.label ?? seat.no ?? "").trim() || "—";
       box.innerHTML = `
-        <div class="seat-title">${escapeHtml(getSeatTitle(seat))}</div>
+        <div class="seat-title">SEAT ${escapeHtml(seatLabel)}</div>
         <div class="${personClass}">${escapeHtml(hasPerson ? seat.person : "-")}</div>
       `;
       canvas.appendChild(box);
@@ -2100,26 +2087,26 @@ async function assignWaitingToSeat(waitingId, seatId) {
         }
 
         if (occupied && canManageLayout()) {
-  if (ui.lastMouseSeatId === seat.id && now - ui.lastMouseClickAt < 380) {
-    ui.lastMouseClickAt = 0;
-    ui.lastMouseSeatId = "";
-    await clearSeat(seat.id);
-    ui.selectedSeatId = null;
-    render();
-    return;
-  }
+          if (ui.lastMouseSeatId === seat.id && now - ui.lastMouseClickAt < 380) {
+            ui.lastMouseClickAt = 0;
+            ui.lastMouseSeatId = "";
+            await clearSeat(seat.id);
+            ui.selectedSeatId = null;
+            render();
+            return;
+          }
 
-  ui.lastMouseClickAt = now;
-  ui.lastMouseSeatId = seat.id;
-  ui.selectedSeatId = seat.id;
-  render();
-  return;
-}
+          ui.lastMouseClickAt = now;
+          ui.lastMouseSeatId = seat.id;
+          ui.selectedSeatId = seat.id;
+          render();
+          return;
+        }
 
-ui.lastMouseClickAt = now;
-ui.lastMouseSeatId = seat.id;
-ui.selectedSeatId = seat.id;
-render();
+        ui.lastMouseClickAt = now;
+        ui.lastMouseSeatId = seat.id;
+        ui.selectedSeatId = seat.id;
+        render();
       });
 
       if (!canManageLayout()) return;
@@ -2222,7 +2209,7 @@ render();
     if (canManageLayout() && selectedWaiting) {
       seatCard.innerHTML += `
         <div class="mobile-selection-banner">
-          <span class="badge sel">선택된 대기</span>
+          <span class="badge sel">배치할 대기</span>
           <strong>${escapeHtml(selectedWaiting.name)}</strong>
         </div>
       `;
@@ -2246,16 +2233,13 @@ render();
               <div class="mobile-seat-mainline">
                 <div class="mobile-seat-inline">
   <div class="mobile-seat-leftpack">
-    <div class="mobile-seat-no-pill">
-      ${escapeHtml(s.label ?? s.no)}
-    </div>
-
-    <div class="mobile-seat-name ${isEmptyPerson(s.person) ? "is-empty" : ""}">
-      ${
-        isEmptyPerson(s.person)
-          ? `-`
-          : escapeHtml(s.person)
-      }
+    <div class="mobile-seat-textstack">
+      <div class="mobile-seat-name-row">
+        <span class="mobile-seat-num">${escapeHtml(seatCanvasDigitsOnly(s.label, s.no))}</span>
+        <div class="mobile-seat-person ${isEmptyPerson(s.person) ? "is-empty" : ""}">
+          ${isEmptyPerson(s.person) ? "비어있음" : escapeHtml(s.person)}
+        </div>
+      </div>
     </div>
   </div>
 
@@ -2263,10 +2247,6 @@ render();
     canManageLayout()
       ? `
       <div class="mobile-seat-inline-actions">
-        <button class="mobile-pill-btn" data-rename-seat="${s.id}">
-          수정
-        </button>
-
         ${
           hasPerson
             ? `<button class="mobile-pill-btn warn" data-clear-seat="${s.id}">
@@ -2318,11 +2298,9 @@ render();
       </div>
     `;
 
-    const sortedWaiting = [...displayWaitingMobile].sort((a, b) => {
-      const aTime = Number(a?.addedAt || 0);
-      const bTime = Number(b?.addedAt || 0);
-      return aTime - bTime;
-    });
+    const sortedWaiting = [...displayWaitingMobile].sort(
+      (a, b) => getWaitingTimerStartMs(a) - getWaitingTimerStartMs(b)
+    );
 
     if (sortedWaiting.length === 0) {
       waitCard.innerHTML += `
@@ -2333,7 +2311,7 @@ render();
       `;
     } else {
       sortedWaiting.forEach((w) => {
-        const start = w.addedAt || Date.now();
+        const start = getWaitingTimerStartMs(w);
         const isSel = ui.selectedWaitingId === w.id;
 
         waitCard.innerHTML += `
@@ -2370,23 +2348,6 @@ render();
       });
     }
 
-    if (canManageLayout()) {
-      waitCard.innerHTML += `
-        <div class="mobile-selection-status">
-          ${
-            ui.selectedWaitingId
-              ? `<div class="badge sel">대기 선택됨</div>`
-              : `<div class="badge">선택된 대기 없음</div>`
-          }
-          ${
-            ui.selectedSeatId
-              ? `<div class="badge sel">Seat 선택됨</div>`
-              : `<div class="badge">선택된 Seat 없음</div>`
-          }
-        </div>
-      `;
-    }
-
     wrap.append(seatCard, waitCard);
     app.appendChild(wrap);
 
@@ -2411,8 +2372,7 @@ render();
           e.target.closest("[data-mobile-seat-select]") ||
           e.target.closest("[data-del]") ||
           e.target.closest("[data-mobile-assign]") ||
-          e.target.closest("[data-clear-seat]") ||
-          e.target.closest("[data-rename-seat]")
+          e.target.closest("[data-clear-seat]")
         ) {
           return;
         }
@@ -2491,20 +2451,13 @@ return;
         const sid = btn.getAttribute("data-mobile-assign");
 
         if (!ui.selectedWaitingId) {
-          alert("먼저 대기자를 선택하세요.");
+          alert("먼저 대기 행을 눌러 배치할 사람을 지정하세요.");
           return;
         }
 
         await assignWaitingToSeat(ui.selectedWaitingId, sid);
         ui.selectedSeatId = null;
         render();
-      });
-    });
-
-    wrap.querySelectorAll("[data-rename-seat]").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        await renameSeat(btn.getAttribute("data-rename-seat"));
       });
     });
 
@@ -2569,7 +2522,7 @@ return;
     } else {
       sortWaitingAscending(displayWaiting).forEach((w, index) => {
         const isSel = selected === w.id;
-        const start = w.addedAt || Date.now();
+        const start = getWaitingTimerStartMs(w);
         html.push(`
           <div class="row ${isSel ? "selected" : ""}" data-wid="${w.id}" style="cursor:pointer;">
             <div class="left">
@@ -2625,100 +2578,63 @@ return;
   }
 
   function renderSeatPanel() {
-    const html = [];
-    const seatedAll = globalSeatOccupancy;
     const waitingAll = getWaitingListForDisplay();
 
     const left = [];
+    const seatCount = eventState.seats.length;
+    const waitCount = waitingAll.length;
+    const metaActionsHidden = !canManageLayout();
 
     left.push(`
-  <div style="display:flex; gap:8px; margin:0 0 12px;">
-    <button
-      id="sortSeatOrderBtn"
-      class="btn ${ui.seatSortMode === "seat" ? "primary" : ""}"
-      style="flex:1;"
-    >
-      Seat 순
-    </button>
-    <button
-      id="sortSeatTimeBtn"
-      class="btn ${ui.seatSortMode === "time" ? "primary" : ""}"
-      style="flex:1;"
-    >
-      오래된 시간순
-    </button>
-  </div>
-`);
+      <div class="global-meta">
+        <div class="global-meta-left">
+          <span class="hint-pill">SEAT: ${seatCount}</span>
+          <span class="hint-pill">WAIT: ${waitCount}</span>
+        </div>
+        <div class="global-meta-actions ${metaActionsHidden ? "hidden" : ""}" aria-hidden="${metaActionsHidden ? "true" : "false"}">
+          <button type="button" id="globalUndoToolbarBtn" class="pill-inline seat-meta-btn seat-meta-btn--undo" ${ui.lastUndoAction ? "" : "disabled"}>되돌리기</button>
+        </div>
+      </div>
+    `);
 
-    if (canManageLayout() && ui.lastUndoAction) {
-      left.push(`<button id="undoLayoutBtn" class="btn" style="width:100%; margin:0 0 12px;">↶ 되돌리기</button>`);
-    }
+    left.push(`
+      <div class="global-form-seat-add ${metaActionsHidden ? "hidden" : ""}" aria-hidden="${metaActionsHidden ? "true" : "false"}">
+        <div class="seat-add-one-row">
+          <div class="seat-add-leading" aria-hidden="true"></div>
+          <button type="button" id="addSeatToolbarBtn" class="pill-inline primary seat-meta-btn seat-add-action-btn" title="+ Seat 추가">추가</button>
+        </div>
+      </div>
+    `);
 
-    if (canManageLayout()) {
-      left.push(`<button id="addSeatBtn" class="btn primary" style="width:100%; margin-bottom:12px;">+ Seat 추가</button>`);
-    } else {
-      left.push(`<div class="badge" style="margin-bottom:12px;">Seat 관리는 admin만 가능합니다</div>`);
-    }
+    left.push(`
+      <div class="seat-sort-row">
+        <button id="sortSeatOrderBtn" class="pill-inline ${ui.seatSortMode === "seat" ? "active" : ""}" type="button">Seat순</button>
+        <button id="sortSeatTimeBtn" class="pill-inline ${ui.seatSortMode === "time" ? "active" : ""}" type="button">시간순</button>
+      </div>
+    `);
+
+    left.push(`<div class="global-list layout-seat-tab-list">`);
 
     if (eventState.seats.length === 0) {
       left.push(`
-        <div class="row">
-          <div class="left">
-            <div>Seat 없음</div>
-            <div class="badge">현재 이벤트(${escapeHtml(EVENT_ID)})에만 생성됩니다</div>
-          </div>
-        </div>
+        <div class="empty-panel">현재 이벤트(${escapeHtml(EVENT_ID)})에 Seat이 없습니다.</div>
       `);
     } else {
-     getSortedSeats(eventState.seats).forEach((s) => {
-          const isSel = ui.selectedSeatId === s.id;
-          const hasPerson = !isEmptyPerson(s.person);
-          const start = hasPerson ? (s.seatedAt || Date.now()) : null;
+      getSortedSeats(eventState.seats).forEach((s) => {
+        const isSel = ui.selectedSeatId === s.id;
+        const hasPerson = !isEmptyPerson(s.person);
+        const start = hasPerson ? (s.seatedAt || Date.now()) : null;
 
-          left.push(`
+        left.push(`
             <div class="seat-manage-row ${isSel ? "selected" : ""}" data-sid="${s.id}" style="cursor:pointer;">
-              <div class="seat-manage-main">
-                <div class="seat-manage-inline">
-                  <div class="seat-manage-texts">
-                    <div class="seat-manage-title">
-                      Seat ${escapeHtml(s.label ?? s.no)}
-                    </div>
-
-                    <div class="seat-manage-name ${isEmptyPerson(s.person) ? "is-empty" : ""}">
-                      ${escapeHtml(s.person)}
-                    </div>
-                  </div>
-
-                  ${
-                    canManageLayout()
-                      ? `
-                      <div class="seat-inline-actions">
-                        <button class="pill-inline" type="button">
-                          선택
-                        </button>
-
-                        <button class="pill-inline" type="button" data-rename-seat="${s.id}">
-                          수정
-                        </button>
-
-                        ${
-                          hasPerson
-                            ? `<button class="pill-inline warn" data-clear-seat="${s.id}">
-                                비우기
-                              </button>`
-                            : ``
-                        }
-
-                        <button class="pill-inline danger" type="button" data-del="${s.id}">
-                          삭제
-                        </button>
-                      </div>
-                      `
-                      : ``
-                  }
+              <div class="seat-manage-main seat-manage-main--oneline">
+                <div class="seat-manage-namewrap seat-manage-namewrap--with-num">
+                  <span class="seat-manage-num">${escapeHtml(seatCanvasDigitsOnly(s.label, s.no))}</span>
+                  <span class="seat-manage-name ${isEmptyPerson(s.person) ? "is-empty" : ""}">
+                    ${escapeHtml(s.person)}
+                  </span>
                 </div>
-
-                <div class="seat-manage-timer">
+                <div class="seat-inline-actions">
                   ${
                     hasPerson
                       ? `<span class="time-chip"
@@ -2727,122 +2643,43 @@ return;
                           data-target="seat:${s.id}">
                           00:00:00
                         </span>`
-                      : `<span class="seat-manage-empty-dash">—</span>`
+                      : `<span class="seat-manage-empty-dash">-</span>`
+                  }
+                  ${
+                    canManageLayout()
+                      ? `
+                      ${
+                        hasPerson
+                          ? `<button class="pill-inline warn" type="button" data-clear-seat="${s.id}">비우기</button>`
+                          : ``
+                      }
+                      <button class="pill-inline danger" type="button" data-del="${s.id}">삭제</button>
+                      `
+                      : ``
                   }
                 </div>
               </div>
             </div>
           `);
-        });
-    }
-
-    const right = [];
-    right.push(`<div class="panel-box">`);
-    right.push(`<h4>전역 현황 (대기/배치)</h4>`);
-    right.push(`<div class="badge" style="margin-bottom:8px;">대기: ${waitingAll.length}명</div>`);
-
-    if (waitingAll.length === 0) {
-      right.push(`
-        <div class="mini-row">
-          <div class="mini-left">
-            <div class="mini-name">대기자 없음</div>
-            <div class="mini-loc">—</div>
-          </div>
-        </div>
-      `);
-    } else {
-      const sortedWaitingAll = [...waitingAll].sort((a, b) => {
-        const aTime = Number(a?.addedAt || 0);
-        const bTime = Number(b?.addedAt || 0);
-        return aTime - bTime;
-      });
-
-      sortedWaitingAll.forEach((w, index) => {
-        const start = w.addedAt || Date.now();
-        const waitingNo = index + 1;
-
-        right.push(`
-          <div class="global-wait-row">
-            <div class="global-wait-left">
-              <div class="global-wait-order">${waitingNo}</div>
-              <div class="global-wait-name">${escapeHtml(w.name)}</div>
-              <div class="global-wait-status">대기(공유)</div>
-            </div>
-
-            <span
-              class="time-chip"
-              data-timer="wait"
-              data-start="${start}"
-              data-target="wait:${w.id}">
-              00:00:00
-            </span>
-          </div>
-        `);
       });
     }
 
-    right.push(`<div class="badge" style="margin:12px 0 8px;">배치: ${seatedAll.length}명</div>`);
+    left.push(`</div>`);
 
-    if (seatedAll.length === 0) {
-      right.push(`
-        <div class="mini-row">
-          <div class="mini-left">
-            <div class="mini-name">배치된 사람 없음</div>
-            <div class="mini-loc">—</div>
-          </div>
-        </div>
-      `);
-    } else {
-      seatedAll.forEach((x) => {
-        const start = x.seatedAt || Date.now();
+    panelContent.innerHTML = left.join("");
 
-        right.push(`
-          <div
-            class="global-wait-row seat-jump-row"
-            data-jump-event="${escapeHtml(x.eventId)}"
-            data-jump-box="${escapeHtml(x.boxId)}"
-            data-jump-seat="${escapeHtml(x.seatId)}"
-            style="cursor:pointer;"
-          >
-            <div class="global-wait-left">
-              <div class="global-wait-order">●</div>
-              <div class="global-wait-name">${escapeHtml(x.name)}</div>
-              <div class="global-wait-status">
-                ${escapeHtml(x.eventId)} / ${escapeHtml(x.boxId)} / Seat ${escapeHtml(x.seatLabel)}
-              </div>
-            </div>
-
-            <span
-              class="time-chip"
-              data-timer="seat"
-              data-start="${start}"
-              data-target="seat-global:${escapeHtml(x.eventId)}:${escapeHtml(x.boxId)}:${escapeHtml(x.seatId)}">
-              00:00:00
-            </span>
-          </div>
-        `);
-      });
-    }
-
-    right.push(`</div>`);
-
-    html.push(`<div class="panel-split">`);
-    html.push(`<div>${left.join("")}</div>`);
-    html.push(`${right.join("")}`);
-    html.push(`</div>`);
-
-    panelContent.innerHTML = html.join("");
-
-    const undoLayoutBtn = document.getElementById("undoLayoutBtn");
-    if (undoLayoutBtn) {
-      undoLayoutBtn.onclick = () => {
+    const globalUndoToolbarBtn = document.getElementById("globalUndoToolbarBtn");
+    if (globalUndoToolbarBtn) {
+      globalUndoToolbarBtn.onclick = () => {
         void undoLastAction();
       };
     }
 
-    const addSeatBtn = document.getElementById("addSeatBtn");
-    if (addSeatBtn) {
-      addSeatBtn.onclick = addSeat;
+    const addSeatToolbarBtn = document.getElementById("addSeatToolbarBtn");
+    if (addSeatToolbarBtn) {
+      addSeatToolbarBtn.onclick = () => {
+        addSeat();
+      };
     }
 
     const sortSeatOrderBtn = document.getElementById("sortSeatOrderBtn");
@@ -2870,7 +2707,7 @@ if (sortSeatTimeBtn) {
       (
         e.target.closest("[data-del]") ||
         e.target.closest("[data-clear-seat]") ||
-        e.target.closest("[data-rename-seat]") ||
+        e.target.closest(".time-chip") ||
         e.target.closest(".pill-inline")
       )
     ) return;
@@ -2881,13 +2718,6 @@ if (sortSeatTimeBtn) {
     render();
   });
 });
-
-    panelContent.querySelectorAll("[data-rename-seat]").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        await renameSeat(btn.getAttribute("data-rename-seat"));
-      });
-    });
 
     panelContent.querySelectorAll("[data-del]").forEach((btn) => {
       btn.addEventListener("click", (e) => {
@@ -2901,24 +2731,6 @@ if (sortSeatTimeBtn) {
   e.stopPropagation();
   await clearSeat(btn.getAttribute("data-clear-seat"));
 });
-    });
-
-    panelContent.querySelectorAll(".seat-jump-row").forEach((row) => {
-      row.addEventListener("click", () => {
-        const jumpEventId = row.getAttribute("data-jump-event") || "";
-        const jumpBoxId = row.getAttribute("data-jump-box") || "";
-        const jumpSeatId = row.getAttribute("data-jump-seat") || "";
-
-        const tournamentId = getCurrentTournamentId();
-        if (tournamentId) {
-          sessionStorage.setItem("tournamentId", tournamentId);
-        }
-        sessionStorage.setItem("eventId", jumpEventId);
-        sessionStorage.setItem("boxId", jumpBoxId);
-        sessionStorage.setItem("focusSeatId", jumpSeatId);
-
-        location.href = buildSeatTargetUrl(jumpEventId, jumpBoxId, jumpSeatId);
-      });
     });
   }
 
@@ -3006,7 +2818,9 @@ if (sortSeatTimeBtn) {
         const nextUpdatedAt = Number(nextW.updatedAt || 0);
 
         waitingState.version = nextW.version || 2;
-        waitingState.waiting = Array.isArray(nextW.waiting) ? nextW.waiting : [];
+        waitingState.waiting = Array.isArray(nextW.waiting)
+          ? nextW.waiting.map((raw) => normalizeWaitingEntry(raw)).filter(Boolean)
+          : [];
         waitingState.updatedAt = nextUpdatedAt || Date.now();
 
         render();
@@ -3017,25 +2831,18 @@ if (sortSeatTimeBtn) {
       }
     );
 
-    onSnapshot(
-      LAYOUT_EVENTS_REF,
-      (snap) => {
-        globalSeatOccupancy = buildGlobalSeatOccupancy(snap.docs);
-        renderPanel();
-        updateTimers();
-      },
-      (err) => {
-        console.error("LAYOUT_EVENTS_REF snapshot error:", err);
-      }
-    );
   }
 
   async function init() {
     if (hasInitialized) return;
     hasInitialized = true;
 
-    const remoteEvent = await loadEventStateRemote();
-    const remoteWaiting = await loadWaitingStateRemote();
+    await refreshCachedEventCardTitle();
+
+    const [remoteEvent, remoteWaiting] = await Promise.all([
+      loadEventStateRemote(),
+      loadWaitingStateRemote()
+    ]);
 
     if (remoteEvent && typeof remoteEvent === "object") {
       eventState.version = remoteEvent.version || 2;
@@ -3054,7 +2861,6 @@ if (sortSeatTimeBtn) {
     }
 
     waitingState.waiting.forEach((w) => {
-      if (!w.addedAt) w.addedAt = Date.now();
       if (!("uid" in w)) w.uid = "";
       if (!("email" in w)) w.email = "";
     });
@@ -3067,19 +2873,16 @@ if (sortSeatTimeBtn) {
       if (!("personEmail" in s)) s.personEmail = "";
     });
 
-    if (!remoteEvent) {
-      await saveEventState();
-    }
-
-    if (!remoteWaiting) {
-      await saveWaitingState();
-    }
+    const bootSaves = [];
+    // layout_events 는 Rules 상 관리자만 쓰기 가능 — 비관리자는 빈 문서 생성 시도 시 permission 오류
+    if (!remoteEvent && isAdminUser) bootSaves.push(saveEventState());
+    if (!remoteWaiting) bootSaves.push(saveWaitingState());
+    if (bootSaves.length) await Promise.all(bootSaves);
 
     waitingState.waiting = waitingState.waiting
       .map((w) => normalizeWaitingEntry(w))
       .filter(Boolean);
 
-    bindGlobalSeatOccupancyRealtime();
     await healAndPersistState("init");
 
     bindTournamentGlobalSeatsMerge();

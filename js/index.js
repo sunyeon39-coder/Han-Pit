@@ -13,7 +13,8 @@ import {
   deleteDoc,
   onSnapshot,
   runTransaction,
-  writeBatch
+  writeBatch,
+  serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 console.log("🔥 index.js loaded");
@@ -89,7 +90,7 @@ function scheduleRenderDealerOps() {
   if (dealerOpsRenderTimer) clearTimeout(dealerOpsRenderTimer);
   dealerOpsRenderTimer = setTimeout(() => {
     renderDealerOps();
-  }, 50);
+  }, 16);
 }
 
 let events = [];
@@ -1841,9 +1842,67 @@ function makeNextEventDefaults() {
   eventCardId.value = `event_${nextNo}`;
   eventCardBoxId.value = `box_${nextNo}`;
   eventCardDate.value = `${yyyy}-${mm}-${dd}`;
-  eventCardTitle.value = `${tournamentId || "Event"} ${nextNo}`;
+  // 통합·layout 라벨과 맞추기 위해 기본 제목은 영문
+  eventCardTitle.value = `Event ${nextNo}`;
   eventCardStart.value = "21:00";
   eventCardClose.value = "21:30";
+}
+
+/** 카드 저장 후 통합 배치도에서 바로 Seat 추가 가능하도록 layout_events 스텁 보장 */
+async function ensureLayoutEventShellAfterCardSave({ tournamentId, eventId, boxId }) {
+  const tid = String(tournamentId || "").trim();
+  const eid = String(eventId || "").trim();
+  const bid = String(boxId || "").trim();
+  if (!tid || !eid || !bid) return;
+
+  const ref = doc(db, "layout_events", `${eid}__${bid}`);
+  let snap;
+  try {
+    snap = await getDoc(ref);
+  } catch (err) {
+    console.error("ensureLayoutEventShellAfterCardSave getDoc error:", err);
+    return;
+  }
+
+  const data = snap.exists() ? snap.data() || {} : {};
+  const hasNextNo = typeof data.nextSeatNo === "number" && Number.isFinite(data.nextSeatNo);
+  const hasNextOrder = typeof data.nextSeatOrder === "number" && Number.isFinite(data.nextSeatOrder);
+  const seats = Array.isArray(data.seats) ? data.seats : [];
+
+  if (snap.exists() && hasNextNo && hasNextOrder) {
+    const docTid = String(data.tournamentId || "").trim();
+    if (tid && docTid && docTid !== tid) {
+      try {
+        await setDoc(ref, { tournamentId: tid, updatedAt: Date.now(), updatedAtServer: serverTimestamp() }, { merge: true });
+      } catch (err) {
+        console.error("ensureLayoutEventShellAfterCardSave patch tournamentId error:", err);
+      }
+    }
+    return;
+  }
+
+  const nextSeatNo = hasNextNo ? data.nextSeatNo : 1;
+  const nextSeatOrder = hasNextOrder ? data.nextSeatOrder : 1;
+
+  try {
+    await setDoc(
+      ref,
+      {
+        version: 2,
+        tournamentId: tid,
+        eventId: eid,
+        boxId: bid,
+        nextSeatNo,
+        nextSeatOrder,
+        seats,
+        updatedAt: Date.now(),
+        updatedAtServer: serverTimestamp()
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    console.error("ensureLayoutEventShellAfterCardSave setDoc error:", err);
+  }
 }
 
 function syncSelectedEventForm() {
@@ -1899,7 +1958,7 @@ function renderEventAdminList() {
           ${escapeHtml(e.date)} · ${escapeHtml(e.start)} ~ ${escapeHtml(e.close)} · ${escapeHtml(e.boxId)}
         </div>
       </div>
-      <button class="event-admin-pick" type="button" data-pick-id="${escapeHtml(e.id)}">선택</button>
+      <button class="event-admin-pick" type="button" data-pick-id="${escapeHtml(e.id)}">지정</button>
     </div>
   `).join("");
 }
@@ -2066,20 +2125,30 @@ async function saveEventCard() {
     return;
   }
 
+  const titleRaw = eventCardTitle.value.trim();
+  const title = titleRaw || `Event ${id}`;
+  if (!titleRaw) eventCardTitle.value = title;
+
   try {
     await setDoc(
       getEventDocRef(id),
       {
         boxId,
         date: normalizeDateString(eventCardDate.value.trim()),
-        title: eventCardTitle.value.trim(),
+        title,
         start: eventCardStart.value.trim(),
         close: eventCardClose.value.trim()
       },
       { merge: true }
     );
 
-    alert("카드가 저장되었습니다.");
+    await ensureLayoutEventShellAfterCardSave({
+      tournamentId,
+      eventId: id,
+      boxId
+    });
+
+    alert("카드가 저장되었습니다. 통합 배치도에서 같은 카드 ID·Box ID로 Seat을 추가할 수 있습니다.");
   } catch (err) {
     console.error(err);
     alert("카드 저장에 실패했습니다.");
@@ -2704,7 +2773,17 @@ globalLayoutBtn?.addEventListener("click", () => {
     return;
   }
   sessionStorage.setItem("tournamentId", tournamentId);
-  location.href = `./global-layout.html?tournamentId=${encodeURIComponent(tournamentId)}`;
+  const eid = String(document.getElementById("eventCardId")?.value || "").trim();
+  const bid = String(document.getElementById("eventCardBoxId")?.value || "").trim();
+  const q = new URLSearchParams();
+  q.set("tournamentId", tournamentId);
+  if (eid && bid) {
+    sessionStorage.setItem("eventId", eid);
+    sessionStorage.setItem("boxId", bid);
+    q.set("eventId", eid);
+    q.set("boxId", bid);
+  }
+  location.href = `./global-layout.html?${q.toString()}`;
 });
 
 /* ===============================
@@ -2913,8 +2992,7 @@ onAuthStateChanged(auth, async (user) => {
       seatMapEditBtn?.classList.add("hidden");
     }
 
-    await initTournamentPeriodWatch();
-    await init();
+    await Promise.all([initTournamentPeriodWatch(), init()]);
   } catch (err) {
     console.error("index auth init error:", err);
     alert("인덱스 데이터를 불러오지 못했습니다.");

@@ -7,15 +7,13 @@
     content="width=device-width, initial-scale=1.0, viewport-fit=cover"
   />
   <title>Han Pit - Index</title>
+  <link rel="stylesheet" href="./css/app-shared.css" />
   <link rel="stylesheet" href="./css/index.css" />
 </head>
 <body>
   <header class="index-topbar">
     <div class="topbar-left">
-      <button id="backBtn" class="back-btn" type="button" aria-label="Go back to hub">
-        <span class="back-icon">←</span>
-        <span>Back</span>
-      </button>
+      <button id="backBtn" class="back-btn" type="button" aria-label="Back">Back</button>
     </div>
 
     <div class="topbar-center">
@@ -54,7 +52,7 @@
   </select>
 
   <button id="deleteSelectedAttendanceLogsBtn" class="mini-btn danger" type="button">
-    선택 삭제
+    체크 삭제
   </button>
 
   <button id="clearAttendanceLogsBtn" class="mini-btn danger" type="button">
@@ -80,7 +78,7 @@
           </div>
 
           <div class="form-group">
-            <label for="eventCardSelect">카드 선택</label>
+            <label for="eventCardSelect">이벤트 카드</label>
             <select id="eventCardSelect"></select>
           </div>
 
@@ -100,8 +98,8 @@
           </div>
 
           <div class="form-group">
-            <label for="eventCardTitle">카드 제목</label>
-            <input id="eventCardTitle" type="text" placeholder="예: Mini Main Day-1F" />
+            <label for="eventCardTitle">카드 제목 (영문 권장)</label>
+            <input id="eventCardTitle" type="text" placeholder="e.g. Event 1 — Main Day 1F" />
           </div>
 
           <div class="form-row">
