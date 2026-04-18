@@ -6,6 +6,8 @@ import {
   doc,
   getDoc,
   getDocs,
+  query,
+  where,
   onSnapshot,
   runTransaction,
   setDoc,
@@ -149,20 +151,45 @@ function buildGlobalSeatDocId(eventId = "", boxId = "", seatId = "") {
   return `${String(eventId || "").trim()}__${String(boxId || "").trim()}__${String(seatId || "").trim()}`;
 }
 
-/** Document refs for current tournament seats (transactions cannot tx.get(collection)). */
-function getGlobalSeatDocRefs() {
-  const seen = new Set();
+/**
+ * 배치/해제 시 "같은 사람이 이미 앉은 다른 좌석"만 tx.get 하도록 좁힌다.
+ * (예전: 대회 전체 좌석마다 순차 tx.get → 느림)
+ */
+function getCandidateSeatRefsForPerson(person = {}, excludeSeatId = "") {
+  const waitingUid = String(person.uid || "").trim();
+  const waitingEmail = String(person.email || "").trim().toLowerCase();
+  const waitingName = String(person.name || "").trim();
+  if (!waitingUid && !waitingEmail && !waitingName) return [];
+
+  const ex = String(excludeSeatId || "").trim();
   const refs = [];
+  const seen = new Set();
+
   for (const s of globalSeats) {
+    const sid = String(s?.seatId || "").trim();
+    if (!sid || sid === ex) continue;
+
     const e = String(s?.currentEventId || s?.mappedEventId || "").trim();
     const b = String(s?.boxId || "").trim();
-    const sid = String(s?.seatId || "").trim();
-    if (!e || !b || !sid) continue;
+    if (!e || !b) continue;
+
+    const pName = String(s?.person || "").trim();
+    if (!pName || isEmptyPerson(pName)) continue;
+
+    const pUid = String(s?.personUid || "").trim();
+    const pEmail = String(s?.personEmail || "").trim().toLowerCase();
+    const sameUser =
+      (waitingUid && pUid && waitingUid === pUid) ||
+      (waitingEmail && pEmail && waitingEmail === pEmail) ||
+      (!waitingUid && !waitingEmail && waitingName && pName === waitingName);
+    if (!sameUser) continue;
+
     const docId = buildGlobalSeatDocId(e, b, sid);
     if (seen.has(docId)) continue;
     seen.add(docId);
     refs.push(doc(db, "tournaments", tournamentId, "global_seats", docId));
   }
+
   return refs;
 }
 
@@ -591,11 +618,19 @@ async function syncLayoutProjection(eventId = "", boxId = "") {
    */
   let liveRows = [];
   try {
-    const snap = await getDocs(collection(db, "tournaments", tournamentId, "global_seats"));
+    const layoutDocId = getProjectionDocId(e, b);
+    const q = query(
+      collection(db, "tournaments", tournamentId, "global_seats"),
+      where("sourceLayoutDocId", "==", layoutDocId)
+    );
+    const snap = await getDocs(q);
     liveRows = snap.docs.map((d) => d.data() || {});
   } catch (err) {
     console.error("syncLayoutProjection getDocs error:", err);
-    liveRows = globalSeats;
+    liveRows = globalSeats.filter((s) => {
+      const eid = String(s.currentEventId || s.mappedEventId || "").trim();
+      return eid === e && String(s.boxId || "").trim() === b;
+    });
   }
 
   const seats = liveRows
@@ -897,25 +932,29 @@ async function assignSelectedWaitingToSeat(seatId = "") {
   const touchedProjectionKeys = new Set();
 
   await runTransaction(db, async (tx) => {
-    const seatSnap = await tx.get(seatRef);
-    if (!seatSnap.exists()) throw new Error("seat_not_found");
-    const seatData = seatSnap.data() || {};
-    if (!isEmptyPerson(seatData.person)) throw new Error("seat_already_occupied");
-
-    const waitingSnap = await tx.get(waitingRef);
-    const waitingData = waitingSnap.exists() ? (waitingSnap.data() || {}) : { waiting: [] };
-    const waitingArr = Array.isArray(waitingData.waiting) ? waitingData.waiting : [];
     const waitingId = String(waiting.id || "").trim();
     const waitingUid = String(waiting.uid || "").trim();
     const waitingEmail = String(waiting.email || "").trim();
     const waitingName = String(waiting.name || "").trim();
     const waitingTournamentId = String(waiting.tournamentId || tournamentId).trim();
 
-    const seatRefs = getGlobalSeatDocRefs();
-    const seatSnaps = [];
-    for (const ref of seatRefs) {
-      seatSnaps.push(await tx.get(ref));
-    }
+    const dupRefs = getCandidateSeatRefsForPerson(
+      { uid: waitingUid, email: waitingEmail, name: waitingName },
+      targetSeatId
+    );
+
+    const [seatSnap, waitingSnap, ...dupSnaps] = await Promise.all([
+      tx.get(seatRef),
+      tx.get(waitingRef),
+      ...dupRefs.map((r) => tx.get(r))
+    ]);
+
+    if (!seatSnap.exists()) throw new Error("seat_not_found");
+    const seatData = seatSnap.data() || {};
+    if (!isEmptyPerson(seatData.person)) throw new Error("seat_already_occupied");
+
+    const waitingData = waitingSnap.exists() ? (waitingSnap.data() || {}) : { waiting: [] };
+    const waitingArr = Array.isArray(waitingData.waiting) ? waitingData.waiting : [];
 
     const nextWaiting = waitingArr.filter((w) => {
       if (!w || typeof w !== "object") return false;
@@ -935,10 +974,10 @@ async function assignSelectedWaitingToSeat(seatId = "") {
 
     // Heal stale state: if the same user is still seated elsewhere, clear those seats first.
     if (waitingUid || waitingEmail || waitingName) {
-      for (let i = 0; i < seatSnaps.length; i++) {
-        const docSnap = seatSnaps[i];
+      for (let i = 0; i < dupSnaps.length; i++) {
+        const docSnap = dupSnaps[i];
         if (!docSnap.exists()) continue;
-        const ref = seatRefs[i];
+        const ref = dupRefs[i];
         const data = docSnap.data() || {};
         const docSeatId = String(data.seatId || "").trim();
         if (docSeatId === targetSeatId) continue;
@@ -1078,14 +1117,19 @@ async function clearSeat(seatId = "") {
     const prevUid = String(seatData.personUid || "").trim();
     const prevEmail = String(seatData.personEmail || "").trim();
     const prevName = String(seatData.person || "").trim();
-    const waitingSnap = await tx.get(waitingRef);
+
+    const otherRefs = getCandidateSeatRefsForPerson(
+      { uid: prevUid, email: prevEmail, name: prevName },
+      targetSeatId
+    );
+
+    const [waitingSnap, ...otherSnaps] = await Promise.all([
+      tx.get(waitingRef),
+      ...otherRefs.map((r) => tx.get(r))
+    ]);
+
     const waitingData = waitingSnap.exists() ? (waitingSnap.data() || {}) : { waiting: [] };
     const waitingArr = Array.isArray(waitingData.waiting) ? waitingData.waiting : [];
-    const seatRefs = getGlobalSeatDocRefs();
-    const seatSnaps = [];
-    for (const ref of seatRefs) {
-      seatSnaps.push(await tx.get(ref));
-    }
     let hasOtherSeat = false;
 
     tx.set(
@@ -1103,7 +1147,7 @@ async function clearSeat(seatId = "") {
     );
 
     if (!isEmptyPerson(prevName)) {
-      hasOtherSeat = seatSnaps.some((docSnap) => {
+      hasOtherSeat = otherSnaps.some((docSnap) => {
         if (!docSnap.exists()) return false;
         const data = docSnap.data() || {};
         const dSeatId = String(data.seatId || "").trim();

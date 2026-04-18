@@ -4,6 +4,8 @@ import {
   doc,
   getDoc,
   getDocs,
+  query,
+  where,
   setDoc,
   onSnapshot,
   serverTimestamp,
@@ -521,22 +523,19 @@ const SAVE_EVENT_DEBOUNCE_MS = 90;
 
     try {
       const safeSeats = Array.isArray(seats) ? seats : [];
-      const snap = await getDocs(GLOBAL_SEATS_REF);
+      const layoutQuery = query(
+        GLOBAL_SEATS_REF,
+        where("sourceLayoutDocId", "==", EVENT_DOC_ID)
+      );
+      const snap = await getDocs(layoutQuery);
 
-      const existingDocs = snap.docs.filter((d) => {
-        const data = d.data() || {};
-        return (
-          String(data.currentEventId || "").trim() === EVENT_ID &&
-          String(data.boxId || "").trim() === BOX_ID
-        );
-      });
+      const existingDocs = snap.docs;
 
       const nextSeatIds = new Set(
         safeSeats.map((s) => String(s?.id || "").trim()).filter(Boolean)
       );
 
-      const batch = writeBatch(db);
-
+      const ops = [];
       safeSeats.forEach((seat) => {
         const seatId = String(seat?.id || "").trim();
         if (!seatId) return;
@@ -547,17 +546,29 @@ const SAVE_EVENT_DEBOUNCE_MS = 90;
           "global_seats",
           buildGlobalSeatDocId(seatId)
         );
-        batch.set(globalSeatRef, mapSeatToGlobalSeatDoc(seat), { merge: true });
+        ops.push({ kind: "set", ref: globalSeatRef, seat });
       });
 
       existingDocs.forEach((d) => {
         const data = d.data() || {};
         const seatId = String(data.seatId || "").trim();
         if (!seatId || nextSeatIds.has(seatId)) return;
-        batch.delete(d.ref);
+        ops.push({ kind: "del", ref: d.ref });
       });
 
-      await batch.commit();
+      const MAX_BATCH = 400;
+      for (let i = 0; i < ops.length; i += MAX_BATCH) {
+        const slice = ops.slice(i, i + MAX_BATCH);
+        const batch = writeBatch(db);
+        for (const op of slice) {
+          if (op.kind === "set") {
+            batch.set(op.ref, mapSeatToGlobalSeatDoc(op.seat), { merge: true });
+          } else {
+            batch.delete(op.ref);
+          }
+        }
+        await batch.commit();
+      }
     } catch (err) {
       console.error("syncGlobalSeatsForCurrentLayout error:", err);
     }
@@ -1392,56 +1403,69 @@ function addWaiting(name, meta = {}) {
       console.error("setDealerStatus error:", err);
     }
   }
-  async function setDealerStatusIfChanged(uid, patch = {}) {
-  if (!uid || !TOURNAMENT_ID) return false;
 
-  try {
-    const ref = doc(db, "dealer_attendance", `${TOURNAMENT_ID}__${uid}`);
-    const snap = await getDoc(ref);
-    const prev = snap.exists() ? (snap.data() || {}) : {};
+  const DEALER_STATUS_COMPARE_KEYS = [
+    "email",
+    "nickname",
+    "status",
+    "currentEventId",
+    "currentBoxId",
+    "currentSeatId",
+    "currentSeatLabel"
+  ];
 
-    const next = {
-      uid,
-      tournamentId: TOURNAMENT_ID,
-      ...patch
-    };
+  async function applyDealerAttendancePatchesBatched(pairs = []) {
+    if (!TOURNAMENT_ID) return;
 
-    const keysToCheck = [
-      "email",
-      "nickname",
-      "status",
-      "currentEventId",
-      "currentBoxId",
-      "currentSeatId",
-      "currentSeatLabel"
-    ];
+    const dedup = new Map();
+    for (const row of pairs) {
+      const uid = String(row?.uid || "").trim();
+      if (!uid) continue;
+      if (dedup.has(uid)) continue;
+      dedup.set(uid, row.patch || {});
+    }
 
-    const changed = keysToCheck.some((key) => {
-      return String(prev[key] ?? "") !== String(next[key] ?? "");
-    });
+    const list = Array.from(dedup.entries());
+    if (!list.length) return;
 
-    if (!changed) return false;
+    const MAX_CHUNK = 400;
 
-    await setDoc(
-      ref,
-      {
-        uid,
-        tournamentId: TOURNAMENT_ID,
-        updatedAt: Date.now(),
-        updatedAtServer: serverTimestamp(),
-        ...patch
-      },
-      { merge: true }
-    );
+    for (let c = 0; c < list.length; c += MAX_CHUNK) {
+      const chunk = list.slice(c, c + MAX_CHUNK);
+      const refs = chunk.map(([uid]) => doc(db, "dealer_attendance", `${TOURNAMENT_ID}__${uid}`));
+      const snaps = await Promise.all(refs.map((r) => getDoc(r)));
 
-    return true;
-  } catch (err) {
-    console.error("setDealerStatusIfChanged error:", err);
-    return false;
+      const batch = writeBatch(db);
+      let writes = 0;
+
+      for (let i = 0; i < chunk.length; i++) {
+        const [uid, patch] = chunk[i];
+        const prev = snaps[i].exists() ? snaps[i].data() || {} : {};
+        const next = { uid, tournamentId: TOURNAMENT_ID, ...patch };
+        const changed = DEALER_STATUS_COMPARE_KEYS.some(
+          (key) => String(prev[key] ?? "") !== String(next[key] ?? "")
+        );
+        if (!changed) continue;
+
+        batch.set(
+          refs[i],
+          {
+            uid,
+            tournamentId: TOURNAMENT_ID,
+            updatedAt: Date.now(),
+            updatedAtServer: serverTimestamp(),
+            ...patch
+          },
+          { merge: true }
+        );
+        writes += 1;
+      }
+
+      if (writes) await batch.commit();
+    }
   }
-}
 
- async function moveDealerToWaiting(meta = {}) {
+  async function moveDealerToWaiting(meta = {}) {
   const uid = String(meta.uid || "").trim();
   const email = String(meta.email || "").trim();
   let nickname = String(meta.nickname || "").trim();
@@ -1492,7 +1516,7 @@ function addWaiting(name, meta = {}) {
   }
 
   if (uid) {
-    await setDealerStatusIfChanged(uid, {
+    await setDealerStatus(uid, {
       email,
       nickname,
       status: "waiting",
@@ -1539,7 +1563,7 @@ async function moveDealerToAssigned({
   touchWaiting(true);
 
   if (uid) {
-    await setDealerStatusIfChanged(uid, {
+    await setDealerStatus(uid, {
       email: String(email || "").trim(),
       nickname: String(displayName || "").trim(),
       status: "assigned",
@@ -1578,13 +1602,14 @@ async function moveDealerToAssigned({
     });
 
     const allUids = new Set([...waitingByUid.keys(), ...seatByUid.keys()]);
-    const tasks = [];
+    const pairs = [];
 
     for (const uid of allUids) {
       const seat = seatByUid.get(uid);
       if (seat) {
-        tasks.push(
-          setDealerStatusIfChanged(uid, {
+        pairs.push({
+          uid,
+          patch: {
             email: String(seat.personEmail || "").trim(),
             nickname: String(seat.person || "").trim(),
             status: "assigned",
@@ -1592,15 +1617,16 @@ async function moveDealerToAssigned({
             currentBoxId: BOX_ID,
             currentSeatId: String(seat.id || "").trim(),
             currentSeatLabel: String(seat.label ?? seat.no ?? "")
-          })
-        );
+          }
+        });
         continue;
       }
 
       const waiting = waitingByUid.get(uid);
       if (waiting) {
-        tasks.push(
-          setDealerStatusIfChanged(uid, {
+        pairs.push({
+          uid,
+          patch: {
             email: String(waiting.email || "").trim(),
             nickname: String(waiting.name || "").trim(),
             status: "waiting",
@@ -1608,12 +1634,12 @@ async function moveDealerToAssigned({
             currentBoxId: "",
             currentSeatId: "",
             currentSeatLabel: ""
-          })
-        );
+          }
+        });
       }
     }
 
-    if (tasks.length) await Promise.all(tasks);
+    if (pairs.length) await applyDealerAttendancePatchesBatched(pairs);
   }
 
   function getIdentityKey({ uid = "", email = "", name = "" } = {}) {
@@ -1775,11 +1801,12 @@ async function moveDealerToAssigned({
       });
     });
 
-    const seatTasks = [];
+    const pairs = [];
     for (const [, item] of seatKeys) {
       if (!item.uid) continue;
-      seatTasks.push(
-        setDealerStatusIfChanged(item.uid, {
+      pairs.push({
+        uid: item.uid,
+        patch: {
           email: item.email,
           nickname: item.nickname,
           status: "assigned",
@@ -1787,16 +1814,16 @@ async function moveDealerToAssigned({
           currentBoxId: BOX_ID,
           currentSeatId: item.seatId,
           currentSeatLabel: item.seatLabel
-        })
-      );
+        }
+      });
     }
 
-    const waitTasks = [];
     for (const [key, item] of waitingKeys) {
       if (seatKeys.has(key)) continue;
       if (!item.uid) continue;
-      waitTasks.push(
-        setDealerStatusIfChanged(item.uid, {
+      pairs.push({
+        uid: item.uid,
+        patch: {
           email: item.email,
           nickname: item.nickname,
           status: "waiting",
@@ -1804,11 +1831,11 @@ async function moveDealerToAssigned({
           currentBoxId: "",
           currentSeatId: "",
           currentSeatLabel: ""
-        })
-      );
+        }
+      });
     }
 
-    await Promise.all([...seatTasks, ...waitTasks]);
+    if (pairs.length) await applyDealerAttendancePatchesBatched(pairs);
   }
 
   async function healAndPersistState(reason = "") {
