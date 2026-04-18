@@ -2755,7 +2755,7 @@ root?.addEventListener("click", (e) => {
   sessionStorage.setItem("eventId", eventId);
   sessionStorage.setItem("boxId", boxId);
 
-  location.href = `layout.html?tournamentId=${encodeURIComponent(tournamentId)}&eventId=${encodeURIComponent(eventId)}&boxId=${encodeURIComponent(boxId)}`;
+  location.href = `./layout.html?tournamentId=${encodeURIComponent(tournamentId)}&eventId=${encodeURIComponent(eventId)}&boxId=${encodeURIComponent(boxId)}`;
 });
 
 /* ===============================

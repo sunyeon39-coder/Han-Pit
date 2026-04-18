@@ -36,7 +36,7 @@ export async function loginWithGoogle() {
 export function requireAuth(onAuthed) {
   onAuthStateChanged(auth, (user) => {
     if (!user) {
-      location.replace("login.html");
+      location.replace("./login.html");
     } else {
       onAuthed(user);
     }
@@ -45,5 +45,5 @@ export function requireAuth(onAuthed) {
 
 export async function logout() {
   await signOut(auth);
-  location.replace("login.html");
+  location.replace("./login.html");
 }
