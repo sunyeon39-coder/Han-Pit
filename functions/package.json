@@ -1,0 +1,13 @@
+{
+  "name": "han-pit-functions",
+  "description": "FCM when layout_notifications seat_assigned is written",
+  "main": "index.js",
+  "engines": {
+    "node": "20"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.6.0",
+    "firebase-functions": "^5.1.1"
+  },
+  "private": true
+}
