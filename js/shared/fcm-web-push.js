@@ -13,6 +13,16 @@ import {
 export const FCM_VAPID_KEY =
   "BAZXsr3GQtq_nPLrF7C89mr3ejM7DbS-cBBfWNZzHfcHggNier7C2fbIG0uex3DZl8ykVxbqrli54cCdLkena94";
 
+function isLikelyIosNonSafariBrowser() {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  const iOS =
+    /iPad|iPhone|iPod/i.test(ua) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (!iOS) return false;
+  return /CriOS|FxiOS|OPiOS|EdgiOS/i.test(ua);
+}
+
 /** FCM 토큰 발급·권한 요청까지 가능한 환경 (Notification API 포함). */
 export function isWebPushEnvironmentOk() {
   if (typeof window === "undefined") return false;
@@ -58,6 +68,33 @@ export function alertFcmRegistrationResult(r) {
   }
   if (r.reason === "unsupported") {
     alert("이 환경에서는 웹 푸시를 사용할 수 없습니다. (HTTPS 또는 localhost 필요)");
+    return;
+  }
+  if (r.reason === "no_messaging") {
+    if (isLikelyIosNonSafariBrowser()) {
+      alert(
+        "iPhone·iPad의 Chrome 등 서드파티 브라우저는 Apple 정책으로 웹 푸시(FCM)를 사용할 수 없습니다.\n\n**Safari**로 이 사이트를 연 뒤, 공유(□↑) → 「홈 화면에 추가」로 설치하고, 홈 화면 아이콘에서 「알림 켜기」를 다시 눌러 주세요."
+      );
+    } else {
+      alert(
+        "이 브라우저에서는 Firebase 웹 푸시를 지원하지 않습니다. Chrome·Edge 최신 버전 또는 iPhone Safari(홈 화면 웹앱 권장)에서 다시 시도해 주세요."
+      );
+    }
+    return;
+  }
+  if (r.reason === "no_token") {
+    alert(
+      "푸시 등록 토큰을 받지 못했습니다. iPhone은 Safari에서 홈 화면에 추가한 뒤 다시 시도하거나, 잠시 후 같은 버튼을 한 번 더 눌러 주세요."
+    );
+    return;
+  }
+  if (r.reason === "error") {
+    const code = r.error && typeof r.error === "object" ? r.error.code : "";
+    const hint =
+      isLikelyIosNonSafariBrowser() || /ios|unsupported-browser|messaging/i.test(String(code))
+        ? " iPhone Chrome이 아니라 Safari(또는 홈 화면 웹앱)에서 시도해 주세요."
+        : "";
+    alert(`알림 등록 중 오류가 발생했습니다.${hint} 잠시 후 다시 시도해 주세요.`);
     return;
   }
   alert("알림 설정에 실패했습니다. 잠시 후 다시 시도해 주세요.");
