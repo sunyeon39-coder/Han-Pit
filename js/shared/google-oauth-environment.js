@@ -39,13 +39,42 @@ export function isGoogleOAuthLikelyBlockedBrowser() {
   return false;
 }
 
-/** 일반 모바일 브라우저에서는 popup 보다 redirect 가 안정적인 경우가 많음 */
+const OAUTH_REDIRECT_PENDING_KEY = "hanpit:oauthRedirectPending";
+
+export function markOAuthRedirectPending() {
+  try {
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.setItem(OAUTH_REDIRECT_PENDING_KEY, "1");
+    }
+  } catch (_) {}
+}
+
+export function clearOAuthRedirectPending() {
+  try {
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.removeItem(OAUTH_REDIRECT_PENDING_KEY);
+    }
+  } catch (_) {}
+}
+
+export function isOAuthRedirectPending() {
+  try {
+    if (typeof sessionStorage === "undefined") return false;
+    return sessionStorage.getItem(OAUTH_REDIRECT_PENDING_KEY) === "1";
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * GitHub Pages 등 앱 호스트와 authDomain(firebaseapp.com)이 다를 때,
+ * Safari/Chrome(모바일 포함)은 리다이렉트 로그인용 서드파티 저장소가 막혀
+ * 계정 선택 후에도 세션이 붙지 않는 경우가 많습니다.
+ * @see https://firebase.google.com/docs/auth/web/redirect-best-practices
+ *
+ * 그래서 기본은 팝업 로그인을 쓰고, 팝업이 막힐 때만 리다이렉트로 폴백합니다.
+ */
 export function shouldPreferGoogleRedirectOverPopup() {
-  if (typeof navigator === "undefined") return false;
-  if (isGoogleOAuthLikelyBlockedBrowser()) return false;
-  const s = ua();
-  if (/Android/i.test(s)) return true;
-  if (/iPhone|iPad|iPod/i.test(s)) return true;
   return false;
 }
 

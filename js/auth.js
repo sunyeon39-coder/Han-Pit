@@ -8,7 +8,8 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import {
   isGoogleOAuthLikelyBlockedBrowser,
-  shouldPreferGoogleRedirectOverPopup
+  shouldPreferGoogleRedirectOverPopup,
+  markOAuthRedirectPending
 } from "./shared/google-oauth-environment.js";
 
 export async function loginWithGoogle() {
@@ -21,6 +22,7 @@ export async function loginWithGoogle() {
   const provider = new GoogleAuthProvider();
 
   if (shouldPreferGoogleRedirectOverPopup()) {
+    markOAuthRedirectPending();
     await signInWithRedirect(auth, provider);
     return null;
   }
@@ -39,6 +41,7 @@ export async function loginWithGoogle() {
     ];
 
     if (fallbackCodes.includes(error?.code)) {
+      markOAuthRedirectPending();
       await signInWithRedirect(auth, provider);
       return null;
     }

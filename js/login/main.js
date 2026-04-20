@@ -3,7 +3,8 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   signInWithRedirect,
-  getRedirectResult
+  getRedirectResult,
+  onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { isAdminEmail } from "../app_config.js";
@@ -12,6 +13,9 @@ import { syncUserProfile } from "./user-sync.js";
 import {
   isGoogleOAuthLikelyBlockedBrowser,
   shouldPreferGoogleRedirectOverPopup,
+  markOAuthRedirectPending,
+  clearOAuthRedirectPending,
+  isOAuthRedirectPending,
   openCurrentUrlInAndroidChrome,
   openCurrentUrlInIosChrome,
   copyCurrentUrlToClipboard
@@ -133,6 +137,7 @@ async function login() {
 
   if (shouldPreferGoogleRedirectOverPopup()) {
     try {
+      markOAuthRedirectPending();
       await signInWithRedirect(auth, provider);
       return;
     } catch (redirectError) {
@@ -157,6 +162,7 @@ async function login() {
 
     if (fallbackCodes.includes(error?.code)) {
       try {
+        markOAuthRedirectPending();
         await signInWithRedirect(auth, provider);
         return;
       } catch (redirectError) {
@@ -220,22 +226,61 @@ async function saveProfile() {
   }
 }
 
+function waitForSignedInUser(authInstance, timeoutMs) {
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => {
+      try {
+        unsub();
+      } catch (_) {}
+      resolve(authInstance.currentUser);
+    }, timeoutMs);
+    const unsub = onAuthStateChanged(authInstance, (u) => {
+      if (!u) return;
+      window.clearTimeout(timer);
+      try {
+        unsub();
+      } catch (_) {}
+      resolve(u);
+    });
+  });
+}
+
 /**
  * signInWithRedirect 복귀 후 처리.
- * 모바일 Safari 등에서는 getRedirectResult 직후 user 가 비어 있고 auth.currentUser 만 채워지는 타이밍이 있어
- * auth.authStateReady() 후 둘 다 확인한다.
+ * getRedirectResult → authStateReady → currentUser 순으로 보고,
+ * GitHub Pages+서드파티 저장소 제한으로 비어 있으면 onAuthStateChanged 로 잠시 대기한다.
  */
 async function consumeGoogleRedirectResult() {
+  const expectedRedirect = isOAuthRedirectPending();
   try {
+    let cred = null;
+    try {
+      cred = await getRedirectResult(auth);
+    } catch (e) {
+      const c = String(e?.code || "");
+      if (c && c !== "auth/no-auth-event") throw e;
+    }
+
     if (typeof auth.authStateReady === "function") {
       await auth.authStateReady();
     }
-    const cred = await getRedirectResult(auth);
-    const user = cred?.user || auth.currentUser;
+
+    let user = cred?.user || auth.currentUser;
     if (user) {
+      clearOAuthRedirectPending();
       await finalizeLoginFlow(user);
+      return;
+    }
+
+    if (expectedRedirect) {
+      user = await waitForSignedInUser(auth, 5000);
+      clearOAuthRedirectPending();
+      if (user) {
+        await finalizeLoginFlow(user);
+      }
     }
   } catch (error) {
+    clearOAuthRedirectPending();
     const code = String(error?.code || "");
     if (!code || code === "auth/no-auth-event") return;
     console.error("redirect result error:", error);
