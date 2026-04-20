@@ -12,7 +12,7 @@
 const {setGlobalOptions} = require("firebase-functions/v2");
 const {onDocumentWritten} = require("firebase-functions/v2/firestore");
 const {initializeApp} = require("firebase-admin/app");
-const {getFirestore} = require("firebase-admin/firestore");
+const {getFirestore, FieldValue} = require("firebase-admin/firestore");
 const {getMessaging} = require("firebase-admin/messaging");
 
 setGlobalOptions({region: "asia-northeast3"});
@@ -75,6 +75,19 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten("layout_notifications/{uid}
   const title = "배치 알림";
   const body = String(after.message || "").trim() || "Seat에 배치되었습니다.";
   const targetUrl = resolveTargetUrlForPush(after.targetUrl);
+  const userRef = db.doc(`users/${uid}`);
+
+  let badgeN = 1;
+  try {
+    await userRef.set({appBadgeCount: FieldValue.increment(1)}, {merge: true});
+    const badgeSnap = await userRef.get();
+    badgeN = Math.min(
+      99,
+      Math.max(1, Number(badgeSnap.exists ? badgeSnap.get("appBadgeCount") || 1 : 1))
+    );
+  } catch (e) {
+    console.error("[notifyLayoutSeatAssigned] badge increment failed", uid, e);
+  }
 
   try {
     await messaging.send({
@@ -83,7 +96,8 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten("layout_notifications/{uid}
       data: {
         title,
         body,
-        targetUrl
+        targetUrl,
+        appBadgeCount: String(badgeN)
       },
       webpush: {
         fcmOptions: {link: targetUrl}
@@ -93,6 +107,9 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten("layout_notifications/{uid}
   } catch (err) {
     const code = String(err?.code || "");
     console.error("[notifyLayoutSeatAssigned] FCM send failed", uid, code, err?.message || err);
+    try {
+      await userRef.set({appBadgeCount: FieldValue.increment(-1)}, {merge: true});
+    } catch (_) {}
     if (code === "messaging/invalid-registration-token" || code === "messaging/registration-token-not-registered") {
       await db.doc(`users/${uid}`).set({fcmToken: ""}, {merge: true});
       await change.after.ref.set({fcmSeatNotifyDedupKey: dedupKey}, {merge: true});

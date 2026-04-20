@@ -13,6 +13,23 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+function applyAppBadgeFromPayload(data) {
+  const raw = data && data.appBadgeCount != null ? data.appBadgeCount : null;
+  if (raw == null) return Promise.resolve();
+  const n = parseInt(String(raw), 10);
+  if (!Number.isFinite(n) || n < 1) {
+    if (typeof navigator.clearAppBadge === "function") {
+      return navigator.clearAppBadge().catch(() => {});
+    }
+    return Promise.resolve();
+  }
+  const capped = Math.min(99, n);
+  if (typeof navigator.setAppBadge === "function") {
+    return navigator.setAppBadge(capped).catch(() => {});
+  }
+  return Promise.resolve();
+}
+
 messaging.onBackgroundMessage((payload) => {
   console.debug("[firebase-messaging-sw.js] background message:", payload);
 
@@ -23,14 +40,20 @@ messaging.onBackgroundMessage((payload) => {
     "Seat에 배치되었습니다.";
 
   const targetUrl = payload?.data?.targetUrl || "./layout.html";
+  const data = {
+    targetUrl,
+    appBadgeCount: payload?.data?.appBadgeCount != null ? String(payload.data.appBadgeCount) : ""
+  };
 
   // icon 경로 없이 표시 (repo에 ./icons 미포함 시 404로 알림 실패 방지)
-  self.registration.showNotification(title, {
-    body,
-    data: {
-      targetUrl
-    }
-  });
+  const nPromise = Promise.resolve(
+    self.registration.showNotification(title, {
+      body,
+      data
+    })
+  );
+  const badgeP = applyAppBadgeFromPayload(payload?.data || {});
+  return Promise.all([nPromise, badgeP]);
 });
 
 self.addEventListener("notificationclick", (event) => {

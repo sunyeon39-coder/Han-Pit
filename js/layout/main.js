@@ -1,4 +1,4 @@
-import { auth } from "../firebase.js";
+import { auth, db } from "../firebase.js";
 import {
   onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
@@ -64,6 +64,7 @@ import {
   refreshFcmTokenIfGranted,
   syncPushOfferButton
 } from "../shared/fcm-web-push.js";
+import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
 
 (() => {
   "use strict";
@@ -496,6 +497,8 @@ import {
 
   bindLayoutPushUiOnce();
 
+  const flushAppBadgeIfVisible = bindAppBadgeClearOnForeground(db, auth);
+
   setupLayoutMainDomWiring({
     menuBtn,
     backBtn,
@@ -549,6 +552,7 @@ import {
 
   syncPushOfferButton(enablePushBtn, user.uid);
   void refreshFcmTokenIfGranted(user.uid);
+  flushAppBadgeIfVisible();
 
   seatNotify.bindMyNotificationWatch();
 

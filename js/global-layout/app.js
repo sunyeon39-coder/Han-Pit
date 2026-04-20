@@ -20,6 +20,7 @@ import {
   refreshFcmTokenIfGranted,
   syncPushOfferButton
 } from "../shared/fcm-web-push.js";
+import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
 
 function bindGlobalLayoutPushUiOnce() {
   const btn = GL.enablePushBtn;
@@ -39,6 +40,7 @@ export function startGlobalLayoutApp() {
   initGlDomRefs();
   bindGlobalLayoutPushUiOnce();
   bindGlobalLayoutEventHandlers();
+  const flushAppBadgeIfVisible = bindAppBadgeClearOnForeground(db, auth);
 
   onAuthStateChanged(auth, async (user) => {
     if (!user) {
@@ -61,6 +63,7 @@ export function startGlobalLayoutApp() {
       }
       syncPushOfferButton(GL.enablePushBtn, user.uid);
       void refreshFcmTokenIfGranted(user.uid);
+      flushAppBadgeIfVisible();
 
       setPanelOpen(false);
       bindRealtime();

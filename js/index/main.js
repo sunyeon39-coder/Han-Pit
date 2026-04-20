@@ -59,6 +59,9 @@ import {
   refreshFcmTokenIfGranted,
   syncPushOfferButton
 } from "../shared/fcm-web-push.js";
+import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
+
+const flushAppBadgeIfVisible = bindAppBadgeClearOnForeground(db, auth);
 
 async function init() {
   refreshIndexDomRefs();
@@ -371,6 +374,7 @@ onAuthStateChanged(auth, async (user) => {
 
     syncPushOfferButton(IX.enablePushBtn, user.uid);
     void refreshFcmTokenIfGranted(user.uid);
+    flushAppBadgeIfVisible();
 
     await init();
     await initTournamentPeriodWatch();

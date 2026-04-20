@@ -50,8 +50,11 @@ import {
   refreshFcmTokenIfGranted,
   syncPushOfferButton
 } from "../shared/fcm-web-push.js";
+import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
 
 initHubRefs();
+
+const flushAppBadgeIfVisible = bindAppBadgeClearOnForeground(db, auth);
 
 const disposeHanSupportHub = wireHanSupportHub({ hubRefs, hubState });
 
@@ -315,6 +318,7 @@ onAuthStateChanged(auth, async (user) => {
 
     syncPushOfferButton(hubRefs.hubEnablePushBtn, user.uid);
     void refreshFcmTokenIfGranted(user.uid);
+    flushAppBadgeIfVisible();
 
     renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
     bindTournamentsRealtime();
