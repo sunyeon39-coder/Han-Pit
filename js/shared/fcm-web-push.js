@@ -1,6 +1,6 @@
 /**
  * Firebase Web Push (FCM) — 모바일 백그라운드 알림용.
- * Android(삼성 포함) Chrome·iOS Safari 16.4+ (홈 화면 추가 시 권장).
+ * Android Chrome·iOS Safari 16.4+ (홈 화면 웹앱 권장).
  */
 import { db, getMessagingSafe } from "../firebase.js";
 import { getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js";

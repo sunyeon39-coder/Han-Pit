@@ -41,16 +41,25 @@ export async function ensureUserDoc(user) {
   const role = isAdminEmail(email) ? "admin" : "user";
 
   if (currentSnap.exists()) {
+    const prev = currentSnap.data() || {};
+    const nextRole = isAdminEmail(email) ? "admin" : "user";
     await updateDoc(userRef, {
       email: user.email || "",
       photoURL: String(user.photoURL || "").trim(),
-      lastLogin: serverTimestamp()
+      lastLogin: serverTimestamp(),
+      role: nextRole
     });
 
     return {
       created: false,
       migrated: false,
-      role
+      role: nextRole,
+      profile: {
+        ...prev,
+        email: user.email || "",
+        photoURL: String(user.photoURL || "").trim(),
+        role: nextRole
+      }
     };
   }
 
@@ -59,18 +68,23 @@ export async function ensureUserDoc(user) {
   if (legacy) {
     const legacyData = legacy.data || {};
     const legacyRole = String(legacyData.role || "user").trim();
+    const nextRole = isAdminEmail(email) ? "admin" : legacyRole || "user";
+
+    const profile = {
+      email: user.email || "",
+      nickname: String(legacyData.nickname || user.displayName || "").trim(),
+      phone: String(legacyData.phone || "").trim(),
+      gender: String(legacyData.gender || "none").trim(),
+      photoURL: String(legacyData.photoURL || user.photoURL || "").trim(),
+      role: nextRole,
+      accessCode: legacyData.accessCode || "",
+      allowedEvents: legacyData.allowedEvents || {}
+    };
 
     await setDoc(
       userRef,
       {
-        email: user.email || "",
-        nickname: String(legacyData.nickname || user.displayName || "").trim(),
-        phone: String(legacyData.phone || "").trim(),
-        gender: String(legacyData.gender || "none").trim(),
-        photoURL: String(legacyData.photoURL || user.photoURL || "").trim(),
-        role: isAdminEmail(email) ? "admin" : legacyRole || "user",
-        accessCode: legacyData.accessCode || "",
-        allowedEvents: legacyData.allowedEvents || {},
+        ...profile,
         createdAt: legacyData.createdAt || serverTimestamp(),
         lastLogin: serverTimestamp()
       },
@@ -80,21 +94,26 @@ export async function ensureUserDoc(user) {
     return {
       created: true,
       migrated: true,
-      role: isAdminEmail(email) ? "admin" : legacyRole || "user"
+      role: nextRole,
+      profile
     };
   }
+
+  const profile = {
+    email: user.email || "",
+    nickname: String(user.displayName || "").trim(),
+    phone: "",
+    gender: "none",
+    photoURL: String(user.photoURL || "").trim(),
+    role,
+    accessCode: "",
+    allowedEvents: {}
+  };
 
   await setDoc(
     userRef,
     {
-      email: user.email || "",
-      nickname: String(user.displayName || "").trim(),
-      phone: "",
-      gender: "none",
-      photoURL: String(user.photoURL || "").trim(),
-      role,
-      accessCode: "",
-      allowedEvents: {},
+      ...profile,
       createdAt: serverTimestamp(),
       lastLogin: serverTimestamp()
     },
@@ -104,26 +123,9 @@ export async function ensureUserDoc(user) {
   return {
     created: true,
     migrated: false,
-    role
+    role,
+    profile
   };
-}
-
-export async function ensureUserRole(user) {
-  if (!user) return;
-
-  const userRef = doc(db, "users", user.uid);
-  const snap = await getDoc(userRef);
-  if (!snap.exists()) return;
-
-  const email = String(user.email || "").trim().toLowerCase();
-  const nextRole = isAdminEmail(email) ? "admin" : "user";
-
-  await updateDoc(userRef, {
-    role: nextRole,
-    email: user.email || "",
-    photoURL: String(user.photoURL || "").trim(),
-    lastLogin: serverTimestamp()
-  });
 }
 
 export async function syncUserProfile(user) {
@@ -136,16 +138,18 @@ export async function syncUserProfile(user) {
 
   try {
     const ensureResult = await ensureUserDoc(user);
-    await ensureUserRole(user);
-
-    const userRef = doc(db, "users", user.uid);
-    const snap = await getDoc(userRef);
-    const data = snap.exists() ? snap.data() || {} : null;
+    if (!ensureResult) {
+      return { ok: false, reason: "ensure-user-failed" };
+    }
 
     return {
       ok: true,
-      ensureResult,
-      profile: data
+      ensureResult: {
+        created: ensureResult.created,
+        migrated: ensureResult.migrated,
+        role: ensureResult.role
+      },
+      profile: ensureResult.profile || null
     };
   } catch (error) {
     console.error("[syncUserProfile] error:", error);

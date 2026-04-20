@@ -99,8 +99,12 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten("layout_notifications/{uid}
         targetUrl,
         appBadgeCount: String(badgeN)
       },
+      android: {priority: "high"},
       webpush: {
-        fcmOptions: {link: targetUrl}
+        fcmOptions: {link: targetUrl},
+        headers: {
+          Urgency: "high"
+        }
       }
     });
     await change.after.ref.set({fcmSeatNotifyDedupKey: dedupKey}, {merge: true});

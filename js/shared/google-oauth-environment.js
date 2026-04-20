@@ -68,21 +68,6 @@ export function openCurrentUrlInAndroidChrome() {
   }
 }
 
-export function openCurrentUrlInSamsungInternet() {
-  if (typeof window === "undefined" || typeof location === "undefined") return;
-  try {
-    const u = new URL(location.href);
-    const tail = `${u.host}${u.pathname}${u.search}${u.hash}`;
-    const fallback = encodeURIComponent(location.href);
-    window.location.href =
-      `intent://${tail}#Intent;scheme=https;action=android.intent.action.VIEW;` +
-      `category=android.intent.category.BROWSABLE;` +
-      `package=com.sec.android.app.sbrowser;S.browser_fallback_url=${fallback};end`;
-  } catch (_) {
-    window.open(location.href, "_blank", "noopener,noreferrer");
-  }
-}
-
 /**
  * iOS: Chrome 앱으로 현재 https 페이지 열기.
  * `googlechrome://navigate?url=` 는 iOS에서 지원되지 않아 호스트가 "navigate"로 잘못 해석됨(ERR_NAME_NOT_RESOLVED).

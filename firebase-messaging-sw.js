@@ -45,12 +45,16 @@ messaging.onBackgroundMessage((payload) => {
   };
 
   // icon 경로 없이 표시 (repo에 ./icons 미포함 시 404로 알림 실패 방지)
-  const nPromise = Promise.resolve(
-    self.registration.showNotification(title, {
-      body,
-      data
-    })
-  );
+  const nPromise = Promise.resolve().then(() => {
+    try {
+      return self.registration.showNotification(title, {
+        body,
+        data
+      });
+    } catch (e) {
+      console.error("[firebase-messaging-sw.js] showNotification failed:", e);
+    }
+  });
   const badgeP = applyAppBadgeFromPayload(payload?.data || {});
   return Promise.all([nPromise, badgeP]);
 });

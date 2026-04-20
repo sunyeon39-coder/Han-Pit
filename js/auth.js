@@ -14,7 +14,7 @@ import {
 export async function loginWithGoogle() {
   if (isGoogleOAuthLikelyBlockedBrowser()) {
     throw new Error(
-      "IN_APP_BROWSER: Google 로그인은 Chrome·삼성 인터넷 등 일반 브라우저에서만 사용할 수 있습니다."
+      "IN_APP_BROWSER: Google 로그인은 Chrome 또는 Safari 등 일반 브라우저에서만 사용할 수 있습니다."
     );
   }
 
