@@ -1,0 +1,394 @@
+import { auth, db } from "../firebase.js";
+
+import {
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+import {
+  doc,
+  getDoc,
+  setDoc
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+import { isAdminEmail } from "../app_config.js";
+import { getIsAdmin } from "../shared/auth-helpers.js";
+import { isAppDebugEnabled } from "../shared/app-debug.js";
+import { openModal, closeModal } from "../shared/dom-utils.js";
+import { getTournamentId } from "./core-utils.js";
+import { isTournamentActive } from "./time-utils.js";
+import { IX, refreshIndexDomRefs } from "./state.js";
+
+import {
+  loadEvents,
+  bindEventsRealtime,
+  bindLayoutSeatSummaryRealtime,
+  render,
+  refreshCardStatuses,
+  populateEventSelect,
+  renderEventAdminList,
+  syncSelectedEventForm,
+  resetEventForm,
+  makeNextEventDefaults,
+  saveEventCard,
+  deleteEventCardCurrent,
+  bindMySeatAssignment
+} from "./event-cards.js";
+
+import {
+  loadDealerAttendanceOnce,
+  bindDealerAttendanceRealtime,
+  bindDealerSeatRealtime,
+  ensureMeRecovered,
+  renderDealerOps,
+  setupAttendanceLogEvents,
+  bindAttendanceLogsRealtime,
+  joinSharedWaitingOnCheckIn,
+  removeFromSharedWaitingOnCheckOut,
+  updateMyAttendanceStatus,
+  forceSelfCheckedOut,
+  forceAdminCheckedOut,
+  getAdminAttendanceList
+} from "./dealer-attendance.js";
+
+import { routeToHub, initTournamentPeriodWatch } from "./tournament-period.js";
+
+import { wireSeatMapListeners } from "./seat-map.js";
+import {
+  registerFcmWebPushAndSave,
+  refreshFcmTokenIfGranted,
+  syncPushOfferButton
+} from "../shared/fcm-web-push.js";
+
+async function init() {
+  refreshIndexDomRefs();
+
+  if (!getTournamentId()) {
+    alert("대회 정보가 없어 허브로 이동합니다.");
+    location.replace("./hub.html");
+    return;
+  }
+
+  /* Firestore 대기 전에도 목록 영역·딜러 패널을 먼저 그려 빈 화면을 줄입니다. */
+  render();
+  renderDealerOps();
+
+  await loadEvents();
+
+  bindEventsRealtime();
+  bindLayoutSeatSummaryRealtime();
+
+  await loadDealerAttendanceOnce();
+  bindDealerAttendanceRealtime();
+  bindDealerSeatRealtime();
+
+  try {
+    await ensureMeRecovered(auth.currentUser);
+  } catch (err) {
+    console.error("ensureMeRecovered error:", err);
+  }
+
+  render();
+  renderDealerOps();
+  refreshCardStatuses();
+
+  setupAttendanceLogEvents();
+  bindAttendanceLogsRealtime();
+}
+
+function wireIndexPageControls() {
+  refreshIndexDomRefs();
+
+  IX.root?.addEventListener("click", (e) => {
+    const card = e.target.closest(".event-card");
+    if (!card) return;
+
+    if (IX.currentTournament && !isTournamentActive(IX.currentTournament)) {
+      routeToHub("대회 기간이 종료되어 허브로 이동합니다.");
+      return;
+    }
+
+    const tournamentId = getTournamentId();
+    const eventId = card.dataset.eventId;
+    const boxId = card.dataset.boxId;
+
+    if (!eventId || !boxId) {
+      console.warn("❌ Missing eventId or boxId");
+      return;
+    }
+
+    sessionStorage.setItem("tournamentId", tournamentId);
+    sessionStorage.setItem("eventId", eventId);
+    sessionStorage.setItem("boxId", boxId);
+
+    location.href = `./layout.html?tournamentId=${encodeURIComponent(tournamentId)}&eventId=${encodeURIComponent(eventId)}&boxId=${encodeURIComponent(boxId)}`;
+  });
+
+  IX.backBtn?.addEventListener("click", () => {
+    sessionStorage.removeItem("boxId");
+    location.href = "./hub.html";
+  });
+
+  IX.globalLayoutBtn?.addEventListener("click", () => {
+    const tournamentId = getTournamentId();
+    if (!tournamentId) {
+      alert("대회 정보가 없습니다.");
+      return;
+    }
+    sessionStorage.setItem("tournamentId", tournamentId);
+    const eid = String(IX.eventCardId?.value || "").trim();
+    const bid = String(IX.eventCardBoxId?.value || "").trim();
+    const q = new URLSearchParams();
+    q.set("tournamentId", tournamentId);
+    if (eid && bid) {
+      sessionStorage.setItem("eventId", eid);
+      sessionStorage.setItem("boxId", bid);
+      q.set("eventId", eid);
+      q.set("boxId", bid);
+    }
+    location.href = `./global-layout.html?${q.toString()}`;
+  });
+
+  IX.eventAdminBtn?.addEventListener("click", async () => {
+    await loadEvents();
+    populateEventSelect();
+    renderEventAdminList();
+    openModal(IX.eventAdminModal);
+  });
+
+  IX.closeEventAdminBtn?.addEventListener("click", () => {
+    closeModal(IX.eventAdminModal);
+  });
+
+  IX.eventAdminModal?.addEventListener("click", (e) => {
+    if (e.target === IX.eventAdminModal) {
+      closeModal(IX.eventAdminModal);
+    }
+  });
+
+  IX.eventCardSelect?.addEventListener("change", syncSelectedEventForm);
+
+  IX.newEventCardBtn?.addEventListener("click", () => {
+    resetEventForm();
+    makeNextEventDefaults();
+  });
+
+  IX.saveEventCardBtn?.addEventListener("click", saveEventCard);
+  IX.deleteEventCardBtn?.addEventListener("click", deleteEventCardCurrent);
+
+  IX.eventCardList?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-pick-id]");
+    if (!btn) return;
+
+    IX.eventCardSelect.value = btn.dataset.pickId;
+    syncSelectedEventForm();
+  });
+
+  IX.dealerOpsMount?.addEventListener("input", (e) => {
+    const searchEl = e.target.closest("[data-dealer-search]");
+    if (!searchEl) return;
+
+    IX.dealerAdminUi.search = String(searchEl.value || "");
+    renderDealerOps();
+  });
+
+  IX.dealerOpsMount?.addEventListener("change", (e) => {
+    const filterEl = e.target.closest("[data-dealer-filter]");
+    if (filterEl) {
+      IX.dealerAdminUi.status = String(filterEl.value || "all");
+      renderDealerOps();
+      return;
+    }
+
+    const sortEl = e.target.closest("[data-dealer-sort]");
+    if (sortEl) {
+      IX.dealerAdminUi.sort = String(sortEl.value || "name");
+      renderDealerOps();
+    }
+  });
+
+  IX.dealerOpsMount?.addEventListener("click", async (e) => {
+    try {
+      const toggleBtn = e.target.closest("[data-dealer-toggle]");
+      if (toggleBtn) {
+        IX.dealerUiCollapsed = !IX.dealerUiCollapsed;
+        renderDealerOps();
+        return;
+      }
+
+      const user = auth.currentUser;
+      const isAdmin = getIsAdmin(user, IX.currentUserProfile);
+
+      if (isAdmin) {
+        const adminBtn = e.target.closest("[data-admin-action]");
+        if (adminBtn) {
+          const action = String(adminBtn.getAttribute("data-admin-action") || "").trim();
+          const uid = String(adminBtn.getAttribute("data-admin-uid") || "").trim();
+
+          if (!action || !uid) return;
+
+          if (action === "checked_out") {
+            const target = getAdminAttendanceList().find((item) => String(item.uid || "").trim() === uid);
+            if (!target) return;
+
+            await forceAdminCheckedOut(target);
+            await loadDealerAttendanceOnce();
+            renderDealerOps();
+            return;
+          }
+        }
+
+        return;
+      }
+
+      const selfBtn = e.target.closest("[data-self-action]");
+      if (!selfBtn || !user) return;
+
+      const action = String(selfBtn.getAttribute("data-self-action") || "").trim();
+      if (!action) return;
+
+      if (action === "waiting") {
+        const ok = await joinSharedWaitingOnCheckIn(user);
+        if (!ok) return;
+
+        await updateMyAttendanceStatus("waiting");
+        await loadDealerAttendanceOnce();
+        renderDealerOps();
+        return;
+      }
+
+      if (action === "checked_out") {
+        const removed = await removeFromSharedWaitingOnCheckOut(user);
+        if (removed === false) return;
+
+        await forceSelfCheckedOut(user);
+        await loadDealerAttendanceOnce();
+        renderDealerOps();
+        return;
+      }
+    } catch (err) {
+      console.error("dealerOps click error:", err);
+    }
+  });
+
+  try {
+    wireSeatMapListeners();
+  } catch (err) {
+    console.error("wireSeatMapListeners (index) error:", err);
+  }
+
+  bindIndexPushUiOnce();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", wireIndexPageControls, { once: true });
+} else {
+  wireIndexPageControls();
+}
+
+function bindIndexPushUiOnce() {
+  const btn = IX.enablePushBtn;
+  if (!btn || btn.dataset.indexPushBound === "1") return;
+  btn.dataset.indexPushBound = "1";
+  btn.addEventListener("click", async () => {
+    const u = auth.currentUser;
+    if (!u?.uid) return;
+    const r = await registerFcmWebPushAndSave(u.uid);
+    if (r.ok) {
+      alert("백그라운드 알림이 켜졌습니다.");
+    } else if (r.reason === "denied") {
+      alert("알림이 차단되어 있습니다. 기기 설정에서 이 브라우저의 알림을 허용해 주세요.");
+    } else if (r.reason === "not_granted") {
+      alert("알림 권한을 허용해 주세요.");
+    } else if (r.reason === "unsupported") {
+      alert("이 환경에서는 웹 푸시를 사용할 수 없습니다. (HTTPS 또는 localhost 필요)");
+    } else {
+      alert("알림 설정에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+    }
+    syncPushOfferButton(btn, u.uid);
+  });
+}
+
+onAuthStateChanged(auth, async (user) => {
+  if (!user) {
+    if (IX.stopMySeatNotificationWatch) {
+      IX.stopMySeatNotificationWatch();
+      IX.stopMySeatNotificationWatch = null;
+    }
+    location.replace("./login.html");
+    return;
+  }
+
+  bindMySeatAssignment(user);
+
+  try {
+    refreshIndexDomRefs();
+
+    const userRef = doc(db, "users", user.uid);
+    const userSnap = await getDoc(userRef);
+    IX.currentUserProfile = userSnap.exists() ? (userSnap.data() || {}) : null;
+
+    if (!IX.currentUserProfile) {
+      IX.currentUserProfile = {
+        email: user.email || "",
+        nickname: user.displayName || "",
+        role: isAdminEmail(user.email || "") ? "admin" : "user",
+        accessCode: "",
+        allowedEvents: {}
+      };
+      await setDoc(userRef, IX.currentUserProfile, { merge: true });
+    }
+
+    const isAdmin = getIsAdmin(auth.currentUser, IX.currentUserProfile);
+
+    if (isAppDebugEnabled()) {
+      console.debug("[INDEX AUTH]", {
+        uid: user.uid,
+        email: user.email || "",
+        profile: IX.currentUserProfile,
+        isAdmin
+      });
+    }
+
+    renderDealerOps();
+
+    if (isAdmin) {
+      IX.globalLayoutBtn?.classList.remove("hidden");
+      IX.eventAdminBtn?.classList.remove("hidden");
+      IX.attendanceLogBtn?.classList.remove("hidden");
+      IX.seatMapEditBtn?.classList.remove("hidden");
+    } else {
+      IX.globalLayoutBtn?.classList.add("hidden");
+      IX.eventAdminBtn?.classList.add("hidden");
+      IX.attendanceLogBtn?.classList.add("hidden");
+      IX.seatMapEditBtn?.classList.add("hidden");
+    }
+
+    syncPushOfferButton(IX.enablePushBtn, user.uid);
+    void refreshFcmTokenIfGranted(user.uid);
+
+    await init();
+    await initTournamentPeriodWatch();
+  } catch (err) {
+    console.error("index auth init error:", err);
+    alert("인덱스 데이터를 불러오지 못했습니다.");
+  }
+});
+
+setInterval(() => {
+  refreshCardStatuses();
+}, 1000);
+
+setInterval(() => {
+  if (IX.currentTournament && !isTournamentActive(IX.currentTournament)) {
+    routeToHub("대회 기간이 종료되어 허브로 이동합니다.");
+  }
+}, 60000);
+
+window.addEventListener("beforeunload", () => {
+  if (IX.stopTournamentWatch) IX.stopTournamentWatch();
+  if (IX.stopMySeatNotificationWatch) IX.stopMySeatNotificationWatch();
+  if (IX.stopEventsWatch) IX.stopEventsWatch();
+  if (IX.stopLayoutEventsWatch) IX.stopLayoutEventsWatch();
+  if (IX.stopDealerAttendanceWatch) IX.stopDealerAttendanceWatch();
+  if (IX.stopDealerSeatWatch) IX.stopDealerSeatWatch();
+});
