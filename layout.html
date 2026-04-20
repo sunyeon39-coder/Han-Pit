@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>BoxBoard</title>
+  <link rel="manifest" href="./manifest.json" />
+  <meta name="theme-color" content="#111832" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <link rel="stylesheet" href="./css/layout.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="top-left">
+    <div class="logo">HAN Pit</div>
+    <button id="menuBtn" class="icon-btn" aria-label="menu">≡</button>
+  </div>
+
+  <div class="top-right">
+  <div id="canvasZoomBar" class="layout-canvas-zoom-bar layout-canvas-zoom-bar--topbar" role="toolbar" aria-label="캔버스 보기"></div>
+  <button id="enablePushBtn" class="pill-btn" type="button">알림 활성화</button>
+  <button id="backBtn" class="pill-btn" type="button">Back</button>
+</div>
+</header>
+
+<main id="app"></main>
+
+<aside id="pcPanel" class="pc-panel" aria-label="panel">
+  <div class="tabs">
+    <button class="tab active" data-tab="wait">대기</button>
+    <button class="tab" data-tab="seat">배치</button>
+  </div>
+
+  <div class="panel-body">
+    <div id="panelContent"></div>
+  </div>
+</aside>
+
+<div id="mobileSheet" class="mobile-sheet" aria-label="mobile sheet">
+  <button id="mobileAddSeat" class="sheet-btn">+ Seat 추가</button>
+  <button id="mobileAddWaiting" class="sheet-btn ghost">+ 대기 추가</button>
+</div>
+
+<script type="module" src="./js/layout.js"></script>
+</body>
+</html>

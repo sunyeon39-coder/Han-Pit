@@ -1,0 +1,13 @@
+{
+  "name": "Han Pit",
+  "short_name": "Han Pit",
+  "description": "Dealer & table management",
+  "id": "./",
+  "start_url": "./hub.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0a1022",
+  "theme_color": "#111832",
+  "lang": "ko",
+  "icons": []
+}

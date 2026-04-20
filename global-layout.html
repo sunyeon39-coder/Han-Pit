@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Han Pit - Global Layout</title>
+  <link rel="manifest" href="./manifest.json" />
+  <meta name="theme-color" content="#111832" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <link rel="stylesheet" href="./css/layout.css" />
+  <link rel="stylesheet" href="./css/global-layout.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="top-left">
+      <div class="logo">HAN Pit</div>
+      <button id="menuBtn" class="icon-btn" aria-label="menu">≡</button>
+    </div>
+
+    <div class="top-right">
+      <div id="canvasZoomBar" class="layout-canvas-zoom-bar layout-canvas-zoom-bar--topbar" role="toolbar" aria-label="캔버스 보기"></div>
+      <button id="enablePushBtn" class="pill-btn" type="button">알림 켜기</button>
+      <button id="backBtn" class="pill-btn" type="button">Back</button>
+    </div>
+  </header>
+
+  <main id="app"></main>
+
+  <aside id="pcPanel" class="pc-panel" aria-label="panel">
+    <div class="tabs">
+      <button class="tab active" data-tab="wait">대기</button>
+      <button class="tab" data-tab="seat">배치</button>
+    </div>
+    <div class="panel-body">
+      <div id="metaStats" class="global-meta">
+        <div class="global-meta-left">
+          <span id="seatCount" class="hint-pill">SEAT: 0</span>
+          <span id="waitingCount" class="hint-pill">WAIT: 0</span>
+        </div>
+        <div id="globalMetaSeatActions" class="global-meta-actions hidden" aria-hidden="true">
+          <button type="button" id="globalUndoToolbarBtn" class="pill-inline seat-meta-btn seat-meta-btn--undo" disabled>되돌리기</button>
+        </div>
+      </div>
+      <div id="panelContent"></div>
+    </div>
+  </aside>
+
+  <div id="mobileSheet" class="mobile-sheet" aria-label="mobile sheet">
+    <button class="sheet-btn" type="button" disabled>+ Seat 추가</button>
+    <button class="sheet-btn ghost" type="button" disabled>+ 대기 추가</button>
+  </div>
+
+  <div id="globalSeatEditModal" class="global-seat-edit-modal" aria-hidden="true">
+    <div class="global-seat-edit-modal__backdrop" data-close-seat-edit aria-hidden="true"></div>
+    <div
+      class="global-seat-edit-modal__card"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="globalSeatEditTitle"
+    >
+      <h2 id="globalSeatEditTitle" class="global-seat-edit-modal__title">Seat 수정</h2>
+      <p class="global-seat-edit-modal__hint">
+        <strong>카드 ID</strong>는 대회에 등록된 목록에서 고르고, <strong>Box ID</strong>는 필요 시 수정할 수 있습니다. 카드/Box를 바꾸면 저장 후
+        <code>layout.html</code> 배치로 이동할지 묻습니다.
+      </p>
+      <p class="global-seat-edit-modal__meta global-seat-edit-modal__meta--id">
+        Seat ID: <code id="globalSeatEditSeatIdDisplay"></code>
+      </p>
+      <div class="global-seat-edit-modal__fields">
+        <label class="global-seat-edit-modal__label" for="globalSeatEditLabel">Seat 라벨</label>
+        <input
+          id="globalSeatEditLabel"
+          class="global-seat-edit-modal__input"
+          type="text"
+          autocomplete="off"
+          maxlength="16"
+          placeholder="-"
+        />
+        <label class="global-seat-edit-modal__label" id="globalSeatEditEventLabel" for="globalSeatEditEventTrigger">카드 ID</label>
+        <div class="global-seat-edit-modal__eventpick" id="globalSeatEditEventPick">
+          <input type="hidden" id="globalSeatEditEventId" value="" autocomplete="off" />
+          <button
+            type="button"
+            class="global-seat-edit-modal__select-trigger"
+            id="globalSeatEditEventTrigger"
+            aria-haspopup="listbox"
+            aria-expanded="false"
+            aria-labelledby="globalSeatEditEventLabel"
+            aria-label="카드 ID 선택"
+          >
+            <span
+              class="global-seat-edit-modal__select-trigger-text global-seat-edit-modal__select-trigger-text--mono"
+              id="globalSeatEditEventTriggerText"
+              aria-hidden="true"
+            >카드 ID 선택 ▾</span>
+          </button>
+          <ul class="global-seat-edit-modal__select-list" id="globalSeatEditEventList" role="listbox" hidden></ul>
+        </div>
+        <label class="global-seat-edit-modal__label" for="globalSeatEditBoxId">Box ID</label>
+        <input
+          id="globalSeatEditBoxId"
+          class="global-seat-edit-modal__input global-seat-edit-modal__input--mono"
+          type="text"
+          autocomplete="off"
+          placeholder="-"
+        />
+      </div>
+      <div class="global-seat-edit-modal__actions">
+        <button type="button" class="global-seat-edit-modal__btn" data-close-seat-edit>취소</button>
+        <button type="button" class="global-seat-edit-modal__btn global-seat-edit-modal__btn--primary" id="globalSeatEditSave">
+          저장
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./js/global-layout.js"></script>
+</body>
+</html>

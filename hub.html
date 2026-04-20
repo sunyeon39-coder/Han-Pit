@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+  />
+  <title>Han Pit – Hub</title>
+  <link rel="manifest" href="./manifest.json" />
+  <meta name="theme-color" content="#111832" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <link rel="stylesheet" href="./css/app-shared.css" />
+  <link rel="stylesheet" href="./css/hub.css" />
+</head>
+<body>
+  <header class="hub-top">
+    <h1 class="brand">Han Pit</h1>
+
+    <div class="hub-actions">
+      <button id="hubEnablePushBtn" class="top-btn push-offer hidden" type="button">알림 켜기</button>
+      <button id="hanSupportBtn" class="top-btn han-support" type="button">HAN지원</button>
+      <button id="profileBtn" class="top-btn profile" type="button">Profile</button>
+      <button id="adminBtn" class="top-btn admin hidden" type="button">Access Manage</button>
+      <button id="logoutBtn" class="top-btn logout" type="button">Logout</button>
+    </div>
+  </header>
+
+  <main class="hub-main">
+    <section id="eventList" class="event-list"></section>
+  </main>
+
+  <!-- HAN 지원 Modal -->
+  <div id="hanSupportModal" class="modal-backdrop">
+    <div class="modal-card han-support-card">
+      <h2>HAN 지원</h2>
+      <p class="han-support-lead muted">아래 정보를 입력해 제출해 주세요. 운영진이 확인합니다.</p>
+
+      <form id="hanSupportForm">
+        <div class="form-group">
+          <label for="hanName">이름 <span class="muted">(로그인 계정, 수정 불가)</span></label>
+          <input
+            id="hanName"
+            name="name"
+            type="text"
+            required
+            maxlength="100"
+            autocomplete="off"
+            readonly
+            class="han-name-locked"
+            aria-readonly="true"
+          />
+        </div>
+        <div class="form-group">
+          <label for="hanAge">나이</label>
+          <input
+            id="hanAge"
+            name="age"
+            type="text"
+            required
+            maxlength="3"
+            inputmode="numeric"
+            pattern="[0-9]+"
+            title="숫자만 입력해 주세요."
+            placeholder="예: 28"
+          />
+        </div>
+        <div class="form-group">
+          <label for="hanGender">성별</label>
+          <select id="hanGender" name="gender" required>
+            <option value="" disabled selected>선택</option>
+            <option value="남성">남성</option>
+            <option value="여성">여성</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="hanPhone">휴대폰 번호</label>
+          <input id="hanPhone" name="phone" type="tel" required maxlength="40" autocomplete="tel" placeholder="010-0000-0000" />
+        </div>
+        <div class="form-group">
+          <label for="hanExperience">경력 <span class="muted">(150자 이내)</span></label>
+          <textarea
+            id="hanExperience"
+            name="experience"
+            rows="4"
+            required
+            maxlength="150"
+            placeholder="관련 경력을 간단히 적어 주세요."
+          ></textarea>
+          <div class="han-exp-count muted"><span id="hanExperienceCount">0</span> / 150</div>
+        </div>
+        <div class="modal-actions">
+          <button id="hanSupportCloseBtn" class="btn ghost" type="button">닫기</button>
+          <button id="hanSupportSubmitBtn" class="btn primary" type="submit">제출</button>
+        </div>
+      </form>
+
+      <div id="hanSupportAdminWrap" class="han-support-admin hidden" aria-hidden="true">
+        <h3 class="han-support-admin-title">지원 내역 <span class="muted">(관리자 전용)</span></h3>
+        <div id="hanSupportAdminList" class="han-support-admin-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Profile Modal -->
+  <div id="profileModal" class="modal-backdrop">
+    <div class="modal-card">
+      <h2>내 프로필</h2>
+
+      <div class="form-group">
+        <label for="profileEmail">이메일</label>
+        <input id="profileEmail" type="text" disabled />
+      </div>
+
+      <div class="form-group">
+        <label for="profileNickname">닉네임</label>
+        <input id="profileNickname" type="text" maxlength="7" placeholder="-" />
+      </div>
+
+      <div class="form-group">
+        <label for="profileAccessCode">내 접근 코드</label>
+        <input id="profileAccessCode" type="text" disabled />
+      </div>
+
+      <div class="modal-actions">
+        <button id="closeProfileBtn" class="btn ghost" type="button">닫기</button>
+        <button id="saveProfileBtn" class="btn primary" type="button">저장</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Admin Modal -->
+     <!-- User Manage Modal -->
+  <div id="userManageModal" class="modal-backdrop user-manage-backdrop">
+    <div class="modal-card user-manage-card">
+      <div class="user-manage-handle" aria-hidden="true"></div>
+
+      <div class="user-manage-head">
+        <div>
+          <h2 id="manageUserName">유저 관리</h2>
+          <div id="manageUserEmail" class="user-manage-email">이메일</div>
+        </div>
+        <button id="closeUserManageBtn" class="icon-close-btn" type="button" aria-label="닫기">✕</button>
+      </div>
+
+      <div id="manageUserMeta" class="user-manage-meta"></div>
+
+      <div class="user-manage-section">
+        <div class="user-manage-section-title">권한 관리</div>
+        <div class="user-manage-actions">
+          <button id="manageAllowBtn" class="row-btn allow wide" type="button">직접 허용</button>
+          <button id="manageRevokeBtn" class="row-btn revoke wide" type="button">허용 해제</button>
+        </div>
+      </div>
+
+      <div class="user-manage-section">
+        <div class="user-manage-section-title">코드 관리</div>
+        <div class="user-manage-actions">
+          <button id="manageAssignCodeBtn" class="row-btn assign wide" type="button">코드 부여</button>
+          <button id="manageRemoveCodeBtn" class="row-btn remove-code wide" type="button">코드 제거</button>
+          <button id="manageViewCodeBtn" class="row-btn view wide" type="button">코드 보기</button>
+        </div>
+      </div>
+
+      <div class="modal-actions user-manage-footer">
+        <button id="closeUserManageFooterBtn" class="btn ghost" type="button">닫기</button>
+      </div>
+    </div>
+  </div>
+  <div id="adminModal" class="modal-backdrop">
+    <div class="modal-card admin-modal-card">
+      <h2>접근 허용 관리</h2>
+
+      <div class="admin-layout">
+        <!-- 대회 관리 -->
+        <section class="admin-block">
+          <div class="admin-block-head">
+            <h3>대회 관리</h3>
+            <button id="newTournamentBtn" class="mini-btn" type="button">새 대회</button>
+          </div>
+
+          <div class="form-group">
+            <label for="adminEventSelect">대회 선택</label>
+            <select id="adminEventSelect"></select>
+          </div>
+
+          <div class="form-group">
+            <label for="adminTournamentId">대회 ID</label>
+            <input id="adminTournamentId" type="text" placeholder="-" />
+          </div>
+
+          <div class="form-group">
+            <label for="adminTournamentName">대회명</label>
+            <input id="adminTournamentName" type="text" placeholder="-" />
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="adminTournamentStartDate">시작일</label>
+              <input id="adminTournamentStartDate" type="text" placeholder="-" />
+            </div>
+
+            <div class="form-group">
+              <label for="adminTournamentEndDate">종료일</label>
+              <input id="adminTournamentEndDate" type="text" placeholder="-" />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="adminTournamentLogoText">로고 텍스트</label>
+              <input id="adminTournamentLogoText" type="text" placeholder="-" />
+            </div>
+
+            <div class="form-group">
+              <label for="adminEventCode">공용 코드</label>
+              <input id="adminEventCode" type="text" placeholder="-" />
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button id="saveTournamentBtn" class="btn primary" type="button">대회 저장</button>
+            <button id="deleteTournamentBtn" class="btn danger" type="button">대회 삭제</button>
+          </div>
+        </section>
+
+        <!-- 유저 허용 관리 -->
+        <section class="admin-block">
+          <h3>가입 유저 목록</h3>
+
+          <div class="form-group compact">
+            <label for="adminSearchInput">유저 검색</label>
+            <input id="adminSearchInput" type="text" placeholder="-" />
+          </div>
+
+          <div class="admin-user-bulk-bar">
+            <label class="admin-bulk-select-all">
+              <input type="checkbox" id="adminBulkSelectAll" />
+              <span>전체 선택 (현재 목록)</span>
+            </label>
+            <div class="admin-bulk-actions">
+              <button id="adminBulkAssignCodeBtn" type="button" class="mini-btn">일괄 코드 부여</button>
+              <button id="adminBulkRemoveCodeBtn" type="button" class="mini-btn admin-bulk-remove-btn">일괄 코드 제거</button>
+            </div>
+          </div>
+
+          <div id="adminUserList" class="user-list"></div>
+        </section>
+      </div>
+
+      <div class="admin-footer">
+  <div class="modal-actions">
+    <button id="closeAdminBtn" class="btn ghost" type="button">닫기</button>
+  </div>
+</div>
+  </div>
+
+  <script type="module" src="./js/hub.js"></script>
+</body>
+</html>

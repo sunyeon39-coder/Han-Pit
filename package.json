@@ -1,0 +1,13 @@
+{
+  "name": "functions",
+  "description": "Firebase Cloud Functions for BoxBoard",
+  "main": "index.js",
+  "engines": {
+    "node": "20"
+  },
+  "dependencies": {
+    "firebase-admin": "13.6.0",
+    "firebase-functions": "7.1.1"
+  },
+  "private": true
+}
