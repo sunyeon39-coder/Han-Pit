@@ -315,3 +315,66 @@ body::after {
     flex-direction: column;
   }
 }
+
+/* 인앱 브라우저 안내 (Google OAuth 차단 대응) */
+.in-app-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(5, 10, 20, 0.88);
+  backdrop-filter: blur(12px);
+}
+
+.in-app-gate-card {
+  max-width: 420px;
+  width: 100%;
+  padding: 28px 24px;
+  border-radius: var(--radius-md);
+  background: var(--panel-1);
+  border: 1px solid var(--line-soft);
+  box-shadow: var(--shadow-float);
+}
+
+.in-app-gate-title {
+  font-size: 18px;
+  font-weight: 800;
+  margin: 0 0 12px;
+  line-height: 1.35;
+  color: var(--text-1);
+}
+
+.in-app-gate-text {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--text-2);
+  margin: 0 0 20px;
+}
+
+.in-app-gate-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.in-app-gate-primary {
+  width: 100%;
+}
+
+.in-app-gate-secondary {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--panel-3);
+  color: var(--text-1);
+}
+
+.in-app-gate-ghost {
+  width: 100%;
+  background: transparent;
+  border-color: var(--line-soft);
+  color: var(--text-2);
+  font-weight: 700;
+}

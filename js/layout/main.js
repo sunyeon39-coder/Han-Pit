@@ -60,6 +60,7 @@ import { createLayoutSeatWaitingMutations } from "./layout-main-seat-waiting-mut
 import { setupLayoutMainDomWiring } from "./layout-main-dom-wiring.js";
 import {
   alertFcmRegistrationResult,
+  ensureForegroundFcmBadgeListener,
   registerFcmWebPushAndSave,
   refreshFcmTokenIfGranted,
   syncPushOfferButton
@@ -498,6 +499,7 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
   bindLayoutPushUiOnce();
 
   const flushAppBadgeIfVisible = bindAppBadgeClearOnForeground(db, auth);
+  void ensureForegroundFcmBadgeListener();
 
   setupLayoutMainDomWiring({
     menuBtn,

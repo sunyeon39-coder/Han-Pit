@@ -55,6 +55,7 @@ import { routeToHub, initTournamentPeriodWatch } from "./tournament-period.js";
 import { wireSeatMapListeners } from "./seat-map.js";
 import {
   alertFcmRegistrationResult,
+  ensureForegroundFcmBadgeListener,
   registerFcmWebPushAndSave,
   refreshFcmTokenIfGranted,
   syncPushOfferButton
@@ -62,6 +63,7 @@ import {
 import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
 
 const flushAppBadgeIfVisible = bindAppBadgeClearOnForeground(db, auth);
+void ensureForegroundFcmBadgeListener();
 
 async function init() {
   refreshIndexDomRefs();

@@ -1,14 +1,15 @@
-import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { doc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 async function clearAppBadgePersisted(db, uid) {
   if (!db || !uid) return;
   try {
-    if (typeof navigator.clearAppBadge === "function") {
-      await navigator.clearAppBadge();
+    const nav = typeof navigator !== "undefined" ? navigator : null;
+    if (nav && typeof nav.clearAppBadge === "function") {
+      await nav.clearAppBadge();
     }
   } catch (_) {}
   try {
-    await updateDoc(doc(db, "users", uid), { appBadgeCount: 0 });
+    await setDoc(doc(db, "users", uid), { appBadgeCount: 0 }, { merge: true });
   } catch (err) {
     console.debug("[app-badge-sync] reset count", err?.code || err);
   }

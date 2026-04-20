@@ -16,6 +16,7 @@ import { bindRealtime } from "./realtime.js";
 import { bindGlobalLayoutEventHandlers } from "./ui-events.js";
 import {
   alertFcmRegistrationResult,
+  ensureForegroundFcmBadgeListener,
   registerFcmWebPushAndSave,
   refreshFcmTokenIfGranted,
   syncPushOfferButton
@@ -41,6 +42,7 @@ export function startGlobalLayoutApp() {
   bindGlobalLayoutPushUiOnce();
   bindGlobalLayoutEventHandlers();
   const flushAppBadgeIfVisible = bindAppBadgeClearOnForeground(db, auth);
+  void ensureForegroundFcmBadgeListener();
 
   onAuthStateChanged(auth, async (user) => {
     if (!user) {

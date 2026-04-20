@@ -46,6 +46,7 @@ import {
 import { wireHanSupportHub } from "./hub-han-support.js";
 import {
   alertFcmRegistrationResult,
+  ensureForegroundFcmBadgeListener,
   registerFcmWebPushAndSave,
   refreshFcmTokenIfGranted,
   syncPushOfferButton
@@ -55,6 +56,7 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
 initHubRefs();
 
 const flushAppBadgeIfVisible = bindAppBadgeClearOnForeground(db, auth);
+void ensureForegroundFcmBadgeListener();
 
 const disposeHanSupportHub = wireHanSupportHub({ hubRefs, hubState });
 

@@ -14,18 +14,17 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 function applyAppBadgeFromPayload(data) {
-  const raw = data && data.appBadgeCount != null ? data.appBadgeCount : null;
-  if (raw == null) return Promise.resolve();
+  if (!data) return Promise.resolve();
+  const raw = data.appBadgeCount;
+  // 빈 문자열은 "배지 없음"으로 처리하지 않음(iOS에서 잘못 clear 되는 것 방지)
+  if (raw == null || raw === "") return Promise.resolve();
   const n = parseInt(String(raw), 10);
-  if (!Number.isFinite(n) || n < 1) {
-    if (typeof navigator.clearAppBadge === "function") {
-      return navigator.clearAppBadge().catch(() => {});
-    }
-    return Promise.resolve();
-  }
+  if (!Number.isFinite(n) || n < 1) return Promise.resolve();
   const capped = Math.min(99, n);
-  if (typeof navigator.setAppBadge === "function") {
-    return navigator.setAppBadge(capped).catch(() => {});
+  // WebKit 권장: 홈 화면 웹앱의 SW 에서는 self.navigator 사용
+  const nav = self.navigator;
+  if (nav && typeof nav.setAppBadge === "function") {
+    return nav.setAppBadge(capped).catch(() => {});
   }
   return Promise.resolve();
 }

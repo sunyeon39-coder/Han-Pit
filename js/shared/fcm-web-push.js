@@ -3,7 +3,7 @@
  * Android(삼성 포함) Chrome·iOS Safari 16.4+ (홈 화면 추가 시 권장).
  */
 import { db, getMessagingSafe } from "../firebase.js";
-import { getToken } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js";
+import { getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js";
 import {
   doc,
   serverTimestamp,
@@ -12,6 +12,25 @@ import {
 
 export const FCM_VAPID_KEY =
   "BAZXsr3GQtq_nPLrF7C89mr3ejM7DbS-cBBfWNZzHfcHggNier7C2fbIG0uex3DZl8ykVxbqrli54cCdLkena94";
+
+let foregroundBadgeListenerBound = false;
+
+/** 앱이 켜져 있을 때 수신되는 FCM 에도 아이콘 배지 숫자 반영 (백그라운드 SW 와 동일 data). */
+export async function ensureForegroundFcmBadgeListener() {
+  if (foregroundBadgeListenerBound || typeof window === "undefined") return;
+  const messaging = await getMessagingSafe();
+  if (!messaging) return;
+  foregroundBadgeListenerBound = true;
+  onMessage(messaging, (payload) => {
+    const raw = payload?.data?.appBadgeCount;
+    if (raw == null || raw === "") return;
+    const n = parseInt(String(raw), 10);
+    if (!Number.isFinite(n) || n < 1) return;
+    if ("setAppBadge" in navigator) {
+      void navigator.setAppBadge(Math.min(99, n)).catch(() => {});
+    }
+  });
+}
 
 function isLikelyIosNonSafariBrowser() {
   if (typeof navigator === "undefined") return false;
@@ -135,7 +154,10 @@ export async function refreshFcmTokenIfGranted(uid) {
       vapidKey: FCM_VAPID_KEY,
       serviceWorkerRegistration: registration
     });
-    if (token) await saveUserFcmToken(uid, token);
+    if (token) {
+      await saveUserFcmToken(uid, token);
+      void ensureForegroundFcmBadgeListener();
+    }
   } catch (err) {
     console.debug("[fcm-web-push] refreshFcmTokenIfGranted:", err);
   }
@@ -181,6 +203,7 @@ export async function registerFcmWebPushAndSave(uid, vapidKey = FCM_VAPID_KEY) {
     if (!token) return { ok: false, reason: "no_token" };
 
     await saveUserFcmToken(uid, token);
+    void ensureForegroundFcmBadgeListener();
     return { ok: true, token };
   } catch (err) {
     console.error("[fcm-web-push] registerFcmWebPushAndSave:", err);

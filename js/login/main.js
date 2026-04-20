@@ -9,6 +9,14 @@ import { doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs
 import { isAdminEmail } from "../app_config.js";
 import { isAppDebugEnabled } from "../shared/app-debug.js";
 import { syncUserProfile } from "./user-sync.js";
+import {
+  isGoogleOAuthLikelyBlockedBrowser,
+  shouldPreferGoogleRedirectOverPopup,
+  openCurrentUrlInAndroidChrome,
+  openCurrentUrlInSamsungInternet,
+  openCurrentUrlInIosChrome,
+  copyCurrentUrlToClipboard
+} from "../shared/google-oauth-environment.js";
 
 const googleBtn = document.getElementById("googleLogin");
 const signupModal = document.getElementById("signupModal");
@@ -16,6 +24,11 @@ const signupConfirm = document.getElementById("signupConfirm");
 
 const nicknameInput = document.getElementById("nicknameInput");
 const phoneInput = document.getElementById("phoneInput");
+
+const inAppGate = document.getElementById("inAppBrowserGate");
+const openInChromeBtn = document.getElementById("openInChromeBtn");
+const openInSamsungBtn = document.getElementById("openInSamsungBtn");
+const copyLoginUrlBtn = document.getElementById("copyLoginUrlBtn");
 
 let selectedGender = "none";
 
@@ -53,6 +66,43 @@ provider.setCustomParameters({
   prompt: "select_account"
 });
 
+function wireInAppBrowserGate() {
+  if (!isGoogleOAuthLikelyBlockedBrowser()) return;
+
+  inAppGate?.classList.remove("hidden");
+  if (googleBtn) {
+    googleBtn.disabled = true;
+    googleBtn.setAttribute("aria-disabled", "true");
+  }
+
+  openInChromeBtn?.addEventListener("click", () => {
+    const s = navigator.userAgent || "";
+    if (/Android/i.test(s)) openCurrentUrlInAndroidChrome();
+    else if (/iPhone|iPad|iPod/i.test(s)) openCurrentUrlInIosChrome();
+    else window.open(location.href, "_blank", "noopener,noreferrer");
+  });
+  openInSamsungBtn?.addEventListener("click", () => {
+    const s = navigator.userAgent || "";
+    if (/Android/i.test(s)) openCurrentUrlInSamsungInternet();
+    else {
+      void (async () => {
+        const ok = await copyCurrentUrlToClipboard();
+        alert(
+          ok
+            ? "주소를 복사했습니다. Safari 또는 Chrome에서 붙여넣기 해 주세요. (삼성 인터넷은 Android 전용입니다.)"
+            : "주소창 URL을 직접 복사해 Safari 또는 Chrome에서 열어 주세요."
+        );
+      })();
+    }
+  });
+  copyLoginUrlBtn?.addEventListener("click", async () => {
+    const ok = await copyCurrentUrlToClipboard();
+    alert(ok ? "주소를 복사했습니다. Chrome 또는 삼성 인터넷 주소창에 붙여넣기 해 주세요." : "복사에 실패했습니다. 주소창의 URL을 직접 선택해 복사해 주세요.");
+  });
+}
+
+wireInAppBrowserGate();
+
 async function finalizeLoginFlow(user) {
   if (!user) return;
 
@@ -88,6 +138,25 @@ async function finalizeLoginFlow(user) {
 }
 
 async function login() {
+  if (isGoogleOAuthLikelyBlockedBrowser()) {
+    alert(
+      "이 환경에서는 Google 로그인을 사용할 수 없습니다.\n\n" +
+        "화면 안내에 따라 Chrome 또는 삼성 인터넷으로 이 페이지를 다시 열어 주세요."
+    );
+    return;
+  }
+
+  if (shouldPreferGoogleRedirectOverPopup()) {
+    try {
+      await signInWithRedirect(auth, provider);
+      return;
+    } catch (redirectError) {
+      console.error("login redirect (primary) error:", redirectError);
+      alert(`로그인 이동 실패: ${redirectError?.code || ""} ${redirectError?.message || redirectError}`);
+      return;
+    }
+  }
+
   try {
     const result = await signInWithPopup(auth, provider);
     await finalizeLoginFlow(result.user);
@@ -173,8 +242,15 @@ getRedirectResult(auth)
     }
   })
   .catch((error) => {
+    const code = String(error?.code || "");
+    if (!code || code === "auth/no-auth-event") return;
     console.error("redirect result error:", error);
-    alert(`redirect result error: ${error?.code || ""} ${error?.message || error}`);
+    const hint =
+      /disallowed|403|useragent/i.test(String(error?.message || "")) ||
+      code === "auth/operation-not-allowed"
+        ? "\n\nChrome 또는 삼성 인터넷에서 다시 시도해 주세요. 카카오톡 등 인앱 브라우저는 사용할 수 없습니다."
+        : "";
+    alert(`로그인 처리 오류: ${code} ${error?.message || ""}${hint}`);
   });
 
 googleBtn?.addEventListener("click", login);
