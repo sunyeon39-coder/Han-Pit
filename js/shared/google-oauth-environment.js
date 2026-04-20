@@ -7,6 +7,33 @@ function ua() {
   return typeof navigator !== "undefined" ? String(navigator.userAgent || "") : "";
 }
 
+/**
+ * 인앱(WebView)에서 `location.href`가 `https//host/...` 처럼 깨지는 경우가 있어
+ * 외부 브라우저로 넘길 때 반드시 정규화한다.
+ */
+export function normalizeAppPageHref(href) {
+  let h = String(href || "").trim();
+  if (!h) return h;
+  h = h.replace(/^https\/\//i, "https://");
+  h = h.replace(/^http\/\//i, "http://");
+  h = h.replace(/^https:\/\/https:\/\//i, "https://");
+  h = h.replace(/^https:\/\/https\/\//i, "https://");
+  h = h.replace(/^https:\/\/https:/i, "https://");
+  return h;
+}
+
+/** `googlechromes://` / `x-safari-https://` 에 넣을 `host + path + query + hash` */
+export function iosExternalBrowserPathFromHref(href) {
+  const raw = normalizeAppPageHref(href);
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== "https:" && u.protocol !== "http:") return "";
+    return `${u.host}${u.pathname}${u.search}${u.hash}`;
+  } catch (_) {
+    return "";
+  }
+}
+
 export function isStandalonePwaDisplay() {
   if (typeof window === "undefined") return false;
   try {
@@ -85,40 +112,71 @@ export function shouldPreferGoogleRedirectOverPopup() {
 export function openCurrentUrlInAndroidChrome() {
   if (typeof window === "undefined" || typeof location === "undefined") return;
   try {
-    const u = new URL(location.href);
+    const href = normalizeAppPageHref(location.href);
+    const u = new URL(href);
     const tail = `${u.host}${u.pathname}${u.search}${u.hash}`;
-    const fallback = encodeURIComponent(location.href);
+    const fallback = encodeURIComponent(href);
     window.location.href =
       `intent://${tail}#Intent;scheme=https;action=android.intent.action.VIEW;` +
       `category=android.intent.category.BROWSABLE;` +
       `package=com.android.chrome;S.browser_fallback_url=${fallback};end`;
   } catch (_) {
-    window.open(location.href, "_blank", "noopener,noreferrer");
+    window.open(normalizeAppPageHref(location.href), "_blank", "noopener,noreferrer");
   }
 }
 
 /**
- * iOS: Chrome 앱으로 현재 https 페이지 열기.
- * `googlechrome://navigate?url=` 는 iOS에서 지원되지 않아 호스트가 "navigate"로 잘못 해석됨(ERR_NAME_NOT_RESOLVED).
- * iOS는 `googlechromes://` + 전체 https URL 형식을 사용해야 함.
+ * iOS: **시스템 Safari**로 현재 페이지 열기 (카카오·라인 등 인앱 → Safari).
+ * `x-safari-https://호스트/경로…` 형식. Google 로그인도 Safari가 가장 안정적이다.
+ */
+export function openCurrentUrlInIosSystemSafari() {
+  if (typeof window === "undefined" || typeof location === "undefined") return;
+  const href = normalizeAppPageHref(location.href);
+  const tail = iosExternalBrowserPathFromHref(href);
+  if (!tail) {
+    window.location.href = href;
+    return;
+  }
+  try {
+    const u = new URL(href);
+    const scheme = u.protocol === "https:" ? "x-safari-https" : "x-safari-http";
+    window.location.href = `${scheme}://${tail}`;
+  } catch (_) {
+    window.location.href = href;
+  }
+}
+
+/**
+ * iOS: **Chrome 앱**으로 같은 URL 열기.
+ * 잘못된 `googlechromes://https://…` 는 호스트가 `https` 로 해석되어 ERR_NAME_NOT_RESOLVED 가 난다.
+ * 반드시 `googlechromes://호스트/경로…` 만 전달한다.
  * @see https://developer.chrome.com/docs/ios/links/
  */
 export function openCurrentUrlInIosChrome() {
   if (typeof window === "undefined" || typeof location === "undefined") return;
-  const href = location.href;
-  if (/^https:\/\//i.test(href)) {
-    window.location.href = `googlechromes://${href}`;
+  const href = normalizeAppPageHref(location.href);
+  const tail = iosExternalBrowserPathFromHref(href);
+  if (!tail) {
+    window.location.href = href;
     return;
   }
-  if (/^http:\/\//i.test(href)) {
-    window.location.href = `googlechrome://${href}`;
-    return;
-  }
+  try {
+    const u = new URL(href);
+    if (u.protocol === "https:") {
+      window.location.href = `googlechromes://${tail}`;
+      return;
+    }
+    if (u.protocol === "http:") {
+      window.location.href = `googlechrome://${tail}`;
+      return;
+    }
+  } catch (_) {}
   window.location.href = href;
 }
 
 export async function copyCurrentUrlToClipboard() {
-  const href = typeof location !== "undefined" ? location.href : "";
+  const href =
+    typeof location !== "undefined" ? normalizeAppPageHref(location.href) : "";
   if (!href) return false;
   try {
     if (typeof window !== "undefined" && window.isSecureContext && navigator.clipboard?.writeText) {

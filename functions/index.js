@@ -101,9 +101,11 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten("layout_notifications/{uid}
       },
       android: {priority: "high"},
       webpush: {
+        notification: {title, body},
         fcmOptions: {link: targetUrl},
         headers: {
-          Urgency: "high"
+          Urgency: "high",
+          TTL: "86400"
         }
       }
     });

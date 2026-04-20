@@ -49,6 +49,8 @@ messaging.onBackgroundMessage((payload) => {
     try {
       return self.registration.showNotification(title, {
         body,
+        lang: "ko",
+        tag: "hanpit-layout-seat",
         data
       });
     } catch (e) {

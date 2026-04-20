@@ -10,6 +10,7 @@ import { doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs
 import { isAdminEmail } from "../app_config.js";
 import { isAppDebugEnabled } from "../shared/app-debug.js";
 import { syncUserProfile } from "./user-sync.js";
+import { refreshFcmTokenIfGranted } from "../shared/fcm-web-push.js";
 import {
   isGoogleOAuthLikelyBlockedBrowser,
   shouldPreferGoogleRedirectOverPopup,
@@ -17,7 +18,7 @@ import {
   clearOAuthRedirectPending,
   isOAuthRedirectPending,
   openCurrentUrlInAndroidChrome,
-  openCurrentUrlInIosChrome,
+  openCurrentUrlInIosSystemSafari,
   copyCurrentUrlToClipboard
 } from "../shared/google-oauth-environment.js";
 
@@ -77,7 +78,7 @@ function wireInAppBrowserGate() {
   openInChromeBtn?.addEventListener("click", () => {
     const s = navigator.userAgent || "";
     if (/Android/i.test(s)) openCurrentUrlInAndroidChrome();
-    else if (/iPhone|iPad|iPod/i.test(s)) openCurrentUrlInIosChrome();
+    else if (/iPhone|iPad|iPod/i.test(s)) openCurrentUrlInIosSystemSafari();
     else window.open(location.href, "_blank", "noopener,noreferrer");
   });
   copyLoginUrlBtn?.addEventListener("click", async () => {
@@ -114,6 +115,8 @@ async function finalizeLoginFlow(user) {
     );
     return;
   }
+
+  void refreshFcmTokenIfGranted(user.uid);
 
   const profile = syncResult.profile || {};
   const nickname = String(profile.nickname || "").trim();
