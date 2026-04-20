@@ -83,11 +83,24 @@ export function openCurrentUrlInSamsungInternet() {
   }
 }
 
-/** iOS: 설치된 Chrome 앱으로 열기 시도 (미설치 시 아무 일 없을 수 있음) */
+/**
+ * iOS: Chrome 앱으로 현재 https 페이지 열기.
+ * `googlechrome://navigate?url=` 는 iOS에서 지원되지 않아 호스트가 "navigate"로 잘못 해석됨(ERR_NAME_NOT_RESOLVED).
+ * iOS는 `googlechromes://` + 전체 https URL 형식을 사용해야 함.
+ * @see https://developer.chrome.com/docs/ios/links/
+ */
 export function openCurrentUrlInIosChrome() {
   if (typeof window === "undefined" || typeof location === "undefined") return;
   const href = location.href;
-  window.location.href = `googlechrome://navigate?url=${encodeURIComponent(href)}`;
+  if (/^https:\/\//i.test(href)) {
+    window.location.href = `googlechromes://${href}`;
+    return;
+  }
+  if (/^http:\/\//i.test(href)) {
+    window.location.href = `googlechrome://${href}`;
+    return;
+  }
+  window.location.href = href;
 }
 
 export async function copyCurrentUrlToClipboard() {

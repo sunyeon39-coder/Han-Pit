@@ -62,9 +62,6 @@ document.querySelectorAll(".gender-btn").forEach((btn) => {
 });
 
 const provider = new GoogleAuthProvider();
-provider.setCustomParameters({
-  prompt: "select_account"
-});
 
 function wireInAppBrowserGate() {
   if (!isGoogleOAuthLikelyBlockedBrowser()) return;
@@ -235,13 +232,22 @@ async function saveProfile() {
   }
 }
 
-getRedirectResult(auth)
-  .then(async (result) => {
-    if (result?.user) {
-      await finalizeLoginFlow(result.user);
+/**
+ * signInWithRedirect 복귀 후 처리.
+ * 모바일 Safari 등에서는 getRedirectResult 직후 user 가 비어 있고 auth.currentUser 만 채워지는 타이밍이 있어
+ * auth.authStateReady() 후 둘 다 확인한다.
+ */
+async function consumeGoogleRedirectResult() {
+  try {
+    if (typeof auth.authStateReady === "function") {
+      await auth.authStateReady();
     }
-  })
-  .catch((error) => {
+    const cred = await getRedirectResult(auth);
+    const user = cred?.user || auth.currentUser;
+    if (user) {
+      await finalizeLoginFlow(user);
+    }
+  } catch (error) {
     const code = String(error?.code || "");
     if (!code || code === "auth/no-auth-event") return;
     console.error("redirect result error:", error);
@@ -251,7 +257,10 @@ getRedirectResult(auth)
         ? "\n\nChrome 또는 삼성 인터넷에서 다시 시도해 주세요. 카카오톡 등 인앱 브라우저는 사용할 수 없습니다."
         : "";
     alert(`로그인 처리 오류: ${code} ${error?.message || ""}${hint}`);
-  });
+  }
+}
+
+void consumeGoogleRedirectResult();
 
 googleBtn?.addEventListener("click", login);
 signupConfirm?.addEventListener("click", saveProfile);

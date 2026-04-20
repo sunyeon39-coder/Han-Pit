@@ -19,7 +19,6 @@ export async function loginWithGoogle() {
   }
 
   const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({ prompt: "select_account" });
 
   if (shouldPreferGoogleRedirectOverPopup()) {
     await signInWithRedirect(auth, provider);
