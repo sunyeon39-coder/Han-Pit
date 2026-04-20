@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+  />
+  <title>Han Pit - Index</title>
+  <link rel="manifest" href="./manifest.json" />
+  <meta name="theme-color" content="#111832" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <link rel="stylesheet" href="./css/app-shared.css" />
+  <link rel="stylesheet" href="./css/index.css" />
+</head>
+<body>
+  <header class="index-topbar">
+    <div class="topbar-left">
+      <button id="backBtn" class="back-btn" type="button" aria-label="Back">Back</button>
+    </div>
+
+    <div class="topbar-center">
+      <div id="topbarTournamentName" class="topbar-title">Tournament Events</div>
+    </div>
+
+    <div class="topbar-right">
+      <button id="enablePushBtn" class="manage-btn hidden" type="button">알림 켜기</button>
+      <button id="globalLayoutBtn" class="manage-btn hidden" type="button">통합 배치도</button>
+      <button id="eventAdminBtn" class="manage-btn hidden" type="button">카드 관리</button>
+      <button id="attendanceLogBtn" class="manage-btn hidden" type="button">운영 로그</button>
+      <button id="seatMapBtn" class="manage-btn" type="button">전체 배치도</button>
+      <button id="seatMapEditBtn" class="manage-btn hidden" type="button">맵 편집</button>
+    </div>
+  </header>
+
+  <main class="index-page">
+  <section id="dealerOpsMount" class="dealer-ops-mount"></section>
+  <div id="indexRoot" class="index-root"></div>
+</main>
+<div id="attendanceLogModal" class="modal-backdrop">
+  <div class="modal-card attendance-log-card">
+    <div class="attendance-log-head">
+      <h2>운영 로그</h2>
+      <button id="closeAttendanceLogBtn" class="mini-btn" type="button">닫기</button>
+    </div>
+
+    <div class="attendance-log-toolbar">
+  <input id="attendanceLogSearch" type="text" placeholder="-" />
+
+  <select id="attendanceLogActionFilter">
+    <option value="all">전체</option>
+    <option value="waiting">대기</option>
+    <option value="assigned">배치중</option>
+    <option value="checked_out">퇴근</option>
+    <option value="break">휴식</option>
+  </select>
+
+  <button id="deleteSelectedAttendanceLogsBtn" class="mini-btn danger" type="button">
+    체크 삭제
+  </button>
+
+  <button id="clearAttendanceLogsBtn" class="mini-btn danger" type="button">
+    전체 초기화
+  </button>
+</div>
+
+    <div id="attendanceLogSummary" class="attendance-log-summary">최근 로그 0건</div>
+    <div id="attendanceLogList" class="attendance-log-list"></div>
+  </div>
+</div>
+
+  <!-- Event Admin Modal -->
+  <div id="eventAdminModal" class="modal-backdrop">
+    <div class="modal-card event-admin-card">
+      <h2>이벤트 카드 관리</h2>
+
+      <div class="event-admin-layout">
+        <section class="admin-block">
+          <div class="admin-block-head">
+            <h3>카드 생성 / 수정</h3>
+            <button id="newEventCardBtn" class="mini-btn" type="button">새 카드</button>
+          </div>
+
+          <div class="form-group">
+            <label for="eventCardSelect">이벤트 카드</label>
+            <select id="eventCardSelect"></select>
+          </div>
+
+          <div class="form-group">
+            <label for="eventCardId">카드 ID</label>
+            <input id="eventCardId" type="text" placeholder="-" />
+          </div>
+
+          <div class="form-group">
+            <label for="eventCardBoxId">Box ID</label>
+            <input id="eventCardBoxId" type="text" placeholder="-" />
+          </div>
+
+          <div class="form-group">
+            <label for="eventCardDate">날짜</label>
+            <input id="eventCardDate" type="text" placeholder="-" />
+          </div>
+
+          <div class="form-group">
+            <label for="eventCardTitle">카드 제목 (영문 권장)</label>
+            <input id="eventCardTitle" type="text" placeholder="-" />
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="eventCardStart">시작 시간</label>
+              <input id="eventCardStart" type="text" placeholder="-" />
+            </div>
+
+            <div class="form-group">
+              <label for="eventCardClose">마감 시간</label>
+              <input id="eventCardClose" type="text" placeholder="-" />
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button id="saveEventCardBtn" class="btn primary" type="button">카드 저장</button>
+            <button id="deleteEventCardBtn" class="btn danger" type="button">카드 삭제</button>
+          </div>
+        </section>
+
+        <section class="admin-block">
+          <h3>현재 카드 목록</h3>
+          <div id="eventCardList" class="event-card-list"></div>
+        </section>
+      </div>
+
+      <div class="modal-actions">
+        <button id="closeEventAdminBtn" class="btn ghost" type="button">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Seat Map Modal -->
+<div id="seatMapModal" class="modal-backdrop">
+  <div class="modal-card seat-map-modal-card">
+    <div class="seat-map-modal-head">
+      <div>
+        <div class="seat-map-kicker">FLOOR MAP</div>
+        <h2>전체 테이블 배치도</h2>
+      </div>
+      <button id="seatMapCloseBtn" class="icon-close-btn" type="button">✕</button>
+    </div>
+
+    <div class="seat-map-scroll-shell">
+      <div id="seatMapScroll" class="seat-map-scroll">
+        <div id="seatMapCanvas" class="seat-map-canvas"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Map Editor Modal -->
+<div id="seatMapEditorModal" class="modal-backdrop">
+  <div class="modal-card seat-map-admin-card">
+    <div class="seat-map-modal-head">
+      <h2>Seat Map Editor</h2>
+      <button id="seatMapEditorCloseBtn" class="icon-close-btn" type="button">✕</button>
+    </div>
+
+    <div class="seat-map-editor-toolbar">
+      <button id="addSeatBtn" class="mini-btn" type="button">Seat 추가</button>
+      <button id="saveMapBtn" class="mini-btn" type="button">맵 저장</button>
+    </div>
+
+    <div class="seat-map-scroll-shell editor">
+      <div id="seatMapEditorScroll" class="seat-map-scroll">
+        <div id="seatMapEditorCanvas" class="seat-map-canvas"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+  <script type="module" src="./js/index.js"></script>
+</body>
+</html>

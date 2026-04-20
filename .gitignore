@@ -1,0 +1,10 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+*.log
+firebase-debug.log
+firebase-debug.*.log
+
+# Cloud Functions — never commit dependencies
+functions/node_modules/

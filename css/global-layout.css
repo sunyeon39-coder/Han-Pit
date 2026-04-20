@@ -1,0 +1,653 @@
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+#app {
+  height: calc(100vh - var(--topbar-h));
+  padding: 14px;
+  padding-right: 14px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#app.with-panel {
+  padding-right: 394px;
+}
+
+#app > .layout-canvas-viewport {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.canvas-inner {
+  position: relative;
+  min-width: 100%;
+  min-height: 100%;
+}
+
+.pc-canvas .seat-box {
+  min-width: 92px;
+  padding: 10px 12px;
+  touch-action: none;
+}
+
+.pc-panel .global-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  flex-wrap: nowrap;
+  padding: 8px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02));
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.16);
+}
+
+.global-meta-left {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.global-meta-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.global-meta-actions.hidden {
+  display: none !important;
+}
+
+.pc-panel .global-meta-actions .seat-meta-btn {
+  min-height: 32px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+/* 되돌리기: 보조 텍스트 버튼 (추가 버튼과 대비) */
+.pc-panel .global-meta-actions .seat-meta-btn--undo {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  padding: 0 12px;
+  color: rgba(255, 255, 255, 0.82);
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.pc-panel .global-meta-actions .seat-meta-btn--undo:not(:disabled):hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.pc-panel .global-meta-actions .seat-meta-btn--undo:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.global-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.global-form.single {
+  grid-template-columns: 1fr;
+}
+
+.global-form .full {
+  grid-column: 1 / -1;
+}
+
+.global-form-hint {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  opacity: 0.78;
+  line-height: 1.4;
+  margin: 0 0 2px 0;
+}
+
+.global-form-hint-compact {
+  margin: 0 0 6px 0;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+/* 통합 배치도 · Seat 추가 입력 (상단 메타 바와 동일 카드 톤) */
+.pc-panel .global-form-seat-add {
+  margin-bottom: 8px;
+  padding: 4px 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.018));
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12);
+}
+
+.seat-add-one-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 라벨 / 카드 / Box / 추가 — 한 줄 30px 고정 (pill 기본 min-height 등 무력화) */
+.pc-panel .global-form-seat-add .seat-add-input,
+.pc-panel .global-form-seat-add .seat-add-event-trigger {
+  box-sizing: border-box;
+  height: 30px;
+  min-height: 30px;
+  max-height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.28);
+  color: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.pc-panel .global-form-seat-add .seat-add-input {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+
+/* 라벨 / EVENT / BOX 동일 너비 */
+.pc-panel .global-form-seat-add .seat-add-input--label,
+.pc-panel .global-form-seat-add .seat-add-input--meta {
+  flex: 1 1 0;
+  min-width: 0;
+  width: 0;
+}
+
+.pc-panel .global-form-seat-add .seat-add-input--label {
+  text-align: left;
+}
+
+.pc-panel .global-form-seat-add .seat-add-input--meta {
+  text-align: center;
+}
+
+/* Seat 추가 줄 · 카드 ID (Firestore events 목록 드롭다운) */
+.pc-panel .global-form-seat-add .seat-add-event-pick {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  width: 0;
+  height: 30px;
+  min-height: 30px;
+  max-height: 30px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: stretch;
+}
+
+.pc-panel .global-form-seat-add .seat-add-event-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  text-align: center;
+  cursor: pointer;
+  margin: 0;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.pc-panel .global-form-seat-add .seat-add-event-trigger:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.pc-panel .global-form-seat-add .seat-add-event-trigger:focus {
+  outline: none;
+  border-color: rgba(77, 163, 255, 0.8);
+  box-shadow: 0 0 0 2px rgba(77, 163, 255, 0.22);
+}
+
+.pc-panel .global-form-seat-add .seat-add-event-trigger-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1;
+  text-align: center;
+}
+
+.pc-panel .global-form-seat-add .seat-add-event-list {
+  z-index: 20;
+}
+
+.seat-add-input::placeholder {
+  opacity: 0.45;
+  text-align: left;
+}
+
+.seat-add-input--meta::placeholder {
+  text-align: center;
+}
+
+.pc-panel .global-form-seat-add .seat-add-input:focus {
+  outline: none;
+  border-color: rgba(77, 163, 255, 0.8);
+  box-shadow: 0 0 0 2px rgba(77, 163, 255, 0.22);
+}
+
+.pc-panel .global-form-seat-add .seat-add-input--meta {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.pc-panel .global-form-seat-add .seat-add-one-row > button.seat-add-action-btn.pill-inline {
+  flex: 0 0 auto;
+  box-sizing: border-box !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  max-height: 30px !important;
+  margin: 0;
+  padding: 0 12px !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1 !important;
+  white-space: nowrap;
+  -webkit-appearance: none;
+  appearance: none;
+  transform: none;
+}
+
+.pc-panel .global-form-seat-add .seat-add-one-row > button.seat-add-action-btn.pill-inline:hover,
+.pc-panel .global-form-seat-add .seat-add-one-row > button.seat-add-action-btn.pill-inline:active {
+  transform: none;
+}
+
+#globalUndoToolbarBtn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.global-list {
+  max-height: calc(100vh - var(--topbar-h) - 260px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.seat-sort-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.seat-sort-row .pill-inline.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(77, 163, 255, 0.25) inset;
+}
+
+.wait-manage-row,
+.seat-manage-row {
+  margin-bottom: 10px;
+}
+
+.wait-manage-row:last-child,
+.seat-manage-row:last-child {
+  margin-bottom: 0;
+}
+
+.meta-line {
+  font-size: 12px;
+  opacity: 0.76;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.meta-line.seat-manage-submeta {
+  font-size: 11px;
+  opacity: 0.62;
+  line-height: 1.25;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.wait-name-text {
+  max-width: none;
+}
+
+.empty-panel {
+  opacity: 0.7;
+  padding: 12px 4px;
+  text-align: center;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+}
+
+.admin-only.hidden {
+  display: none;
+}
+
+@media (max-width: 1180px) {
+  #app {
+    padding-right: 14px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  #app.with-panel {
+    padding-right: 14px;
+  }
+
+  #pcPanel {
+    display: none !important;
+  }
+}
+
+/* ---------- Seat 수정 모달 (패널 Seat 추가 카드와 동일 톤) ---------- */
+.global-seat-edit-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 2400;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.global-seat-edit-modal.global-seat-edit-modal--open {
+  display: flex;
+}
+
+body.global-seat-edit-modal-open {
+  overflow: hidden;
+}
+
+.global-seat-edit-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(3, 7, 17, 0.78);
+  backdrop-filter: blur(12px);
+  cursor: pointer;
+}
+
+.global-seat-edit-modal__card {
+  position: relative;
+  z-index: 1;
+  width: min(92vw, 420px);
+  max-height: min(88vh, 640px);
+  overflow: auto;
+  padding: 18px 18px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.022)),
+    linear-gradient(160deg, rgba(12, 18, 32, 0.98), rgba(18, 26, 42, 0.96));
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  color: inherit;
+}
+
+.global-seat-edit-modal__title {
+  margin: 0 0 10px;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+.global-seat-edit-modal__hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.82;
+  font-weight: 600;
+}
+
+.global-seat-edit-modal__hint code {
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.global-seat-edit-modal__meta {
+  margin: 0 0 14px;
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.72;
+}
+
+.global-seat-edit-modal__meta--id code {
+  font-size: 12px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.global-seat-edit-modal__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.global-seat-edit-modal__label {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+  margin-top: 4px;
+}
+
+.global-seat-edit-modal__label:first-of-type {
+  margin-top: 0;
+}
+
+.global-seat-edit-modal__input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 34px;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.28);
+  color: inherit;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.global-seat-edit-modal__input--mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+}
+
+.global-seat-edit-modal__input::placeholder {
+  opacity: 0.42;
+  font-weight: 600;
+}
+
+.global-seat-edit-modal__input:focus {
+  outline: none;
+  border-color: rgba(77, 163, 255, 0.85);
+  box-shadow: 0 0 0 2px rgba(77, 163, 255, 0.22);
+}
+
+.global-seat-edit-modal__eventpick {
+  position: relative;
+}
+
+.global-seat-edit-modal__select-trigger {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.38);
+  color: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-align: left;
+  cursor: pointer;
+}
+
+.global-seat-edit-modal__select-trigger:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.global-seat-edit-modal__select-trigger:focus {
+  outline: none;
+  border-color: rgba(77, 163, 255, 0.85);
+  box-shadow: 0 0 0 2px rgba(77, 163, 255, 0.22);
+}
+
+.global-seat-edit-modal__select-trigger-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.global-seat-edit-modal__select-trigger-text--mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: 0.01em;
+}
+
+.global-seat-edit-modal__select-list {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 6;
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(18, 22, 32, 0.98);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+}
+
+.global-seat-edit-modal__select-list[hidden] {
+  display: none !important;
+}
+
+.global-seat-edit-modal__select-list li {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.global-seat-edit-modal__select-list li:hover,
+.global-seat-edit-modal__select-list li.is-active {
+  background: rgba(77, 163, 255, 0.16);
+}
+
+.global-seat-edit-modal__select-list li .global-seat-edit-modal__opt-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 650;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  opacity: 0.55;
+}
+
+.global-seat-edit-modal__select-list li.is-muted {
+  opacity: 0.75;
+  cursor: default;
+}
+
+.global-seat-edit-modal__select-list li.global-seat-edit-modal__select-empty {
+  padding: 12px 10px;
+  font-size: 12px;
+  font-weight: 650;
+  opacity: 0.55;
+  text-align: center;
+  list-style: none;
+  cursor: default;
+}
+
+.global-seat-edit-modal__select-list li.global-seat-edit-modal__select-empty:hover {
+  background: transparent;
+}
+
+.global-seat-edit-modal__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  justify-content: flex-end;
+}
+
+.global-seat-edit-modal__btn {
+  min-height: 36px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.global-seat-edit-modal__btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.global-seat-edit-modal__btn--primary {
+  border-color: rgba(77, 163, 255, 0.55);
+  background: rgba(77, 163, 255, 0.22);
+}
+
+.global-seat-edit-modal__btn--primary:hover {
+  background: rgba(77, 163, 255, 0.3);
+}
+
+.global-seat-edit-modal__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 대기 탭: layout.html 모바일 대기열과 동일한 compact 행 (이름만 + 타이머 + 삭제) */
+.pc-panel .global-list .mobile-wait-row.compact {
+  margin-bottom: 12px;
+}
+
+.pc-panel .global-list .mobile-wait-row.compact:last-child {
+  margin-bottom: 0;
+}

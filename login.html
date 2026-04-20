@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HAN Pit Login</title>
+  <link rel="manifest" href="./manifest.json" />
+  <meta name="theme-color" content="#111832" />
+  <link rel="stylesheet" href="./css/login.css" />
+</head>
+<body>
+
+  <div class="login-wrap">
+    <div class="login-card">
+      <h1 class="logo">HAN Pit</h1>
+      <p class="subtitle">Dealer & Table Management</p>
+
+      <button id="googleLogin" class="login-btn" type="button">
+        Google로 로그인
+      </button>
+
+      <p class="login-desc">
+        Google 계정으로 간편하게 로그인하세요
+      </p>
+    </div>
+  </div>
+
+  <!-- 첫 로그인 정보 입력 모달 -->
+  <div id="signupModal" class="signup-modal hidden">
+    <div class="signup-card">
+      <h2>기본 정보를 입력해주세요</h2>
+
+      <div class="input-box">
+        <input id="nicknameInput" type="text" placeholder="-" maxlength="7" />
+      </div>
+
+      <div class="gender-box">
+        <button class="gender-btn" type="button" data-gender="male">남성</button>
+        <button class="gender-btn" type="button" data-gender="female">여성</button>
+        <button class="gender-btn active" type="button" data-gender="none">미선택</button>
+      </div>
+
+      <div class="input-box">
+        <input id="phoneInput" type="text" placeholder="-" />
+      </div>
+
+      <button id="signupConfirm" class="login-btn" type="button">
+        확인
+      </button>
+    </div>
+  </div>
+
+  <script type="module" src="./js/login.js"></script>
+</body>
+</html>

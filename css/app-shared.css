@@ -1,0 +1,70 @@
+/**
+ * Han Pit — 공통 디자인 토큰 (hub / index / layout / global-layout)
+ * 페이지 CSS보다 먼저 로드하거나 layout.css에서 @import
+ */
+:root {
+  --topbar-h: 64px;
+  --topbar-pad-y: 10px;
+  --topbar-pad-x: 14px;
+  --control-h: 44px;
+  --control-h-sm: 36px;
+  --radius-pill: 999px;
+  --radius-card: 18px;
+  --radius-control: 12px;
+  --radius-modal: 20px;
+  --panel-pad: 14px;
+
+  /* Layout / 배치도 (블루 포인트) */
+  --bg1: #070b18;
+  --bg2: #0c1225;
+  --panel: rgba(255, 255, 255, 0.06);
+  --border: rgba(255, 255, 255, 0.12);
+  --text: #eef2ff;
+  --muted: rgba(238, 242, 255, 0.6);
+  --accent-blue: #4da3ff;
+  --accent-gold: #d6b25e;
+  --accent-gold-strong: #efd08d;
+  --accent: var(--accent-blue);
+  --danger: #ff5b7f;
+  --ok: #3ee2a0;
+  --radius: 18px;
+  --shadow-card: 0 18px 46px rgba(0, 0, 0, 0.28);
+  --shadow-float: 0 28px 80px rgba(0, 0, 0, 0.4);
+
+  /* Index 토너먼트 화면 (골드 CTA + 상태색) */
+  --bg-1: #07111f;
+  --bg-2: #0d172a;
+  --bg-3: #13203a;
+  --panel-1: rgba(255, 255, 255, 0.05);
+  --panel-2: rgba(255, 255, 255, 0.08);
+  --panel-3: rgba(255, 255, 255, 0.12);
+  --line-soft: rgba(255, 255, 255, 0.08);
+  --line-mid: rgba(255, 255, 255, 0.14);
+  --line-gold: rgba(214, 178, 94, 0.34);
+  --text-1: #f7f8fc;
+  --text-2: #c8d0de;
+  --text-3: #8f9cb4;
+  --scheduled: #94a3b8;
+  --opened: #f4b860;
+  --running: #5fd2a4;
+  --closed: #f26d7d;
+
+  --font-app: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, Arial, sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.hidden {
+  display: none !important;
+}
