@@ -13,27 +13,40 @@ export function isAttendanceTerminal(status) {
   return s === "checked_out" || s === "off";
 }
 
+/** index 이벤트 카드에 없는 eventId 의 좌석은 과거 배치 잔상으로 보고 배치중 판정에서 제외 */
+export function seatStillMatchesActiveEventCard(seatInfo) {
+  if (!seatInfo) return false;
+  const eid = String(seatInfo.eventId || "").trim();
+  if (!eid) return false;
+  const events = Array.isArray(IX.events) ? IX.events : [];
+  return events.some((ev) => String(ev.id || "").trim() === eid);
+}
+
 export function getDerivedAttendance(user) {
   if (!user) return null;
 
   const base = getBaseAttendance(user);
   const seatInfo = IX.dealerSeatMap.get(user.uid);
-  /** 좌석 문서가 늦게 비워지거나 잘못 남아 있어도, 퇴근·미출근이면 출석 상태를 우선한다. */
-  const useSeat = Boolean(seatInfo) && !(base && isAttendanceTerminal(base.status));
+  /** 퇴근·미출근이면 좌석 무시 + 삭제된 카드·빈 eventId 좌석은 배치로 치지 않음 */
+  const useSeat =
+    Boolean(seatInfo) &&
+    !(base && isAttendanceTerminal(base.status)) &&
+    seatStillMatchesActiveEventCard(seatInfo);
 
   if (!base) {
+    const seatOnly = seatInfo && seatStillMatchesActiveEventCard(seatInfo);
     return {
       uid: user.uid,
       nickname: IX.currentUserProfile?.nickname || user.displayName || "Unknown",
-      status: seatInfo ? "assigned" : "off",
+      status: seatOnly ? "assigned" : "off",
       checkedInAt: null,
       checkedOutAt: null,
       breakStartedAt: null,
       totalBreakMs: 0,
-      currentEventId: seatInfo?.eventId || "",
-      currentBoxId: seatInfo?.boxId || "",
-      currentSeatId: seatInfo?.seatId || "",
-      currentSeatLabel: seatInfo?.seatLabel || "",
+      currentEventId: seatOnly ? (seatInfo.eventId || "") : "",
+      currentBoxId: seatOnly ? (seatInfo.boxId || "") : "",
+      currentSeatId: seatOnly ? (seatInfo.seatId || "") : "",
+      currentSeatLabel: seatOnly ? (seatInfo.seatLabel || "") : "",
       updatedAt: 0
     };
   }
