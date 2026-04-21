@@ -12,7 +12,11 @@
       "firebase.json",
       "**/.*",
       "**/node_modules/**",
-      "functions/**"
+      "functions/**",
+      ".env",
+      ".env.*",
+      "*.pem",
+      "package-lock.json"
     ]
   }
 }

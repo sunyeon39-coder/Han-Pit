@@ -1,13 +1,10 @@
 {
-  "name": "functions",
-  "description": "Firebase Cloud Functions for BoxBoard",
-  "main": "index.js",
-  "engines": {
-    "node": "20"
-  },
-  "dependencies": {
-    "firebase-admin": "13.6.0",
-    "firebase-functions": "7.1.1"
-  },
-  "private": true
+  "name": "han-pit",
+  "private": true,
+  "description": "HAN Pit 정적 사이트 (Hosting) + Firebase rules/functions",
+  "scripts": {
+    "deploy:hosting": "firebase deploy --only hosting",
+    "deploy:functions": "firebase deploy --only functions",
+    "deploy:rules": "firebase deploy --only firestore:rules"
+  }
 }
