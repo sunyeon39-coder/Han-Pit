@@ -1,0 +1,149 @@
+/**
+ * 홈 화면 추가 안내 (hub / login 공통)
+ */
+.ath-hint {
+  position: fixed;
+  /* login 인앱 차단(200)·허브 모달(1000+)보다 낮게 */
+  z-index: 150;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: min(52vh, 420px);
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0));
+  background: linear-gradient(180deg, rgba(10, 16, 34, 0.97) 0%, #0a1022 100%);
+  border-top: 1px solid rgba(214, 178, 94, 0.35);
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #e8ecf8;
+  font-size: 13px;
+  line-height: 1.45;
+  animation: ath-slide-up 0.28s ease-out;
+}
+
+@keyframes ath-slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.ath-hint__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.ath-hint__title {
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -0.02em;
+  color: #f0e6c8;
+}
+
+.ath-hint__close {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #c7d0df;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ath-hint__close:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.ath-hint__body {
+  overflow-y: auto;
+  flex: 1;
+  padding-right: 4px;
+  margin-bottom: 12px;
+}
+
+.ath-hint__sub {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #d6b25e;
+  margin: 10px 0 6px;
+}
+
+.ath-hint__sub:first-child {
+  margin-top: 0;
+}
+
+.ath-hint__body p {
+  margin: 0 0 8px;
+  color: rgba(232, 236, 248, 0.92);
+}
+
+.ath-hint__body strong {
+  color: #fff;
+  font-weight: 600;
+}
+
+.ath-hint__divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 12px 0;
+}
+
+.ath-hint__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ath-hint__btn {
+  flex: 1;
+  min-width: 120px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.06);
+  color: #e8ecf8;
+}
+
+.ath-hint__btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.ath-hint__btn--primary {
+  background: rgba(214, 178, 94, 0.2);
+  border-color: rgba(214, 178, 94, 0.45);
+  color: #f0e6c8;
+}
+
+.ath-hint__btn--primary:hover {
+  background: rgba(214, 178, 94, 0.3);
+}
+
+@media (min-width: 640px) {
+  .ath-hint {
+    left: auto;
+    right: 16px;
+    bottom: 16px;
+    max-width: 420px;
+    max-height: min(70vh, 520px);
+    border-radius: 16px;
+    border: 1px solid rgba(214, 178, 94, 0.3);
+    padding: 16px 18px;
+  }
+}
