@@ -8,11 +8,18 @@ export function getBaseAttendance(user) {
   return IX.dealerAttendanceMap.get(getAttendanceDocId(tournamentId, user.uid)) || null;
 }
 
+export function isAttendanceTerminal(status) {
+  const s = String(status || "").trim();
+  return s === "checked_out" || s === "off";
+}
+
 export function getDerivedAttendance(user) {
   if (!user) return null;
 
   const base = getBaseAttendance(user);
   const seatInfo = IX.dealerSeatMap.get(user.uid);
+  /** 좌석 문서가 늦게 비워지거나 잘못 남아 있어도, 퇴근·미출근이면 출석 상태를 우선한다. */
+  const useSeat = Boolean(seatInfo) && !(base && isAttendanceTerminal(base.status));
 
   if (!base) {
     return {
@@ -33,11 +40,11 @@ export function getDerivedAttendance(user) {
 
   return {
     ...base,
-    status: seatInfo ? "assigned" : base.status,
-    currentEventId: seatInfo?.eventId || base.currentEventId || "",
-    currentBoxId: seatInfo?.boxId || base.currentBoxId || "",
-    currentSeatId: seatInfo?.seatId || base.currentSeatId || "",
-    currentSeatLabel: seatInfo?.seatLabel || base.currentSeatLabel || ""
+    status: useSeat ? "assigned" : base.status,
+    currentEventId: useSeat ? (seatInfo.eventId || base.currentEventId || "") : base.currentEventId || "",
+    currentBoxId: useSeat ? (seatInfo.boxId || base.currentBoxId || "") : base.currentBoxId || "",
+    currentSeatId: useSeat ? (seatInfo.seatId || base.currentSeatId || "") : base.currentSeatId || "",
+    currentSeatLabel: useSeat ? (seatInfo.seatLabel || base.currentSeatLabel || "") : base.currentSeatLabel || ""
   };
 }
 
