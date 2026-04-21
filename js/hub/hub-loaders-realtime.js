@@ -109,3 +109,34 @@ export function bindUsersRealtime() {
     }
   );
 }
+
+/** 운영진이 코드·직접 허용을 바꿀 때 허브 카드(접근 제한)가 새로고침 없이 갱신되도록 */
+export function bindMyProfileRealtime(uid) {
+  if (!uid) return;
+
+  if (hubState.stopMyProfileWatch) {
+    hubState.stopMyProfileWatch();
+    hubState.stopMyProfileWatch = null;
+  }
+
+  hubState.stopMyProfileWatch = onSnapshot(
+    doc(db, "users", uid),
+    (snap) => {
+      if (!snap.exists()) return;
+
+      const patch = snap.data() || {};
+      hubState.currentUserProfile = { ...(hubState.currentUserProfile || {}), ...patch };
+
+      renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
+
+      const isAdmin = getIsAdminUser(hubState.currentUser, hubState.currentUserProfile);
+      if (isAdmin && hubRefs.adminModal?.classList.contains("show")) {
+        populateTournamentSelect();
+        renderAdminUserList();
+      }
+    },
+    (err) => {
+      console.error("bindMyProfileRealtime error:", err);
+    }
+  );
+}

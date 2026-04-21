@@ -15,9 +15,8 @@ import { renderDealerOps } from "./dealer-attendance-render.js";
 import { ensureMeRecovered } from "./dealer-attendance-recovery.js";
 
 export function bindDealerAttendanceRealtime() {
-  const tournamentId = getTournamentId();
   const user = auth.currentUser;
-  if (!tournamentId || !user) return;
+  if (!user) return;
 
   if (IX.stopDealerAttendanceWatch) {
     IX.stopDealerAttendanceWatch();
@@ -28,7 +27,12 @@ export function bindDealerAttendanceRealtime() {
     IX.stopDealerAttendanceWatch = onSnapshot(
       collection(db, "dealer_attendance"),
       (snap) => {
+        const tournamentId = getTournamentId();
         IX.dealerAttendanceMap.clear();
+        if (!tournamentId) {
+          renderDealerOps();
+          return;
+        }
 
         snap.docs.forEach((d) => {
           if (!attendanceDocBelongsToTournament(d.id, tournamentId)) return;
@@ -46,6 +50,9 @@ export function bindDealerAttendanceRealtime() {
     );
     return;
   }
+
+  const tournamentId = getTournamentId();
+  if (!tournamentId) return;
 
   IX.stopDealerAttendanceWatch = onSnapshot(
     getAttendanceRef(tournamentId, user.uid),

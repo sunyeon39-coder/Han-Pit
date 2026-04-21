@@ -20,5 +20,6 @@ export const hubState = {
   adminBulkSelectedUids: new Set(),
   stopTournamentsWatch: null,
   stopUsersWatch: null,
+  stopMyProfileWatch: null,
   adminActionInFlight: false
 };

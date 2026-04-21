@@ -21,5 +21,6 @@ export function parseTournamentIdFromAttendanceDocId(docId) {
 export function attendanceDocBelongsToTournament(docId, tournamentId) {
   const tid = String(tournamentId || "").trim();
   if (!tid || !docId) return false;
-  return String(docId).startsWith(`${tid}${marker}`);
+  const prefix = `${tid}__`;
+  return String(docId).startsWith(prefix);
 }

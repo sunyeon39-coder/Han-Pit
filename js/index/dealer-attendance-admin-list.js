@@ -31,10 +31,16 @@ export function getAdminAttendanceList() {
   return list;
 }
 
+function normalizeDealerAdminKeyword(raw) {
+  const s = String(raw || "").trim().toLowerCase();
+  if (!s || /^[\s\-._]+$/.test(s)) return "";
+  return s;
+}
+
 export function getFilteredAdminAttendanceList() {
   const base = getAdminAttendanceList();
 
-  const keyword = IX.dealerAdminUi.search.trim().toLowerCase();
+  const keyword = normalizeDealerAdminKeyword(IX.dealerAdminUi.search);
   let list = base.filter((item) => {
     const name = String(item.nickname || "").toLowerCase();
     const email = String(item.email || "").toLowerCase();

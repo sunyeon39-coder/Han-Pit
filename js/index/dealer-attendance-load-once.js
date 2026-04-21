@@ -17,9 +17,14 @@ export async function loadDealerAttendanceOnce() {
   try {
     if (getIsAdmin(user, IX.currentUserProfile)) {
       const snap = await getDocs(collection(db, "dealer_attendance"));
+      const adminTournamentId = getTournamentId();
+      if (!adminTournamentId) {
+        scheduleRenderDealerOps();
+        return;
+      }
 
       snap.docs.forEach((d) => {
-        if (!attendanceDocBelongsToTournament(d.id, tournamentId)) return;
+        if (!attendanceDocBelongsToTournament(d.id, adminTournamentId)) return;
         const data = d.data() || {};
         const tid =
           parseTournamentIdFromAttendanceDocId(d.id) || String(data.tournamentId || "").trim();
