@@ -1,12 +1,13 @@
 import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
+import { attendanceDocBelongsToTournament } from "./dealer-attendance-refs.js";
 
 export function getAdminAttendanceList() {
   const tournamentId = getTournamentId();
   const list = [];
 
-  IX.dealerAttendanceMap.forEach((value) => {
-    if (value.tournamentId !== tournamentId) return;
+  IX.dealerAttendanceMap.forEach((value, docId) => {
+    if (!attendanceDocBelongsToTournament(docId, tournamentId)) return;
     const derived = {
       ...value,
       ...(IX.dealerSeatMap.get(value.uid)

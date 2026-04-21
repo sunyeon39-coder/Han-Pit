@@ -1,5 +1,6 @@
 import { db } from "../firebase.js";
 import { collection, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { attendanceDocBelongsToTournament } from "../index/dealer-attendance-refs.js";
 import { GL } from "./state.js";
 import { renderSeats, renderSeatPanel, renderWaiting } from "./panel-ui.js";
 import { getCurrentTournamentWaiting } from "./waiting.js";
@@ -50,14 +51,25 @@ export function bindRealtime() {
   GL.stopAttendanceWatch = onSnapshot(
     collection(db, "dealer_attendance"),
     (snap) => {
+      const inactive = new Set();
+      snap.docs.forEach((d) => {
+        if (!attendanceDocBelongsToTournament(d.id, GL.tournamentId)) return;
+        const data = d.data() || {};
+        const uid = String(data.uid || "").trim();
+        const status = String(data.status || "").trim();
+        if (uid && (status === "checked_out" || status === "off")) inactive.add(uid);
+      });
+      GL.attendanceInactiveUids = inactive;
+
       GL.attendanceWaiting = snap.docs
-        .map((d) => d.data() || {})
-        .filter((d) => {
-          const tid = String(d.tournamentId || "").trim();
-          if (tid !== GL.tournamentId) return false;
-          const status = String(d.status || "").trim();
+        .map((d) => ({ id: d.id, ...(d.data() || {}) }))
+        .filter((row) => {
+          if (!attendanceDocBelongsToTournament(row.id, GL.tournamentId)) return false;
+          const status = String(row.status || "").trim();
           return status === "waiting" || status === "checked_in";
-        });
+        })
+        .map(({ id: _id, ...rest }) => rest);
+
       renderWaiting(getCurrentTournamentWaiting());
     },
     (err) => {

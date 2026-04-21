@@ -18,8 +18,15 @@ export function isPersonSeatedInGlobalSeats(seats, person = {}) {
 }
 
 export function getCurrentTournamentWaiting() {
+  const inactive = GL.attendanceInactiveUids instanceof Set ? GL.attendanceInactiveUids : new Set();
+
   const waitingBase = GL.globalWaiting
     .filter((w) => String(w?.tournamentId || "").trim() === GL.tournamentId)
+    .filter((w) => {
+      const uid = String(w?.uid || "").trim();
+      if (uid && inactive.has(uid)) return false;
+      return true;
+    })
     .filter((w) =>
       !isPersonSeatedInGlobalSeats(GL.globalSeats, {
         uid: w?.uid,

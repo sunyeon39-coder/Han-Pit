@@ -4,7 +4,7 @@ import { collection, getDoc, getDocs } from "https://www.gstatic.com/firebasejs/
 import { getIsAdmin } from "../shared/auth-helpers.js";
 import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
-import { getAttendanceRef } from "./dealer-attendance-refs.js";
+import { getAttendanceRef, attendanceDocBelongsToTournament, parseTournamentIdFromAttendanceDocId } from "./dealer-attendance-refs.js";
 import { scheduleRenderDealerOps } from "./dealer-attendance-render.js";
 
 export async function loadDealerAttendanceOnce() {
@@ -19,12 +19,15 @@ export async function loadDealerAttendanceOnce() {
       const snap = await getDocs(collection(db, "dealer_attendance"));
 
       snap.docs.forEach((d) => {
+        if (!attendanceDocBelongsToTournament(d.id, tournamentId)) return;
         const data = d.data() || {};
+        const tid =
+          parseTournamentIdFromAttendanceDocId(d.id) || String(data.tournamentId || "").trim();
         IX.dealerAttendanceMap.set(d.id, {
           uid: String(data.uid || "").trim(),
           nickname: String(data.nickname || "").trim(),
           email: String(data.email || "").trim(),
-          tournamentId: String(data.tournamentId || "").trim(),
+          tournamentId: tid,
           status: String(data.status || "off").trim(),
           checkedInAt: Number(data.checkedInAt || 0) || null,
           checkedOutAt: Number(data.checkedOutAt || 0) || null,

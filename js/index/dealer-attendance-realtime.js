@@ -4,7 +4,12 @@ import { collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.
 import { getIsAdmin } from "../shared/auth-helpers.js";
 import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
-import { getAttendanceDocId, getAttendanceRef } from "./dealer-attendance-refs.js";
+import {
+  getAttendanceDocId,
+  getAttendanceRef,
+  attendanceDocBelongsToTournament,
+  parseTournamentIdFromAttendanceDocId
+} from "./dealer-attendance-refs.js";
 import { normalizeAttendanceDoc } from "./dealer-attendance-derived.js";
 import { renderDealerOps } from "./dealer-attendance-render.js";
 import { ensureMeRecovered } from "./dealer-attendance-recovery.js";
@@ -26,8 +31,10 @@ export function bindDealerAttendanceRealtime() {
         IX.dealerAttendanceMap.clear();
 
         snap.docs.forEach((d) => {
-          const data = normalizeAttendanceDoc(d.data() || {});
-          if (data.tournamentId !== tournamentId) return;
+          if (!attendanceDocBelongsToTournament(d.id, tournamentId)) return;
+          const raw = d.data() || {};
+          const forcedTid = parseTournamentIdFromAttendanceDocId(d.id) || tournamentId;
+          const data = normalizeAttendanceDoc({ ...raw, tournamentId: forcedTid });
           IX.dealerAttendanceMap.set(d.id, data);
         });
 

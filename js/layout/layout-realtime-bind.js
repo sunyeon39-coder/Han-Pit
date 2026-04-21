@@ -3,6 +3,7 @@
  */
 import { db } from "../firebase.js";
 import { collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { attendanceDocBelongsToTournament } from "../index/dealer-attendance-refs.js";
 
 export function createLayoutRealtimeBind(deps) {
   const {
@@ -78,8 +79,7 @@ export function createLayoutRealtimeBind(deps) {
               return { id: d.id, ...data };
             })
             .filter((d) => {
-              const dTid = String(d.tournamentId || "").trim();
-              if (dTid !== tid) return false;
+              if (!attendanceDocBelongsToTournament(d.id, tid)) return false;
               const status = String(d.status || "").trim();
               return status === "waiting" || status === "checked_in";
             });
