@@ -112,17 +112,51 @@ export function bindUsersRealtime() {
   );
 }
 
+let hubProfileCacheResyncTimer = null;
+
+export function clearHubProfileCacheResyncDebounce() {
+  if (hubProfileCacheResyncTimer) {
+    clearTimeout(hubProfileCacheResyncTimer);
+    hubProfileCacheResyncTimer = null;
+  }
+}
+
+let hubPeriodicAccessTimer = null;
+
+export function disposeHubPeriodicAccessResync() {
+  if (hubPeriodicAccessTimer) {
+    clearInterval(hubPeriodicAccessTimer);
+    hubPeriodicAccessTimer = null;
+  }
+}
+
+/** PWA 등에서 리스너가 멈춰도 주기적으로 서버와 맞춤 (일반 유저만) */
+export function bindHubPeriodicAccessResync(uid) {
+  disposeHubPeriodicAccessResync();
+  if (!uid) return;
+
+  hubPeriodicAccessTimer = window.setInterval(() => {
+    if (document.visibilityState !== "visible") return;
+    if (hubState.currentUser?.uid !== uid) return;
+    void resyncHubAccessFromServer(uid);
+  }, 32000);
+}
+
 /** 운영진이 코드·직접 허용을 바꿀 때 허브 카드(접근 제한)가 새로고침 없이 갱신되도록 */
 export function bindMyProfileRealtime(uid) {
   if (!uid) return;
+
+  clearHubProfileCacheResyncDebounce();
 
   if (hubState.stopMyProfileWatch) {
     hubState.stopMyProfileWatch();
     hubState.stopMyProfileWatch = null;
   }
+  hubState.hubProfileWatchUid = null;
 
   hubState.stopMyProfileWatch = onSnapshot(
     doc(db, "users", uid),
+    { includeMetadataChanges: true },
     (snap) => {
       if (!snap.exists()) return;
 
@@ -136,11 +170,21 @@ export function bindMyProfileRealtime(uid) {
         populateTournamentSelect();
         renderAdminUserList();
       }
+
+      if (snap.metadata.fromCache) {
+        clearHubProfileCacheResyncDebounce();
+        hubProfileCacheResyncTimer = setTimeout(() => {
+          hubProfileCacheResyncTimer = null;
+          void resyncHubAccessFromServer(uid);
+        }, 160);
+      }
     },
     (err) => {
       console.error("bindMyProfileRealtime error:", err);
     }
   );
+
+  hubState.hubProfileWatchUid = uid;
 }
 
 /**

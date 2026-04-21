@@ -21,5 +21,9 @@ export const hubState = {
   stopTournamentsWatch: null,
   stopUsersWatch: null,
   stopMyProfileWatch: null,
+  /** `bindMyProfileRealtime`가 현재 uid에 대해 구독 중이면 true — onAuth 중복 시 stale 덮어쓰기 방지 */
+  hubProfileWatchUid: null,
+  /** onAuthStateChanged 비동기 경합 시 오래된 완료분 무시 */
+  hubAuthFlowGen: 0,
   adminActionInFlight: false
 };

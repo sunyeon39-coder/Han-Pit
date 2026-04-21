@@ -26,13 +26,17 @@ import {
 } from "./hub-admin-ui.js";
 import {
   bindHubForegroundAccessResync,
+  bindHubPeriodicAccessResync,
   bindMyProfileRealtime,
   bindTournamentsRealtime,
   bindUsersRealtime,
+  clearHubProfileCacheResyncDebounce,
   disposeHubForegroundAccessResync,
+  disposeHubPeriodicAccessResync,
   loadAllUsers,
   loadTournaments,
-  loadUserProfile
+  loadUserProfile,
+  resyncHubAccessFromServer
 } from "./hub-loaders-realtime.js";
 import { saveNickname } from "./hub-profile.js";
 import {
@@ -280,6 +284,10 @@ userManageModal?.addEventListener("click", (e) => {
 
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
+    hubState.hubAuthFlowGen = 0;
+    hubState.hubProfileWatchUid = null;
+    clearHubProfileCacheResyncDebounce();
+    disposeHubPeriodicAccessResync();
     if (hubState.stopMyProfileWatch) {
       hubState.stopMyProfileWatch();
       hubState.stopMyProfileWatch = null;
@@ -291,8 +299,16 @@ onAuthStateChanged(auth, async (user) => {
 
   hubState.currentUser = user;
 
+  if (hubState.stopMyProfileWatch && hubState.hubProfileWatchUid === user.uid) {
+    return;
+  }
+
   try {
+    const initGen = ++hubState.hubAuthFlowGen;
+
     const [profile] = await Promise.all([loadUserProfile(user.uid), loadTournaments()]);
+    if (initGen !== hubState.hubAuthFlowGen) return;
+
     hubState.currentUserProfile = profile;
     if (!hubState.currentUserProfile) {
       const fallbackProfile = {
@@ -307,6 +323,8 @@ onAuthStateChanged(auth, async (user) => {
       hubState.currentUserProfile = fallbackProfile;
     }
 
+    if (initGen !== hubState.hubAuthFlowGen) return;
+
     if (isAppDebugEnabled()) {
       console.debug("[HUB AUTH]", {
         uid: user.uid,
@@ -318,8 +336,11 @@ onAuthStateChanged(auth, async (user) => {
 
     const isAdmin = getIsAdminUser(user, hubState.currentUserProfile);
 
+    if (initGen !== hubState.hubAuthFlowGen) return;
+
     if (isAdmin) {
       hubState.usersCache = await loadAllUsers();
+      if (initGen !== hubState.hubAuthFlowGen) return;
       adminBtn?.classList.remove("hidden");
       bindUsersRealtime();
     } else {
@@ -330,10 +351,24 @@ onAuthStateChanged(auth, async (user) => {
     void refreshFcmTokenIfGranted(user.uid);
     flushAppBadgeIfVisible();
 
+    if (initGen !== hubState.hubAuthFlowGen) return;
+
     renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
     bindTournamentsRealtime();
     bindMyProfileRealtime(user.uid);
     bindHubForegroundAccessResync(user.uid);
+
+    if (!isAdmin) {
+      bindHubPeriodicAccessResync(user.uid);
+    } else {
+      disposeHubPeriodicAccessResync();
+    }
+
+    window.setTimeout(() => {
+      if (initGen !== hubState.hubAuthFlowGen) return;
+      if (hubState.currentUser?.uid !== user.uid) return;
+      void resyncHubAccessFromServer(user.uid);
+    }, 450);
   } catch (err) {
     console.error("hub auth init error:", err);
     alert("허브 데이터를 불러오지 못했습니다.");
@@ -344,6 +379,9 @@ window.addEventListener("beforeunload", () => {
   if (hubState.stopTournamentsWatch) hubState.stopTournamentsWatch();
   if (hubState.stopUsersWatch) hubState.stopUsersWatch();
   if (hubState.stopMyProfileWatch) hubState.stopMyProfileWatch();
+  hubState.hubProfileWatchUid = null;
+  clearHubProfileCacheResyncDebounce();
+  disposeHubPeriodicAccessResync();
   disposeHubForegroundAccessResync();
   disposeHanSupportHub();
 });
