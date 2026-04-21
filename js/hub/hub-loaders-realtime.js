@@ -3,6 +3,8 @@ import {
   collection,
   getDocs,
   getDoc,
+  getDocFromServer,
+  getDocsFromServer,
   doc,
   onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
@@ -139,4 +141,109 @@ export function bindMyProfileRealtime(uid) {
       console.error("bindMyProfileRealtime error:", err);
     }
   );
+}
+
+/**
+ * 홈 화면(PWA)·사파리 standalone 등에서 백그라운드 후 캐시/리스너가 늦을 때
+ * 서버 기준으로 프로필·대회 목록을 다시 읽어 접근 카드를 맞춥니다.
+ */
+export async function resyncHubAccessFromServer(uid) {
+  const user = hubState.currentUser;
+  if (!uid || !user?.uid || uid !== user.uid) return;
+
+  try {
+    const userRef = doc(db, "users", uid);
+    let uSnap;
+    try {
+      uSnap = await getDocFromServer(userRef);
+    } catch {
+      uSnap = await getDoc(userRef);
+    }
+
+    if (uSnap.exists()) {
+      const patch = uSnap.data() || {};
+      hubState.currentUserProfile = { ...(hubState.currentUserProfile || {}), ...patch };
+    }
+
+    let tSnap;
+    try {
+      tSnap = await getDocsFromServer(collection(db, "tournaments"));
+    } catch {
+      tSnap = await getDocs(collection(db, "tournaments"));
+    }
+
+    if (tSnap.empty) {
+      hubState.tournamentsCache = [];
+    } else {
+      hubState.tournamentsCache = sortTournaments(tSnap.docs.map(normalizeTournamentDoc));
+    }
+
+    renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
+
+    const isAdmin = getIsAdminUser(hubState.currentUser, hubState.currentUserProfile);
+    if (isAdmin && hubRefs.adminModal?.classList.contains("show")) {
+      populateTournamentSelect();
+      renderAdminUserList();
+    }
+  } catch (err) {
+    console.warn("resyncHubAccessFromServer:", err);
+  }
+}
+
+let hubForegroundResyncDispose = null;
+
+export function disposeHubForegroundAccessResync() {
+  if (typeof hubForegroundResyncDispose === "function") {
+    hubForegroundResyncDispose();
+    hubForegroundResyncDispose = null;
+  }
+}
+
+/** 앱이 다시 보이거나 네트워크가 돌아올 때 서버와 한 번 맞춤 (새로고침 없는 PWA 대응) */
+export function bindHubForegroundAccessResync(uid) {
+  disposeHubForegroundAccessResync();
+  if (!uid) return;
+
+  const boundAt = Date.now();
+  let timer = null;
+
+  const schedule = (immediate) => {
+    if (!hubState.currentUser || hubState.currentUser.uid !== uid) return;
+    if (document.visibilityState !== "visible") return;
+
+    const elapsed = Date.now() - boundAt;
+    if (!immediate && elapsed < 700) return;
+
+    clearTimeout(timer);
+    const delay = immediate ? 40 : 280;
+    timer = setTimeout(() => {
+      timer = null;
+      void resyncHubAccessFromServer(uid);
+    }, delay);
+  };
+
+  const onVisibility = () => {
+    if (document.visibilityState === "visible") schedule(false);
+  };
+
+  const onPageShow = (ev) => {
+    if (ev.persisted) schedule(true);
+    else if (document.visibilityState === "visible") schedule(false);
+  };
+
+  const onOnline = () => schedule(true);
+  const onFocus = () => schedule(false);
+
+  document.addEventListener("visibilitychange", onVisibility);
+  window.addEventListener("pageshow", onPageShow);
+  window.addEventListener("online", onOnline);
+  window.addEventListener("focus", onFocus);
+
+  hubForegroundResyncDispose = () => {
+    document.removeEventListener("visibilitychange", onVisibility);
+    window.removeEventListener("pageshow", onPageShow);
+    window.removeEventListener("online", onOnline);
+    window.removeEventListener("focus", onFocus);
+    clearTimeout(timer);
+  };
 }

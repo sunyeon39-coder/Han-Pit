@@ -25,9 +25,11 @@ import {
   syncAdminBulkSelectAllCheckbox
 } from "./hub-admin-ui.js";
 import {
+  bindHubForegroundAccessResync,
   bindMyProfileRealtime,
   bindTournamentsRealtime,
   bindUsersRealtime,
+  disposeHubForegroundAccessResync,
   loadAllUsers,
   loadTournaments,
   loadUserProfile
@@ -282,6 +284,7 @@ onAuthStateChanged(auth, async (user) => {
       hubState.stopMyProfileWatch();
       hubState.stopMyProfileWatch = null;
     }
+    disposeHubForegroundAccessResync();
     location.replace("./login.html");
     return;
   }
@@ -330,6 +333,7 @@ onAuthStateChanged(auth, async (user) => {
     renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
     bindTournamentsRealtime();
     bindMyProfileRealtime(user.uid);
+    bindHubForegroundAccessResync(user.uid);
   } catch (err) {
     console.error("hub auth init error:", err);
     alert("허브 데이터를 불러오지 못했습니다.");
@@ -340,5 +344,6 @@ window.addEventListener("beforeunload", () => {
   if (hubState.stopTournamentsWatch) hubState.stopTournamentsWatch();
   if (hubState.stopUsersWatch) hubState.stopUsersWatch();
   if (hubState.stopMyProfileWatch) hubState.stopMyProfileWatch();
+  disposeHubForegroundAccessResync();
   disposeHanSupportHub();
 });
