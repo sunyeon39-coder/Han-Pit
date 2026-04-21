@@ -5,6 +5,7 @@
 *.log
 firebase-debug.log
 firebase-debug.*.log
+.firebase/
 
 # Cloud Functions — never commit dependencies
 functions/node_modules/
