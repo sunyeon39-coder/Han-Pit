@@ -68,3 +68,27 @@ textarea {
 .hidden {
   display: none !important;
 }
+
+/* 상단 Han Pit 워드마크 (layout / hub / index 공통) */
+a.app-mark {
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
+  text-decoration: none;
+  color: inherit;
+  flex-shrink: 0;
+}
+
+.app-mark-img {
+  display: block;
+  height: clamp(26px, 3.8vw, 32px);
+  width: auto;
+  max-width: min(168px, 44vw);
+  object-fit: contain;
+}
+
+.logo.logo--mark {
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
+}

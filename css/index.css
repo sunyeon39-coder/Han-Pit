@@ -45,6 +45,12 @@ body {
 .topbar-left {
   justify-content: flex-start;
   flex-shrink: 0;
+  gap: 10px;
+}
+
+.index-topbar .topbar-left .app-mark-img {
+  height: clamp(26px, 3.4vw, 32px);
+  max-width: min(160px, 36vw);
 }
 
 .topbar-center {

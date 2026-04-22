@@ -134,6 +134,20 @@ body::after {
   margin-bottom: 10px;
 }
 
+.logo.logo--mark {
+  display: flex;
+  justify-content: center;
+  font-size: 0;
+  line-height: 0;
+}
+
+.logo.logo--mark .app-mark-img {
+  height: clamp(48px, 14vw, 58px);
+  width: auto;
+  max-width: min(280px, 88vw);
+  object-fit: contain;
+}
+
 .logo::after {
   content: "";
   display: block;
@@ -293,8 +307,12 @@ body::after {
     border-radius: 22px;
   }
 
-  .logo {
+  .logo:not(.logo--mark) {
     font-size: 32px;
+  }
+
+  .logo.logo--mark .app-mark-img {
+    height: clamp(42px, 16vw, 52px);
   }
 
   .subtitle {

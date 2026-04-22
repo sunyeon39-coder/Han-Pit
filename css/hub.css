@@ -38,6 +38,16 @@ body {
   color: var(--text-1);
 }
 
+.brand.brand--mark {
+  font-size: 0;
+  line-height: 0;
+}
+
+.brand.brand--mark .app-mark-img {
+  height: clamp(28px, 3.6vw, 34px);
+  max-width: min(176px, 48vw);
+}
+
 .hub-actions {
   display: flex;
   gap: 8px;
@@ -1049,7 +1059,7 @@ body {
     padding: 10px 10px 10px 12px;
   }
 
-  .brand {
+  .brand:not(.brand--mark) {
     flex: 0 1 auto;
     min-width: 0;
     font-size: clamp(15px, 4.2vw, 20px);
@@ -1057,6 +1067,17 @@ body {
     text-overflow: ellipsis;
     white-space: nowrap;
     max-width: 38vw;
+  }
+
+  .brand.brand--mark {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: min(42vw, 160px);
+  }
+
+  .brand.brand--mark .app-mark-img {
+    max-width: 100%;
+    height: clamp(24px, 5.5vw, 30px);
   }
 
   .hub-actions {

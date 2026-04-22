@@ -31,7 +31,14 @@ input {
   gap:10px;
   flex-shrink:0;
 }
-.logo{ font-weight:900; line-height:1.05; }
+.logo {
+  font-weight: 900;
+  line-height: 1.05;
+}
+.logo.logo--mark .app-mark-img {
+  height: clamp(26px, 3.6vw, 32px);
+  max-width: min(156px, 40vw);
+}
 .icon-btn{
   width:var(--control-h);height:var(--control-h);
   border-radius:50%;
@@ -1478,9 +1485,14 @@ button,input{
   backdrop-filter: blur(18px);
 }
 
-.logo{
+.logo {
   font-size: 22px;
-  letter-spacing: -.04em;
+  letter-spacing: -0.04em;
+}
+
+.logo.logo--mark {
+  font-size: 0;
+  letter-spacing: 0;
 }
 
 .icon-btn,
