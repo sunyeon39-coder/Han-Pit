@@ -214,6 +214,11 @@ main{
   color:rgba(255,252,248,.98);
   letter-spacing:-.02em;
 }
+/* 본인 배치 좌석: 이름만 주황색으로 강조 */
+.seat-box.is-occupied .seat-person.is-self:not(.is-empty) {
+  color: #ff9a3c;
+  text-shadow: 0 0 14px rgba(255, 154, 60, 0.38);
+}
 .seat-box.is-occupied.t-green .seat-title,
 .seat-box.is-occupied.t-yellow .seat-title,
 .seat-box.is-occupied.t-orange .seat-title,
@@ -910,6 +915,11 @@ input:focus{ border-color:rgba(77,163,255,.6); }
   color: rgba(255, 255, 255, 0.55);
 }
 
+.mobile-seat-person.is-self:not(.is-empty) {
+  color: #ff9a3c;
+  text-shadow: 0 0 12px rgba(255, 154, 60, 0.35);
+}
+
 .mobile-seat-right,
 .mobile-wait-right {
   flex-shrink: 0;
@@ -1151,6 +1161,11 @@ input:focus{ border-color:rgba(77,163,255,.6); }
 
 .seat-manage-name.is-empty {
   color: rgba(255,255,255,0.55);
+}
+
+.seat-manage-name.is-self:not(.is-empty) {
+  color: #ff9a3c;
+  text-shadow: 0 0 12px rgba(255, 154, 60, 0.35);
 }
 
 .seat-inline-actions {
@@ -1789,6 +1804,10 @@ input:focus{
 .seat-box.selected.is-occupied .seat-person:not(.is-empty){
   color: #fff;
   font-size: 17px;
+}
+.seat-box.selected.is-occupied .seat-person.is-self:not(.is-empty) {
+  color: #ff9a3c;
+  text-shadow: 0 0 14px rgba(255, 154, 60, 0.38);
 }
 .seat-box.selected .seat-person.is-empty{
   color: rgba(200, 214, 236, 0.88);

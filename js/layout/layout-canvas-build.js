@@ -16,7 +16,8 @@ export function createLayoutCanvasBuild(deps) {
     assignWaitingToSeat,
     clearSeat,
     touchEvent,
-    onFullRender
+    onFullRender,
+    getCurrentUserUid
   } = deps;
 
   function dragSeatBy(seatId, dx, dy) {
@@ -66,7 +67,12 @@ export function createLayoutCanvasBuild(deps) {
       box.dataset.seatid = seat.id;
       box.style.left = `${seat.x || 0}px`;
       box.style.top = `${seat.y || 0}px`;
-      const personClass = hasPerson ? "seat-person" : "seat-person is-empty";
+      const myUid = String(getCurrentUserUid?.() || "").trim();
+      const seatUid = String(seat.personUid || "").trim();
+      const isSelf = hasPerson && myUid && seatUid === myUid;
+      const personClass = [hasPerson ? "seat-person" : "seat-person is-empty", isSelf ? "is-self" : ""]
+        .filter(Boolean)
+        .join(" ");
       const seatLabel = String(seat.label ?? seat.no ?? "").trim() || "—";
       box.innerHTML = `
         <div class="seat-title">SEAT ${escapeHtml(seatLabel)}</div>

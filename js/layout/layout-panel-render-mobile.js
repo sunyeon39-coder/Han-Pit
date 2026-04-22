@@ -21,7 +21,8 @@ export function createLayoutMobilePanelRender(deps) {
     deleteWaiting,
     clearSeat,
     assignWaitingToSeat,
-    onFullRender
+    onFullRender,
+    getCurrentUserUid
   } = deps;
 
   function renderMobile() {
@@ -64,10 +65,13 @@ export function createLayoutMobilePanelRender(deps) {
         </div>
       `;
     } else {
+      const myUid = String(getCurrentUserUid?.() || "").trim();
       getSortedSeats(eventState.seats).forEach((s) => {
         const hasPerson = !isEmptyPerson(s.person);
         const start = hasPerson ? (s.seatedAt || Date.now()) : null;
         const isSel = ui.selectedSeatId === s.id;
+        const seatUid = String(s.personUid || "").trim();
+        const isSelf = hasPerson && myUid && seatUid === myUid;
 
         const manage = canManageLayout();
         const assignLabel = selectedWaiting
@@ -78,7 +82,7 @@ export function createLayoutMobilePanelRender(deps) {
               <div class="mobile-seat-mainline">
                 <div class="mobile-seat-name-cluster">
                   <span class="mobile-seat-num">${escapeHtml(seatCanvasDigitsOnly(s.label, s.no))}</span>
-                  <div class="mobile-seat-person ${isEmptyPerson(s.person) ? "is-empty" : ""}">
+                  <div class="mobile-seat-person ${isEmptyPerson(s.person) ? "is-empty" : ""} ${isSelf ? "is-self" : ""}">
                     ${isEmptyPerson(s.person) ? "비어있음" : escapeHtml(s.person)}
                   </div>
                 </div>

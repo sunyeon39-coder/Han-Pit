@@ -355,6 +355,7 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
     clearSeat,
     assignWaitingToSeat,
     undoLastAction,
+    getCurrentUserUid: () => String(currentUser?.uid || "").trim(),
     onFullRender: () => render(),
     onPanelRefresh: () => renderPanel(),
     onTimersUpdate: () => layoutTimers.updateTimers()
@@ -372,6 +373,7 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
     assignWaitingToSeat,
     clearSeat,
     touchEvent,
+    getCurrentUserUid: () => String(currentUser?.uid || "").trim(),
     onFullRender: () => render()
   });
 

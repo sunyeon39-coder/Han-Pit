@@ -1,3 +1,4 @@
+import { auth } from "../firebase.js";
 import { GL } from "./state.js";
 import {
   escapeHtml,
@@ -143,12 +144,17 @@ export function renderSeats(seats = []) {
   }
 
   GL.seatCountEl.textContent = `SEAT: ${seats.length}`;
+  const myUid = String(auth.currentUser?.uid || "").trim();
   const sorted = [...seats].sort((a, b) => (a.order || 0) - (b.order || 0));
   const seatHtml = sorted.map((s, idx) => {
     const label = s.label || s.no || s.seatId || "-";
     const occupied = !isEmptyPerson(String(s.person || "").trim());
     const name = occupied ? String(s.person || "").trim() : "-";
-    const personClass = occupied ? "seat-person" : "seat-person is-empty";
+    const seatUid = String(s.personUid || "").trim();
+    const isSelf = occupied && myUid && seatUid === myUid;
+    const personClass = [occupied ? "seat-person" : "seat-person is-empty", isSelf ? "is-self" : ""]
+      .filter(Boolean)
+      .join(" ");
     const seatId = String(s.seatId || "").trim();
     const selectedClass = GL.selectedSeatIds.has(seatId) ? "selected" : "";
     const x = Number.isFinite(Number(s.x)) ? Number(s.x) : getSeatPosition(idx).x;
@@ -282,12 +288,15 @@ export function renderSeatPanel() {
     }
     return (a.order || 0) - (b.order || 0);
   });
+  const myUid = String(auth.currentUser?.uid || "").trim();
   const rows = sorted
     .map((s) => {
       const eventId = s.currentEventId || s.mappedEventId || "-";
       const boxId = s.boxId || "-";
       const occupied = !isEmptyPerson(String(s.person || "").trim());
       const name = occupied ? String(s.person || "").trim() : "-";
+      const seatUid = String(s.personUid || "").trim();
+      const isSelf = occupied && myUid && seatUid === myUid;
       const seatId = String(s.seatId || "").trim();
       const selectedRowClass = GL.selectedSeatIds.has(seatId) ? "selected" : "";
       const seatedAt = toMillis(s.seatedAt || 0);
@@ -299,7 +308,7 @@ export function renderSeatPanel() {
           <div class="seat-manage-namewrap seat-manage-namewrap--with-num">
             <span class="seat-manage-num">${escapeHtml(seatCanvasDigitsOnly(s.label, s.no))}</span>
             <div class="seat-manage-namecol">
-              <span class="seat-manage-name ${occupied ? "" : "is-empty"}">${escapeHtml(name)}</span>
+              <span class="seat-manage-name ${occupied ? "" : "is-empty"} ${isSelf ? "is-self" : ""}">${escapeHtml(name)}</span>
               <span class="meta-line seat-manage-submeta">event: ${escapeHtml(eventId)} / box: ${escapeHtml(boxId)}</span>
             </div>
           </div>

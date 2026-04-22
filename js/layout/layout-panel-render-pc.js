@@ -23,7 +23,8 @@ export function createLayoutPcPanelRender(deps) {
     undoLastAction,
     onFullRender,
     onPanelRefresh,
-    onTimersUpdate
+    onTimersUpdate,
+    getCurrentUserUid
   } = deps;
 
   function renderWaitPanel() {
@@ -147,17 +148,20 @@ export function createLayoutPcPanelRender(deps) {
         <div class="empty-panel">현재 이벤트(${escapeHtml(EVENT_ID)})에 Seat이 없습니다.</div>
       `);
     } else {
+      const myUid = String(getCurrentUserUid?.() || "").trim();
       getSortedSeats(eventState.seats).forEach((s) => {
         const isSel = ui.selectedSeatId === s.id;
         const hasPerson = !isEmptyPerson(s.person);
         const start = hasPerson ? (s.seatedAt || Date.now()) : null;
+        const seatUid = String(s.personUid || "").trim();
+        const isSelf = hasPerson && myUid && seatUid === myUid;
 
         left.push(`
             <div class="seat-manage-row ${isSel ? "selected" : ""}" data-sid="${s.id}" style="cursor:pointer;">
               <div class="seat-manage-main seat-manage-main--oneline">
                 <div class="seat-manage-namewrap seat-manage-namewrap--with-num">
                   <span class="seat-manage-num">${escapeHtml(seatCanvasDigitsOnly(s.label, s.no))}</span>
-                  <span class="seat-manage-name ${isEmptyPerson(s.person) ? "is-empty" : ""}">
+                  <span class="seat-manage-name ${isEmptyPerson(s.person) ? "is-empty" : ""} ${isSelf ? "is-self" : ""}">
                     ${escapeHtml(s.person)}
                   </span>
                 </div>
