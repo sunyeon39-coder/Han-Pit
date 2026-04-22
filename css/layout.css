@@ -1361,6 +1361,12 @@ input:focus{ border-color:rgba(77,163,255,.6); }
   font-weight: 700;
 }
 
+/* 아래 블록의 .mobile-seat-person { color:#fff } 보다 우선 — 본인 이름 주황 유지 */
+.mobile-seat-row .mobile-seat-person.is-self:not(.is-empty) {
+  color: #ff9a3c;
+  text-shadow: 0 0 12px rgba(255, 154, 60, 0.35);
+}
+
 /* 이전 2줄 구조 숨김용 */
 .mobile-seat-row.compact .mobile-seat-badge,
 .mobile-seat-row.compact .mobile-seat-title,

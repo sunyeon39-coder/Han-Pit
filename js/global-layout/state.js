@@ -32,6 +32,8 @@ export const GL = {
   selectedSeatIds: new Set(),
 
   isAdminUser: false,
+  /** 본인 좌석 강조용 (users 프로필 스냅샷) */
+  userProfile: null,
   hasShownPermissionAlert: false,
 
   activeTab: "wait",

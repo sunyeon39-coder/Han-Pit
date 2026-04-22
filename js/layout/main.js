@@ -39,7 +39,12 @@ import {
   SOUND_ENABLED_KEY
 } from "./layout-main-route-env.js";
 import { getWaitingTimerStartMs } from "./layout-main-waiting-time.js";
-import { getIdentityKey, getWaitingIdentity, getSeatIdentity } from "./layout-main-identity.js";
+import {
+  getIdentityKey,
+  getWaitingIdentity,
+  getSeatIdentity,
+  isSeatAssignedToCurrentUser
+} from "./layout-main-identity.js";
 import {
   normalizeWaitingEntry as normalizeWaitingEntryCore,
   sortWaitingAscending
@@ -355,7 +360,7 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
     clearSeat,
     assignWaitingToSeat,
     undoLastAction,
-    getCurrentUserUid: () => String(currentUser?.uid || "").trim(),
+    isSeatMine: (seat) => isSeatAssignedToCurrentUser(seat, currentUser, currentUserProfile),
     onFullRender: () => render(),
     onPanelRefresh: () => renderPanel(),
     onTimersUpdate: () => layoutTimers.updateTimers()
@@ -373,7 +378,7 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
     assignWaitingToSeat,
     clearSeat,
     touchEvent,
-    getCurrentUserUid: () => String(currentUser?.uid || "").trim(),
+    isSeatMine: (seat) => isSeatAssignedToCurrentUser(seat, currentUser, currentUserProfile),
     onFullRender: () => render()
   });
 

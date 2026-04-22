@@ -53,6 +53,7 @@ export function startGlobalLayoutApp() {
     try {
       const userSnap = await getDoc(doc(db, "users", user.uid));
       const profile = userSnap.exists() ? (userSnap.data() || {}) : null;
+      GL.userProfile = profile || {};
       GL.isAdminUser = getIsAdmin(user, profile);
       if (!GL.isAdminUser) {
         alert("관리자만 접근할 수 있습니다.");

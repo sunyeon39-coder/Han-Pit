@@ -1,4 +1,5 @@
 import { auth } from "../firebase.js";
+import { isSeatAssignedToCurrentUser } from "../layout/layout-main-identity.js";
 import { GL } from "./state.js";
 import {
   escapeHtml,
@@ -144,14 +145,12 @@ export function renderSeats(seats = []) {
   }
 
   GL.seatCountEl.textContent = `SEAT: ${seats.length}`;
-  const myUid = String(auth.currentUser?.uid || "").trim();
   const sorted = [...seats].sort((a, b) => (a.order || 0) - (b.order || 0));
   const seatHtml = sorted.map((s, idx) => {
     const label = s.label || s.no || s.seatId || "-";
     const occupied = !isEmptyPerson(String(s.person || "").trim());
     const name = occupied ? String(s.person || "").trim() : "-";
-    const seatUid = String(s.personUid || "").trim();
-    const isSelf = occupied && myUid && seatUid === myUid;
+    const isSelf = occupied && isSeatAssignedToCurrentUser(s, auth.currentUser, GL.userProfile);
     const personClass = [occupied ? "seat-person" : "seat-person is-empty", isSelf ? "is-self" : ""]
       .filter(Boolean)
       .join(" ");
@@ -288,15 +287,13 @@ export function renderSeatPanel() {
     }
     return (a.order || 0) - (b.order || 0);
   });
-  const myUid = String(auth.currentUser?.uid || "").trim();
   const rows = sorted
     .map((s) => {
       const eventId = s.currentEventId || s.mappedEventId || "-";
       const boxId = s.boxId || "-";
       const occupied = !isEmptyPerson(String(s.person || "").trim());
       const name = occupied ? String(s.person || "").trim() : "-";
-      const seatUid = String(s.personUid || "").trim();
-      const isSelf = occupied && myUid && seatUid === myUid;
+      const isSelf = occupied && isSeatAssignedToCurrentUser(s, auth.currentUser, GL.userProfile);
       const seatId = String(s.seatId || "").trim();
       const selectedRowClass = GL.selectedSeatIds.has(seatId) ? "selected" : "";
       const seatedAt = toMillis(s.seatedAt || 0);

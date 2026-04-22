@@ -24,7 +24,7 @@ export function createLayoutPcPanelRender(deps) {
     onFullRender,
     onPanelRefresh,
     onTimersUpdate,
-    getCurrentUserUid
+    isSeatMine
   } = deps;
 
   function renderWaitPanel() {
@@ -148,13 +148,11 @@ export function createLayoutPcPanelRender(deps) {
         <div class="empty-panel">현재 이벤트(${escapeHtml(EVENT_ID)})에 Seat이 없습니다.</div>
       `);
     } else {
-      const myUid = String(getCurrentUserUid?.() || "").trim();
       getSortedSeats(eventState.seats).forEach((s) => {
         const isSel = ui.selectedSeatId === s.id;
         const hasPerson = !isEmptyPerson(s.person);
         const start = hasPerson ? (s.seatedAt || Date.now()) : null;
-        const seatUid = String(s.personUid || "").trim();
-        const isSelf = hasPerson && myUid && seatUid === myUid;
+        const isSelf = hasPerson && !!isSeatMine?.(s);
 
         left.push(`
             <div class="seat-manage-row ${isSel ? "selected" : ""}" data-sid="${s.id}" style="cursor:pointer;">

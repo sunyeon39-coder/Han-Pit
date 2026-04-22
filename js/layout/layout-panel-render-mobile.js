@@ -22,7 +22,7 @@ export function createLayoutMobilePanelRender(deps) {
     clearSeat,
     assignWaitingToSeat,
     onFullRender,
-    getCurrentUserUid
+    isSeatMine
   } = deps;
 
   function renderMobile() {
@@ -65,13 +65,11 @@ export function createLayoutMobilePanelRender(deps) {
         </div>
       `;
     } else {
-      const myUid = String(getCurrentUserUid?.() || "").trim();
       getSortedSeats(eventState.seats).forEach((s) => {
         const hasPerson = !isEmptyPerson(s.person);
         const start = hasPerson ? (s.seatedAt || Date.now()) : null;
         const isSel = ui.selectedSeatId === s.id;
-        const seatUid = String(s.personUid || "").trim();
-        const isSelf = hasPerson && myUid && seatUid === myUid;
+        const isSelf = hasPerson && !!isSeatMine?.(s);
 
         const manage = canManageLayout();
         const assignLabel = selectedWaiting
