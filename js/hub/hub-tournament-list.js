@@ -1,3 +1,8 @@
+/**
+ * Hub 대회 목록 렌더.
+ * 카드 DOM: .event-card > (.event-body: .event-left + .event-center) + .event-right
+ * 레이아웃·여백은 css/hub.css 의 .hub-main { --hub-* } 변수로 조절.
+ */
 import { escapeHtml } from "../shared/dom-utils.js";
 import { getIsAdminUser, hasEventAccess, routeToTournament } from "./hub-helpers.js";
 import { hubRefs } from "./hub-dom-refs.js";

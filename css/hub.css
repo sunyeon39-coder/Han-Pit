@@ -121,7 +121,13 @@ body {
   filter: brightness(1.05);
 }
 
-/* main */
+/* ---------------------------------------------------------------------------
+   Hub 본문 + 대회 목록
+   DOM: .hub-main > .event-list > article.event-card
+        > .event-body (.event-left + .event-center)
+        > .event-right (.detail-btn | .lock-badge)
+   수치 조절: 아래 --hub-* 변수 (모바일은 @media max-width 900px 의 .hub-main)
+--------------------------------------------------------------------------- */
 .hub-main {
   flex: 1;
   display: flex;
@@ -129,6 +135,22 @@ body {
   align-items: center;
   min-height: 0;
   padding: 20px 12px 28px;
+
+  --hub-list-max: min(1024px, 100%);
+  --hub-card-radius: 20px;
+  --hub-card-pad-x: 12px;
+  --hub-card-pad-y: 16px;
+  --hub-card-col-gap: clamp(12px, 2vw, 18px);
+  --hub-card-row-gap: 12px;
+  --hub-body-gap: clamp(12px, 2vw, 18px);
+  --hub-thumb: 96px;
+  --hub-thumb-radius: 16px;
+  --hub-card-surface:
+    radial-gradient(120% 80% at 12% 0%, rgba(77, 163, 255, 0.08), transparent 52%),
+    linear-gradient(155deg, rgba(22, 28, 48, 0.94), rgba(10, 14, 28, 0.97));
+  --hub-card-surface-hover:
+    radial-gradient(120% 80% at 12% 0%, rgba(77, 163, 255, 0.1), transparent 52%),
+    linear-gradient(155deg, rgba(26, 32, 52, 0.97), rgba(12, 17, 32, 0.99));
 }
 
 .event-list {
@@ -136,7 +158,7 @@ body {
   flex-direction: column;
   gap: 14px;
   width: 100%;
-  max-width: min(1024px, 100%);
+  max-width: var(--hub-list-max);
 }
 
 .event-list.event-list--empty {
@@ -365,22 +387,19 @@ body {
   }
 }
 
-/* event card — 본문은 왼쪽, CTA는 오른쪽(박스 안 좌우 여백 최소화) */
 .event-card {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  column-gap: clamp(12px, 2vw, 18px);
-  row-gap: 12px;
+  column-gap: var(--hub-card-col-gap);
+  row-gap: var(--hub-card-row-gap);
   width: 100%;
   color: var(--text-1);
-  border-radius: 20px;
-  padding: 16px 12px;
+  border-radius: var(--hub-card-radius);
+  padding: var(--hub-card-pad-y) var(--hub-card-pad-x);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background:
-    radial-gradient(120% 80% at 12% 0%, rgba(77, 163, 255, 0.08), transparent 52%),
-    linear-gradient(155deg, rgba(22, 28, 48, 0.94), rgba(10, 14, 28, 0.97));
+  background: var(--hub-card-surface);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
     0 10px 36px rgba(0, 0, 0, 0.22);
@@ -393,9 +412,7 @@ body {
 
 .event-card.is-enabled:hover {
   border-color: rgba(214, 178, 94, 0.38);
-  background:
-    radial-gradient(120% 80% at 12% 0%, rgba(77, 163, 255, 0.1), transparent 52%),
-    linear-gradient(155deg, rgba(26, 32, 52, 0.97), rgba(12, 17, 32, 0.99));
+  background: var(--hub-card-surface-hover);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.08),
     0 14px 44px rgba(0, 0, 0, 0.28);
@@ -409,17 +426,17 @@ body {
 .event-body {
   display: flex;
   align-items: center;
-  gap: clamp(12px, 2vw, 18px);
+  gap: var(--hub-body-gap);
   min-width: 0;
   flex: 1 1 auto;
   max-width: 100%;
 }
 
 .event-left {
-  width: 96px;
-  height: 96px;
+  width: var(--hub-thumb);
+  height: var(--hub-thumb);
   flex-shrink: 0;
-  border-radius: 16px;
+  border-radius: var(--hub-thumb-radius);
   background: linear-gradient(165deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
   border: 1px solid rgba(214, 178, 94, 0.38);
   color: rgba(255, 250, 240, 0.98);
@@ -562,8 +579,6 @@ body {
   background: rgba(4,8,18,.58);
   backdrop-filter: blur(8px);
   z-index: 1000;
-
-  /* 추가 */
   padding: 16px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -1180,6 +1195,14 @@ body {
   .hub-main {
     flex: 1;
     padding: 14px 10px 20px;
+    --hub-list-max: 100%;
+    --hub-card-radius: 18px;
+    --hub-card-pad-x: 12px;
+    --hub-card-pad-y: 14px;
+    --hub-card-col-gap: 0;
+    --hub-card-row-gap: 12px;
+    --hub-thumb: 76px;
+    --hub-thumb-radius: 14px;
   }
 
   .hub-empty-state {
@@ -1194,15 +1217,11 @@ body {
     flex-direction: column;
     align-items: stretch;
     justify-content: flex-start;
-    row-gap: 12px;
-    column-gap: 0;
-    padding: 14px 12px;
-    border-radius: 18px;
   }
 
   .event-body {
     display: grid;
-    grid-template-columns: 76px minmax(0, 1fr);
+    grid-template-columns: var(--hub-thumb) minmax(0, 1fr);
     gap: 12px 14px;
     align-items: center;
     width: 100%;
@@ -1210,9 +1229,6 @@ body {
   }
 
   .event-left {
-    width: 76px;
-    height: 76px;
-    border-radius: 14px;
     font-size: 21px;
   }
 
