@@ -131,24 +131,37 @@ body::after {
   font-weight: 800;
   letter-spacing: -0.04em;
   text-align: center;
-  margin-bottom: 10px;
+  margin: 0 auto 14px;
+  width: 100%;
 }
 
 .logo.logo--mark {
   display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
   font-size: 0;
   line-height: 0;
 }
 
 .logo.logo--mark .app-mark-img {
-  height: clamp(58px, 16vw, 76px);
+  height: clamp(72px, 20vw, 96px);
   width: auto;
-  max-width: min(320px, 92vw);
+  max-width: min(380px, 94vw);
   object-fit: contain;
 }
 
-.logo::after {
+.logo.logo--mark::after {
+  content: "";
+  display: block;
+  width: min(160px, 42vw);
+  height: 3px;
+  margin: 16px auto 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(214, 178, 94, 0.2), var(--accent), rgba(214, 178, 94, 0.2));
+}
+
+.logo:not(.logo--mark)::after {
   content: "";
   display: block;
   width: 84px;
@@ -312,7 +325,13 @@ body::after {
   }
 
   .logo.logo--mark .app-mark-img {
-    height: clamp(52px, 18vw, 68px);
+    height: clamp(64px, 22vw, 84px);
+    max-width: min(360px, 92vw);
+  }
+
+  .logo.logo--mark::after {
+    width: min(140px, 48vw);
+    margin-top: 14px;
   }
 
   .subtitle {
