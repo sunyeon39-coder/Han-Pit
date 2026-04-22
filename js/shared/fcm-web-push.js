@@ -17,20 +17,89 @@ export const FCM_VAPID_KEY =
 
 let foregroundBadgeListenerBound = false;
 
-/** 앱이 켜져 있을 때 수신되는 FCM 에도 아이콘 배지 숫자 반영 (백그라운드 SW 와 동일 data). */
+const SEAT_NOTIFY_TAG = "hanpit-seat";
+
+/** Badging API 없는 Android Chrome 탭용 — 탭 제목에 읽지 않은 건수 표시 */
+function captureDocumentTitleBadgeBaseOnce() {
+  if (typeof document === "undefined" || globalThis.__hanPitTitleBadgeBase != null) return;
+  const t = String(document.title || "").trim();
+  globalThis.__hanPitTitleBadgeBase = t.replace(/^\(\d{1,2}\)\s+/, "").trim() || t;
+}
+
+export function syncDocumentTitleBadgeCount(n) {
+  if (typeof document === "undefined") return;
+  captureDocumentTitleBadgeBaseOnce();
+  const base = globalThis.__hanPitTitleBadgeBase || document.title;
+  if (!Number.isFinite(n) || n < 1) {
+    document.title = base;
+    return;
+  }
+  document.title = `(${Math.min(99, n)}) ${base}`;
+}
+
+export function clearDocumentTitleBadge() {
+  if (typeof document === "undefined" || globalThis.__hanPitTitleBadgeBase == null) return;
+  document.title = globalThis.__hanPitTitleBadgeBase;
+}
+
+function notifyIconUrl() {
+  try {
+    return new URL("./icons/icon-192.png", globalThis.location?.href || "").href;
+  } catch (_) {
+    return "";
+  }
+}
+
+async function handleForegroundFcmPayload(payload) {
+  const data = payload?.data || {};
+  const raw = data.appBadgeCount;
+  if (raw != null && raw !== "") {
+    const n = parseInt(String(raw), 10);
+    if (Number.isFinite(n) && n >= 1) {
+      const capped = Math.min(99, n);
+      if ("setAppBadge" in navigator) {
+        void navigator.setAppBadge(capped).catch(() => {});
+      }
+      syncDocumentTitleBadgeCount(capped);
+    }
+  }
+
+  const title = String(payload?.notification?.title || data.title || "").trim() || "배치 알림";
+  const body = String(payload?.notification?.body || data.body || "").trim();
+  if (!body && !data.targetUrl) return;
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+
+  const icon = notifyIconUrl();
+  const noteOpts = {
+    body: body || "Seat에 배치되었습니다.",
+    tag: SEAT_NOTIFY_TAG,
+    renotify: true,
+    lang: "ko",
+    data: { ...data },
+    vibrate: [180, 80, 180]
+  };
+  if (icon) Object.assign(noteOpts, { icon, badge: icon });
+
+  try {
+    const reg = await getOrRegisterFcmServiceWorker();
+    await reg.showNotification(title, noteOpts);
+  } catch (e) {
+    try {
+      new Notification(title, noteOpts);
+    } catch (e2) {
+      console.debug("[fcm-web-push] foreground showNotification:", e2);
+    }
+  }
+}
+
+/** 앱이 켜져 있을 때 수신되는 FCM — 배지·탭 제목 + OS 알림(Android 포그라운드 등). */
 export async function ensureForegroundFcmBadgeListener() {
   if (foregroundBadgeListenerBound || typeof window === "undefined") return;
   const messaging = await getMessagingSafe();
   if (!messaging) return;
   foregroundBadgeListenerBound = true;
   onMessage(messaging, (payload) => {
-    const raw = payload?.data?.appBadgeCount;
-    if (raw == null || raw === "") return;
-    const n = parseInt(String(raw), 10);
-    if (!Number.isFinite(n) || n < 1) return;
-    if ("setAppBadge" in navigator) {
-      void navigator.setAppBadge(Math.min(99, n)).catch(() => {});
-    }
+    void handleForegroundFcmPayload(payload);
   });
 }
 

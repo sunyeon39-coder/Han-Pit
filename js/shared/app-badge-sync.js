@@ -1,4 +1,5 @@
 import { doc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { clearDocumentTitleBadge } from "./fcm-web-push.js";
 
 async function clearAppBadgePersisted(db, uid) {
   if (!db || !uid) return;
@@ -8,6 +9,7 @@ async function clearAppBadgePersisted(db, uid) {
       await nav.clearAppBadge();
     }
   } catch (_) {}
+  clearDocumentTitleBadge();
   try {
     await setDoc(doc(db, "users", uid), { appBadgeCount: 0 }, { merge: true });
   } catch (err) {

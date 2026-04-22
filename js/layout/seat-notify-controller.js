@@ -259,8 +259,10 @@ export function createLayoutSeatNotifyController({
 
       new Notification(title, {
         body,
-        tag: "layout-seat-assigned",
-        renotify: true
+        tag: "hanpit-seat",
+        renotify: true,
+        lang: "ko",
+        vibrate: [180, 80, 180]
       });
     } catch (err) {
       console.error("showBrowserNotification error:", err);
@@ -320,9 +322,9 @@ export function createLayoutSeatNotifyController({
       targetUrl: data.targetUrl || ""
     });
 
-    if (document.hidden) {
-      showBrowserNotification("배치 알림", msg);
-    }
+    /* Android 등: 탭이 보이는 동안(document.hidden=false)에는 이전에 OS 알림을 생략해
+       소리·오버레이만 있었음. FCM과 동일 tag 로 한 번만 머물도록 시스템 트레이에도 표시. */
+    showBrowserNotification("배치 알림", msg);
   }
 
   async function showPendingSeatNotificationOnce() {
