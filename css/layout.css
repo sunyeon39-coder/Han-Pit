@@ -1878,3 +1878,60 @@ input:focus{
 #seatAlertOverlay .btn.ghost {
   color: var(--text-2);
 }
+
+/* 알림 소리 활성화 프롬프트 — seatAlert와 동일한 카드 박스 (클래스만 공유할 때 layout.css에 정의 없으면 박스 없음) */
+#soundPromptOverlay.sound-overlay {
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+#soundPromptOverlay .modal-card {
+  width: min(92vw, 430px);
+  border-radius: 26px;
+  padding: 24px;
+  border: 1px solid var(--line-soft);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
+    linear-gradient(160deg, rgba(9, 15, 29, 0.98), rgba(17, 26, 44, 0.96));
+  color: var(--text-1);
+  box-shadow: var(--shadow-float);
+}
+
+#soundPromptOverlay .modal-title {
+  margin: 0 0 12px;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+#soundPromptOverlay .modal-text {
+  margin: 0 0 20px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+#soundPromptOverlay .modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+#soundPromptOverlay .btn {
+  flex: 1;
+  min-height: 48px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 13px 14px;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-1);
+}
+
+#soundPromptOverlay .btn.primary {
+  border-color: rgba(239, 208, 141, 0.28);
+  background: linear-gradient(135deg, rgba(239, 208, 141, 0.18), rgba(214, 178, 94, 0.08));
+  color: #fff4d6;
+}
