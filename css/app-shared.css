@@ -81,9 +81,9 @@ a.app-mark {
 
 .app-mark-img {
   display: block;
-  height: clamp(26px, 3.8vw, 32px);
+  height: clamp(36px, 5.2vw, 44px);
   width: auto;
-  max-width: min(168px, 44vw);
+  max-width: min(240px, 58vw);
   object-fit: contain;
 }
 

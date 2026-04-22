@@ -44,8 +44,8 @@ body {
 }
 
 .brand.brand--mark .app-mark-img {
-  height: clamp(28px, 3.6vw, 34px);
-  max-width: min(176px, 48vw);
+  height: clamp(38px, 5vw, 44px);
+  max-width: min(240px, 54vw);
 }
 
 .hub-actions {
@@ -1072,12 +1072,12 @@ body {
   .brand.brand--mark {
     flex: 0 1 auto;
     min-width: 0;
-    max-width: min(42vw, 160px);
+    max-width: min(56vw, 220px);
   }
 
   .brand.brand--mark .app-mark-img {
     max-width: 100%;
-    height: clamp(24px, 5.5vw, 30px);
+    height: clamp(34px, 7.5vw, 42px);
   }
 
   .hub-actions {

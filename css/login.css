@@ -142,9 +142,9 @@ body::after {
 }
 
 .logo.logo--mark .app-mark-img {
-  height: clamp(48px, 14vw, 58px);
+  height: clamp(58px, 16vw, 76px);
   width: auto;
-  max-width: min(280px, 88vw);
+  max-width: min(320px, 92vw);
   object-fit: contain;
 }
 
@@ -312,7 +312,7 @@ body::after {
   }
 
   .logo.logo--mark .app-mark-img {
-    height: clamp(42px, 16vw, 52px);
+    height: clamp(52px, 18vw, 68px);
   }
 
   .subtitle {
