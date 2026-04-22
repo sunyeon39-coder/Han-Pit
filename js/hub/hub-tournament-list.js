@@ -69,16 +69,18 @@ export function renderTournaments(tournaments, userProfile, user) {
     card.dataset.tournamentId = tournament.id;
 
     card.innerHTML = `
-      <div class="event-left">${escapeHtml(tournament.logoText || "HAN")}</div>
+      <div class="event-body">
+        <div class="event-left">${escapeHtml(tournament.logoText || "HAN")}</div>
 
-      <div class="event-center">
-        <h2 class="event-title">${escapeHtml(tournament.name)}</h2>
-        <div class="event-meta">
-          <div class="event-date">
-            ${escapeHtml(tournament.startDate)} ~ ${escapeHtml(tournament.endDate)}
-          </div>
-          <div class="event-access ${enabled ? "event-access--ok" : ""}">
-            ${enabled ? "접속 가능" : "허용된 계정만 입장 가능"}
+        <div class="event-center">
+          <h2 class="event-title">${escapeHtml(tournament.name)}</h2>
+          <div class="event-meta">
+            <div class="event-date">
+              ${escapeHtml(tournament.startDate)} ~ ${escapeHtml(tournament.endDate)}
+            </div>
+            <div class="event-access ${enabled ? "event-access--ok" : ""}">
+              ${enabled ? "접속 가능" : "허용된 계정만 입장 가능"}
+            </div>
           </div>
         </div>
       </div>

@@ -128,15 +128,15 @@ body {
   flex-direction: column;
   align-items: center;
   min-height: 0;
-  padding: 24px 20px 32px;
+  padding: 20px 12px 28px;
 }
 
 .event-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
   width: 100%;
-  max-width: 920px;
+  max-width: min(1024px, 100%);
 }
 
 .event-list.event-list--empty {
@@ -365,19 +365,26 @@ body {
   }
 }
 
-/* event card */
+/* event card — 본문은 왼쪽, CTA는 오른쪽(박스 안 좌우 여백 최소화) */
 .event-card {
   display: flex;
-  align-items: stretch;
-  gap: 22px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  column-gap: clamp(12px, 2vw, 18px);
+  row-gap: 12px;
   width: 100%;
-  background: rgba(14, 19, 36, 0.92);
   color: var(--text-1);
-  border-radius: 16px;
-  padding: 22px 24px;
-  border: 1px solid var(--border-app, rgba(255, 255, 255, 0.09));
-  box-shadow: var(--shadow-card);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  border-radius: 20px;
+  padding: 16px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background:
+    radial-gradient(120% 80% at 12% 0%, rgba(77, 163, 255, 0.08), transparent 52%),
+    linear-gradient(155deg, rgba(22, 28, 48, 0.94), rgba(10, 14, 28, 0.97));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 10px 36px rgba(0, 0, 0, 0.22);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
 
 .event-card.is-enabled {
@@ -385,11 +392,13 @@ body {
 }
 
 .event-card.is-enabled:hover {
-  border-color: rgba(214, 178, 94, 0.32);
-  background: rgba(16, 22, 40, 0.96);
+  border-color: rgba(214, 178, 94, 0.38);
+  background:
+    radial-gradient(120% 80% at 12% 0%, rgba(77, 163, 255, 0.1), transparent 52%),
+    linear-gradient(155deg, rgba(26, 32, 52, 0.97), rgba(12, 17, 32, 0.99));
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.05),
-    0 12px 40px rgba(0, 0, 0, 0.28);
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 14px 44px rgba(0, 0, 0, 0.28);
 }
 
 .event-card.is-locked {
@@ -397,26 +406,35 @@ body {
   filter: saturate(.82);
 }
 
+.event-body {
+  display: flex;
+  align-items: center;
+  gap: clamp(12px, 2vw, 18px);
+  min-width: 0;
+  flex: 1 1 auto;
+  max-width: 100%;
+}
+
 .event-left {
-  width: 108px;
-  height: 108px;
-  align-self: center;
-  border-radius: 14px;
-  background: var(--surface-ctrl, rgba(255, 255, 255, 0.055));
-  border: 1px solid rgba(214, 178, 94, 0.35);
-  color: rgba(255, 250, 240, 0.98);
+  width: 96px;
+  height: 96px;
   flex-shrink: 0;
+  border-radius: 16px;
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(214, 178, 94, 0.38);
+  color: rgba(255, 250, 240, 0.98);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 30px;
+  font-size: 26px;
   font-weight: 800;
   letter-spacing: -0.04em;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 6px 20px rgba(0, 0, 0, 0.18);
 }
 
 .event-center {
-  flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -485,15 +503,15 @@ body {
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
-  flex-shrink: 0;
+  flex: 0 0 auto;
 }
 
 .detail-btn {
   min-width: 0;
   min-height: var(--control-h);
   height: var(--control-h);
-  border-radius: var(--radius-pill);
-  padding: 0 18px;
+  border-radius: 14px;
+  padding: 0 20px;
   border: 1px solid rgba(239, 208, 141, 0.42);
   background: linear-gradient(135deg, #f2dfb2, var(--accent-gold-strong) 44%, #b8893d 100%);
   color: #1a1508;
@@ -1161,7 +1179,7 @@ body {
 
   .hub-main {
     flex: 1;
-    padding: 16px;
+    padding: 14px 10px 20px;
   }
 
   .hub-empty-state {
@@ -1173,27 +1191,32 @@ body {
   }
 
   .event-card {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    row-gap: 12px;
+    column-gap: 0;
+    padding: 14px 12px;
+    border-radius: 18px;
+  }
+
+  .event-body {
     display: grid;
-    grid-template-columns: 82px minmax(0, 1fr);
-    grid-template-areas:
-      "left center"
-      "right right";
-    align-items: start;
-    gap: 14px 16px;
-    padding: 18px 16px;
-    border-radius: 16px;
+    grid-template-columns: 76px minmax(0, 1fr);
+    gap: 12px 14px;
+    align-items: center;
+    width: 100%;
+    flex: none;
   }
 
   .event-left {
-    grid-area: left;
-    width: 82px;
-    height: 82px;
-    border-radius: 12px;
-    font-size: 22px;
+    width: 76px;
+    height: 76px;
+    border-radius: 14px;
+    font-size: 21px;
   }
 
   .event-center {
-    grid-area: center;
     min-width: 0;
     display: flex;
     flex-direction: column;
@@ -1201,7 +1224,7 @@ body {
   }
 
   .event-title {
-    font-size: 20px;
+    font-size: 19px;
     line-height: 1.15;
   }
 
@@ -1224,12 +1247,11 @@ body {
   }
 
   .event-right {
-    grid-area: right;
     display: flex;
     flex-direction: column;
     align-items: stretch;
     gap: 10px;
-    margin-top: 4px;
+    width: 100%;
   }
 
   .detail-btn {
