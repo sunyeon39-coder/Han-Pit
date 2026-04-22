@@ -2,6 +2,7 @@ import { escapeHtml } from "../shared/dom-utils.js";
 import { db, getMessagingSafe } from "../firebase.js";
 import {
   FCM_VAPID_KEY,
+  getOrRegisterFcmServiceWorker,
   saveUserFcmToken as saveUserFcmTokenShared
 } from "../shared/fcm-web-push.js";
 import { doc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
@@ -394,16 +395,18 @@ export function createLayoutSeatNotifyController({
 /** 레이아웃에서 푸시 토큰만 발급할 때 (저장은 saveLayoutPushToken). */
 export async function registerLayoutPushIfPossible(vapidKey = FCM_VAPID_KEY) {
   try {
+    if (typeof Notification === "undefined") return null;
+    if (Notification.permission === "denied") return null;
+    let permission = Notification.permission;
+    if (permission === "default") {
+      permission = await Notification.requestPermission();
+    }
+    if (permission !== "granted") return null;
+
     const messaging = await getMessagingSafe();
     if (!messaging) return null;
 
-    const permission = await Notification.requestPermission();
-    if (permission !== "granted") return null;
-
-    const registration = await navigator.serviceWorker.register("./firebase-messaging-sw.js", {
-      scope: "./"
-    });
-    await navigator.serviceWorker.ready;
+    const registration = await getOrRegisterFcmServiceWorker();
     const token = await getToken(messaging, {
       vapidKey,
       serviceWorkerRegistration: registration

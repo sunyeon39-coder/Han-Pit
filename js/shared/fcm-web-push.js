@@ -136,6 +136,17 @@ export async function saveUserFcmToken(uid, token) {
 /**
  * 권한이 이미 granted 인 경우 토큰만 갱신해 Firestore에 저장 (무음).
  */
+export async function getOrRegisterFcmServiceWorker() {
+  let registration = await navigator.serviceWorker.getRegistration();
+  if (!registration?.active?.scriptURL?.includes("firebase-messaging-sw")) {
+    registration = await navigator.serviceWorker.register("./firebase-messaging-sw.js", {
+      scope: "./"
+    });
+  }
+  await navigator.serviceWorker.ready;
+  return registration;
+}
+
 export async function refreshFcmTokenIfGranted(uid) {
   if (!uid || !isWebPushEnvironmentOk()) return;
   if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
@@ -144,13 +155,7 @@ export async function refreshFcmTokenIfGranted(uid) {
     const messaging = await getMessagingSafe();
     if (!messaging) return;
 
-    let registration = await navigator.serviceWorker.getRegistration("./");
-    if (!registration) {
-      registration = await navigator.serviceWorker.register("./firebase-messaging-sw.js", {
-        scope: "./"
-      });
-    }
-    await navigator.serviceWorker.ready;
+    const registration = await getOrRegisterFcmServiceWorker();
 
     const token = await getToken(messaging, {
       vapidKey: FCM_VAPID_KEY,
@@ -174,29 +179,27 @@ export async function registerFcmWebPushAndSave(uid, vapidKey = FCM_VAPID_KEY) {
   if (!isWebPushUiOfferable()) return { ok: false, reason: "unsupported" };
   if (!("Notification" in window)) return { ok: false, reason: "no_notification_api" };
 
+  if (Notification.permission === "denied") {
+    return { ok: false, reason: "denied" };
+  }
+
+  /**
+   * iOS Safari / 홈 화면 웹앱: 알림 권한 요청은 사용자 탭(제스처)과 같은 짧은
+   * 호출 체인에 있어야 하므로, 어떤 await(getMessaging 등)보다 먼저 처리한다.
+   */
+  let permission = Notification.permission;
+  if (permission === "default") {
+    permission = await Notification.requestPermission();
+  }
+  if (permission !== "granted") {
+    return { ok: false, reason: "not_granted" };
+  }
+
   try {
     const messaging = await getMessagingSafe();
     if (!messaging) return { ok: false, reason: "no_messaging" };
 
-    if (Notification.permission === "denied") {
-      return { ok: false, reason: "denied" };
-    }
-
-    let permission = Notification.permission;
-    if (permission === "default") {
-      permission = await Notification.requestPermission();
-    }
-    if (permission !== "granted") {
-      return { ok: false, reason: "not_granted" };
-    }
-
-    let registration = await navigator.serviceWorker.getRegistration("./");
-    if (!registration) {
-      registration = await navigator.serviceWorker.register("./firebase-messaging-sw.js", {
-        scope: "./"
-      });
-    }
-    await navigator.serviceWorker.ready;
+    const registration = await getOrRegisterFcmServiceWorker();
 
     const token = await getToken(messaging, {
       vapidKey,

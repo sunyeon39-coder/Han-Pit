@@ -312,7 +312,10 @@ function bindIndexPushUiOnce() {
   btn.dataset.indexPushBound = "1";
   btn.addEventListener("click", async () => {
     const u = auth.currentUser;
-    if (!u?.uid) return;
+    if (!u?.uid) {
+      alert("로그인을 확인하는 중입니다. 잠시 후 다시 눌러 주세요.");
+      return;
+    }
     const r = await registerFcmWebPushAndSave(u.uid);
     alertFcmRegistrationResult(r);
     syncPushOfferButton(btn, u.uid);

@@ -27,7 +27,7 @@ function isStandalonePwaShell() {
 
 function requestServiceWorkerUpdateCheck() {
   if (!navigator.serviceWorker?.getRegistration) return;
-  void navigator.serviceWorker.getRegistration("./").then((reg) => {
+  void navigator.serviceWorker.getRegistration().then((reg) => {
     void reg?.update();
   });
 }

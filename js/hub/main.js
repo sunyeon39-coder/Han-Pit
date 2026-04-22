@@ -72,8 +72,11 @@ function bindHubPushUiOnce() {
   if (!btn || btn.dataset.hubPushBound === "1") return;
   btn.dataset.hubPushBound = "1";
   btn.addEventListener("click", async () => {
-    const u = hubState.currentUser;
-    if (!u?.uid) return;
+    const u = hubState.currentUser ?? auth.currentUser;
+    if (!u?.uid) {
+      alert("로그인을 확인하는 중입니다. 잠시 후 다시 눌러 주세요.");
+      return;
+    }
     const r = await registerFcmWebPushAndSave(u.uid);
     alertFcmRegistrationResult(r);
     syncPushOfferButton(btn, u.uid);
