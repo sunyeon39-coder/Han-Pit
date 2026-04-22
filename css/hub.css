@@ -25,13 +25,11 @@ body {
   min-height: var(--topbar-h);
   height: var(--topbar-h);
   padding: var(--topbar-pad-y) var(--topbar-pad-x);
-  border-bottom: 1px solid var(--border-hair, rgba(255, 255, 255, 0.075));
-  background: rgba(6, 10, 22, 0.58);
-  backdrop-filter: blur(20px) saturate(145%);
-  -webkit-backdrop-filter: blur(20px) saturate(145%);
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.05),
-    0 16px 48px rgba(0, 0, 0, 0.22);
+  border-bottom: 1px solid var(--border-app, rgba(255, 255, 255, 0.09));
+  background: var(--chrome-bg, rgba(11, 15, 26, 0.94));
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-chrome, 0 1px 0 rgba(255, 255, 255, 0.045));
 }
 
 .brand {
@@ -66,20 +64,17 @@ body {
   height: var(--control-h);
   padding: 0 16px;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-app, rgba(255, 255, 255, 0.09));
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 650;
+  letter-spacing: 0.01em;
   cursor: pointer;
-  box-shadow: var(--rim-subtle, inset 0 1px 0 rgba(255, 255, 255, 0.045));
-  transition:
-    transform 0.2s var(--ease-out, ease),
-    border-color 0.2s ease,
-    background 0.2s ease,
-    box-shadow 0.2s var(--ease-soft, ease);
+  box-shadow: none;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .top-btn.profile {
-  background: linear-gradient(165deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.04));
+  background: var(--surface-ctrl, rgba(255, 255, 255, 0.055));
   color: var(--text);
 }
 
@@ -114,11 +109,19 @@ body {
 }
 
 .top-btn:hover {
-  transform: translateY(-1px);
-  border-color: rgba(255, 255, 255, 0.16);
-  box-shadow:
-    var(--rim-light, inset 0 1px 0 rgba(255, 255, 255, 0.07)),
-    0 12px 36px rgba(0, 0, 0, 0.2);
+  background: var(--surface-ctrl-hover, rgba(255, 255, 255, 0.092));
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.top-btn.admin:hover,
+.top-btn.han-support:hover,
+.top-btn.push-offer:hover {
+  filter: brightness(1.06);
+}
+
+.top-btn.logout:hover {
+  background: rgba(0, 0, 0, 0.55);
+  filter: brightness(1.05);
 }
 
 /* main */

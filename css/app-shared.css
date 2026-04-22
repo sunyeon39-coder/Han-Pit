@@ -14,11 +14,18 @@
   --radius-modal: 20px;
   --panel-pad: 14px;
 
+  /* 앱형 크롬 — 탑바·툴바·기본 컨트롤 */
+  --chrome-bg: rgba(11, 15, 26, 0.94);
+  --surface-ctrl: rgba(255, 255, 255, 0.055);
+  --surface-ctrl-hover: rgba(255, 255, 255, 0.092);
+  --border-app: rgba(255, 255, 255, 0.09);
+  --shadow-chrome: 0 1px 0 rgba(255, 255, 255, 0.045);
+
   /* Layout / 배치도 (블루 포인트) */
   --bg1: #070b18;
   --bg2: #0c1225;
   --panel: rgba(255, 255, 255, 0.06);
-  --border: rgba(255, 255, 255, 0.12);
+  --border: rgba(255, 255, 255, 0.1);
   --text: #eef2ff;
   --muted: rgba(238, 242, 255, 0.6);
   --accent-blue: #4da3ff;
@@ -28,17 +35,14 @@
   --danger: #ff5b7f;
   --ok: #3ee2a0;
   --radius: 18px;
-  /* 카드·모달: 얕은 리프트 + 깊은 소프트 섀도우 */
+  /* 카드·모달: 정리된 한 겹 + 상단 림 */
   --shadow-card:
-    0 2px 8px rgba(0, 0, 0, 0.18),
-    0 20px 56px rgba(0, 0, 0, 0.32),
-    inset 0 1px 0 rgba(255, 255, 255, 0.055);
-  --shadow-float:
-    0 8px 28px rgba(0, 0, 0, 0.28),
-    0 36px 96px rgba(0, 0, 0, 0.38);
-  --rim-light: inset 0 1px 0 rgba(255, 255, 255, 0.07);
-  --rim-subtle: inset 0 1px 0 rgba(255, 255, 255, 0.045);
-  --border-hair: rgba(255, 255, 255, 0.075);
+    0 1px 0 rgba(255, 255, 255, 0.04),
+    0 14px 44px rgba(0, 0, 0, 0.28);
+  --shadow-float: 0 10px 36px rgba(0, 0, 0, 0.28);
+  --rim-light: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --rim-subtle: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --border-hair: var(--border-app);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
 
