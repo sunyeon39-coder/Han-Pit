@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="./css/layout.css" />
   <link rel="stylesheet" href="./css/global-layout.css" />
 </head>
-<body>
+<body class="page-global-layout">
   <header class="topbar">
     <div class="top-left">
       <div class="logo">HAN Pit</div>
@@ -49,8 +49,8 @@
   </aside>
 
   <div id="mobileSheet" class="mobile-sheet" aria-label="mobile sheet">
-    <button class="sheet-btn" type="button" disabled>+ Seat 추가</button>
-    <button class="sheet-btn ghost" type="button" disabled>+ 대기 추가</button>
+    <button id="mobileAddSeat" class="sheet-btn" type="button">+ Seat 추가</button>
+    <button id="mobileAddWaiting" class="sheet-btn ghost" type="button">+ 대기 추가</button>
   </div>
 
   <div id="globalSeatEditModal" class="global-seat-edit-modal" aria-hidden="true">

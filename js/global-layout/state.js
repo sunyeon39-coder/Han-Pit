@@ -16,6 +16,9 @@ export const GL = {
   pcPanel: null,
   panelContent: null,
   tabs: [],
+  mobileSheet: null,
+  mobileAddSeatBtn: null,
+  mobileAddWaitingBtn: null,
 
   stopSeatWatch: null,
   stopWaitingWatch: null,
@@ -70,4 +73,7 @@ export function initGlDomRefs() {
   GL.pcPanel = document.getElementById("pcPanel");
   GL.panelContent = document.getElementById("panelContent");
   GL.tabs = Array.from(document.querySelectorAll(".tab"));
+  GL.mobileSheet = document.getElementById("mobileSheet");
+  GL.mobileAddSeatBtn = document.getElementById("mobileAddSeat");
+  GL.mobileAddWaitingBtn = document.getElementById("mobileAddWaiting");
 }

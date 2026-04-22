@@ -320,6 +320,7 @@ export function renderSeatPanel() {
                     : ``
                 : ``
             }
+            ${GL.isAdminUser && occupied ? `<button class="pill-inline warn" type="button" data-clear-seat="${escapeHtml(seatId)}">비우기</button>` : ``}
             ${
               GL.isAdminUser
                 ? `<button class="pill-inline" type="button" data-rename-seat="${escapeHtml(seatId)}" title="Seat 라벨·카드(eventId)·Box ID 변경. 카드/Box를 바꾸면 저장 후 layout 배치로 이동할 수 있습니다.">수정</button>`

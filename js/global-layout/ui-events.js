@@ -1,4 +1,5 @@
 import { GL } from "./state.js";
+import { layoutIsMobile } from "../layout/layout-main-route-env.js";
 import {
   getSeatById,
   renderSeats,
@@ -32,6 +33,29 @@ function findSeatBoxEl(innerRoot, seatId) {
       (node) => String(node.getAttribute("data-seat-id") || "").trim() === sid
     ) || null
   );
+}
+
+function openGlobalMobileSeatAddFlow() {
+  GL.activeTab = "seat";
+  setPanelOpen(true);
+  GL.mobileSheet?.classList.remove("open");
+  renderSeatPanel();
+  requestAnimationFrame(() => document.getElementById("seatLabelInput")?.focus());
+}
+
+function openGlobalMobileWaitingAddFlow() {
+  GL.activeTab = "wait";
+  setPanelOpen(true);
+  GL.mobileSheet?.classList.remove("open");
+  renderWaiting(getCurrentTournamentWaiting());
+  requestAnimationFrame(() => document.getElementById("manualWaitingNameInput")?.focus());
+}
+
+/** 관리자 로그인 후 하단 시트 버튼 표시 등 */
+export function syncGlobalLayoutMobileChrome() {
+  const show = !!GL.isAdminUser;
+  if (GL.mobileAddSeatBtn) GL.mobileAddSeatBtn.style.display = show ? "" : "none";
+  if (GL.mobileAddWaitingBtn) GL.mobileAddWaitingBtn.style.display = show ? "" : "none";
 }
 
 function applyCanvasSeatSelectionClick(seatId, multi) {
@@ -113,6 +137,24 @@ export function bindGlobalLayoutEventHandlers() {
       const sid = String(renameSeatBtn.getAttribute("data-rename-seat") || "");
       if (!sid) return;
       openSeatEditModal(sid);
+      return;
+    }
+
+    const clearSeatBtn = e.target.closest("[data-clear-seat]");
+    if (clearSeatBtn) {
+      const sid = String(clearSeatBtn.getAttribute("data-clear-seat") || "").trim();
+      if (!sid) return;
+      const seat = getSeatById(sid);
+      if (!seat || isEmptyPerson(String(seat.person || "").trim())) return;
+      if (!confirm("이 Seat에서 사람을 뺄까요?")) return;
+      try {
+        await clearSeat(sid);
+        renderSeats(GL.globalSeats);
+        if (GL.activeTab === "seat") renderSeatPanel();
+      } catch (err) {
+        console.error("clearSeat error:", err);
+        alert("Seat 비우기에 실패했습니다.");
+      }
       return;
     }
 
@@ -220,7 +262,48 @@ export function bindGlobalLayoutEventHandlers() {
   });
 
   GL.menuBtn?.addEventListener("click", () => {
+    GL.mobileSheet?.classList.remove("open");
     setPanelOpen(!GL.panelOpen);
+  });
+
+  GL.mobileAddSeatBtn?.addEventListener("click", () => {
+    if (!GL.isAdminUser) return;
+    if (layoutIsMobile()) {
+      openGlobalMobileSeatAddFlow();
+      return;
+    }
+    GL.activeTab = "seat";
+    setPanelOpen(true);
+    renderSeatPanel();
+    requestAnimationFrame(() => document.getElementById("seatLabelInput")?.focus());
+  });
+
+  GL.mobileAddWaitingBtn?.addEventListener("click", () => {
+    if (!GL.isAdminUser) return;
+    if (layoutIsMobile()) {
+      openGlobalMobileWaitingAddFlow();
+      return;
+    }
+    GL.activeTab = "wait";
+    setPanelOpen(true);
+    renderWaiting(getCurrentTournamentWaiting());
+    requestAnimationFrame(() => document.getElementById("manualWaitingNameInput")?.focus());
+  });
+
+  window.addEventListener("resize", () => {
+    if (!layoutIsMobile()) {
+      GL.mobileSheet?.classList.remove("open");
+    }
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (!GL.panelOpen) return;
+    const modal = document.getElementById("globalSeatEditModal");
+    if (modal?.classList.contains("global-seat-edit-modal--open")) return;
+    const tag = (document.activeElement && document.activeElement.tagName) || "";
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    setPanelOpen(false);
   });
 
   GL.app?.addEventListener("pointerdown", (e) => {
@@ -388,4 +471,6 @@ export function bindGlobalLayoutEventHandlers() {
       console.error("keyboard deleteGlobalSeat error:", err);
     }
   });
+
+  syncGlobalLayoutMobileChrome();
 }

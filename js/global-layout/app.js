@@ -13,7 +13,7 @@ import {
 import { getCurrentTournamentWaiting } from "./waiting.js";
 import { updateGlobalMetaToolbar } from "./toolbar.js";
 import { bindRealtime } from "./realtime.js";
-import { bindGlobalLayoutEventHandlers } from "./ui-events.js";
+import { bindGlobalLayoutEventHandlers, syncGlobalLayoutMobileChrome } from "./ui-events.js";
 import {
   alertFcmRegistrationResult,
   ensureForegroundFcmBadgeListener,
@@ -60,6 +60,7 @@ export function startGlobalLayoutApp() {
         location.replace("./index.html");
         return;
       }
+      syncGlobalLayoutMobileChrome();
       if (GL.urlEventId && GL.urlBoxId) {
         sessionStorage.setItem("eventId", GL.urlEventId);
         sessionStorage.setItem("boxId", GL.urlBoxId);
