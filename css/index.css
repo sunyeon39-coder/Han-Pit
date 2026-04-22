@@ -50,11 +50,6 @@ body {
   gap: 10px;
 }
 
-.index-topbar .topbar-left .app-mark-img {
-  height: clamp(38px, 5vw, 44px);
-  max-width: min(228px, 52vw);
-}
-
 .topbar-center {
   justify-content: center;
   min-width: 0;
@@ -972,7 +967,7 @@ body {
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 10px;
     height: auto;
-    padding: 12px 14px;
+    padding: var(--topbar-pad-y) 14px;
   }
 
   .topbar-left {
@@ -1021,7 +1016,7 @@ body {
 
 @media (max-width: 420px) {
   .index-topbar {
-    padding: 10px 12px;
+    padding: var(--topbar-pad-y) 12px;
     gap: 8px;
   }
 

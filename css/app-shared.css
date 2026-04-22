@@ -3,8 +3,9 @@
  * 페이지 CSS보다 먼저 로드하거나 layout.css에서 @import
  */
 :root {
-  --topbar-h: 64px;
-  --topbar-pad-y: 10px;
+  /* 워드마크 확대에 맞춰 살짝 올림 — layout/index/hub/global-layout 공통 */
+  --topbar-h: 72px;
+  --topbar-pad-y: 5px;
   --topbar-pad-x: 14px;
   --control-h: 44px;
   --control-h-sm: 36px;
@@ -101,10 +102,18 @@ a.app-mark {
 
 .app-mark-img {
   display: block;
-  height: clamp(36px, 5.2vw, 44px);
+  height: clamp(50px, 6.5vw, 60px);
   width: auto;
-  max-width: min(240px, 58vw);
+  max-width: min(320px, 64vw);
   object-fit: contain;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+}
+
+@media (max-width: 900px) {
+  .app-mark-img {
+    height: clamp(46px, 12vw, 58px);
+    max-width: min(74vw, 320px);
+  }
 }
 
 .logo.logo--mark {

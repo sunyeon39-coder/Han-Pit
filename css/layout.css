@@ -39,10 +39,6 @@ input {
   font-weight: 900;
   line-height: 1.05;
 }
-.logo.logo--mark .app-mark-img {
-  height: clamp(38px, 5vw, 44px);
-  max-width: min(228px, 52vw);
-}
 .icon-btn {
   width: var(--control-h);
   height: var(--control-h);
