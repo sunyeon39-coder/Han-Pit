@@ -30,9 +30,13 @@ body {
   align-items: center;
   gap: 12px;
   padding: var(--topbar-pad-y) var(--topbar-pad-x);
-  border-bottom: 1px solid var(--line-soft);
-  background: rgba(7, 13, 25, 0.72);
-  backdrop-filter: blur(18px);
+  border-bottom: 1px solid var(--border-hair, rgba(255, 255, 255, 0.075));
+  background: rgba(6, 10, 22, 0.58);
+  backdrop-filter: blur(20px) saturate(145%);
+  -webkit-backdrop-filter: blur(20px) saturate(145%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05),
+    0 16px 48px rgba(0, 0, 0, 0.22);
 }
 
 .topbar-left,
@@ -74,7 +78,7 @@ body {
 .topbar-title {
   font-size: clamp(20px, 3.2vw, 38px);
   font-weight: 800;
-  color: rgba(247, 248, 252, 0.94);
+  color: rgba(247, 248, 252, 0.96);
   letter-spacing: -0.04em;
   white-space: nowrap;
   overflow: hidden;
@@ -82,6 +86,7 @@ body {
   text-align: center;
   width: 100%;
   max-width: 100%;
+  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.35);
 }
 
 .back-btn,
@@ -89,7 +94,12 @@ body {
 .btn,
 .mini-btn,
 .event-admin-pick {
-  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+  transition:
+    transform 0.2s var(--ease-out, ease),
+    box-shadow 0.2s var(--ease-soft, ease),
+    border-color 0.2s ease,
+    background 0.2s ease,
+    filter 0.2s ease;
 }
 
 .back-btn,
@@ -107,9 +117,10 @@ body {
 }
 
 .back-btn {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.04));
   color: var(--text-1);
+  box-shadow: var(--rim-subtle, inset 0 1px 0 rgba(255, 255, 255, 0.045));
 }
 
 .back-btn:hover,
@@ -121,20 +132,28 @@ body {
 }
 
 .back-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06));
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow:
+    var(--rim-light, inset 0 1px 0 rgba(255, 255, 255, 0.07)),
+    0 10px 28px rgba(0, 0, 0, 0.18);
 }
 
 .manage-btn {
-  border: 1px solid rgba(239, 208, 141, 0.38);
-  background: linear-gradient(135deg, #f4deb0, var(--accent-strong) 38%, #bc9547 100%);
+  border: 1px solid rgba(239, 208, 141, 0.42);
+  background: linear-gradient(135deg, #f8e8c4, var(--accent-strong) 40%, #b8893d 100%);
   color: #111827;
-  box-shadow: 0 12px 28px rgba(214, 178, 94, 0.18);
+  box-shadow:
+    0 10px 28px rgba(214, 178, 94, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .manage-btn:hover {
-  box-shadow: 0 14px 32px rgba(214, 178, 94, 0.26);
+  box-shadow:
+    0 14px 40px rgba(214, 178, 94, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
   filter: brightness(1.03);
 }
 
