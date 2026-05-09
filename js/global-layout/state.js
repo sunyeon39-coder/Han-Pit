@@ -49,6 +49,8 @@ export const GL = {
   lastGlobalUndo: null,
   waitListScrollTop: 0,
   seatListScrollTop: 0,
+  lastSeatTapAt: 0,
+  lastSeatTapId: "",
 
   /** PC 캔버스 패닝·줌 (우측 패널에 가린 영역 탐색) */
   canvasPanX: 0,

@@ -22,6 +22,8 @@ import {
 import { initGlobalSeatEditModal, openSeatEditModal } from "./seat-edit-modal.js";
 import { fmtElapsed, isEmptyPerson, timerClass } from "./utils.js";
 
+const GLOBAL_SEAT_DOUBLE_ACTIVATE_MS = 350;
+
 function isMultiSelectPointer(e) {
   return !!(e && (e.ctrlKey || e.metaKey));
 }
@@ -479,11 +481,17 @@ export function bindGlobalLayoutEventHandlers() {
     if (!seatId) return;
     const seat = getSeatById(seatId);
     if (!seat) return;
+    const now = Date.now();
+    const isSameSeatQuickTap =
+      GL.lastSeatTapId === seatId && now - Number(GL.lastSeatTapAt || 0) < GLOBAL_SEAT_DOUBLE_ACTIVATE_MS;
+    const isDoubleActivate = e.detail >= 2 || isSameSeatQuickTap;
 
-    if (e.detail >= 2 && !GL.selectedWaitingId) {
+    if (isDoubleActivate && !GL.selectedWaitingId) {
       if (!isEmptyPerson(String(seat.person || "").trim())) {
         try {
           await clearSeat(seatId);
+          GL.lastSeatTapAt = 0;
+          GL.lastSeatTapId = "";
           renderSeats(GL.globalSeats);
           if (GL.activeTab === "seat") renderSeatPanel();
         } catch (err) {
@@ -492,6 +500,9 @@ export function bindGlobalLayoutEventHandlers() {
       }
       return;
     }
+
+    GL.lastSeatTapAt = now;
+    GL.lastSeatTapId = seatId;
 
     if (String(GL.selectedWaitingId || "").trim() && !isMultiSelectPointer(e)) {
       try {
