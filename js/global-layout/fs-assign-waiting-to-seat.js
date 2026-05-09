@@ -38,6 +38,9 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
     renderWaiting(getCurrentTournamentWaiting());
     return;
   }
+  if (waiting.blockChecked === true) {
+    throw new Error("waiting_blocked");
+  }
 
   const evForMsg = String(seat.currentEventId || seat.mappedEventId || "").trim();
   const eventDisplayTitle = await resolveTournamentEventTitle(evForMsg);

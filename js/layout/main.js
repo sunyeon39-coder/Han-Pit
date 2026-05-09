@@ -38,7 +38,7 @@ import {
   ALERT_VOLUME,
   SOUND_ENABLED_KEY
 } from "./layout-main-route-env.js";
-import { getWaitingTimerStartMs } from "./layout-main-waiting-time.js";
+import { getWaitingTimerStartMs, getWaitingDisplayStartMs } from "./layout-main-waiting-time.js";
 import {
   getIdentityKey,
   getWaitingIdentity,
@@ -285,6 +285,7 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
     deleteWaiting,
     clearSeat,
     assignWaitingToSeat,
+    setWaitingBlockChecked,
     findSeat,
     getWaitingListForDisplay,
     clearWaitingSelectionIfSeated,
@@ -351,6 +352,7 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
     getWaitingListForDisplay,
     getSortedSeats,
     getWaitingTimerStartMs,
+    getWaitingDisplayStartMs,
     sortWaitingAscending,
     seatCanvasDigitsOnly,
     addSeat,
@@ -359,6 +361,7 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
     deleteWaiting,
     clearSeat,
     assignWaitingToSeat,
+    setWaitingBlockChecked,
     undoLastAction,
     isSeatMine: (seat) => isSeatAssignedToCurrentUser(seat, currentUser, currentUserProfile),
     onFullRender: () => render(),

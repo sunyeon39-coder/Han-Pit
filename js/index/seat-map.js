@@ -19,6 +19,7 @@ const MAP_BASE_WIDTH = 1400;
 const MAP_BASE_HEIGHT = 900;
 const MAP_SEAT_SIZE = 48;
 const MAP_PADDING = 120;
+let seatMapEditMode = false;
 
 /* ===============================
    MAP SIZE HELPERS
@@ -120,6 +121,15 @@ function renderSeatMap() {
   });
 }
 
+function setSeatMapEditMode(editing) {
+  seatMapEditMode = editing === true;
+  IX.seatMapEditActions?.classList.toggle("hidden", !seatMapEditMode);
+  const canEdit = IX.seatMapOpenEditorBtn?.dataset.canEdit === "1";
+  if (IX.seatMapOpenEditorBtn) {
+    IX.seatMapOpenEditorBtn.classList.toggle("hidden", seatMapEditMode || !canEdit);
+  }
+}
+
 /* ===============================
    WATCH SEAT DATA
 =============================== */
@@ -145,7 +155,7 @@ function bindSeatMapRealtime() {
         });
       });
 
-      renderSeatMap();
+      if (!seatMapEditMode) renderSeatMap();
     },
     (err) => {
       console.error("bindSeatMapRealtime error:", err);
@@ -154,43 +164,7 @@ function bindSeatMapRealtime() {
 }
 
 /* ===============================
-   DRAG MAP EDIT (ADMIN)
-=============================== */
-
-function enableSeatDrag() {
-  if (!IX.seatMapCanvas) return;
-
-  let target = null;
-  let offsetX = 0;
-  let offsetY = 0;
-
-  IX.seatMapCanvas.addEventListener("mousedown", (e) => {
-    const el = e.target.closest(".map-seat");
-    if (!el) return;
-
-    target = el;
-    offsetX = e.offsetX;
-    offsetY = e.offsetY;
-  });
-
-  window.addEventListener("mousemove", (e) => {
-    if (!target) return;
-
-    const rect = IX.seatMapCanvas.getBoundingClientRect();
-    const x = e.clientX - rect.left - offsetX;
-    const y = e.clientY - rect.top - offsetY;
-
-    target.style.left = `${x}px`;
-    target.style.top = `${y}px`;
-  });
-
-  window.addEventListener("mouseup", () => {
-    target = null;
-  });
-}
-
-/* ===============================
-   MAP EDITOR
+   MAP EDITOR (same modal)
 =============================== */
 
 /* load map */
@@ -211,10 +185,10 @@ async function loadMapEditor() {
 /* render */
 
 function renderEditor() {
-  if (!IX.seatMapEditorCanvas) return;
+  if (!IX.seatMapCanvas) return;
 
-  IX.seatMapEditorCanvas.innerHTML = "";
-  applySeatMapCanvasSize(IX.seatMapEditorCanvas, IX.editorSeats);
+  IX.seatMapCanvas.innerHTML = "";
+  applySeatMapCanvasSize(IX.seatMapCanvas, IX.editorSeats);
 
   IX.editorSeats.forEach((seat) => {
     const el = document.createElement("div");
@@ -225,7 +199,7 @@ function renderEditor() {
     el.style.top = `${seat.y}px`;
 
     enableDrag(el, seat);
-    IX.seatMapEditorCanvas.appendChild(el);
+    IX.seatMapCanvas.appendChild(el);
   });
 }
 
@@ -245,7 +219,7 @@ function enableDrag(el, seat) {
   window.addEventListener("mousemove", (e) => {
     if (!dragging) return;
 
-    const rect = IX.seatMapEditorCanvas.getBoundingClientRect();
+    const rect = IX.seatMapCanvas.getBoundingClientRect();
 
     seat.x = e.clientX - rect.left - offsetX;
     seat.y = e.clientY - rect.top - offsetY;
@@ -257,7 +231,7 @@ function enableDrag(el, seat) {
   window.addEventListener("mouseup", () => {
     if (!dragging) return;
     dragging = false;
-    applySeatMapCanvasSize(IX.seatMapEditorCanvas, IX.editorSeats);
+    applySeatMapCanvasSize(IX.seatMapCanvas, IX.editorSeats);
   });
 }
 
@@ -270,9 +244,9 @@ export function wireSeatMapListeners() {
 
   try {
   bindSeatMapRealtime();
-  enableSeatDrag();
 
   IX.seatMapBtn?.addEventListener("click", async () => {
+    setSeatMapEditMode(false);
     await loadSeatMapLayout();
     renderSeatMap();
     openModal(IX.seatMapModal);
@@ -283,6 +257,7 @@ export function wireSeatMapListeners() {
   });
 
   IX.seatMapCloseBtn?.addEventListener("click", () => {
+    setSeatMapEditMode(false);
     closeModal(IX.seatMapModal);
   });
 
@@ -299,9 +274,9 @@ export function wireSeatMapListeners() {
   renderEditor();
 
   requestAnimationFrame(() => {
-    if (!IX.seatMapEditorScroll || !IX.seatMapEditorCanvas) return;
-    IX.seatMapEditorScroll.scrollLeft = Math.max(0, IX.editorSeats[IX.editorSeats.length - 1].x - 120);
-    IX.seatMapEditorScroll.scrollTop = Math.max(0, IX.editorSeats[IX.editorSeats.length - 1].y - 120);
+    if (!IX.seatMapScroll || !IX.seatMapCanvas) return;
+    IX.seatMapScroll.scrollLeft = Math.max(0, IX.editorSeats[IX.editorSeats.length - 1].x - 120);
+    IX.seatMapScroll.scrollTop = Math.max(0, IX.editorSeats[IX.editorSeats.length - 1].y - 120);
   });
 });
 
@@ -314,20 +289,19 @@ export function wireSeatMapListeners() {
     { merge: true }
   );
 
+    IX.seatMapLayout = [...IX.editorSeats];
+    setSeatMapEditMode(false);
+    renderSeatMap();
     alert("맵 저장 완료");
   });
 
-  IX.seatMapEditBtn?.addEventListener("click", async () => {
-  await loadMapEditor();
-  openModal(IX.seatMapEditorModal);
+  IX.seatMapOpenEditorBtn?.addEventListener("click", async () => {
+    setSeatMapEditMode(true);
+    await loadMapEditor();
 
     requestAnimationFrame(() => {
-      centerSeatMapViewport(IX.seatMapEditorScroll, IX.seatMapEditorCanvas);
+      centerSeatMapViewport(IX.seatMapScroll, IX.seatMapCanvas);
     });
-  });
-
-  IX.seatMapEditorCloseBtn?.addEventListener("click", () => {
-    closeModal(IX.seatMapEditorModal);
   });
 
   indexSeatMapControlsWired = true;

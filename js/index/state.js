@@ -16,7 +16,7 @@ export const IX = {
   clearAttendanceLogsBtn: null,
   deleteSelectedAttendanceLogsBtn: null,
 
-  seatMapEditBtn: null,
+  seatMapOpenEditorBtn: null,
   eventAdminModal: null,
   closeEventAdminBtn: null,
 
@@ -38,13 +38,10 @@ export const IX = {
   seatMapBtn: null,
   seatMapModal: null,
   seatMapCloseBtn: null,
+  seatMapEditActions: null,
   seatMapCanvas: null,
   seatMapScroll: null,
 
-  seatMapEditorModal: null,
-  seatMapEditorCloseBtn: null,
-  seatMapEditorCanvas: null,
-  seatMapEditorScroll: null,
   addSeatBtn: null,
   saveMapBtn: null,
 
@@ -110,7 +107,7 @@ export function refreshIndexDomRefs() {
   IX.clearAttendanceLogsBtn = $("clearAttendanceLogsBtn");
   IX.deleteSelectedAttendanceLogsBtn = $("deleteSelectedAttendanceLogsBtn");
 
-  IX.seatMapEditBtn = $("seatMapEditBtn");
+  IX.seatMapOpenEditorBtn = $("seatMapOpenEditorBtn");
   IX.eventAdminModal = $("eventAdminModal");
   IX.closeEventAdminBtn = $("closeEventAdminBtn");
 
@@ -132,13 +129,10 @@ export function refreshIndexDomRefs() {
   IX.seatMapBtn = $("seatMapBtn");
   IX.seatMapModal = $("seatMapModal");
   IX.seatMapCloseBtn = $("seatMapCloseBtn");
+  IX.seatMapEditActions = $("seatMapEditActions");
   IX.seatMapCanvas = $("seatMapCanvas");
   IX.seatMapScroll = $("seatMapScroll");
 
-  IX.seatMapEditorModal = $("seatMapEditorModal");
-  IX.seatMapEditorCloseBtn = $("seatMapEditorCloseBtn");
-  IX.seatMapEditorCanvas = $("seatMapEditorCanvas");
-  IX.seatMapEditorScroll = $("seatMapEditorScroll");
   IX.addSeatBtn = $("addSeatBtn");
   IX.saveMapBtn = $("saveMapBtn");
 }

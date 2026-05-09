@@ -13,7 +13,7 @@ export function createLayoutMobilePanelRender(deps) {
     canManageLayout,
     getWaitingListForDisplay,
     getSortedSeats,
-    getWaitingTimerStartMs,
+    getWaitingDisplayStartMs,
     seatCanvasDigitsOnly,
     addSeat,
     addWaiting,
@@ -21,6 +21,7 @@ export function createLayoutMobilePanelRender(deps) {
     deleteWaiting,
     clearSeat,
     assignWaitingToSeat,
+    setWaitingBlockChecked,
     onFullRender,
     isSeatMine
   } = deps;
@@ -130,7 +131,7 @@ export function createLayoutMobilePanelRender(deps) {
     `;
 
     const sortedWaiting = [...displayWaitingMobile].sort(
-      (a, b) => getWaitingTimerStartMs(a) - getWaitingTimerStartMs(b)
+      (a, b) => getWaitingDisplayStartMs(a) - getWaitingDisplayStartMs(b)
     );
 
     if (sortedWaiting.length === 0) {
@@ -142,16 +143,25 @@ export function createLayoutMobilePanelRender(deps) {
       `;
     } else {
       sortedWaiting.forEach((w) => {
-        const start = getWaitingTimerStartMs(w);
+        const start = getWaitingDisplayStartMs(w);
         const isSel = ui.selectedWaitingId === w.id;
+        const blocked = w.blockChecked === true;
 
         waitCard.innerHTML += `
-          <div class="mobile-wait-row compact ${isSel ? "selected" : ""}" data-mobile-wait="${w.id}">
+          <div class="mobile-wait-row compact ${isSel ? "selected" : ""} ${blocked ? "is-blocked" : ""}" data-mobile-wait="${w.id}">
             <div class="mobile-wait-mainline">
               <div class="mobile-wait-inline">
+                ${
+                  canManageLayout()
+                    ? `<label class="wait-block-check-wrap" title="체크 시 배치 블락 + 체크 시각 기준 타이머">
+                        <input type="checkbox" class="wait-block-check" data-mobile-block-w="${w.id}" ${blocked ? "checked" : ""} />
+                      </label>`
+                    : ``
+                }
                 <div class="mobile-wait-name">
                   ${escapeHtml(w.name)}
                 </div>
+                ${blocked ? `<span class="wait-block-badge">BLOCK</span>` : ``}
 
                 ${
                   canManageLayout()
@@ -253,7 +263,8 @@ export function createLayoutMobilePanelRender(deps) {
       row.addEventListener("click", (e) => {
         if (
           e.target.closest("[data-mobile-wait-select]") ||
-          e.target.closest("[data-del-w]")
+          e.target.closest("[data-del-w]") ||
+          e.target.closest("[data-mobile-block-w]")
         ) {
           return;
         }
@@ -300,6 +311,14 @@ export function createLayoutMobilePanelRender(deps) {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         deleteWaiting(btn.getAttribute("data-del-w"));
+      });
+    });
+
+    wrap.querySelectorAll("[data-mobile-block-w]").forEach((cb) => {
+      cb.addEventListener("change", async (e) => {
+        e.stopPropagation();
+        const wid = cb.getAttribute("data-mobile-block-w");
+        await setWaitingBlockChecked(wid, cb.checked);
       });
     });
 

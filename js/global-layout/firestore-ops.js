@@ -6,7 +6,8 @@ export {
   updateGlobalWaiting,
   undoLastGlobalAction,
   addManualWaiting,
-  removeManualWaiting
+  removeManualWaiting,
+  setWaitingBlocked
 } from "./fs-waiting-list-undo.js";
 export { assignSelectedWaitingToSeat } from "./fs-assign-waiting-to-seat.js";
 export { clearSeat } from "./fs-clear-global-seat.js";

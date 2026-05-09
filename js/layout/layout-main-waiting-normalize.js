@@ -19,7 +19,10 @@ export function normalizeWaitingEntry(raw, tournamentId) {
     email: String(raw.email || "").trim(),
     tournamentId: String(raw.tournamentId || tournamentId || "").trim(),
     addedAt: getWaitingTimerStartMs(raw),
-    carryStartedAt: raw.carryStartedAt ? Number(raw.carryStartedAt) : null
+    carryStartedAt: raw.carryStartedAt ? Number(raw.carryStartedAt) : null,
+    blockChecked: raw.blockChecked === true,
+    blockCheckedAt: raw.blockCheckedAt ? Number(raw.blockCheckedAt) : null,
+    blockAccumulatedMs: raw.blockAccumulatedMs ? Number(raw.blockAccumulatedMs) : 0
   };
 }
 

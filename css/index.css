@@ -1198,22 +1198,6 @@ body {
   background:rgba(242,109,125,.14);
 }
 
-.dealer-admin-card{
-  display:flex;
-  flex-direction:column;
-  max-height:420px;   /* 중요 */
-}
-
-.dealer-admin-summary{
-  flex-shrink:0;
-}
-
-.dealer-admin-list{
-  overflow-y:auto;
-  max-height:300px;
-  padding-right:4px;
-}
-
 /* ===== DEALER TOOLBAR ===== */
 .dealer-admin-toolbar{
   display:flex;
@@ -1689,90 +1673,6 @@ body {
   margin-bottom:12px;
 }
 
-.attendance-log-list{
-  overflow:auto;
-  display:flex;
-  flex-direction:column;
-  gap:10px;
-  padding-right:4px;
-}
-
-.attendance-log-item{
-  border:1px solid var(--line-soft);
-  border-radius:16px;
-  padding:12px 14px;
-  background:rgba(255,255,255,0.04);
-}
-
-.attendance-log-top{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:12px;
-  margin-bottom:6px;
-}
-
-.attendance-log-name{
-  font-size:15px;
-  font-weight:900;
-  color:var(--text-1);
-}
-
-.attendance-log-time{
-  font-size:12px;
-  color:var(--text-3);
-  white-space:nowrap;
-}
-
-.attendance-log-meta{
-  display:flex;
-  flex-wrap:wrap;
-  gap:8px;
-  margin-bottom:6px;
-}
-
-.attendance-log-pill{
-  display:inline-flex;
-  align-items:center;
-  min-height:28px;
-  padding:0 10px;
-  border-radius:999px;
-  font-size:12px;
-  font-weight:800;
-  border:1px solid var(--line-soft);
-  background:rgba(255,255,255,0.06);
-  color:var(--text-2);
-}
-
-.attendance-log-desc{
-  font-size:13px;
-  line-height:1.5;
-  color:var(--text-2);
-}
-
-.attendance-log-empty{
-  border:1px dashed var(--line-soft);
-  border-radius:16px;
-  padding:20px;
-  text-align:center;
-  color:var(--text-3);
-}
-
-@media (max-width: 768px){
-  .attendance-log-toolbar{
-    grid-template-columns: 1fr;
-  }
-
-  .attendance-log-card{
-    width:calc(100vw - 20px);
-    max-height:86vh;
-  }
-
-  .attendance-log-top{
-    flex-direction:column;
-    align-items:flex-start;
-  }
-}
 /* ===============================
    ATTENDANCE LOG MODAL
 =============================== */
@@ -1798,13 +1698,6 @@ body {
   margin:0;
   font-size:20px;
   font-weight:800;
-}
-
-.attendance-log-toolbar{
-  display:grid;
-  grid-template-columns: 1fr 180px;
-  gap:10px;
-  margin-bottom:12px;
 }
 
 .attendance-log-toolbar input,
@@ -1840,59 +1733,6 @@ body {
   padding-right:4px;
 }
 
-.attendance-log-item{
-  border:1px solid rgba(255,255,255,.10);
-  border-radius:16px;
-  padding:12px 14px;
-  background:rgba(255,255,255,.04);
-}
-
-.attendance-log-top{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:12px;
-  margin-bottom:8px;
-}
-
-.attendance-log-name{
-  font-size:15px;
-  font-weight:800;
-  color:#fff;
-}
-
-.attendance-log-time{
-  font-size:12px;
-  color:rgba(255,255,255,.58);
-  white-space:nowrap;
-}
-
-.attendance-log-meta{
-  display:flex;
-  flex-wrap:wrap;
-  gap:8px;
-  margin-bottom:8px;
-}
-
-.attendance-log-pill{
-  display:inline-flex;
-  align-items:center;
-  min-height:28px;
-  padding:0 10px;
-  border-radius:999px;
-  font-size:12px;
-  font-weight:700;
-  border:1px solid rgba(255,255,255,.10);
-  background:rgba(255,255,255,.06);
-  color:rgba(255,255,255,.82);
-}
-
-.attendance-log-desc{
-  font-size:13px;
-  line-height:1.5;
-  color:rgba(255,255,255,.74);
-}
-
 .attendance-log-empty{
   border:1px dashed rgba(255,255,255,.14);
   border-radius:16px;
@@ -1926,17 +1766,9 @@ body {
   }
 
   .attendance-log-toolbar{
-    grid-template-columns:1fr;
+    grid-template-columns:1fr 1fr;
   }
 
-  .attendance-log-top{
-    flex-direction:column;
-    align-items:flex-start;
-  }
-
-  .attendance-log-time{
-    white-space:normal;
-  }
 }
 .attendance-log-toolbar{
   display:grid;
@@ -1958,7 +1790,10 @@ body {
 .attendance-log-top-left{
   display:flex;
   align-items:center;
-  gap:10px;
+  gap:8px;
+  min-width: 0;
+  flex-wrap: nowrap;
+  min-height: 24px;
 }
 
 .attendance-log-check{
@@ -1967,19 +1802,13 @@ body {
   accent-color:#ff6b6b;
 }
 
-@media (max-width: 768px){
-  .attendance-log-toolbar{
-    grid-template-columns:1fr 1fr;
-  }
-}
-
 .attendance-log-item {
   border: 1px solid rgba(255,255,255,.08);
   border-left-width: 4px;
   border-radius: 16px;
   background: rgba(255,255,255,.04);
   padding: 12px 14px;
-  margin-bottom: 10px;
+  margin-bottom: 1px;
 }
 
 .attendance-log-item.action-checked_in { border-left-color: #5fd2a4; }
@@ -1991,15 +1820,59 @@ body {
 .attendance-log-pill.strong {
   font-weight: 900;
   min-width: auto;
+  flex-shrink: 0;
+  min-height: 22px;
+  line-height: 22px;
 }
 
-.attendance-log-meta.compact {
-  margin-top: 8px;
-  opacity: .78;
+/* 운영 로그 카드 1열 컴팩트 정리 */
+.attendance-log-item {
+  padding: 10px 12px;
+  border-radius: 12px;
 }
 
-.attendance-log-desc {
-  margin-top: 8px;
-  font-size: 13px;
-  color: rgba(255,255,255,.78);
+.attendance-log-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0;
+  gap: 8px;
+  min-height: 22px;
+}
+
+.attendance-log-name {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attendance-log-time {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  font-size: 11px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.attendance-log-meta {
+  gap: 6px;
+}
+
+.attendance-log-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  min-height: 22px;
+  padding: 0 8px;
+  font-size: 11px;
+  line-height: 1;
 }

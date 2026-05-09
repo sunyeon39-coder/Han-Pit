@@ -129,7 +129,7 @@ function ensureGlobalPanListeners() {
       if (!s) return;
       if (s.pointerId != null && e.pointerId !== s.pointerId) return;
       GL.canvasPanX = s.ox + (e.clientX - s.sx);
-      GL.canvasPanY = s.lockHorizontalOnly ? s.oy : s.oy + (e.clientY - s.sy);
+      GL.canvasPanY = s.oy + (e.clientY - s.sy);
       applyGlobalLayoutCanvasTransform(s.canvas);
     },
     { passive: true }
@@ -225,7 +225,6 @@ export function wireGlobalLayoutCanvasViewport(viewport, canvas) {
         sy: e.clientY,
         ox: GL.canvasPanX,
         oy: GL.canvasPanY,
-        lockHorizontalOnly: !!GL.panelOpen,
         pointerId: e.pointerId
       };
       viewport.classList.add("is-panning");

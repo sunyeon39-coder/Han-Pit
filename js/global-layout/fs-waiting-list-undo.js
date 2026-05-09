@@ -176,3 +176,80 @@ export async function removeManualWaiting(waitingId = "") {
   GL.lastGlobalUndo = { kind: "remove_waiting", snapshotBefore };
   if (GL.selectedWaitingId === wid) GL.selectedWaitingId = "";
 }
+
+export async function setWaitingBlocked(waitingId = "", checked = false) {
+  const wid = String(waitingId || "").trim();
+  if (!wid) return;
+  const target = getCurrentTournamentWaiting().find((w) => String(w?.id || "").trim() === wid);
+  if (!target) return;
+
+  const waitingRef = doc(db, "layout_shared", "global_waiting");
+  const now = Date.now();
+  const nextChecked = checked === true;
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(waitingRef);
+    const data = snap.exists() ? (snap.data() || {}) : {};
+    const arr = Array.isArray(data.waiting) ? [...data.waiting] : [];
+
+    const targetUid = String(target.uid || "").trim();
+    const targetEmail = String(target.email || "").trim().toLowerCase();
+    const targetName = String(target.name || "").trim();
+    const targetTid = String(target.tournamentId || GL.tournamentId || "").trim();
+
+    let idx = arr.findIndex((w) => String(w?.id || "").trim() === wid);
+    if (idx < 0) {
+      idx = arr.findIndex((w) => {
+        const wTid = String(w?.tournamentId || "").trim();
+        if (targetTid && wTid && targetTid !== wTid) return false;
+        const wUid = String(w?.uid || "").trim();
+        const wEmail = String(w?.email || "").trim().toLowerCase();
+        const wName = String(w?.name || "").trim();
+        if (targetUid && wUid && targetUid === wUid) return true;
+        if (!targetUid && targetEmail && wEmail && targetEmail === wEmail) return true;
+        if (!targetUid && !targetEmail && targetName && wName === targetName) return true;
+        return false;
+      });
+    }
+
+    const base = idx >= 0 && arr[idx] && typeof arr[idx] === "object"
+      ? { ...arr[idx] }
+      : {
+          id: wid,
+          uid: String(target.uid || "").trim(),
+          email: String(target.email || "").trim(),
+          name: String(target.name || "").trim(),
+          tournamentId: String(target.tournamentId || GL.tournamentId || "").trim(),
+          joinedAt: Number(target.joinedAt || target.createdAt || Date.now()) || Date.now()
+        };
+
+    const prevChecked = base.blockChecked === true;
+    if (prevChecked === nextChecked) return;
+
+    if (nextChecked) {
+      base.blockChecked = true;
+      base.blockCheckedAt = now;
+    } else {
+      const startedAt = Number(base.blockCheckedAt || 0);
+      const elapsed = startedAt > 0 ? Math.max(0, now - startedAt) : 0;
+      base.blockChecked = false;
+      base.blockCheckedAt = null;
+      base.blockAccumulatedMs = Number(base.blockAccumulatedMs || 0) + elapsed;
+    }
+
+    if (idx >= 0) arr[idx] = base;
+    else arr.push(base);
+
+    tx.set(
+      waitingRef,
+      {
+        ...data,
+        version: 2,
+        waiting: arr,
+        updatedAt: now,
+        updatedAtServer: serverTimestamp()
+      },
+      { merge: true }
+    );
+  });
+}

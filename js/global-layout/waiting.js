@@ -1,5 +1,42 @@
 import { GL } from "./state.js";
-import { isEmptyPerson, makeUid } from "./utils.js";
+import { isEmptyPerson, makeUid, toMillis } from "./utils.js";
+
+function toPositiveMs(v) {
+  const ms = toMillis(v);
+  return Number.isFinite(ms) && ms > 0 ? Math.floor(ms) : 0;
+}
+
+export function getWaitingJoinMs(raw = {}) {
+  const keys = [
+    "joinedAt",
+    "createdAt",
+    "joinedAtServer",
+    "updatedAtServer",
+    "updatedAt",
+    "addedAt",
+    "carryStartedAt"
+  ];
+  for (const key of keys) {
+    const ms = toPositiveMs(raw?.[key]);
+    if (ms > 0) return ms;
+  }
+  return Date.now();
+}
+
+export function isWaitingBlocked(raw = {}) {
+  return raw?.blockChecked === true;
+}
+
+export function getWaitingDisplayStartMs(raw = {}) {
+  const baseStart = getWaitingJoinMs(raw);
+  const blockedAccumulatedMs = toPositiveMs(raw?.blockAccumulatedMs);
+  if (isWaitingBlocked(raw)) {
+    const checkedAt = toPositiveMs(raw?.blockCheckedAt);
+    if (checkedAt > 0) return checkedAt;
+  }
+  const shifted = baseStart - blockedAccumulatedMs;
+  return shifted > 0 ? shifted : baseStart;
+}
 
 export function isPersonSeatedInGlobalSeats(seats, person = {}) {
   const uid = String(person.uid || "").trim();
@@ -70,7 +107,10 @@ export function getCurrentTournamentWaiting() {
       name: String(item.name || item.nickname || "").trim() || uid || "-",
       tournamentId: GL.tournamentId,
       joinedAt: Number(item.statusChangedAt || item.checkedInAt || Date.now()) || Date.now(),
-      source: "attendance_fallback"
+      source: "attendance_fallback",
+      blockChecked: false,
+      blockCheckedAt: null,
+      blockAccumulatedMs: 0
     });
   });
 

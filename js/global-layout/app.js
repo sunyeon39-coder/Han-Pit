@@ -7,6 +7,7 @@ import {
   updateCanvasSeatTimerClasses,
   renderSeatPanel,
   renderWaiting,
+  updateWaitingTimersInPanel,
   setPanelOpen,
   isTypingInPanel
 } from "./panel-ui.js";
@@ -82,7 +83,7 @@ export function startGlobalLayoutApp() {
         if (GL.activeTab === "seat") {
           renderSeatPanel();
         } else {
-          renderWaiting(getCurrentTournamentWaiting());
+          updateWaitingTimersInPanel();
         }
       }, 1000);
     } catch (err) {

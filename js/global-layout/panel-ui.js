@@ -10,6 +10,7 @@ import {
   timerClass,
   getSeatPosition
 } from "./utils.js";
+import { getWaitingDisplayStartMs, isWaitingBlocked } from "./waiting.js";
 import { updateTabUi, updateGlobalMetaToolbar } from "./toolbar.js";
 import {
   applyGlobalLayoutCanvasTransform,
@@ -123,7 +124,7 @@ export function renderSeats(seats = []) {
   if (!GL.app) return;
   if (!seats.length) {
     GL.app.innerHTML = `
-      <div class="layout-canvas-viewport" title="빈 영역을 드래그하면 화면을 이동합니다. 상단 버튼으로 확대·축소. 우측 패널이 열려 있으면 좌우로만 이동합니다. Seat 위에서 옮기려면 Shift를 누른 채 드래그하세요.">
+      <div class="layout-canvas-viewport" title="빈 영역을 드래그하면 화면을 이동합니다. 상단 버튼으로 확대·축소. Seat 위에서 옮기려면 Shift를 누른 채 드래그하세요.">
         <div class="canvas pc-canvas">
           <div class="canvas-inner">
             <div class="empty-panel" style="position:absolute;left:24px;top:24px;width:260px;">
@@ -134,6 +135,7 @@ export function renderSeats(seats = []) {
       </div>
     `;
     GL.seatCountEl.textContent = "SEAT: 0";
+    if (GL.assignedCountEl) GL.assignedCountEl.textContent = "ASSIGNED: 0";
     const vp = GL.app.querySelector(".layout-canvas-viewport");
     const cv = GL.app.querySelector(".pc-canvas");
     if (vp && cv) {
@@ -145,6 +147,10 @@ export function renderSeats(seats = []) {
   }
 
   GL.seatCountEl.textContent = `SEAT: ${seats.length}`;
+  if (GL.assignedCountEl) {
+    const assignedCount = seats.filter((s) => !isEmptyPerson(String(s?.person || "").trim())).length;
+    GL.assignedCountEl.textContent = `ASSIGNED: ${assignedCount}`;
+  }
   const sorted = [...seats].sort((a, b) => (a.order || 0) - (b.order || 0));
   const seatHtml = sorted.map((s, idx) => {
     const label = s.label || s.no || s.seatId || "-";
@@ -174,7 +180,7 @@ export function renderSeats(seats = []) {
   }).join("");
 
   GL.app.innerHTML = `
-    <div class="layout-canvas-viewport" title="빈 영역을 드래그하면 화면을 이동합니다. 상단 버튼으로 확대·축소. 우측 패널이 열려 있으면 좌우로만 이동합니다. Seat 위에서 옮기려면 Shift를 누른 채 드래그하세요.">
+    <div class="layout-canvas-viewport" title="빈 영역을 드래그하면 화면을 이동합니다. 상단 버튼으로 확대·축소. Seat 위에서 옮기려면 Shift를 누른 채 드래그하세요.">
       <div class="canvas pc-canvas">
         <div class="canvas-inner">
           ${seatHtml}
@@ -203,21 +209,9 @@ export function renderWaiting(waiting = []) {
     return;
   }
 
-  const joinMs = (w) =>
-    toMillis(
-      w.joinedAt ||
-        w.createdAt ||
-        w.joinedAtServer ||
-        w.updatedAtServer ||
-        w.updatedAt ||
-        w.addedAt ||
-        w.carryStartedAt ||
-        0
-    ) || 0;
-
   const sortedWaiting = [...waiting].sort((a, b) => {
-    const da = joinMs(a);
-    const db = joinMs(b);
+    const da = getWaitingDisplayStartMs(a);
+    const db = getWaitingDisplayStartMs(b);
     if (da !== db) return da - db;
     return String(a.id || "").localeCompare(String(b.id || ""));
   });
@@ -226,23 +220,51 @@ export function renderWaiting(waiting = []) {
     .map((w) => {
       const wid = String(w.id || "");
       const selected = GL.selectedWaitingId === wid;
-      const joinedAt = joinMs(w) || Date.now();
-      const elapsed = Date.now() - joinedAt;
+      const blocked = isWaitingBlocked(w);
+      const startMs = getWaitingDisplayStartMs(w);
+      const elapsed = Date.now() - startMs;
       const tClass = timerClass(elapsed);
+      const blockCheck = GL.isAdminUser
+        ? `<label class="wait-block-check-wrap" title="체크 시 배치 블락 + 체크 시각 기준 타이머">
+            <input type="checkbox" class="wait-block-check" data-block-wid="${escapeHtml(wid)}" ${blocked ? "checked" : ""} />
+          </label>`
+        : "";
+      const blockBadge = blocked ? `<span class="wait-block-badge">BLOCK</span>` : "";
+      const joinedAtMs =
+        toMillis(
+          w.joinedAt ||
+            w.createdAt ||
+            w.joinedAtServer ||
+            w.updatedAtServer ||
+            w.updatedAt ||
+            w.addedAt ||
+            w.carryStartedAt ||
+            0
+        ) || 0;
+      const blockAccumulatedMs = Number(w.blockAccumulatedMs || 0) || 0;
+      const blockCheckedAtMs = Number(w.blockCheckedAt || 0) || 0;
       const deleteBtn = GL.isAdminUser
         ? `<div class="mobile-wait-inline-actions">
             <button class="mobile-pill-btn danger" type="button" data-delete-wid="${escapeHtml(wid)}">삭제</button>
           </div>`
         : "";
       return `
-    <div class="mobile-wait-row compact ${selected ? "selected" : ""}" data-wid="${escapeHtml(wid)}">
+    <div
+      class="mobile-wait-row compact ${selected ? "selected" : ""} ${blocked ? "is-blocked" : ""}"
+      data-wid="${escapeHtml(wid)}"
+      data-wait-join-ms="${joinedAtMs}"
+      data-block-accum-ms="${blockAccumulatedMs}"
+      data-block-checked-at-ms="${blockCheckedAtMs}"
+    >
       <div class="mobile-wait-mainline">
         <div class="mobile-wait-inline">
+          ${blockCheck}
           <div class="mobile-wait-name">${escapeHtml(w.name || w.uid || "-")}</div>
+          ${blockBadge}
           ${deleteBtn}
         </div>
         <div class="mobile-wait-right">
-          <span class="time-chip ${tClass}">${fmtElapsed(elapsed)}</span>
+          <span class="time-chip ${tClass}" data-wait-start="${startMs}" data-wait-id="${escapeHtml(wid)}">${fmtElapsed(elapsed)}</span>
         </div>
       </div>
     </div>
@@ -262,6 +284,21 @@ export function renderWaiting(waiting = []) {
   restorePanelScroll();
   updateGlobalMetaToolbar();
   refreshGlobalLayoutAlignButtonState();
+}
+
+export function updateWaitingTimersInPanel() {
+  if (!GL.panelContent || GL.activeTab !== "wait") return;
+  const chips = GL.panelContent.querySelectorAll(".time-chip[data-wait-start]");
+  if (!chips.length) return;
+  const now = Date.now();
+  chips.forEach((chip) => {
+    const start = Number(chip.getAttribute("data-wait-start") || "0");
+    const elapsed = start > 0 ? Math.max(0, now - start) : 0;
+    chip.textContent = fmtElapsed(elapsed);
+    const cls = timerClass(elapsed);
+    chip.classList.remove("t-green", "t-yellow", "t-orange", "t-red");
+    chip.classList.add(cls);
+  });
 }
 
 export function renderSeatPanel() {
@@ -320,13 +357,13 @@ export function renderSeatPanel() {
                     : ``
                 : ``
             }
-            ${GL.isAdminUser && occupied ? `<button class="pill-inline warn" type="button" data-clear-seat="${escapeHtml(seatId)}">비우기</button>` : ``}
+            ${GL.isAdminUser && occupied ? `<button class="pill-inline seat-icon-btn warn" type="button" data-clear-seat="${escapeHtml(seatId)}" title="비우기" aria-label="비우기">🧹</button>` : ``}
             ${
               GL.isAdminUser
-                ? `<button class="pill-inline" type="button" data-rename-seat="${escapeHtml(seatId)}" title="Seat 라벨·카드(eventId)·Box ID 변경. 카드/Box를 바꾸면 저장 후 layout 배치로 이동할 수 있습니다.">수정</button>`
+                ? `<button class="pill-inline seat-icon-btn" type="button" data-rename-seat="${escapeHtml(seatId)}" title="수정" aria-label="수정">⚙</button>`
                 : ``
             }
-            ${GL.isAdminUser ? `<button class="pill-inline danger" data-delete-seat="${escapeHtml(seatId)}">삭제</button>` : ``}
+            ${GL.isAdminUser ? `<button class="pill-inline seat-icon-btn danger" data-delete-seat="${escapeHtml(seatId)}" title="삭제" aria-label="삭제">🗑</button>` : ``}
           </div>
         </div>
       </div>

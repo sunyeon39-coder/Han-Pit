@@ -246,6 +246,33 @@ export function createLayoutSeatWaitingMutations(deps) {
     });
   }
 
+  function setWaitingBlockChecked(waitingId, checked) {
+    return runSeatWaitingMutationSerialized(async () => {
+      if (!canManageLayout()) return;
+      const waiting = findWaiting(waitingId);
+      if (!waiting) return;
+
+      const now = Date.now();
+      const nextChecked = checked === true;
+      const prevChecked = waiting.blockChecked === true;
+      if (prevChecked === nextChecked) return;
+
+      if (nextChecked) {
+        waiting.blockChecked = true;
+        waiting.blockCheckedAt = now;
+      } else {
+        const startedAt = Number(waiting.blockCheckedAt || 0);
+        const elapsed = startedAt > 0 ? Math.max(0, now - startedAt) : 0;
+        waiting.blockChecked = false;
+        waiting.blockCheckedAt = null;
+        waiting.blockAccumulatedMs = Number(waiting.blockAccumulatedMs || 0) + elapsed;
+      }
+
+      touchWaiting(true);
+      render();
+    });
+  }
+
   function removeWaitingEntriesByIdentity(identityKey) {
     if (!identityKey) return 0;
 
@@ -261,6 +288,7 @@ export function createLayoutSeatWaitingMutations(deps) {
       const waiting = normalizeWaitingEntry(resolveRawWaiting(waitingId));
       const seat = findSeat(seatId);
       if (!waiting || !seat) return;
+      if (waiting.blockChecked === true) return;
 
       getHealUndo().captureLayoutUndo("assign_waiting_to_seat");
 
@@ -450,6 +478,7 @@ export function createLayoutSeatWaitingMutations(deps) {
     deleteSeat,
     deleteWaiting,
     assignWaitingToSeat,
+    setWaitingBlockChecked,
     clearSeat,
     findSeat,
     findWaiting,

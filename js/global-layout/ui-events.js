@@ -16,10 +16,11 @@ import {
   addGlobalSeat,
   addManualWaiting,
   removeManualWaiting,
+  setWaitingBlocked,
   undoLastGlobalAction
 } from "./firestore-ops.js";
 import { initGlobalSeatEditModal, openSeatEditModal } from "./seat-edit-modal.js";
-import { isEmptyPerson } from "./utils.js";
+import { fmtElapsed, isEmptyPerson, timerClass } from "./utils.js";
 
 function isMultiSelectPointer(e) {
   return !!(e && (e.ctrlKey || e.metaKey));
@@ -72,6 +73,53 @@ function applyCanvasSeatSelectionClick(seatId, multi) {
     GL.selectedSeatIds.clear();
     GL.selectedSeatIds.add(sid);
   }
+}
+
+function applyOptimisticWaitingBlockRow(row, checked) {
+  if (!row) return;
+  const now = Date.now();
+  const nextChecked = checked === true;
+
+  const joinMs = Number(row.getAttribute("data-wait-join-ms") || "0") || now;
+  const prevAccumMs = Number(row.getAttribute("data-block-accum-ms") || "0") || 0;
+  const prevCheckedAtMs = Number(row.getAttribute("data-block-checked-at-ms") || "0") || 0;
+  const chip = row.querySelector(".time-chip[data-wait-start]");
+
+  row.classList.toggle("is-blocked", nextChecked);
+
+  const nameEl = row.querySelector(".mobile-wait-name");
+  let badge = row.querySelector(".wait-block-badge");
+  if (nextChecked) {
+    if (!badge && nameEl?.parentElement) {
+      badge = document.createElement("span");
+      badge.className = "wait-block-badge";
+      badge.textContent = "BLOCK";
+      nameEl.insertAdjacentElement("afterend", badge);
+    }
+  } else if (badge) {
+    badge.remove();
+  }
+
+  let startMs = now;
+  if (nextChecked) {
+    row.setAttribute("data-block-checked-at-ms", String(now));
+    startMs = now;
+  } else {
+    const effectiveCheckedAt = prevCheckedAtMs > 0 ? prevCheckedAtMs : now;
+    const blockedElapsed = Math.max(0, now - effectiveCheckedAt);
+    const nextAccumMs = prevAccumMs + blockedElapsed;
+    row.setAttribute("data-block-accum-ms", String(nextAccumMs));
+    row.setAttribute("data-block-checked-at-ms", "0");
+    startMs = Math.max(1, joinMs - nextAccumMs);
+  }
+
+  if (!chip) return;
+  chip.setAttribute("data-wait-start", String(startMs));
+  const elapsed = Math.max(0, now - startMs);
+  chip.textContent = fmtElapsed(elapsed);
+  const cls = timerClass(elapsed);
+  chip.classList.remove("t-green", "t-yellow", "t-orange", "t-red");
+  chip.classList.add(cls);
 }
 
 export function bindGlobalLayoutEventHandlers() {
@@ -167,6 +215,8 @@ export function bindGlobalLayoutEventHandlers() {
       } catch (err) {
         if (String(err?.message || "").includes("same_person_noop")) {
           alert("이미 그 Seat에 있는 사람입니다.");
+        } else if (String(err?.message || "").includes("waiting_blocked")) {
+          alert("BLOCK 체크된 대기자는 배치할 수 없습니다.");
         } else if (String(err?.message || "").includes("waiting_not_found")) {
           alert("해당 대기자가 이미 처리되었습니다.");
         } else {
@@ -221,6 +271,8 @@ export function bindGlobalLayoutEventHandlers() {
       return;
     }
 
+    if (e.target.closest("[data-block-wid]") || e.target.closest(".wait-block-check-wrap")) return;
+
     const row = e.target.closest("[data-wid]");
     if (!row) return;
     const wid = String(row.getAttribute("data-wid") || "");
@@ -230,6 +282,27 @@ export function bindGlobalLayoutEventHandlers() {
 
     if (GL.selectedWaitingId) GL.selectedSeatIds.clear();
     renderWaiting(getCurrentTournamentWaiting());
+  });
+
+  GL.panelContent?.addEventListener("change", async (e) => {
+    if (!GL.isAdminUser) return;
+    const blockCb = e.target.closest("[data-block-wid]");
+    if (!blockCb) return;
+    const wid = String(blockCb.getAttribute("data-block-wid") || "").trim();
+    if (!wid) return;
+    const row = blockCb.closest("[data-wid]");
+    const nextChecked = !!blockCb.checked;
+    applyOptimisticWaitingBlockRow(row, nextChecked);
+    blockCb.disabled = true;
+    try {
+      await setWaitingBlocked(wid, nextChecked);
+    } catch (err) {
+      console.error("setWaitingBlocked error:", err);
+      alert("BLOCK 체크 변경에 실패했습니다.");
+      renderWaiting(getCurrentTournamentWaiting());
+    } finally {
+      blockCb.disabled = false;
+    }
   });
 
   GL.panelContent?.addEventListener("dblclick", async (e) => {
@@ -429,6 +502,8 @@ export function bindGlobalLayoutEventHandlers() {
       } catch (err) {
         if (String(err?.message || "").includes("same_person_noop")) {
           alert("이미 그 Seat에 있는 사람입니다.");
+        } else if (String(err?.message || "").includes("waiting_blocked")) {
+          alert("BLOCK 체크된 대기자는 배치할 수 없습니다.");
         } else if (String(err?.message || "").includes("waiting_not_found")) {
           alert("해당 대기자가 이미 처리되었습니다.");
         } else {

@@ -12,6 +12,7 @@ export const GL = {
   backBtn: null,
   canvasZoomBar: null,
   seatCountEl: null,
+  assignedCountEl: null,
   waitingCountEl: null,
   pcPanel: null,
   panelContent: null,
@@ -69,6 +70,7 @@ export function initGlDomRefs() {
   GL.backBtn = document.getElementById("backBtn");
   GL.canvasZoomBar = document.getElementById("canvasZoomBar");
   GL.seatCountEl = document.getElementById("seatCount");
+  GL.assignedCountEl = document.getElementById("assignedCount");
   GL.waitingCountEl = document.getElementById("waitingCount");
   GL.pcPanel = document.getElementById("pcPanel");
   GL.panelContent = document.getElementById("panelContent");

@@ -70,22 +70,6 @@ function formatLogDateTime(ts) {
   });
 }
 
-function getAttendanceLogDescription(log) {
-  const actionLabel = getAttendanceActionLabel(log.action);
-  const nickname = String(log.nickname || "이름 없음").trim();
-  const seatLabel = String(log.seatLabel || "").trim();
-  const eventId = String(log.eventId || "").trim();
-  const boxId = String(log.boxId || "").trim();
-
-  const parts = [`${nickname} · ${actionLabel}`];
-
-  if (seatLabel) parts.push(`Seat ${seatLabel}`);
-  if (eventId) parts.push(`Event ${eventId}`);
-  if (boxId) parts.push(`Box ${boxId}`);
-
-  return parts.join(" / ");
-}
-
 function getFilteredAttendanceLogs() {
   const tournamentId = getTournamentId();
   const keyword = String(IX.attendanceLogUi.search || "").trim().toLowerCase();
@@ -146,13 +130,9 @@ function renderAttendanceLogs() {
     const action = String(log.action || "").trim();
     const nickname = escapeHtml(log.nickname || "이름 없음");
     const timeText = formatLogDateTime(log.createdAt);
-    const desc = escapeHtml(getAttendanceLogDescription(log));
 
+    const actionPill = `<span class="attendance-log-pill strong">${escapeHtml(getAttendanceActionLabel(action))}</span>`;
     const meta = [];
-
-    meta.push(
-      `<span class="attendance-log-pill strong">${escapeHtml(getAttendanceActionLabel(action))}</span>`
-    );
 
     if (log.eventId) {
       meta.push(`<span class="attendance-log-pill">Event ${escapeHtml(log.eventId)}</span>`);
@@ -177,6 +157,7 @@ function renderAttendanceLogs() {
               ${checked ? "checked" : ""}
             />
             <div class="attendance-log-name">${nickname}</div>
+            ${actionPill}
           </div>
           <div class="attendance-log-time">${escapeHtml(timeText)}</div>
         </div>
@@ -185,7 +166,6 @@ function renderAttendanceLogs() {
           ${meta.join("")}
         </div>
 
-        <div class="attendance-log-desc">${desc}</div>
       </div>
     `;
   }).join("");

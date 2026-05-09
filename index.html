@@ -42,7 +42,6 @@
       <button id="eventAdminBtn" class="manage-btn hidden" type="button">카드 관리</button>
       <button id="attendanceLogBtn" class="manage-btn hidden" type="button">운영 로그</button>
       <button id="seatMapBtn" class="manage-btn" type="button">전체 배치도</button>
-      <button id="seatMapEditBtn" class="manage-btn hidden" type="button">맵 편집</button>
     </div>
   </header>
 
@@ -157,33 +156,17 @@
         <div class="seat-map-kicker">FLOOR MAP</div>
         <h2>전체 테이블 배치도</h2>
       </div>
+      <button id="seatMapOpenEditorBtn" class="mini-btn hidden" type="button">맵 편집</button>
       <button id="seatMapCloseBtn" class="icon-close-btn" type="button">✕</button>
+    </div>
+    <div id="seatMapEditActions" class="seat-map-editor-toolbar hidden">
+      <button id="addSeatBtn" class="mini-btn" type="button">Seat 추가</button>
+      <button id="saveMapBtn" class="mini-btn" type="button">맵 저장</button>
     </div>
 
     <div class="seat-map-scroll-shell">
       <div id="seatMapScroll" class="seat-map-scroll">
         <div id="seatMapCanvas" class="seat-map-canvas"></div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Map Editor Modal -->
-<div id="seatMapEditorModal" class="modal-backdrop">
-  <div class="modal-card seat-map-admin-card">
-    <div class="seat-map-modal-head">
-      <h2>Seat Map Editor</h2>
-      <button id="seatMapEditorCloseBtn" class="icon-close-btn" type="button">✕</button>
-    </div>
-
-    <div class="seat-map-editor-toolbar">
-      <button id="addSeatBtn" class="mini-btn" type="button">Seat 추가</button>
-      <button id="saveMapBtn" class="mini-btn" type="button">맵 저장</button>
-    </div>
-
-    <div class="seat-map-scroll-shell editor">
-      <div id="seatMapEditorScroll" class="seat-map-scroll">
-        <div id="seatMapEditorCanvas" class="seat-map-canvas"></div>
       </div>
     </div>
   </div>

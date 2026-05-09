@@ -175,9 +175,9 @@ export async function applyGlobalSeatRename(
   const labelOnly = !moved && nextLabel === prevLabel;
   if (labelOnly) return false;
 
-  const layoutGate = await validateLayoutEventForGlobalOps(nextEventId, nextBoxId, {
-    requireSeatId: targetSeatId
-  });
+  // Seat 수정/이동은 target layout_events 안에 동일 seatId가 없어도 허용한다.
+  // (global_seats 소스 기준으로 syncLayoutProjection 시 대상 layout_events가 갱신됨)
+  const layoutGate = await validateLayoutEventForGlobalOps(nextEventId, nextBoxId);
   if (!layoutGate.ok) {
     alert(layoutGate.message);
     return false;

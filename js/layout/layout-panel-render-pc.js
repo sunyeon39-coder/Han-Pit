@@ -12,7 +12,7 @@ export function createLayoutPcPanelRender(deps) {
     canManageLayout,
     getWaitingListForDisplay,
     getSortedSeats,
-    getWaitingTimerStartMs,
+    getWaitingDisplayStartMs,
     sortWaitingAscending,
     seatCanvasDigitsOnly,
     addSeat,
@@ -20,6 +20,7 @@ export function createLayoutPcPanelRender(deps) {
     deleteSeat,
     deleteWaiting,
     clearSeat,
+    setWaitingBlockChecked,
     undoLastAction,
     onFullRender,
     onPanelRefresh,
@@ -50,11 +51,20 @@ export function createLayoutPcPanelRender(deps) {
     } else {
       sortWaitingAscending(displayWaiting).forEach((w) => {
         const isSel = selected === w.id;
-        const start = getWaitingTimerStartMs(w);
+        const start = getWaitingDisplayStartMs(w);
+        const blocked = w.blockChecked === true;
         html.push(`
-          <div class="row ${isSel ? "selected" : ""}" data-wid="${w.id}" style="cursor:pointer;">
+          <div class="row ${isSel ? "selected" : ""} ${blocked ? "is-blocked" : ""}" data-wid="${w.id}" style="cursor:pointer;">
             <div class="left layout-wait-row-left">
+              ${
+                canManageLayout()
+                  ? `<label class="wait-block-check-wrap" title="체크 시 배치 블락 + 체크 시각 기준 타이머">
+                      <input type="checkbox" class="wait-block-check" data-block-w="${w.id}" ${blocked ? "checked" : ""} />
+                    </label>`
+                  : ``
+              }
               <div class="layout-wait-name" style="font-weight:900;">${escapeHtml(w.name)}</div>
+              ${blocked ? `<span class="wait-block-badge">BLOCK</span>` : ``}
             </div>
             <div style="display:flex; align-items:center; gap:8px;">
               <span class="time-chip" data-timer="wait" data-start="${start}" data-target="wait:${w.id}">00:00:00</span>
@@ -88,7 +98,7 @@ export function createLayoutPcPanelRender(deps) {
 
     panelContent.querySelectorAll("[data-wid]").forEach((row) => {
       row.addEventListener("click", (e) => {
-        if (e.target.closest("[data-del-w]")) return;
+        if (e.target.closest("[data-del-w]") || e.target.closest("[data-block-w]")) return;
         const wid = row.getAttribute("data-wid");
         ui.selectedWaitingId = ui.selectedWaitingId === wid ? null : wid;
         ui.selectedSeatId = null;
@@ -101,6 +111,14 @@ export function createLayoutPcPanelRender(deps) {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         deleteWaiting(btn.getAttribute("data-del-w"));
+      });
+    });
+
+    panelContent.querySelectorAll("[data-block-w]").forEach((cb) => {
+      cb.addEventListener("change", async (e) => {
+        e.stopPropagation();
+        const wid = cb.getAttribute("data-block-w");
+        await setWaitingBlockChecked(wid, cb.checked);
       });
     });
   }
