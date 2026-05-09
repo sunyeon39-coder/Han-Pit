@@ -52,6 +52,7 @@ import {
 import {
   layoutLoadMyUserProfile,
   layoutLoadEventStateRemote,
+  layoutLoadEventStateFromGlobalSeats,
   layoutLoadWaitingStateRemote,
   layoutAcknowledgeMyNotification,
   layoutRefreshCachedEventCardTitle,
@@ -405,6 +406,10 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
     return layoutLoadEventStateRemote(EVENT_REF);
   }
 
+  async function loadEventStateFromGlobalSeats() {
+    return layoutLoadEventStateFromGlobalSeats(TOURNAMENT_ID, EVENT_ID, BOX_ID);
+  }
+
   async function loadWaitingStateRemote() {
     return layoutLoadWaitingStateRemote(WAITING_REF);
   }
@@ -477,6 +482,7 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
     FOCUS_SEAT_ID,
     refreshCachedEventCardTitle,
     loadEventStateRemote,
+    loadEventStateFromGlobalSeats,
     loadWaitingStateRemote,
     eventState,
     waitingState,

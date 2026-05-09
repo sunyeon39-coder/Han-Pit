@@ -8,6 +8,7 @@ export function createLayoutBootstrap(deps) {
     FOCUS_SEAT_ID,
     refreshCachedEventCardTitle,
     loadEventStateRemote,
+    loadEventStateFromGlobalSeats,
     loadWaitingStateRemote,
     eventState,
     waitingState,
@@ -37,15 +38,22 @@ export function createLayoutBootstrap(deps) {
       loadEventStateRemote(),
       loadWaitingStateRemote()
     ]);
+    const hasRemoteSeats =
+      remoteEvent &&
+      typeof remoteEvent === "object" &&
+      Array.isArray(remoteEvent.seats) &&
+      remoteEvent.seats.length > 0;
+    const fallbackEvent = hasRemoteSeats ? null : await loadEventStateFromGlobalSeats();
+    const initialEvent = remoteEvent && typeof remoteEvent === "object" ? remoteEvent : fallbackEvent;
 
-    if (remoteEvent && typeof remoteEvent === "object") {
-      eventState.version = remoteEvent.version || 2;
-      eventState.eventId = remoteEvent.eventId || EVENT_ID;
-      eventState.boxId = remoteEvent.boxId || BOX_ID;
-      eventState.nextSeatNo = remoteEvent.nextSeatNo || 1;
-      eventState.nextSeatOrder = remoteEvent.nextSeatOrder || 1;
-      eventState.seats = Array.isArray(remoteEvent.seats) ? remoteEvent.seats : [];
-      eventState.updatedAt = Number(remoteEvent.updatedAt || Date.now());
+    if (initialEvent && typeof initialEvent === "object") {
+      eventState.version = initialEvent.version || 2;
+      eventState.eventId = initialEvent.eventId || EVENT_ID;
+      eventState.boxId = initialEvent.boxId || BOX_ID;
+      eventState.nextSeatNo = initialEvent.nextSeatNo || 1;
+      eventState.nextSeatOrder = initialEvent.nextSeatOrder || 1;
+      eventState.seats = Array.isArray(initialEvent.seats) ? initialEvent.seats : [];
+      eventState.updatedAt = Number(initialEvent.updatedAt || Date.now());
     }
 
     if (remoteWaiting && typeof remoteWaiting === "object") {

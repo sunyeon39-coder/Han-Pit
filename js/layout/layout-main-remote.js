@@ -1,5 +1,14 @@
 import { db, auth } from "../firebase.js";
-import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  setDoc,
+  serverTimestamp,
+  where
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 export async function layoutLoadMyUserProfile() {
   if (!auth.currentUser) return null;
@@ -32,6 +41,61 @@ export async function layoutLoadWaitingStateRemote(waitingRef) {
     return snap.data() || null;
   } catch (err) {
     console.error("loadWaitingStateRemote error:", err);
+    return null;
+  }
+}
+
+export async function layoutLoadEventStateFromGlobalSeats(tournamentId = "", eventId = "", boxId = "") {
+  const tid = String(tournamentId || "").trim();
+  const eid = String(eventId || "").trim();
+  const bid = String(boxId || "").trim();
+  if (!tid || !eid || !bid) return null;
+
+  try {
+    const snap = await getDocs(
+      query(
+        collection(db, "tournaments", tid, "global_seats"),
+        where("boxId", "==", bid)
+      )
+    );
+
+    const seats = snap.docs
+      .map((d) => d.data() || {})
+      .filter((s) => {
+        const mappedEventId = String(s.currentEventId || s.mappedEventId || "").trim();
+        return mappedEventId === eid;
+      })
+      .sort((a, b) => Number(a.order || 0) - Number(b.order || 0))
+      .map((s) => ({
+        id: String(s.seatId || "").trim(),
+        label: String(s.label || "").trim(),
+        no: Number(s.no || 0) || 0,
+        order: Number(s.order || 0) || 0,
+        person: String(s.person || "").trim() || "비어있음",
+        personUid: String(s.personUid || "").trim(),
+        personEmail: String(s.personEmail || "").trim(),
+        seatedAt: s.seatedAt ? Number(s.seatedAt) : null,
+        x: Number(s.x || 0) || 0,
+        y: Number(s.y || 0) || 0
+      }))
+      .filter((s) => s.id);
+
+    if (!seats.length) return null;
+    const maxNo = seats.reduce((m, s) => Math.max(m, Number(s.no || 0)), 0);
+    const maxOrder = seats.reduce((m, s) => Math.max(m, Number(s.order || 0)), 0);
+
+    return {
+      version: 2,
+      tournamentId: tid,
+      eventId: eid,
+      boxId: bid,
+      seats,
+      nextSeatNo: maxNo + 1,
+      nextSeatOrder: maxOrder + 1,
+      updatedAt: Date.now()
+    };
+  } catch (err) {
+    console.error("layoutLoadEventStateFromGlobalSeats error:", err);
     return null;
   }
 }
