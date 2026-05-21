@@ -238,8 +238,6 @@ export function renderWaiting(waiting = []) {
           w.joinedAt ||
             w.createdAt ||
             w.joinedAtServer ||
-            w.updatedAtServer ||
-            w.updatedAt ||
             w.addedAt ||
             w.carryStartedAt ||
             0

@@ -7,15 +7,7 @@ function toPositiveMs(v) {
 }
 
 export function getWaitingJoinMs(raw = {}) {
-  const keys = [
-    "joinedAt",
-    "createdAt",
-    "joinedAtServer",
-    "updatedAtServer",
-    "updatedAt",
-    "addedAt",
-    "carryStartedAt"
-  ];
+  const keys = ["joinedAt", "createdAt", "joinedAtServer", "addedAt", "carryStartedAt"];
   for (const key of keys) {
     const ms = toPositiveMs(raw?.[key]);
     if (ms > 0) return ms;
@@ -28,14 +20,16 @@ export function isWaitingBlocked(raw = {}) {
 }
 
 export function getWaitingDisplayStartMs(raw = {}) {
-  const baseStart = getWaitingJoinMs(raw);
+  const joinAnchor = getWaitingJoinMs(raw);
   const blockedAccumulatedMs = toPositiveMs(raw?.blockAccumulatedMs);
   if (isWaitingBlocked(raw)) {
     const checkedAt = toPositiveMs(raw?.blockCheckedAt);
     if (checkedAt > 0) return checkedAt;
   }
-  const shifted = baseStart - blockedAccumulatedMs;
-  return shifted > 0 ? shifted : baseStart;
+  if (blockedAccumulatedMs <= 0) return joinAnchor;
+  const shifted = joinAnchor + blockedAccumulatedMs;
+  const now = Date.now();
+  return shifted > now ? joinAnchor : shifted;
 }
 
 export function isPersonSeatedInGlobalSeats(seats, person = {}) {

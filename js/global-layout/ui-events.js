@@ -112,7 +112,7 @@ function applyOptimisticWaitingBlockRow(row, checked) {
     const nextAccumMs = prevAccumMs + blockedElapsed;
     row.setAttribute("data-block-accum-ms", String(nextAccumMs));
     row.setAttribute("data-block-checked-at-ms", "0");
-    startMs = Math.max(1, joinMs - nextAccumMs);
+    startMs = Math.min(now, joinMs + nextAccumMs);
   }
 
   if (!chip) return;

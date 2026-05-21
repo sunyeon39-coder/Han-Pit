@@ -15,15 +15,28 @@ export function millisFromWaitingTimeField(v) {
   return n < 1e11 ? Math.floor(n * 1000) : Math.floor(n);
 }
 
+const WAITING_JOIN_ANCHOR_KEYS = [
+  "joinedAt",
+  "createdAt",
+  "joinedAtServer",
+  "addedAt",
+  "carryStartedAt"
+];
+
+/** 대기 등록 시각(블록 토글·updatedAt 으로 바뀌지 않는 필드만) */
+export function getWaitingJoinAnchorMs(raw = {}) {
+  for (const k of WAITING_JOIN_ANCHOR_KEYS) {
+    const ms = millisFromWaitingTimeField(raw[k]);
+    if (ms > 0) return ms;
+  }
+  return Date.now();
+}
+
 export function getWaitingTimerStartMs(raw = {}) {
   const keys = [
-    "joinedAt",
-    "createdAt",
-    "joinedAtServer",
+    ...WAITING_JOIN_ANCHOR_KEYS,
     "updatedAtServer",
-    "updatedAt",
-    "addedAt",
-    "carryStartedAt"
+    "updatedAt"
   ];
   for (const k of keys) {
     const ms = millisFromWaitingTimeField(raw[k]);
@@ -49,14 +62,20 @@ export function getWaitingBlockCheckedAtMs(raw = {}) {
   return toPositiveMs(raw?.blockCheckedAt);
 }
 
-/** 표시용 타이머 시작 시각: 체크 중에는 체크 시각, 해제 상태에서는 누적 체크 시간을 반영 */
+/**
+ * 표시용 타이머 시작 시각
+ * - 체크 중: 체크한 시각부터 경과
+ * - 해제: (대기 등록 시각 + 누적 블록 시간) — 블록 동안은 본 타이머에서 제외
+ */
 export function getWaitingDisplayStartMs(raw = {}) {
-  const baseStart = getWaitingTimerStartMs(raw);
+  const joinAnchor = getWaitingJoinAnchorMs(raw);
   const blockedAccumulatedMs = getWaitingBlockedAccumulatedMs(raw);
   if (isWaitingBlocked(raw)) {
     const checkedAt = getWaitingBlockCheckedAtMs(raw);
     if (checkedAt > 0) return checkedAt;
   }
-  const shifted = baseStart - blockedAccumulatedMs;
-  return shifted > 0 ? shifted : baseStart;
+  if (blockedAccumulatedMs <= 0) return joinAnchor;
+  const shifted = joinAnchor + blockedAccumulatedMs;
+  const now = Date.now();
+  return shifted > now ? joinAnchor : shifted;
 }
