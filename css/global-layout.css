@@ -810,3 +810,55 @@ body.global-seat-edit-modal-open {
   border-color: rgba(122, 162, 255, 0.72);
   background: rgba(76, 114, 255, 0.2);
 }
+
+/* 통합 배치도: event/box 조합별 Seat 테두리 (선택 시 파란색은 layout.css .seat-box.selected 유지) */
+.pc-canvas .seat-box.eb-palette-0 {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+.pc-canvas .seat-box.eb-palette-1 {
+  border-color: rgba(255, 92, 92, 0.78);
+}
+.pc-canvas .seat-box.eb-palette-2 {
+  border-color: rgba(255, 158, 72, 0.82);
+}
+.pc-canvas .seat-box.eb-palette-3 {
+  border-color: rgba(118, 214, 138, 0.78);
+}
+.pc-canvas .seat-box.eb-palette-4 {
+  border-color: rgba(198, 124, 255, 0.78);
+}
+.pc-canvas .seat-box.eb-palette-5 {
+  border-color: rgba(255, 118, 178, 0.78);
+}
+.pc-canvas .seat-box.eb-palette-6 {
+  border-color: rgba(255, 208, 88, 0.85);
+}
+.pc-canvas .seat-box.eb-palette-7 {
+  border-color: rgba(72, 196, 186, 0.78);
+}
+.pc-canvas .seat-box.eb-palette-8 {
+  border-color: rgba(255, 138, 102, 0.8);
+}
+.pc-canvas .seat-box.eb-palette-9 {
+  border-color: rgba(178, 228, 96, 0.78);
+}
+
+.pc-canvas .seat-box[class*="eb-palette-"] {
+  border-width: 2px;
+  transition: border-color 0.35s ease, box-shadow 0.35s ease;
+}
+
+.pc-canvas .seat-box[class*="eb-palette-"].is-occupied {
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+.pc-panel .seat-manage-row.eb-palette-0 { border-color: rgba(255, 255, 255, 0.14); }
+.pc-panel .seat-manage-row.eb-palette-1 { border-color: rgba(255, 92, 92, 0.55); }
+.pc-panel .seat-manage-row.eb-palette-2 { border-color: rgba(255, 158, 72, 0.58); }
+.pc-panel .seat-manage-row.eb-palette-3 { border-color: rgba(118, 214, 138, 0.55); }
+.pc-panel .seat-manage-row.eb-palette-4 { border-color: rgba(198, 124, 255, 0.55); }
+.pc-panel .seat-manage-row.eb-palette-5 { border-color: rgba(255, 118, 178, 0.55); }
+.pc-panel .seat-manage-row.eb-palette-6 { border-color: rgba(255, 208, 88, 0.62); }
+.pc-panel .seat-manage-row.eb-palette-7 { border-color: rgba(72, 196, 186, 0.55); }
+.pc-panel .seat-manage-row.eb-palette-8 { border-color: rgba(255, 138, 102, 0.58); }
+.pc-panel .seat-manage-row.eb-palette-9 { border-color: rgba(178, 228, 96, 0.55); }

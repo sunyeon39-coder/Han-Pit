@@ -19,6 +19,7 @@ import {
 } from "./canvas-viewport.js";
 import { wireSeatAddEventPicker } from "./seat-add-event-picker.js";
 import { readPersistedSeatAddForm } from "./seat-add-form-persist.js";
+import { buildEventBoxPaletteMap, getEventBoxPaletteClass } from "./event-box-palette.js";
 
 export function updateCanvasSeatTimerClasses() {
   if (!GL.app) return;
@@ -152,6 +153,7 @@ export function renderSeats(seats = []) {
     GL.assignedCountEl.textContent = `ASSIGNED: ${assignedCount}`;
   }
   const sorted = [...seats].sort((a, b) => (a.order || 0) - (b.order || 0));
+  const paletteMap = buildEventBoxPaletteMap(sorted);
   const seatHtml = sorted.map((s, idx) => {
     const label = s.label || s.no || s.seatId || "-";
     const occupied = !isEmptyPerson(String(s.person || "").trim());
@@ -167,7 +169,8 @@ export function renderSeats(seats = []) {
     const seatedAtMs = occupied ? toMillis(s.seatedAt || 0) : 0;
     const elapsedMs = occupied ? (seatedAtMs > 0 ? Date.now() - seatedAtMs : 0) : 0;
     const timerCls = occupied ? timerClass(elapsedMs) : "";
-    const seatBoxClass = ["seat-box", occupied ? "is-occupied" : "", timerCls, selectedClass]
+    const paletteClass = getEventBoxPaletteClass(s, paletteMap);
+    const seatBoxClass = ["seat-box", paletteClass, occupied ? "is-occupied" : "", timerCls, selectedClass]
       .filter(Boolean)
       .join(" ");
     const canvasLabel = String(s.label ?? s.no ?? "").trim() || "—";
@@ -324,6 +327,7 @@ export function renderSeatPanel() {
     }
     return (a.order || 0) - (b.order || 0);
   });
+  const panelPaletteMap = buildEventBoxPaletteMap(sorted);
   const rows = sorted
     .map((s) => {
       const eventId = s.currentEventId || s.mappedEventId || "-";
@@ -332,12 +336,13 @@ export function renderSeatPanel() {
       const name = occupied ? String(s.person || "").trim() : "-";
       const isSelf = occupied && isSeatAssignedToCurrentUser(s, auth.currentUser, GL.userProfile);
       const seatId = String(s.seatId || "").trim();
+      const paletteClass = getEventBoxPaletteClass(s, panelPaletteMap);
       const selectedRowClass = GL.selectedSeatIds.has(seatId) ? "selected" : "";
       const seatedAt = toMillis(s.seatedAt || 0);
       const elapsed = seatedAt ? Date.now() - seatedAt : 0;
       const tClass = timerClass(elapsed);
       return `
-      <div class="seat-manage-row ${selectedRowClass}" data-select-seat="${escapeHtml(seatId)}">
+      <div class="seat-manage-row ${paletteClass} ${selectedRowClass}" data-select-seat="${escapeHtml(seatId)}">
         <div class="seat-manage-main seat-manage-main--oneline">
           <div class="seat-manage-namewrap seat-manage-namewrap--with-num">
             <span class="seat-manage-num">${escapeHtml(seatCanvasDigitsOnly(s.label, s.no))}</span>
