@@ -4,7 +4,10 @@ html,
 body {
   margin: 0;
   height: 100%;
-  background: linear-gradient(180deg, var(--bg1), var(--bg2));
+  background:
+    radial-gradient(ellipse 90% 55% at 50% -18%, rgba(77, 163, 255, 0.1), transparent 58%),
+    radial-gradient(ellipse 50% 40% at 100% 0%, rgba(214, 178, 94, 0.07), transparent 50%),
+    linear-gradient(180deg, var(--bg1), var(--bg2));
   color: var(--text);
   font-family: var(--font-app);
 }
@@ -309,8 +312,10 @@ main{
   cursor:pointer;
 }
 .tab.active{
-  border-color:var(--accent);
-  background:rgba(77,163,255,.25);
+  border-color:rgba(239, 208, 141, 0.42);
+  background:linear-gradient(145deg, rgba(239, 208, 141, 0.28), rgba(214, 178, 94, 0.14));
+  color:#fff8e8;
+  box-shadow:var(--glow-gold), var(--shadow-inset-soft);
 }
 .panel-body{
   flex:1;

@@ -1,0 +1,305 @@
+/**
+ * Han Pit — Premium UI layer (hub / index / layout / global-layout / login)
+ */
+
+/* ── Chrome & navigation ── */
+.topbar,
+.index-topbar,
+.hub-top {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(16, 20, 36, 0.94) 0%, rgba(8, 11, 22, 0.9) 100%);
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  box-shadow: var(--shadow-chrome);
+}
+
+.app-mark-img {
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.45));
+}
+
+/* ── Controls ── */
+button,
+.btn,
+.pill-btn,
+.icon-btn,
+.top-btn,
+.back-btn,
+.manage-btn,
+.mini-btn,
+.tab,
+.event-admin-pick,
+.pill-inline {
+  transition:
+    background var(--transition-ui),
+    border-color var(--transition-ui),
+    color var(--transition-ui),
+    box-shadow var(--transition-ui),
+    filter var(--transition-ui),
+    transform var(--transition-ui);
+}
+
+.btn,
+.pill-btn,
+.icon-btn,
+.top-btn,
+.back-btn,
+.manage-btn,
+.mini-btn {
+  box-shadow: var(--shadow-inset-soft);
+}
+
+.btn.primary,
+.manage-btn,
+.top-btn.admin {
+  border-color: rgba(239, 208, 141, 0.45);
+  background: linear-gradient(145deg, #f4e4bc 0%, #e2c878 38%, #c9a24e 100%);
+  color: #14120a;
+  font-weight: 700;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 8px 22px rgba(201, 162, 78, 0.22);
+}
+
+.btn.primary:hover,
+.manage-btn:hover,
+.top-btn.admin:hover {
+  filter: brightness(1.05);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 10px 26px rgba(201, 162, 78, 0.28);
+}
+
+.btn.ghost,
+.back-btn,
+.pill-btn,
+.icon-btn,
+.top-btn.profile {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+  border-color: var(--border-app);
+}
+
+.btn.ghost:hover,
+.back-btn:hover,
+.pill-btn:hover,
+.icon-btn:hover,
+.top-btn:hover {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06));
+  border-color: var(--border-strong);
+}
+
+/* ── Tabs & panels ── */
+.tabs {
+  gap: 6px;
+  padding: 10px 10px 8px;
+}
+
+.tab {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+  border-color: rgba(255, 255, 255, 0.1);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.tab.active {
+  border-color: rgba(239, 208, 141, 0.42);
+  background: linear-gradient(145deg, rgba(239, 208, 141, 0.28), rgba(214, 178, 94, 0.14));
+  color: #fff8e8;
+  box-shadow: var(--glow-gold), var(--shadow-inset-soft);
+}
+
+.pc-panel {
+  background: linear-gradient(180deg, rgba(12, 16, 32, 0.97), rgba(7, 10, 20, 0.99));
+  backdrop-filter: blur(22px) saturate(1.15);
+  -webkit-backdrop-filter: blur(22px) saturate(1.15);
+  border-left-color: rgba(255, 255, 255, 0.08);
+  box-shadow: -28px 0 56px rgba(0, 0, 0, 0.38);
+}
+
+.pc-panel .global-meta {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
+  box-shadow: var(--shadow-inset-soft), 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+/* ── Canvas & seats ── */
+.layout-canvas-viewport,
+.canvas,
+.pc-canvas {
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow:
+    var(--shadow-inset-soft),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.15),
+    0 24px 56px rgba(0, 0, 0, 0.36);
+}
+
+.seat-box {
+  border-width: 2px;
+  background: linear-gradient(165deg, rgba(24, 30, 52, 0.92), rgba(11, 15, 28, 0.96));
+  box-shadow:
+    var(--shadow-inset-soft),
+    0 10px 24px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.seat-box.is-occupied {
+  background: linear-gradient(165deg, rgba(28, 34, 58, 0.94), rgba(14, 18, 32, 0.98));
+}
+
+/* ── Lists & rows ── */
+.row,
+.seat-manage-row,
+.mobile-wait-row,
+.mobile-seat-row,
+.wait-manage-row {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02));
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: var(--shadow-inset-soft);
+}
+
+.row:hover,
+.seat-manage-row:hover,
+.mobile-wait-row:hover,
+.mobile-seat-row:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+}
+
+.row.selected,
+.seat-manage-row.selected,
+.mobile-wait-row.selected,
+.mobile-seat-row.selected {
+  border-color: rgba(77, 163, 255, 0.55);
+  background: linear-gradient(90deg, rgba(77, 163, 255, 0.16), rgba(255, 255, 255, 0.04));
+  box-shadow: var(--glow-blue), var(--shadow-inset-soft);
+}
+
+/* ── Cards (index / hub) ── */
+.event-card {
+  border-color: rgba(255, 255, 255, 0.1);
+  background:
+    radial-gradient(120% 90% at 8% 0%, rgba(214, 178, 94, 0.08), transparent 55%),
+    linear-gradient(165deg, rgba(20, 26, 46, 0.96), rgba(9, 13, 26, 0.98));
+  box-shadow: var(--shadow-card);
+}
+
+.event-card:hover {
+  border-color: rgba(239, 208, 141, 0.22);
+  box-shadow:
+    var(--shadow-card),
+    var(--glow-gold);
+}
+
+.hub-main .event-card.is-enabled:hover {
+  border-color: rgba(239, 208, 141, 0.28);
+}
+
+.info-box,
+.entries-table {
+  border-color: rgba(255, 255, 255, 0.09);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+  box-shadow: var(--shadow-inset-soft);
+}
+
+/* ── Modals ── */
+.modal-backdrop {
+  background: rgba(4, 7, 16, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.modal-card,
+.login-card {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: linear-gradient(165deg, rgba(18, 24, 44, 0.97), rgba(8, 12, 24, 0.99));
+  box-shadow:
+    var(--shadow-card),
+    0 32px 80px rgba(0, 0, 0, 0.45);
+}
+
+.modal-card h2,
+.login-card .logo {
+  letter-spacing: -0.03em;
+}
+
+/* ── Forms ── */
+input,
+select,
+textarea,
+.seat-add-input,
+.seat-add-event-trigger {
+  border-radius: var(--radius-control);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.22);
+  transition:
+    border-color var(--transition-ui),
+    box-shadow var(--transition-ui),
+    background var(--transition-ui);
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+.seat-add-input:focus,
+.seat-add-event-trigger:focus {
+  outline: none;
+  border-color: rgba(239, 208, 141, 0.42);
+  box-shadow: 0 0 0 3px rgba(214, 178, 94, 0.14);
+  background: rgba(0, 0, 0, 0.28);
+}
+
+/* ── Time chips & pills ── */
+.time-chip,
+.pill {
+  box-shadow: var(--shadow-inset-soft);
+}
+
+/* ── Scrollbar ── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+  background-clip: padding-box;
+}
+
+/* ── Focus & selection ── */
+:focus-visible {
+  outline: 2px solid rgba(239, 208, 141, 0.55);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgba(214, 178, 94, 0.32);
+  color: #fff;
+}
+
+/* ── Typography polish ── */
+.date-title,
+.event-title,
+.panel-title,
+.topbar-title,
+.brand {
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.date-count,
+.meta-line,
+.info-label {
+  letter-spacing: -0.01em;
+}

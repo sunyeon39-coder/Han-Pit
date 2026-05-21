@@ -2,6 +2,9 @@
  * Han Pit — 공통 디자인 토큰 (hub / index / layout / global-layout)
  * 페이지 CSS보다 먼저 로드하거나 layout.css에서 @import
  */
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");
+@import "./app-premium.css";
+
 :root {
   /* 워드마크 확대에 맞춰 살짝 올림 — layout/index/hub/global-layout 공통 */
   --topbar-h: 72px;
@@ -16,17 +19,19 @@
   --panel-pad: 14px;
 
   /* 앱형 크롬 — 탑바·툴바·기본 컨트롤 */
-  --chrome-bg: rgba(11, 15, 26, 0.94);
-  --surface-ctrl: rgba(255, 255, 255, 0.055);
-  --surface-ctrl-hover: rgba(255, 255, 255, 0.092);
-  --border-app: rgba(255, 255, 255, 0.09);
-  --shadow-chrome: 0 1px 0 rgba(255, 255, 255, 0.045);
+  --chrome-bg: rgba(9, 12, 24, 0.82);
+  --surface-ctrl: rgba(255, 255, 255, 0.065);
+  --surface-ctrl-hover: rgba(255, 255, 255, 0.11);
+  --surface-elevated: rgba(18, 24, 42, 0.72);
+  --border-app: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --shadow-chrome: 0 1px 0 rgba(255, 255, 255, 0.07), 0 10px 32px rgba(0, 0, 0, 0.28);
 
   /* Layout / 배치도 (블루 포인트) */
   --bg1: #070b18;
   --bg2: #0c1225;
-  --panel: rgba(255, 255, 255, 0.06);
-  --border: rgba(255, 255, 255, 0.1);
+  --panel: rgba(255, 255, 255, 0.07);
+  --border: rgba(255, 255, 255, 0.11);
   --text: #eef2ff;
   --muted: rgba(238, 242, 255, 0.6);
   --accent-blue: #4da3ff;
@@ -38,11 +43,16 @@
   --radius: 18px;
   /* 카드·모달: 정리된 한 겹 + 상단 림 */
   --shadow-card:
-    0 1px 0 rgba(255, 255, 255, 0.04),
-    0 14px 44px rgba(0, 0, 0, 0.28);
-  --shadow-float: 0 10px 36px rgba(0, 0, 0, 0.28);
-  --rim-light: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  --rim-subtle: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    0 1px 0 rgba(255, 255, 255, 0.07),
+    0 2px 8px rgba(0, 0, 0, 0.12),
+    0 18px 48px rgba(0, 0, 0, 0.34);
+  --shadow-float: 0 16px 44px rgba(0, 0, 0, 0.38);
+  --shadow-inset-soft: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --rim-light: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  --rim-subtle: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --glow-gold: 0 0 24px rgba(214, 178, 94, 0.18);
+  --glow-blue: 0 0 22px rgba(77, 163, 255, 0.16);
+  --transition-ui: 0.22s var(--ease-out);
   --border-hair: var(--border-app);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
@@ -65,12 +75,20 @@
   --running: #5fd2a4;
   --closed: #f26d7d;
 
-  --font-app: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, Arial, sans-serif;
+  --font-app: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", -apple-system, BlinkMacSystemFont,
+    system-ui, sans-serif;
 }
 
 html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+html,
+body {
+  font-family: var(--font-app);
+  letter-spacing: -0.02em;
 }
 
 *,
