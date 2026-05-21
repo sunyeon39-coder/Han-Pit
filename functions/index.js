@@ -63,12 +63,32 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten("layout_notifications/{uid}
   if (!uid) return;
 
   const dedupKey = buildDedupKey(uid, after);
-  if (String(after.fcmSeatNotifyDedupKey || "") === dedupKey) return;
+
+  const notifyRef = change.after.ref;
+  let shouldSend = false;
+  try {
+    shouldSend = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(notifyRef);
+      if (!snap.exists) return false;
+      const cur = snap.data() || {};
+      if (String(cur.fcmSeatNotifyDedupKey || "") === dedupKey) return false;
+      if (String(cur.fcmSeatNotifySending || "") === dedupKey) return false;
+      tx.set(notifyRef, {fcmSeatNotifySending: dedupKey}, {merge: true});
+      return true;
+    });
+  } catch (e) {
+    console.error("[notifyLayoutSeatAssigned] dedup transaction failed", uid, e);
+    return;
+  }
+  if (!shouldSend) return;
 
   const userSnap = await db.doc(`users/${uid}`).get();
   const token = userSnap.exists ? String(userSnap.get("fcmToken") || "").trim() : "";
   if (!token) {
-    await change.after.ref.set({fcmSeatNotifyDedupKey: dedupKey}, {merge: true});
+    await notifyRef.set(
+      {fcmSeatNotifyDedupKey: dedupKey, fcmSeatNotifySending: FieldValue.delete()},
+      {merge: true}
+    );
     return;
   }
 
@@ -90,18 +110,18 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten("layout_notifications/{uid}
   }
 
   try {
+    // 웹: notification 페이로드 + SW showNotification 이 겹치면 모바일에서 알림이 2개 뜸 → data-only
     await messaging.send({
       token,
-      notification: {title, body},
       data: {
         title,
         body,
         targetUrl,
-        appBadgeCount: String(badgeN)
+        appBadgeCount: String(badgeN),
+        dedupKey
       },
       android: {priority: "high"},
       webpush: {
-        notification: {title, body},
         fcmOptions: {link: targetUrl},
         headers: {
           Urgency: "high",
@@ -109,7 +129,10 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten("layout_notifications/{uid}
         }
       }
     });
-    await change.after.ref.set({fcmSeatNotifyDedupKey: dedupKey}, {merge: true});
+    await notifyRef.set(
+      {fcmSeatNotifyDedupKey: dedupKey, fcmSeatNotifySending: FieldValue.delete()},
+      {merge: true}
+    );
   } catch (err) {
     const code = String(err?.code || "");
     console.error("[notifyLayoutSeatAssigned] FCM send failed", uid, code, err?.message || err);
@@ -118,9 +141,13 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten("layout_notifications/{uid}
     } catch (_) {}
     if (code === "messaging/invalid-registration-token" || code === "messaging/registration-token-not-registered") {
       await db.doc(`users/${uid}`).set({fcmToken: ""}, {merge: true});
-      await change.after.ref.set({fcmSeatNotifyDedupKey: dedupKey}, {merge: true});
+      await notifyRef.set(
+        {fcmSeatNotifyDedupKey: dedupKey, fcmSeatNotifySending: FieldValue.delete()},
+        {merge: true}
+      );
       return;
     }
+    await notifyRef.set({fcmSeatNotifySending: FieldValue.delete()}, {merge: true});
     throw err;
   }
 });

@@ -64,16 +64,17 @@ async function handleForegroundFcmPayload(payload) {
     }
   }
 
-  const title = String(payload?.notification?.title || data.title || "").trim() || "배치 알림";
-  const body = String(payload?.notification?.body || data.body || "").trim();
+  const title = String(data.title || payload?.notification?.title || "").trim() || "배치 알림";
+  const body = String(data.body || payload?.notification?.body || "").trim();
   if (!body && !data.targetUrl) return;
   if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
 
   const icon = notifyIconUrl();
+  const notifyTag = String(data.dedupKey || "").trim() || SEAT_NOTIFY_TAG;
   const noteOpts = {
     body: body || "Seat에 배치되었습니다.",
-    tag: SEAT_NOTIFY_TAG,
-    renotify: true,
+    tag: notifyTag,
+    renotify: false,
     lang: "ko",
     data: { ...data },
     vibrate: [180, 80, 180]

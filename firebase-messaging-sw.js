@@ -2,7 +2,7 @@ importScripts("https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"
 importScripts("https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js");
 
 /** 배포마다 1 올리면 브라우저가 새 SW 로 인식해 controllerchange → 홈 화면 자동 새로고침이 걸립니다. */
-const SW_DEPLOY_REVISION = 4;
+const SW_DEPLOY_REVISION = 5;
 
 /** SW 갱신 시 홈 화면 웹앱이 오래된 탭에 머물지 않도록 즉시 활성화 */
 self.addEventListener("install", () => {
@@ -44,28 +44,30 @@ function applyAppBadgeFromPayload(data) {
 messaging.onBackgroundMessage((payload) => {
   console.debug("[firebase-messaging-sw.js] background message:", payload);
 
-  const title = payload?.notification?.title || "BoxBoard";
+  const data = payload?.data || {};
+  const title = String(data.title || payload?.notification?.title || "").trim() || "배치 알림";
   const body =
-    payload?.notification?.body ||
-    payload?.data?.message ||
+    String(data.body || payload?.notification?.body || data.message || "").trim() ||
     "Seat에 배치되었습니다.";
 
-  const targetUrl = payload?.data?.targetUrl || "./layout.html";
-  const data = {
+  const targetUrl = data.targetUrl || "./layout.html";
+  const notifyTag = String(data.dedupKey || "").trim() || "hanpit-seat";
+
+  const noteData = {
     targetUrl,
-    appBadgeCount: payload?.data?.appBadgeCount != null ? String(payload.data.appBadgeCount) : ""
+    appBadgeCount: data.appBadgeCount != null ? String(data.appBadgeCount) : ""
   };
 
-  // icon 경로 없이 표시 (repo에 ./icons 미포함 시 404로 알림 실패 방지)
+  // data-only FCM: SW에서만 1회 표시 (notification 페이로드 자동 표시와 중복 방지)
   const nPromise = Promise.resolve().then(() => {
     try {
       return self.registration.showNotification(title, {
         body,
         lang: "ko",
-        tag: "hanpit-seat",
-        renotify: true,
+        tag: notifyTag,
+        renotify: false,
         vibrate: [180, 80, 180],
-        data
+        data: noteData
       });
     } catch (e) {
       console.error("[firebase-messaging-sw.js] showNotification failed:", e);
