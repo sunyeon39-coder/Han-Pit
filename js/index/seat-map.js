@@ -8,6 +8,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 import { openModal, closeModal } from "../shared/dom-utils.js";
+import { getStableEventBoxPaletteClass } from "../global-layout/event-box-palette.js";
 import { IX } from "./state.js";
 
 /* ===============================
@@ -220,6 +221,9 @@ function renderSeatMap() {
 
     if (info) {
       el.classList.add("filled");
+      el.classList.add(
+        getStableEventBoxPaletteClass(info.eventId, info.boxId)
+      );
     }
 
     el.style.left = `${x}px`;
@@ -260,7 +264,8 @@ function bindSeatMapRealtime() {
           if (!id) return;
 
           IX.seatMapData.set(id, {
-            eventId: data.eventId,
+            eventId: String(data.eventId || "").trim(),
+            boxId: String(data.boxId || "").trim(),
             person: seat.person
           });
         });

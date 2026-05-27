@@ -947,10 +947,23 @@ body {
 }
 
 .map-seat.filled{
-  background: #5fd2a4;
+  background: rgba(95,210,164,.42);
   color: #02120a;
   border-color: rgba(95,210,164,.7);
+  border-width: 2px;
 }
+
+/* index 전체 배치도: 카드/박스 ID 조합별 테두리 (통합 배치도 팔레트와 동일 색상표) */
+.seat-map-canvas .map-seat.filled.eb-palette-0 { border-color: rgba(255, 255, 255, 0.16); }
+.seat-map-canvas .map-seat.filled.eb-palette-1 { border-color: rgba(255, 92, 92, 0.78); }
+.seat-map-canvas .map-seat.filled.eb-palette-2 { border-color: rgba(255, 158, 72, 0.82); }
+.seat-map-canvas .map-seat.filled.eb-palette-3 { border-color: rgba(118, 214, 138, 0.78); }
+.seat-map-canvas .map-seat.filled.eb-palette-4 { border-color: rgba(198, 124, 255, 0.78); }
+.seat-map-canvas .map-seat.filled.eb-palette-5 { border-color: rgba(255, 118, 178, 0.78); }
+.seat-map-canvas .map-seat.filled.eb-palette-6 { border-color: rgba(255, 208, 88, 0.85); }
+.seat-map-canvas .map-seat.filled.eb-palette-7 { border-color: rgba(72, 196, 186, 0.78); }
+.seat-map-canvas .map-seat.filled.eb-palette-8 { border-color: rgba(255, 138, 102, 0.8); }
+.seat-map-canvas .map-seat.filled.eb-palette-9 { border-color: rgba(178, 228, 96, 0.78); }
 
 .map-seat.selected{
   border: 2px solid #4da3ff;

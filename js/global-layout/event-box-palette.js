@@ -40,3 +40,11 @@ function fallbackPaletteIndex(key = "") {
   }
   return hash % EVENT_BOX_PALETTE_COUNT;
 }
+
+/** eventId+boxId 조합 → 항상 동일한 팔레트 (날짜·화면 구성과 무관, index 배치도 등) */
+export function getStableEventBoxPaletteClass(eventId = "", boxId = "") {
+  return getEventBoxPaletteClass(
+    { currentEventId: String(eventId || "").trim(), boxId: String(boxId || "").trim() },
+    null
+  );
+}
