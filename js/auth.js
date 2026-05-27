@@ -1,15 +1,16 @@
 import { auth } from "./firebase.js";
 import {
-  GoogleAuthProvider,
   signInWithPopup,
   signInWithRedirect,
   onAuthStateChanged,
   signOut
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { createGoogleAuthProvider } from "./shared/google-auth-provider.js";
 import {
   isGoogleOAuthLikelyBlockedBrowser,
   shouldPreferGoogleRedirectOverPopup,
-  markOAuthRedirectPending
+  markOAuthRedirectPending,
+  clearOAuthRedirectPending
 } from "./shared/google-oauth-environment.js";
 
 export async function loginWithGoogle() {
@@ -19,7 +20,15 @@ export async function loginWithGoogle() {
     );
   }
 
-  const provider = new GoogleAuthProvider();
+  if (auth.currentUser) {
+    try {
+      await signOut(auth);
+    } catch (signOutErr) {
+      console.warn("loginWithGoogle pre-signOut:", signOutErr);
+    }
+  }
+
+  const provider = createGoogleAuthProvider();
 
   if (shouldPreferGoogleRedirectOverPopup()) {
     markOAuthRedirectPending();
@@ -61,6 +70,7 @@ export function requireAuth(onAuthed) {
 }
 
 export async function logout() {
+  clearOAuthRedirectPending();
   await signOut(auth);
   location.replace("./login.html");
 }

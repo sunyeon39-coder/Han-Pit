@@ -1,11 +1,12 @@
 import { auth, db } from "../firebase.js";
 import {
-  GoogleAuthProvider,
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
-  onAuthStateChanged
+  onAuthStateChanged,
+  signOut
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { createGoogleAuthProvider } from "../shared/google-auth-provider.js";
 import { doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { isAdminEmail } from "../app_config.js";
 import { isAppDebugEnabled } from "../shared/app-debug.js";
@@ -64,7 +65,7 @@ document.querySelectorAll(".gender-btn").forEach((btn) => {
   });
 });
 
-const provider = new GoogleAuthProvider();
+const provider = createGoogleAuthProvider();
 
 function wireInAppBrowserGate() {
   if (!isGoogleOAuthLikelyBlockedBrowser()) return;
@@ -136,6 +137,14 @@ async function login() {
         "화면 안내에 따라 Chrome(Android) 또는 Safari(iPhone)로 이 페이지를 다시 열어 주세요."
     );
     return;
+  }
+
+  if (auth.currentUser) {
+    try {
+      await signOut(auth);
+    } catch (signOutErr) {
+      console.warn("login pre-signOut:", signOutErr);
+    }
   }
 
   if (shouldPreferGoogleRedirectOverPopup()) {

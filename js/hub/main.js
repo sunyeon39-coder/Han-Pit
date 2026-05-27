@@ -1,6 +1,7 @@
 import { auth, db } from "../firebase.js";
 
-import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { logout } from "../auth.js";
 
 import { doc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
@@ -115,8 +116,7 @@ const {
 
 logoutBtn?.addEventListener("click", async () => {
   try {
-    await signOut(auth);
-    location.href = "./login.html";
+    await logout();
   } catch (err) {
     console.error(err);
     alert("로그아웃에 실패했습니다.");
