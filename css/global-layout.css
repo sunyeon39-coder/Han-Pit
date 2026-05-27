@@ -856,87 +856,98 @@ body.global-seat-edit-modal-open {
   cursor: not-allowed;
 }
 
-/* 통합배치도 PC 패널: 대기·배치 목록 행 동일 compact 크기 */
-body.page-global-layout .pc-panel .global-list > .seat-manage-row {
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  padding: 4px 14px;
-  margin-bottom: 10px;
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.02);
-  gap: 0;
+/* 통합배치도 PC 패널: 대기·배치 목록 행 — 배치 탭과 동일한 낮은 높이 */
+body.page-global-layout .pc-panel .global-list > .seat-manage-row,
+body.page-global-layout .pc-panel .global-list > .seat-manage-row.wait-panel-row,
+body.page-global-layout .pc-panel .global-list > .mobile-wait-row,
+body.page-global-layout .pc-panel .global-list > .mobile-wait-row.compact {
+  box-sizing: border-box !important;
+  display: flex !important;
+  align-items: center !important;
+  padding: 2px 12px !important;
+  margin-bottom: 6px !important;
+  border-radius: 14px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: rgba(255, 255, 255, 0.02) !important;
+  gap: 0 !important;
+  min-height: 0 !important;
 }
 
-body.page-global-layout .pc-panel .global-list > .seat-manage-row:last-child {
-  margin-bottom: 0;
+body.page-global-layout .pc-panel .global-list > .seat-manage-row:last-child,
+body.page-global-layout .pc-panel .global-list > .mobile-wait-row:last-child {
+  margin-bottom: 0 !important;
 }
 
-body.page-global-layout .pc-panel .global-list > .seat-manage-row .seat-manage-main--oneline {
+body.page-global-layout .pc-panel .global-list > .seat-manage-row .seat-manage-main--oneline,
+body.page-global-layout .pc-panel .global-list > .mobile-wait-row .mobile-wait-mainline {
   flex: 1;
   width: 100%;
-  min-height: 32px;
+  min-height: 0 !important;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 body.page-global-layout .pc-panel .global-list > .seat-manage-row .seat-manage-namewrap--with-num {
-  gap: 10px;
+  gap: 8px;
   align-items: center;
 }
 
-body.page-global-layout .pc-panel .global-list > .seat-manage-row .seat-manage-name {
-  font-size: 15px;
-  font-weight: 800;
-  line-height: 1.25;
+body.page-global-layout .pc-panel .global-list > .seat-manage-row .seat-manage-num {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0 7px;
+  font-size: 12px;
 }
 
-body.page-global-layout .pc-panel .global-list > .seat-manage-row .seat-inline-actions {
-  gap: 6px;
+body.page-global-layout .pc-panel .global-list > .seat-manage-row .seat-manage-name,
+body.page-global-layout .pc-panel .global-list > .mobile-wait-row .mobile-wait-name {
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+body.page-global-layout .pc-panel .global-list > .seat-manage-row .seat-inline-actions,
+body.page-global-layout .pc-panel .global-list > .mobile-wait-row .mobile-wait-inline,
+body.page-global-layout .pc-panel .global-list > .mobile-wait-row .mobile-wait-right {
+  gap: 5px;
   flex-wrap: nowrap;
 }
 
-body.page-global-layout .pc-panel .global-list > .seat-manage-row .seat-inline-actions .pill-inline {
-  min-height: 30px;
-  height: 30px;
-  padding: 0 12px;
-  font-size: 12px;
+body.page-global-layout .pc-panel .global-list .seat-inline-actions .pill-inline,
+body.page-global-layout .pc-panel .global-list .seat-inline-actions .seat-icon-btn,
+body.page-global-layout .pc-panel .global-list .mobile-wait-inline-actions .pill-inline,
+body.page-global-layout .pc-panel .global-list .mobile-wait-inline-actions .mobile-pill-btn {
+  min-height: 26px !important;
+  height: 26px !important;
+  padding: 0 10px !important;
+  font-size: 11px !important;
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
 }
 
-body.page-global-layout .pc-panel .global-list > .seat-manage-row .seat-inline-actions .time-chip {
-  padding: 4px 10px;
-  font-size: 12px;
-  line-height: 1;
-  flex-shrink: 0;
+body.page-global-layout .pc-panel .global-list .seat-inline-actions .seat-icon-btn {
+  width: 28px !important;
+  min-width: 28px !important;
+  padding: 0 !important;
+}
+
+body.page-global-layout .pc-panel .global-list .seat-inline-actions .time-chip,
+body.page-global-layout .pc-panel .global-list .mobile-wait-right .time-chip {
+  padding: 2px 8px !important;
+  font-size: 11px !important;
+  line-height: 1 !important;
+  min-height: 26px !important;
+  height: 26px !important;
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
-  box-sizing: border-box;
 }
 
-/* 캐시된 mobile-wait-row 마크업도 동일 크기 */
-body.page-global-layout .pc-panel .global-list > .mobile-wait-row,
-body.page-global-layout .pc-panel .global-list > .mobile-wait-row.compact {
-  padding: 4px 14px;
-  margin-bottom: 10px;
-  border-radius: 18px;
-}
-
-body.page-global-layout .pc-panel .global-list > .mobile-wait-row .mobile-wait-mainline {
-  min-height: 32px;
-  align-items: center;
-  gap: 8px;
-}
-
-body.page-global-layout .pc-panel .global-list > .mobile-wait-row .mobile-wait-inline-actions .pill-inline,
-body.page-global-layout .pc-panel .global-list > .mobile-wait-row .mobile-wait-inline-actions .mobile-pill-btn {
-  min-height: 30px;
-  height: 30px;
-  padding: 0 12px;
-  font-size: 12px;
+/* layout.css mobile-wait-row padding:14px 무력화 (통합배치도 전역) */
+body.page-global-layout .mobile-wait-row {
+  padding: 2px 12px;
+  margin-bottom: 6px;
 }
 
 /* 대기 탭: 체크박스만 표시 (주변 원·테두리 없음) */
