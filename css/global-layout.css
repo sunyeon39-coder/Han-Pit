@@ -445,18 +445,38 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
 
   body.page-global-layout .global-layout-mobile .mobile-seat-name-cluster {
     min-width: 0;
-    flex: 1;
+    flex: 1 1 auto;
+    max-width: 100%;
   }
 
-  body.page-global-layout .global-layout-mobile .seat-manage-submeta {
-    font-size: 10px;
-    margin-top: 2px;
-  }
-
-  body.page-global-layout .global-layout-mobile .mobile-seat-mainline {
-    align-items: flex-start;
+  body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-mainline {
+    align-items: center;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px 8px;
+    overflow-x: visible;
+  }
+
+  body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-person {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    font-size: 14px;
+    line-height: 1.25;
+    flex: 1 1 4rem;
+    min-width: 3rem;
+  }
+
+  body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-inline-actions {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+    order: 3;
+  }
+
+  body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-right {
+    margin-left: auto;
+    order: 2;
   }
 
   body.page-global-layout .seat-manage-row .seat-inline-actions {

@@ -27,6 +27,7 @@ import { getCurrentTournamentWaiting } from "./waiting.js";
 
 const GLOBAL_MOBILE_SEAT_DOUBLE_MS = 350;
 
+/** 모바일 Seat 목록: 앉은 지 오래된 순(타이머 긴 사람 위), 빈 Seat 은 아래 */
 function getSortedSeatsForMobile() {
   const nowMs = Date.now();
   const seatedElapsedMs = (s) => {
@@ -36,13 +37,11 @@ function getSortedSeatsForMobile() {
     return Math.max(0, nowMs - t);
   };
   return [...GL.globalSeats].sort((a, b) => {
-    if (GL.seatSortMode === "time") {
-      const ea = seatedElapsedMs(a);
-      const eb = seatedElapsedMs(b);
-      if (ea >= 0 && eb >= 0 && ea !== eb) return eb - ea;
-      if (ea >= 0 && eb < 0) return -1;
-      if (ea < 0 && eb >= 0) return 1;
-    }
+    const ea = seatedElapsedMs(a);
+    const eb = seatedElapsedMs(b);
+    if (ea >= 0 && eb >= 0 && ea !== eb) return eb - ea;
+    if (ea >= 0 && eb < 0) return -1;
+    if (ea < 0 && eb >= 0) return 1;
     return (a.order || 0) - (b.order || 0);
   });
 }
@@ -104,8 +103,6 @@ export function renderGlobalLayoutMobile() {
       const isSel = GL.selectedSeatIds.has(seatId);
       const isSelf = occupied && isSeatAssignedToCurrentUser(s, auth.currentUser, GL.userProfile);
       const paletteClass = getEventBoxPaletteClass(s, paletteMap);
-      const eventId = s.currentEventId || s.mappedEventId || "-";
-      const boxId = s.boxId || "-";
       const seatedAt = occupied ? toMillis(s.seatedAt || 0) : 0;
       const elapsed = seatedAt ? Date.now() - seatedAt : 0;
       const tClass = occupied ? timerClass(elapsed) : "";
@@ -118,7 +115,6 @@ export function renderGlobalLayoutMobile() {
             <div class="mobile-seat-name-cluster">
               <span class="mobile-seat-num">${escapeHtml(seatCanvasDigitsOnly(s.label, s.no))}</span>
               <div class="mobile-seat-person ${occupied ? "" : "is-empty"} ${isSelf ? "is-self" : ""}">${escapeHtml(name)}</div>
-              <div class="meta-line seat-manage-submeta">event: ${escapeHtml(eventId)} / box: ${escapeHtml(boxId)}</div>
             </div>
             <div class="mobile-seat-inline-actions">
               ${
