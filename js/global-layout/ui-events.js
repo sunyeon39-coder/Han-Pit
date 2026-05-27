@@ -20,6 +20,7 @@ import {
   undoLastGlobalAction
 } from "./firestore-ops.js";
 import { initGlobalSeatEditModal, openSeatEditModal } from "./seat-edit-modal.js";
+import { refreshGlobalLayoutAlignButtonState } from "./canvas-viewport.js";
 import { fmtElapsed, isEmptyPerson, timerClass } from "./utils.js";
 
 const GLOBAL_SEAT_DOUBLE_ACTIVATE_MS = 350;
@@ -254,6 +255,7 @@ export function bindGlobalLayoutEventHandlers() {
         applyCanvasSeatSelectionClick(sid, isMultiSelectPointer(e));
         renderSeatPanel();
         renderSeats(GL.globalSeats);
+        refreshGlobalLayoutAlignButtonState();
       }
       return;
     }
@@ -474,6 +476,7 @@ export function bindGlobalLayoutEventHandlers() {
     applyCanvasSeatSelectionClick(sid, isMultiSelectPointer(e));
     renderSeats(GL.globalSeats);
     if (GL.activeTab === "seat") renderSeatPanel();
+    refreshGlobalLayoutAlignButtonState();
   }
 
   GL.app?.addEventListener("pointermove", (e) => {

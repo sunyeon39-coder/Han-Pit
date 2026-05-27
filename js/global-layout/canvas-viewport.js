@@ -69,8 +69,8 @@ export function initGlobalLayoutZoomBarDom() {
 
 export function zoomBarHtml() {
   return `
-      <button type="button" class="layout-canvas-zoom-btn layout-canvas-align-btn" data-align-row title="가로 한 줄 (같은 높이)">가로</button>
-      <button type="button" class="layout-canvas-zoom-btn layout-canvas-align-btn" data-align-col title="세로 한 줄 (같은 좌우)">세로</button>
+      <button type="button" class="layout-canvas-zoom-btn layout-canvas-align-btn" data-align-row title="선택 Seat 2개 이상 · 같은 높이(가로 한 줄). ⌘/Ctrl+클릭으로 다중 선택">가로 정렬</button>
+      <button type="button" class="layout-canvas-zoom-btn layout-canvas-align-btn" data-align-col title="선택 Seat 2개 이상 · 같은 좌우(세로 한 줄). ⌘/Ctrl+클릭으로 다중 선택">세로 정렬</button>
       <button type="button" class="layout-canvas-zoom-btn" data-zoom-out aria-label="축소">−</button>
       <span class="layout-canvas-zoom-label" data-zoom-label>100%</span>
       <button type="button" class="layout-canvas-zoom-btn" data-zoom-in aria-label="확대">+</button>
@@ -154,7 +154,7 @@ function getGlobalLayoutCanvasEl() {
   return GL.app?.querySelector(".pc-canvas") || null;
 }
 
-function wireGlobalLayoutZoomBarOnce() {
+export function wireGlobalLayoutZoomBarOnce() {
   const bar = GL.canvasZoomBar || document.getElementById("canvasZoomBar");
   if (!bar || bar.dataset.zoomButtonsBound === "1") return;
   bar.dataset.zoomButtonsBound = "1";

@@ -16,6 +16,10 @@ import { updateGlobalMetaToolbar } from "./toolbar.js";
 import { bindRealtime } from "./realtime.js";
 import { bindGlobalLayoutEventHandlers, syncGlobalLayoutMobileChrome } from "./ui-events.js";
 import {
+  initGlobalLayoutZoomBarDom,
+  wireGlobalLayoutZoomBarOnce
+} from "./canvas-viewport.js";
+import {
   alertFcmRegistrationResult,
   ensureForegroundFcmBadgeListener,
   registerFcmWebPushAndSave,
@@ -43,6 +47,8 @@ function bindGlobalLayoutPushUiOnce() {
 export function startGlobalLayoutApp() {
   initGlFromUrl();
   initGlDomRefs();
+  initGlobalLayoutZoomBarDom();
+  wireGlobalLayoutZoomBarOnce();
   bindGlobalLayoutPushUiOnce();
   bindGlobalLayoutEventHandlers();
   const flushAppBadgeIfVisible = bindAppBadgeClearOnForeground(db, auth);

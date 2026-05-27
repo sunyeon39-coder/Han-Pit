@@ -297,8 +297,8 @@ function enableDrag(el, seat) {
   let dragging = false;
   let moved = false;
 
-  el.addEventListener("mousedown", (e) => {
-    if (e.button !== 0) return;
+  const beginPointerSession = (e) => {
+    if (e.button !== 0 && e.pointerType === "mouse") return;
     e.stopPropagation();
     dragging = false;
     moved = false;
@@ -326,6 +326,9 @@ function enableDrag(el, seat) {
     const onUp = (ev) => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
       if (!moved) {
         applySeatMapSelectionClick(seatId, isSeatMapMultiSelectPointer(ev));
         syncSeatMapSelectionUi();
@@ -337,7 +340,12 @@ function enableDrag(el, seat) {
 
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
-  });
+    window.addEventListener("pointermove", onMove, { passive: true });
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  };
+
+  el.addEventListener("pointerdown", beginPointerSession);
 }
 
 /* add seat */
