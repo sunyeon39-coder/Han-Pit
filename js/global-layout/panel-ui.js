@@ -237,7 +237,7 @@ export function renderWaiting(waiting = []) {
       const elapsed = Date.now() - startMs;
       const tClass = timerClass(elapsed);
       const blockCheck = GL.isAdminUser
-        ? `<label class="seat-manage-num wait-check-slot" title="체크 시 배치 블락 + 체크 시각 기준 타이머">
+        ? `<label class="wait-check-slot" title="체크 시 배치 블락 + 체크 시각 기준 타이머">
             <input type="checkbox" class="wait-block-check" data-block-wid="${escapeHtml(wid)}" ${blocked ? "checked" : ""} />
           </label>`
         : "";

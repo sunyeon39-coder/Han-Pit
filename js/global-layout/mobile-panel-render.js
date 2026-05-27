@@ -261,7 +261,7 @@ export function renderGlobalLayoutMobile() {
         >
           <div class="mobile-seat-mainline">
             <div class="mobile-seat-name-cluster">
-              <label class="mobile-seat-num wait-check-slot" title="체크 시 배치 블락">
+              <label class="wait-check-slot" title="체크 시 배치 블락">
                 <input type="checkbox" class="wait-block-check" data-mobile-block-w="${escapeHtml(wid)}" ${blocked ? "checked" : ""} />
               </label>
               <div class="mobile-seat-person">${escapeHtml(w.name || w.uid || "-")}</div>
