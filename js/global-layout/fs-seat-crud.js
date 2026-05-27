@@ -11,6 +11,7 @@ import {
   buildGlobalSeatDocId,
   getAttendanceRef,
   getProjectionDocId,
+  parseGlobalSeatDocId,
   isValidLayoutRouteIdPart,
   isValidSeatLabel,
   looksLikeDisplayTitleNotId,
@@ -119,13 +120,40 @@ export async function deleteGlobalSeat(seatId = "") {
   await syncLayoutProjection(eventId, boxId);
 }
 
-/** Firestore global_seats 문서 — seatId 기준으로 실제 doc ref 탐색 */
+function seatCardPairDiffers(prevE, prevB, nextE, nextB, eventCards = []) {
+  const pe = resolveEventIdForSave(prevE, eventCards) || String(prevE || "").trim();
+  const ne = resolveEventIdForSave(nextE, eventCards) || String(nextE || "").trim();
+  const pb = String(prevB || "").trim() || "1";
+  const nb = String(nextB || "").trim() || "1";
+  if (pe !== ne) return true;
+  if (pb !== nb) return true;
+  if (String(prevE || "").trim() !== String(nextE || "").trim()) return true;
+  return false;
+}
+
+/** Firestore global_seats 문서 — 실제 doc id 우선, seatId 기준 fallback */
 async function findGlobalSeatDocRef(seatId = "", eventCards = []) {
   const sid = String(seatId || "").trim();
   if (!sid || !GL.tournamentId) return null;
 
-  const pairs = [];
   const seat = getSeatById(sid);
+  const docIdFromSnap = String(seat?.__firestoreDocId || "").trim();
+  if (docIdFromSnap) {
+    const ref = doc(db, "tournaments", GL.tournamentId, "global_seats", docIdFromSnap);
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      const data = snap.data() || {};
+      const parsed = parseGlobalSeatDocId(docIdFromSnap, sid);
+      return {
+        ref,
+        snap,
+        eventId: String(data.currentEventId || data.mappedEventId || parsed?.eventId || "").trim(),
+        boxId: String(data.boxId || parsed?.boxId || "").trim() || "1"
+      };
+    }
+  }
+
+  const pairs = [];
   if (seat) {
     pairs.push([
       String(seat.currentEventId || seat.mappedEventId || "").trim(),
@@ -142,21 +170,29 @@ async function findGlobalSeatDocRef(seatId = "", eventCards = []) {
 
   const seen = new Set();
   for (const [rawE, rawB] of pairs) {
-    const e = resolveEventIdForSave(rawE, eventCards) || rawE;
     const b = String(rawB || "").trim() || "1";
-    const key = `${e}\t${b}`;
-    if (!e || seen.has(key)) continue;
-    seen.add(key);
-    const ref = doc(
-      db,
-      "tournaments",
-      GL.tournamentId,
-      "global_seats",
-      buildGlobalSeatDocId(e, b, sid)
-    );
-    const snap = await getDoc(ref);
-    if (snap.exists()) {
-      return { ref, snap, eventId: e, boxId: b };
+    const tryEvents = [String(rawE || "").trim(), resolveEventIdForSave(rawE, eventCards) || ""].filter(Boolean);
+    for (const e of tryEvents) {
+      const key = `${e}\t${b}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const ref = doc(
+        db,
+        "tournaments",
+        GL.tournamentId,
+        "global_seats",
+        buildGlobalSeatDocId(e, b, sid)
+      );
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        const data = snap.data() || {};
+        return {
+          ref,
+          snap,
+          eventId: String(data.currentEventId || data.mappedEventId || e).trim(),
+          boxId: String(data.boxId || b).trim() || "1"
+        };
+      }
     }
   }
   return null;
@@ -221,27 +257,29 @@ export async function applyGlobalSeatRename(
   }
 
   const foundDoc = await findGlobalSeatDocRef(targetSeatId, eventCards);
-  const prevEventId = foundDoc?.eventId || String(seat.currentEventId || seat.mappedEventId || "").trim();
-  const prevBoxId = foundDoc?.boxId || String(seat.boxId || "").trim() || "1";
-  if (!prevEventId) {
-    alert("현재 Seat의 카드 정보를 찾을 수 없습니다.");
+  if (!foundDoc?.snap?.exists()) {
+    alert("Firestore에서 이 Seat 문서를 찾을 수 없습니다. 새로고침 후 다시 시도해 주세요.");
     return false;
   }
 
-  const prevLabel = String(seat.label ?? seat.no ?? "").trim();
-  const moved =
-    resolvedNextEventId !== prevEventId || String(nextBoxId || "").trim() !== String(prevBoxId || "").trim();
-  if (!moved && nextLabel === prevLabel) return false;
+  const prevEventId = foundDoc.eventId;
+  const prevBoxId = foundDoc.boxId;
+  const rawSeatEvent = String(seat.currentEventId || seat.mappedEventId || "").trim();
 
-  const oldRef =
-    foundDoc?.ref ||
-    doc(
-      db,
-      "tournaments",
-      GL.tournamentId,
-      "global_seats",
-      buildGlobalSeatDocId(prevEventId, prevBoxId, targetSeatId)
-    );
+  const prevLabel = String(seat.label ?? seat.no ?? "").trim();
+  const moved = seatCardPairDiffers(
+    prevEventId || rawSeatEvent,
+    prevBoxId,
+    resolvedNextEventId,
+    nextBoxId,
+    eventCards
+  );
+  if (!moved && nextLabel === prevLabel) {
+    alert("변경된 내용이 없습니다. 다른 카드를 선택했는지 확인해 주세요.");
+    return false;
+  }
+
+  const oldRef = foundDoc.ref;
   const newDocId = buildGlobalSeatDocId(resolvedNextEventId, nextBoxId, targetSeatId);
   const newRef = doc(db, "tournaments", GL.tournamentId, "global_seats", newDocId);
   const now = Date.now();
@@ -270,8 +308,14 @@ export async function applyGlobalSeatRename(
     await ensureLayoutEventShellForGlobalOps(prevEventId, prevBoxId);
   }
 
+  const syncPrevParsed =
+    parseGlobalSeatDocId(foundDoc.ref.id, targetSeatId) || {
+      eventId: prevEventId,
+      boxId: prevBoxId
+    };
+
   if (moved) {
-    const oldDocId = buildGlobalSeatDocId(prevEventId, prevBoxId, targetSeatId);
+    const oldDocId = foundDoc.ref.id;
     if (oldDocId === newDocId) {
       await setDoc(
         oldRef,
@@ -358,9 +402,9 @@ export async function applyGlobalSeatRename(
     );
   }
 
-  const oldDocId = buildGlobalSeatDocId(prevEventId, prevBoxId, targetSeatId);
+  const oldDocId = foundDoc.ref.id;
   if (moved && oldDocId !== newDocId) {
-    await syncLayoutProjection(prevEventId, prevBoxId);
+    await syncLayoutProjection(syncPrevParsed.eventId, syncPrevParsed.boxId);
     await syncLayoutProjection(resolvedNextEventId, nextBoxId);
   } else {
     await syncLayoutProjection(resolvedNextEventId, nextBoxId);

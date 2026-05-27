@@ -258,7 +258,11 @@ async function onSaveClick() {
   if (els.saveBtn) els.saveBtn.disabled = true;
   try {
     const ok = await applyGlobalSeatRename(currentSeatId, nextLabel, nextEventId, nextBoxId);
-    if (ok) closeSeatEditModal();
+    if (ok) {
+      closeSeatEditModal();
+    } else {
+      alert("저장되지 않았습니다. 카드·Box·라벨을 확인한 뒤 다시 시도해 주세요.");
+    }
   } catch (err) {
     console.error("applyGlobalSeatRename error:", err);
     alert("Seat 정보 변경에 실패했습니다.");
@@ -294,7 +298,17 @@ export function initGlobalSeatEditModal() {
   els0.eventList?.addEventListener("click", (e) => {
     const li = e.target?.closest?.("li[data-event-id]");
     if (!li) return;
+    e.preventDefault();
     e.stopPropagation();
+    const els = getEls();
+    if (els) applySelectionFromRow(els, li);
+  });
+
+  els0.eventList?.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const li = e.target?.closest?.("li[data-event-id]");
+    if (!li) return;
+    e.preventDefault();
     const els = getEls();
     if (els) applySelectionFromRow(els, li);
   });

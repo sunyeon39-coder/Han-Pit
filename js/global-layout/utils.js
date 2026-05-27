@@ -41,6 +41,22 @@ export function buildGlobalSeatDocId(eventId = "", boxId = "", seatId = "") {
   return `${String(eventId || "").trim()}__${String(boxId || "").trim()}__${String(seatId || "").trim()}`;
 }
 
+/** global_seats 문서 ID → eventId / boxId (eventId에 __ 없음 가정) */
+export function parseGlobalSeatDocId(docId = "", seatId = "") {
+  const id = String(docId || "").trim();
+  const sid = String(seatId || "").trim();
+  if (!id || !sid) return null;
+  const suffix = `__${sid}`;
+  if (!id.endsWith(suffix)) return null;
+  const rest = id.slice(0, -suffix.length);
+  const sep = rest.lastIndexOf("__");
+  if (sep < 0) return null;
+  const eventId = rest.slice(0, sep).trim();
+  const boxId = rest.slice(sep + 2).trim();
+  if (!eventId || !boxId) return null;
+  return { eventId, boxId };
+}
+
 export function getProjectionDocId(eventId = "", boxId = "") {
   return `${String(eventId || "").trim()}__${String(boxId || "").trim()}`;
 }

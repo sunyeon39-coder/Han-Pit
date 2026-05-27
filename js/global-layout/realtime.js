@@ -18,7 +18,10 @@ export function bindRealtime() {
   GL.stopSeatWatch = onSnapshot(
     collection(db, "tournaments", GL.tournamentId, "global_seats"),
     (snap) => {
-      GL.globalSeats = snap.docs.map((d) => d.data() || {});
+      GL.globalSeats = snap.docs.map((d) => ({
+        ...(d.data() || {}),
+        __firestoreDocId: d.id
+      }));
       renderSeats(GL.globalSeats);
       if (GL.activeTab === "seat") renderSeatPanel();
       if (GL.activeTab === "wait") {
