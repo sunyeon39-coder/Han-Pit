@@ -92,13 +92,14 @@ function syncSeatMapSelectionUi() {
     const sid = String(el.getAttribute("data-seat-id") || "").trim();
     el.classList.toggle("selected", seatMapSelectedIds.has(sid));
   });
-  refreshSeatMapAlignButtons();
+  refreshSeatMapEditorToolbar();
 }
 
-function refreshSeatMapAlignButtons() {
-  const disabled = seatMapSelectedIds.size < 2;
-  if (IX.alignSeatMapRowBtn) IX.alignSeatMapRowBtn.disabled = disabled;
-  if (IX.alignSeatMapColBtn) IX.alignSeatMapColBtn.disabled = disabled;
+function refreshSeatMapEditorToolbar() {
+  const alignDisabled = seatMapSelectedIds.size < 2;
+  if (IX.alignSeatMapRowBtn) IX.alignSeatMapRowBtn.disabled = alignDisabled;
+  if (IX.alignSeatMapColBtn) IX.alignSeatMapColBtn.disabled = alignDisabled;
+  if (IX.deleteSeatMapBtn) IX.deleteSeatMapBtn.disabled = seatMapSelectedIds.size < 1;
 }
 
 function alignEditorSeats(axis = "") {
@@ -134,6 +135,39 @@ function alignEditorSeats(axis = "") {
     }
   });
 
+  renderEditor();
+}
+
+function deleteSelectedEditorSeats() {
+  if (!seatMapEditMode) return;
+
+  const ids = [...seatMapSelectedIds];
+  if (!ids.length) {
+    alert("삭제할 Seat을 선택해 주세요.");
+    return;
+  }
+
+  const idSet = new Set(ids);
+  const labels = ids
+    .map((id) => {
+      const seat = IX.editorSeats.find((s) => String(s.id || "") === id);
+      return String(seat?.label || id).trim() || id;
+    })
+    .join(", ");
+
+  const assignedCount = ids.filter((id) => IX.seatMapData.has(id)).length;
+  let msg =
+    ids.length === 1
+      ? `Seat "${labels}"을(를) 맵에서 삭제할까요?`
+      : `선택한 Seat ${ids.length}개(${labels})를 맵에서 삭제할까요?`;
+  if (assignedCount > 0) {
+    msg +=
+      "\n\n※ 일부 Seat은 현재 이벤트 배치에 표시 중입니다. 맵 레이아웃에서만 제거됩니다.";
+  }
+  if (!confirm(msg)) return;
+
+  IX.editorSeats = IX.editorSeats.filter((s) => !idSet.has(String(s.id || "")));
+  clearSeatMapSelection();
   renderEditor();
 }
 
@@ -204,7 +238,7 @@ function setSeatMapEditMode(editing) {
   if (IX.seatMapOpenEditorBtn) {
     IX.seatMapOpenEditorBtn.classList.toggle("hidden", seatMapEditMode || !canEdit);
   }
-  refreshSeatMapAlignButtons();
+  refreshSeatMapEditorToolbar();
 }
 
 /* ===============================
@@ -283,10 +317,56 @@ function renderEditor() {
     IX.seatMapCanvas.appendChild(el);
   });
 
-  refreshSeatMapAlignButtons();
+  refreshSeatMapEditorToolbar();
 }
 
 /* drag */
+
+function buildSeatMapDragGroup(primarySeatId = "") {
+  const sid = String(primarySeatId || "").trim();
+  const moveIds =
+    sid && seatMapSelectedIds.has(sid) && seatMapSelectedIds.size > 1
+      ? [...seatMapSelectedIds]
+      : sid
+        ? [sid]
+        : [];
+
+  return moveIds
+    .map((id) => {
+      const s = IX.editorSeats.find((item) => String(item.id || "") === id);
+      if (!s) return null;
+      return {
+        seat: s,
+        startX: Number(s.x) || 0,
+        startY: Number(s.y) || 0
+      };
+    })
+    .filter(Boolean);
+}
+
+function applySeatMapDragGroupDelta(dragGroup, primarySeatId, newX, newY) {
+  if (!dragGroup?.length || !IX.seatMapCanvas) return;
+  const sid = String(primarySeatId || "").trim();
+  const primary =
+    dragGroup.find((entry) => String(entry.seat.id || "") === sid) || dragGroup[0];
+  const deltaX = newX - primary.startX;
+  const deltaY = newY - primary.startY;
+
+  for (const { seat: s, startX, startY } of dragGroup) {
+    s.x = startX + deltaX;
+    s.y = startY + deltaY;
+    const id = String(s.id || "");
+    const escapedId =
+      typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(id)
+        : id.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    const node = IX.seatMapCanvas.querySelector(`.map-seat[data-seat-id="${escapedId}"]`);
+    if (node) {
+      node.style.left = `${s.x}px`;
+      node.style.top = `${s.y}px`;
+    }
+  }
+}
 
 function enableDrag(el, seat) {
   const seatId = String(seat.id || "");
@@ -296,12 +376,15 @@ function enableDrag(el, seat) {
   let startClientY = 0;
   let dragging = false;
   let moved = false;
+  /** @type {Array<{ seat: object, startX: number, startY: number }> | null} */
+  let dragGroup = null;
 
   const beginPointerSession = (e) => {
     if (e.button !== 0 && e.pointerType === "mouse") return;
     e.stopPropagation();
     dragging = false;
     moved = false;
+    dragGroup = null;
     offsetX = e.offsetX;
     offsetY = e.offsetY;
     startClientX = e.clientX;
@@ -313,14 +396,14 @@ function enableDrag(el, seat) {
       if (!moved && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
         moved = true;
         dragging = true;
+        dragGroup = buildSeatMapDragGroup(seatId);
       }
-      if (!dragging) return;
+      if (!dragging || !dragGroup?.length) return;
 
       const rect = IX.seatMapCanvas.getBoundingClientRect();
-      seat.x = ev.clientX - rect.left - offsetX;
-      seat.y = ev.clientY - rect.top - offsetY;
-      el.style.left = `${seat.x}px`;
-      el.style.top = `${seat.y}px`;
+      const newX = ev.clientX - rect.left - offsetX;
+      const newY = ev.clientY - rect.top - offsetY;
+      applySeatMapDragGroupDelta(dragGroup, seatId, newX, newY);
     };
 
     const onUp = (ev) => {
@@ -395,6 +478,10 @@ export function wireSeatMapListeners() {
     focusSeatMapViewportTopLeft(IX.seatMapScroll);
   });
 });
+
+  IX.deleteSeatMapBtn?.addEventListener("click", () => {
+    deleteSelectedEditorSeats();
+  });
 
   IX.alignSeatMapRowBtn?.addEventListener("click", () => {
     alignEditorSeats("row");

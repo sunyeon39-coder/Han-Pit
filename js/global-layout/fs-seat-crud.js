@@ -440,6 +440,21 @@ export async function applyGlobalSeatRename(
   return true;
 }
 
+export async function addGlobalSeatQuick(rawLabel = "") {
+  const label = String(rawLabel || "").trim();
+  if (!label) {
+    alert("Seat 라벨을 입력하세요.");
+    return;
+  }
+  const fallbackEb = getDefaultEventBoxForNewSeat();
+  await addGlobalSeatCore({
+    label,
+    eventId: fallbackEb.eventId,
+    boxId: fallbackEb.boxId,
+    clearFormInputs: false
+  });
+}
+
 export async function addGlobalSeat() {
   const seatLabelInput = document.getElementById("seatLabelInput");
   const seatEventInput = document.getElementById("seatEventInput");
@@ -448,29 +463,41 @@ export async function addGlobalSeat() {
   const fallbackEb = getDefaultEventBoxForNewSeat();
   const eventId = String(seatEventInput?.value || "").trim() || fallbackEb.eventId;
   const boxId = String(seatBoxInput?.value || "").trim() || fallbackEb.boxId;
-  if (!label) {
+  await addGlobalSeatCore({
+    label,
+    eventId,
+    boxId,
+    clearFormInputs: true
+  });
+}
+
+async function addGlobalSeatCore({ label = "", eventId = "", boxId = "", clearFormInputs = false } = {}) {
+  const lid = String(label || "").trim();
+  const eid = String(eventId || "").trim();
+  const bid = String(boxId || "").trim();
+  if (!lid) {
     alert("Seat 라벨을 입력하세요.");
     return;
   }
-  if (!eventId || !boxId) {
+  if (!eid || !bid) {
     alert("eventId와 boxId를 입력하거나, index에서 이벤트 카드를 선택한 뒤 다시 시도하세요.");
     return;
   }
-  if (!isValidLayoutRouteIdPart(eventId) || !isValidLayoutRouteIdPart(boxId)) {
+  if (!isValidLayoutRouteIdPart(eid) || !isValidLayoutRouteIdPart(bid)) {
     alert(
       "카드 ID / Box ID 형식이 올바르지 않습니다. (비어 있지 않고, / 나 __ 는 사용할 수 없습니다.)\nindex「카드 관리」에 표시된 값과 layout.html 주소창의 eventId·boxId를 확인하세요."
     );
     return;
   }
-  if (looksLikeDisplayTitleNotId(eventId)) {
+  if (looksLikeDisplayTitleNotId(eid)) {
     alert(
       "EVENT 칸에는 카드 제목이 아니라 카드 ID(예: 숫자·event_1)를 넣어야 합니다.\nindex「카드 관리」에서 해당 카드를 선택하면 카드 ID·Box ID가 보입니다."
     );
     return;
   }
 
-  await ensureLayoutEventShellForGlobalOps(eventId, boxId);
-  const layoutGate = await validateLayoutEventForGlobalOps(eventId, boxId, {
+  await ensureLayoutEventShellForGlobalOps(eid, bid);
+  const layoutGate = await validateLayoutEventForGlobalOps(eid, bid, {
     ensureShell: true,
     trustGlobalSeats: true
   });
@@ -479,7 +506,7 @@ export async function addGlobalSeat() {
     return;
   }
 
-  if (!isValidSeatLabel(label)) {
+  if (!isValidSeatLabel(lid)) {
     alert("Seat 라벨은 영문/숫자 기준으로 입력해주세요. (예: 1, A1, VIP_1)");
     return;
   }
@@ -487,13 +514,13 @@ export async function addGlobalSeat() {
   const now = Date.now();
   const seatId = `seat_${makeUid("g").slice(-8)}`;
   const order = GL.globalSeats.length + 1;
-  const docId = buildGlobalSeatDocId(eventId, boxId, seatId);
+  const docId = buildGlobalSeatDocId(eid, bid, seatId);
 
   await setDoc(
     doc(db, "tournaments", GL.tournamentId, "global_seats", docId),
     {
       seatId,
-      label,
+      label: lid,
       no: order,
       order,
       x: 0,
@@ -504,23 +531,29 @@ export async function addGlobalSeat() {
       seatedAt: null,
       status: "empty",
       tournamentId: GL.tournamentId,
-      mappedEventId: eventId,
-      currentEventId: eventId,
-      boxId,
-      sourceLayoutDocId: `${eventId}__${boxId}`,
+      mappedEventId: eid,
+      currentEventId: eid,
+      boxId: bid,
+      sourceLayoutDocId: `${eid}__${bid}`,
       updatedAt: now,
       updatedAtServer: serverTimestamp()
     },
     { merge: true }
   );
 
-  await syncLayoutProjection(eventId, boxId);
-  sessionStorage.setItem("eventId", eventId);
-  sessionStorage.setItem("boxId", boxId);
-  GL.lastGlobalUndo = { kind: "add_seat", seatId, eventId, boxId };
-  seatLabelInput.value = "";
-  if (seatEventInput) seatEventInput.value = eventId;
-  if (seatBoxInput) seatBoxInput.value = boxId;
-  writePersistedSeatAddForm(eventId, boxId);
-  syncSeatAddEventPickerFromHidden();
+  await syncLayoutProjection(eid, bid);
+  sessionStorage.setItem("eventId", eid);
+  sessionStorage.setItem("boxId", bid);
+  GL.lastGlobalUndo = { kind: "add_seat", seatId, eventId: eid, boxId: bid };
+
+  if (clearFormInputs) {
+    const seatLabelInput = document.getElementById("seatLabelInput");
+    const seatEventInput = document.getElementById("seatEventInput");
+    const seatBoxInput = document.getElementById("seatBoxInput");
+    if (seatLabelInput) seatLabelInput.value = "";
+    if (seatEventInput) seatEventInput.value = eid;
+    if (seatBoxInput) seatBoxInput.value = bid;
+    writePersistedSeatAddForm(eid, bid);
+    syncSeatAddEventPickerFromHidden();
+  }
 }

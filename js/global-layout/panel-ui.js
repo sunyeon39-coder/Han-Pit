@@ -1,6 +1,9 @@
 import { auth } from "../firebase.js";
 import { isSeatAssignedToCurrentUser } from "../layout/layout-main-identity.js";
+import { layoutIsMobile } from "../layout/layout-main-route-env.js";
 import { GL } from "./state.js";
+import { updateGlobalLayoutMetaCounts } from "./meta-ui.js";
+import { renderGlobalLayoutMobile } from "./mobile-panel-render.js";
 import {
   escapeHtml,
   isEmptyPerson,
@@ -123,6 +126,11 @@ export function getDefaultEventBoxForNewSeat() {
 
 export function renderSeats(seats = []) {
   if (!GL.app) return;
+  updateGlobalLayoutMetaCounts(seats);
+  if (layoutIsMobile()) {
+    renderGlobalLayoutMobile();
+    return;
+  }
   if (!seats.length) {
     GL.app.innerHTML = `
       <div class="layout-canvas-viewport" title="빈 영역을 드래그하면 화면을 이동합니다. 상단 버튼으로 확대·축소. Seat 위에서 옮기려면 Shift를 누른 채 드래그하세요.">
@@ -147,11 +155,6 @@ export function renderSeats(seats = []) {
     return;
   }
 
-  GL.seatCountEl.textContent = `SEAT: ${seats.length}`;
-  if (GL.assignedCountEl) {
-    const assignedCount = seats.filter((s) => !isEmptyPerson(String(s?.person || "").trim())).length;
-    GL.assignedCountEl.textContent = `ASSIGNED: ${assignedCount}`;
-  }
   const sorted = [...seats].sort((a, b) => (a.order || 0) - (b.order || 0));
   const paletteMap = buildEventBoxPaletteMap(sorted);
   const seatHtml = sorted.map((s, idx) => {
@@ -202,6 +205,13 @@ export function renderSeats(seats = []) {
 }
 
 export function renderWaiting(waiting = []) {
+  if (GL.waitingCountEl) {
+    GL.waitingCountEl.textContent = `WAIT: ${(waiting || []).length}`;
+  }
+  if (layoutIsMobile()) {
+    renderSeats(GL.globalSeats);
+    return;
+  }
   if (!GL.panelContent) return;
   capturePanelScroll();
   const waitTabActive = GL.activeTab === "wait";
@@ -303,6 +313,7 @@ export function updateWaitingTimersInPanel() {
 }
 
 export function renderSeatPanel() {
+  if (layoutIsMobile()) return;
   if (!GL.panelContent) return;
   capturePanelScroll();
   updateTabUi();

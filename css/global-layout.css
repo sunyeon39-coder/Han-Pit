@@ -423,34 +423,40 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     padding-right: 14px;
   }
 
-  /*
-   * layout.css 는 좁은 화면에서 #pcPanel 을 숨깁니다(일반 layout 은 #app 안에 모바일 카드).
-   * 통합 배치도는 패널을 캔버스 위 전체 오버레이로 써서 대기/배치·비우기와 동일 UX를 제공합니다.
-   */
+  /* 모바일: layout.html 과 동일하게 카드 목록(#app) + 하단 시트, PC 캔버스·우측 패널 숨김 */
   body.page-global-layout #pcPanel {
-    display: flex !important;
-    flex-direction: column;
-    width: 100%;
-    max-width: 100%;
-    left: 0;
-    right: 0;
-    border-left: none;
-    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.35);
-    z-index: 85;
-    transition: transform 0.25s ease;
-    transform: translateX(100%);
-    pointer-events: none;
+    display: none !important;
   }
 
   body.page-global-layout #pcPanel.open {
-    display: flex !important;
-    transform: translateX(0);
-    pointer-events: auto;
+    display: none !important;
   }
 
-  body.page-global-layout .global-list {
-    max-height: calc(100vh - var(--topbar-h) - 220px);
-    min-height: 120px;
+  body.page-global-layout #canvasZoomBar {
+    display: none !important;
+  }
+
+  body.page-global-layout .global-mobile-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  body.page-global-layout .global-layout-mobile .mobile-seat-name-cluster {
+    min-width: 0;
+    flex: 1;
+  }
+
+  body.page-global-layout .global-layout-mobile .seat-manage-submeta {
+    font-size: 10px;
+    margin-top: 2px;
+  }
+
+  body.page-global-layout .global-layout-mobile .mobile-seat-mainline {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
   }
 
   body.page-global-layout .seat-manage-row .seat-inline-actions {

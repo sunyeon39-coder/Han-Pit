@@ -14,7 +14,9 @@ import {
   clearSeat,
   deleteGlobalSeat,
   addGlobalSeat,
+  addGlobalSeatQuick,
   addManualWaiting,
+  addManualWaitingByName,
   removeManualWaiting,
   setWaitingBlocked,
   undoLastGlobalAction
@@ -39,20 +41,28 @@ function findSeatBoxEl(innerRoot, seatId) {
   );
 }
 
-function openGlobalMobileSeatAddFlow() {
-  GL.activeTab = "seat";
-  setPanelOpen(true);
+async function runGlobalMobileAddSeat() {
   GL.mobileSheet?.classList.remove("open");
-  renderSeatPanel();
-  requestAnimationFrame(() => document.getElementById("seatLabelInput")?.focus());
+  const label = prompt("Seat 라벨", "");
+  if (label === null) return;
+  try {
+    await addGlobalSeatQuick(label);
+  } catch (err) {
+    console.error("addGlobalSeatQuick error:", err);
+    alert("Seat 추가에 실패했습니다.");
+  }
 }
 
-function openGlobalMobileWaitingAddFlow() {
-  GL.activeTab = "wait";
-  setPanelOpen(true);
+async function runGlobalMobileAddWaiting() {
   GL.mobileSheet?.classList.remove("open");
-  renderWaiting(getCurrentTournamentWaiting());
-  requestAnimationFrame(() => document.getElementById("manualWaitingNameInput")?.focus());
+  const name = prompt("대기자 이름", "");
+  if (name === null) return;
+  try {
+    await addManualWaitingByName(name);
+  } catch (err) {
+    console.error("addManualWaitingByName error:", err);
+    alert("대기 추가에 실패했습니다.");
+  }
 }
 
 /** 관리자 로그인 후 하단 시트 버튼 표시 등 */
@@ -339,6 +349,11 @@ export function bindGlobalLayoutEventHandlers() {
   });
 
   GL.menuBtn?.addEventListener("click", () => {
+    if (layoutIsMobile()) {
+      setPanelOpen(false);
+      GL.mobileSheet?.classList.toggle("open");
+      return;
+    }
     GL.mobileSheet?.classList.remove("open");
     setPanelOpen(!GL.panelOpen);
   });
@@ -346,7 +361,7 @@ export function bindGlobalLayoutEventHandlers() {
   GL.mobileAddSeatBtn?.addEventListener("click", () => {
     if (!GL.isAdminUser) return;
     if (layoutIsMobile()) {
-      openGlobalMobileSeatAddFlow();
+      void runGlobalMobileAddSeat();
       return;
     }
     GL.activeTab = "seat";
@@ -358,7 +373,7 @@ export function bindGlobalLayoutEventHandlers() {
   GL.mobileAddWaitingBtn?.addEventListener("click", () => {
     if (!GL.isAdminUser) return;
     if (layoutIsMobile()) {
-      openGlobalMobileWaitingAddFlow();
+      void runGlobalMobileAddWaiting();
       return;
     }
     GL.activeTab = "wait";
@@ -368,8 +383,16 @@ export function bindGlobalLayoutEventHandlers() {
   });
 
   window.addEventListener("resize", () => {
-    if (!layoutIsMobile()) {
+    if (layoutIsMobile()) {
+      setPanelOpen(false);
       GL.mobileSheet?.classList.remove("open");
+    } else {
+      GL.mobileSheet?.classList.remove("open");
+    }
+    renderSeats(GL.globalSeats);
+    if (!layoutIsMobile()) {
+      if (GL.activeTab === "seat") renderSeatPanel();
+      else renderWaiting(getCurrentTournamentWaiting());
     }
   });
 

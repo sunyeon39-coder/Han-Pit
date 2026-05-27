@@ -3,8 +3,10 @@ import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/fi
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { GL, initGlFromUrl, initGlDomRefs } from "./state.js";
 import { getIsAdmin } from "./utils.js";
+import { layoutIsMobile } from "../layout/layout-main-route-env.js";
 import {
   updateCanvasSeatTimerClasses,
+  renderSeats,
   renderSeatPanel,
   renderWaiting,
   updateWaitingTimersInPanel,
@@ -85,6 +87,10 @@ export function startGlobalLayoutApp() {
       if (GL.timerHandle) clearInterval(GL.timerHandle);
       GL.timerHandle = setInterval(() => {
         if (isTypingInPanel()) return;
+        if (layoutIsMobile()) {
+          renderSeats(GL.globalSeats);
+          return;
+        }
         updateCanvasSeatTimerClasses();
         if (GL.activeTab === "seat") {
           renderSeatPanel();

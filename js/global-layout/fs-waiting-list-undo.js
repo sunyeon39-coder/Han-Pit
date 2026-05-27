@@ -142,6 +142,17 @@ export async function undoLastGlobalAction() {
   else renderWaiting(getCurrentTournamentWaiting());
 }
 
+export async function addManualWaitingByName(rawName = "") {
+  const name = String(rawName || "").trim();
+  if (!name) {
+    alert("대기자 이름을 입력하세요.");
+    return;
+  }
+  const input = document.getElementById("manualWaitingNameInput");
+  if (input) input.value = name;
+  await addManualWaiting();
+}
+
 export async function addManualWaiting() {
   const input = document.getElementById("manualWaitingNameInput");
   const name = String(input?.value || "").trim();

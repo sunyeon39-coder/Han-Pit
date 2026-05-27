@@ -11,6 +11,7 @@ export {
   updateGlobalWaiting,
   undoLastGlobalAction,
   addManualWaiting,
+  addManualWaitingByName,
   removeManualWaiting,
   setWaitingBlocked
 } from "./fs-waiting-list-undo.js";
@@ -21,5 +22,6 @@ export {
   saveSeatPosition,
   deleteGlobalSeat,
   applyGlobalSeatRename,
-  addGlobalSeat
+  addGlobalSeat,
+  addGlobalSeatQuick
 } from "./fs-seat-crud.js";
