@@ -6,6 +6,7 @@ import {
   escapeHtml,
   isEmptyPerson,
   seatCanvasDigitsOnly,
+  compareSeatsByCanvasLabel,
   toMillis,
   fmtElapsed,
   timerClass
@@ -33,8 +34,10 @@ import { getCurrentTournamentWaiting, sortWaitingForDisplay } from "./waiting.js
 
 const GLOBAL_MOBILE_SEAT_DOUBLE_MS = 350;
 
-/** 모바일 Seat 목록: 앉은 지 오래된 순(타이머 긴 사람 위), 빈 Seat 은 아래 */
 function getSortedSeatsForMobile() {
+  if (GL.seatSortMode !== "time") {
+    return [...GL.globalSeats].sort(compareSeatsByCanvasLabel);
+  }
   const nowMs = Date.now();
   const seatedElapsedMs = (s) => {
     if (isEmptyPerson(String(s?.person || "").trim())) return -1;
@@ -48,7 +51,7 @@ function getSortedSeatsForMobile() {
     if (ea >= 0 && eb >= 0 && ea !== eb) return eb - ea;
     if (ea >= 0 && eb < 0) return -1;
     if (ea < 0 && eb >= 0) return 1;
-    return (a.order || 0) - (b.order || 0);
+    return compareSeatsByCanvasLabel(a, b);
   });
 }
 

@@ -11,6 +11,15 @@ export function seatCanvasDigitsOnly(label, no) {
   return "—";
 }
 
+/** 패널 Seat순: 화면 SEAT 뱃지(라벨·no) 숫자 인식 오름차순 */
+export function compareSeatsByCanvasLabel(a = {}, b = {}) {
+  const la = seatCanvasDigitsOnly(a.label, a.no);
+  const lb = seatCanvasDigitsOnly(b.label, b.no);
+  const cmp = la.localeCompare(lb, undefined, { numeric: true, sensitivity: "base" });
+  if (cmp !== 0) return cmp;
+  return (a.order ?? a.no ?? 0) - (b.order ?? b.no ?? 0);
+}
+
 export function isEmptyPerson(name = "") {
   const v = String(name || "").trim();
   return !v || v === "비어있음";

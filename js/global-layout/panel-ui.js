@@ -7,6 +7,7 @@ import {
   escapeHtml,
   isEmptyPerson,
   seatCanvasDigitsOnly,
+  compareSeatsByCanvasLabel,
   toMillis,
   fmtElapsed,
   timerClass,
@@ -330,9 +331,9 @@ export function renderSeatPanel() {
       if (ea >= 0 && eb >= 0 && ea !== eb) return eb - ea;
       if (ea >= 0 && eb < 0) return -1;
       if (ea < 0 && eb >= 0) return 1;
-      return (a.order || 0) - (b.order || 0);
+      return compareSeatsByCanvasLabel(a, b);
     }
-    return (a.order || 0) - (b.order || 0);
+    return compareSeatsByCanvasLabel(a, b);
   });
   const panelPaletteMap = buildEventBoxPaletteMap(sorted);
   const rows = sorted

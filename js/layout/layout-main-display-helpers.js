@@ -25,6 +25,14 @@ export function seatCanvasDigitsOnly(label, no) {
   return "—";
 }
 
+export function compareSeatsByCanvasLabel(a = {}, b = {}) {
+  const la = seatCanvasDigitsOnly(a.label, a.no);
+  const lb = seatCanvasDigitsOnly(b.label, b.no);
+  const cmp = la.localeCompare(lb, undefined, { numeric: true, sensitivity: "base" });
+  if (cmp !== 0) return cmp;
+  return (a.order ?? a.no ?? 0) - (b.order ?? b.no ?? 0);
+}
+
 export function getSortedSeats(list = [], seatSortMode, isEmptyPersonFn = isEmptyPerson) {
   const seats = [...list];
 
@@ -36,18 +44,16 @@ export function getSortedSeats(list = [], seatSortMode, isEmptyPersonFn = isEmpt
       if (aOccupied !== bOccupied) return aOccupied ? -1 : 1;
 
       if (!aOccupied && !bOccupied) {
-        return (a.order ?? a.no ?? 0) - (b.order ?? b.no ?? 0);
+        return compareSeatsByCanvasLabel(a, b);
       }
 
       const aTime = Number(a.seatedAt || 0);
       const bTime = Number(b.seatedAt || 0);
       if (aTime !== bTime) return aTime - bTime;
 
-      return (a.order ?? a.no ?? 0) - (b.order ?? b.no ?? 0);
+      return compareSeatsByCanvasLabel(a, b);
     });
   }
 
-  return seats.sort((a, b) => {
-    return (a.order ?? a.no ?? 0) - (b.order ?? b.no ?? 0);
-  });
+  return seats.sort(compareSeatsByCanvasLabel);
 }
