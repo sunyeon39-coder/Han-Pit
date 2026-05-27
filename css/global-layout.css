@@ -152,8 +152,29 @@ body.page-global-layout .pc-panel .global-meta-actions {
   line-height: 1.45;
 }
 
-/* 통합 배치도 · Seat 추가 입력 (상단 메타 바와 동일 카드 톤) */
-body.page-global-layout .pc-panel .global-form-seat-add,
+/* 배치 탭 상단: Seat 추가 + Seat순/시간순 — 대기 탭 global-form.single 과 동일 카드 */
+body.page-global-layout .pc-panel .gl-panel-seat-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+  padding: 4px 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.018));
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12);
+}
+
+body.page-global-layout .pc-panel .gl-panel-seat-toolbar .seat-add-one-row,
+body.page-global-layout .pc-panel .gl-panel-seat-toolbar .seat-sort-row {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* layout.html 등: 카드 없이 단독 사용 시 */
 .pc-panel .global-form-seat-add {
   margin-bottom: 6px;
   padding: 4px 6px;
@@ -285,6 +306,7 @@ body.page-global-layout .pc-panel .seat-add-one-row,
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
+.pc-panel .global-form-seat-add.seat-add-one-row > button.seat-add-action-btn.pill-inline,
 .pc-panel .global-form-seat-add .seat-add-one-row > button.seat-add-action-btn.pill-inline {
   flex: 0 0 auto;
   box-sizing: border-box !important;
@@ -306,6 +328,8 @@ body.page-global-layout .pc-panel .seat-add-one-row,
   transform: none;
 }
 
+.pc-panel .global-form-seat-add.seat-add-one-row > button.seat-add-action-btn.pill-inline:hover,
+.pc-panel .global-form-seat-add.seat-add-one-row > button.seat-add-action-btn.pill-inline:active,
 .pc-panel .global-form-seat-add .seat-add-one-row > button.seat-add-action-btn.pill-inline:hover,
 .pc-panel .global-form-seat-add .seat-add-one-row > button.seat-add-action-btn.pill-inline:active {
   transform: none;
@@ -372,14 +396,19 @@ body.page-global-layout .pc-panel .global-form.single .pill-inline.full {
   box-sizing: border-box;
 }
 
-/* 배치 탭: Seat순/시간순 — 대기 탭 추가 폼과 동일 compact */
+/* 배치 탭: Seat순/시간순 (gl-panel-seat-toolbar 안에서는 카드 밖 여백 없음) */
 body.page-global-layout .pc-panel .seat-sort-row {
   display: flex;
   gap: 4px;
   margin-bottom: 6px;
 }
 
-body.page-global-layout .pc-panel .seat-sort-row .pill-inline {
+body.page-global-layout .pc-panel .gl-panel-seat-toolbar .seat-sort-row {
+  margin-bottom: 0;
+}
+
+body.page-global-layout .pc-panel .seat-sort-row .pill-inline,
+body.page-global-layout .pc-panel .gl-panel-seat-toolbar .seat-sort-row .pill-inline {
   flex: 1;
   box-sizing: border-box;
   height: 30px;

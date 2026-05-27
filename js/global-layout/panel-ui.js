@@ -404,11 +404,11 @@ export function renderSeatPanel() {
   }
 
   GL.panelContent.innerHTML = `
-    <div
-      class="global-form-seat-add admin-only ${GL.isAdminUser ? "" : "hidden"}"
-      title="${escapeHtml(seatAddTitle)}"
-    >
-      <div class="seat-add-one-row">
+    <div class="gl-panel-seat-toolbar">
+      <div
+        class="seat-add-one-row global-form-seat-add admin-only ${GL.isAdminUser ? "" : "hidden"}"
+        title="${escapeHtml(seatAddTitle)}"
+      >
         <input
           id="seatLabelInput"
           class="seat-add-input seat-add-input--label"
@@ -449,10 +449,10 @@ export function renderSeatPanel() {
           추가
         </button>
       </div>
-    </div>
-    <div class="seat-sort-row">
-      <button id="sortSeatOrderBtn" class="pill-inline ${GL.seatSortMode === "seat" ? "active" : ""}" type="button">Seat순</button>
-      <button id="sortSeatTimeBtn" class="pill-inline ${GL.seatSortMode === "time" ? "active" : ""}" type="button" title="앉은 지 오래된 순(타이머 긴 사람이 위), 빈 좌석은 아래">시간순</button>
+      <div class="seat-sort-row">
+        <button id="sortSeatOrderBtn" class="pill-inline ${GL.seatSortMode === "seat" ? "active" : ""}" type="button">Seat순</button>
+        <button id="sortSeatTimeBtn" class="pill-inline ${GL.seatSortMode === "time" ? "active" : ""}" type="button" title="앉은 지 오래된 순(타이머 긴 사람이 위), 빈 좌석은 아래">시간순</button>
+      </div>
     </div>
     <div class="global-list">
       ${listHtml}
