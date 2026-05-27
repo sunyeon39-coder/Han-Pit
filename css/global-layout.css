@@ -153,8 +153,9 @@ body.page-global-layout .pc-panel .global-meta-actions {
 }
 
 /* 통합 배치도 · Seat 추가 입력 (상단 메타 바와 동일 카드 톤) */
+body.page-global-layout .pc-panel .global-form-seat-add,
 .pc-panel .global-form-seat-add {
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   padding: 4px 6px;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -162,11 +163,12 @@ body.page-global-layout .pc-panel .global-meta-actions {
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12);
 }
 
+body.page-global-layout .pc-panel .seat-add-one-row,
 .seat-add-one-row {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 /* 라벨 / 카드 / Box / 추가 — 한 줄 30px 고정 (pill 기본 min-height 등 무력화) */
@@ -370,10 +372,28 @@ body.page-global-layout .pc-panel .global-form.single .pill-inline.full {
   box-sizing: border-box;
 }
 
-.seat-sort-row {
+/* 배치 탭: Seat순/시간순 — 대기 탭 추가 폼과 동일 compact */
+body.page-global-layout .pc-panel .seat-sort-row {
   display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+body.page-global-layout .pc-panel .seat-sort-row .pill-inline {
+  flex: 1;
+  box-sizing: border-box;
+  height: 30px;
+  min-height: 30px;
+  max-height: 30px;
+  margin: 0;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
 }
 
 .seat-sort-row .pill-inline.active {
