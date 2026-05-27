@@ -1,7 +1,10 @@
 import { getSeatById } from "./panel-ui.js";
 import { applyGlobalSeatRename } from "./firestore-ops.js";
 import { isValidSeatLabel, isValidLayoutRouteIdPart, looksLikeDisplayTitleNotId, escapeHtml } from "./utils.js";
-import { fetchTournamentEvents } from "./tournament-events.js";
+import {
+  fetchEventCardsForSeatEdit,
+  resolveEventIdForSave
+} from "./tournament-events.js";
 import { resolveBoxIdForEventId } from "./event-box-resolve.js";
 
 let currentSeatId = "";
@@ -59,7 +62,9 @@ function setEventSelection(els, eventId, titleHint = "") {
   if (!els?.eventId || !els.eventTriggerText) return;
   const id = String(eventId || "").trim();
   els.eventId.value = id;
-  els.eventTriggerText.textContent = id ? `${id} ▾` : "카드 ID 선택 ▾";
+  const found = seatEditModalEventsCache.find((ev) => String(ev.id || "").trim() === id);
+  const label = found ? String(found.title || id).trim() : id;
+  els.eventTriggerText.textContent = id ? `${label} ▾` : "카드 선택 ▾";
   if (els.eventTrigger) {
     const hint = String(titleHint || "").trim();
     if (id) {
@@ -120,24 +125,16 @@ function renderEventList(els, events, currentId) {
     li.dataset.eventId = ev.id;
     li.dataset.eventTitle = ev.title || ev.id;
     li.dataset.eventBox = ev.boxId || "";
-    const title = String(ev.title || "").trim();
-    const sub = title && title !== ev.id ? escapeHtml(title) : "";
-    li.innerHTML = sub
-      ? `${escapeHtml(ev.id)}<span class="global-seat-edit-modal__opt-sub">${sub}</span>`
-      : escapeHtml(ev.id);
+    const title = String(ev.title || "").trim() || ev.id;
+    const boxId = String(ev.boxId || "").trim() || "1";
+    const sub =
+      title !== ev.id
+        ? `${escapeHtml(ev.id)} · box ${escapeHtml(boxId)}`
+        : `box ${escapeHtml(boxId)}`;
+    li.innerHTML = `${escapeHtml(title)}<span class="global-seat-edit-modal__opt-sub">${sub}</span>`;
     if (cur && ev.id === cur) li.classList.add("is-active");
     els.eventList.appendChild(li);
   }
-}
-
-/** 드롭다운 표시명(제목)이 hidden에 들어간 경우 실제 카드 doc id로 변환 */
-function resolveEventIdForSave(rawId = "", cachedEvents = []) {
-  const raw = String(rawId || "").trim();
-  if (!raw) return "";
-  if (cachedEvents.some((ev) => String(ev?.id || "").trim() === raw)) return raw;
-  const byTitle = cachedEvents.find((ev) => String(ev?.title || "").trim() === raw);
-  if (byTitle) return String(byTitle.id || "").trim();
-  return raw;
 }
 
 function syncTriggerLabel(els, events, currentId) {
@@ -195,7 +192,7 @@ export async function openSeatEditModal(seatId = "") {
 
   let events = [];
   try {
-    events = await fetchTournamentEvents();
+    events = await fetchEventCardsForSeatEdit();
   } catch (err) {
     console.error("fetchTournamentEvents error:", err);
     events = [];
@@ -207,8 +204,8 @@ export async function openSeatEditModal(seatId = "") {
   els.eventId.value = resolvedEv || ev;
   syncTriggerLabel(els, events, resolvedEv || ev);
   const boxFromCard = resolveBoxIdForEventId(
-    ev,
-    events.find((e) => String(e.id || "") === String(ev)),
+    resolvedEv || ev,
+    events.find((e) => String(e.id || "") === String(resolvedEv || ev)),
     events
   );
   if (els.boxId) els.boxId.value = boxFromCard || bx;
@@ -250,8 +247,11 @@ async function onSaveClick() {
     );
     return;
   }
-  if (looksLikeDisplayTitleNotId(nextEventId)) {
-    alert("카드 ID 형식이 올바르지 않습니다. 목록에서 카드를 다시 선택해주세요.");
+  const knownCard = seatEditModalEventsCache.some(
+    (ev) => String(ev?.id || "").trim() === nextEventId
+  );
+  if (!knownCard && looksLikeDisplayTitleNotId(nextEventId)) {
+    alert("카드는 목록에서 선택해 주세요. (index「카드 관리」에 등록된 카드만 사용 가능)");
     return;
   }
 

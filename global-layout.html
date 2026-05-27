@@ -73,7 +73,7 @@
     >
       <h2 id="globalSeatEditTitle" class="global-seat-edit-modal__title">Seat 수정</h2>
       <p class="global-seat-edit-modal__hint">
-        <strong>카드 ID</strong>는 대회에 등록된 목록에서 고르고, <strong>Box ID</strong>는 필요 시 수정할 수 있습니다. 카드/Box를 바꾸면 저장 후
+        <strong>카드</strong>는 목록에서 다른 이벤트 카드로 바꿀 수 있고, <strong>Box ID</strong>는 필요 시 수정할 수 있습니다. 카드/Box를 바꾸면 저장 후
         <code>layout.html</code> 배치로 이동할지 묻습니다.
       </p>
       <p class="global-seat-edit-modal__meta global-seat-edit-modal__meta--id">
@@ -89,7 +89,7 @@
           maxlength="16"
           placeholder="-"
         />
-        <label class="global-seat-edit-modal__label" id="globalSeatEditEventLabel" for="globalSeatEditEventTrigger">카드 ID</label>
+        <label class="global-seat-edit-modal__label" id="globalSeatEditEventLabel" for="globalSeatEditEventTrigger">카드 (이벤트)</label>
         <div class="global-seat-edit-modal__eventpick" id="globalSeatEditEventPick">
           <input type="hidden" id="globalSeatEditEventId" value="" autocomplete="off" />
           <button
@@ -127,6 +127,6 @@
     </div>
   </div>
 
-  <script type="module" src="./js/global-layout.js?v=20260527-seat-edit"></script>
+  <script type="module" src="./js/global-layout.js?v=20260527-card-switch"></script>
 </body>
 </html>
