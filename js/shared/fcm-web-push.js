@@ -64,7 +64,7 @@ async function handleForegroundFcmPayload(payload) {
     }
   }
 
-  const title = String(data.title || payload?.notification?.title || "").trim() || "배치 알림";
+  const title = String(data.title || payload?.notification?.title || "").trim() || "Han Pit";
   const body = String(data.body || payload?.notification?.body || "").trim();
   if (!body && !data.targetUrl) return;
   if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
@@ -72,7 +72,7 @@ async function handleForegroundFcmPayload(payload) {
   const icon = notifyIconUrl();
   const notifyTag = String(data.dedupKey || "").trim() || SEAT_NOTIFY_TAG;
   const noteOpts = {
-    body: body || "Seat에 배치되었습니다.",
+    body: body || "좌석이 배치되었습니다.",
     tag: notifyTag,
     renotify: false,
     lang: "ko",

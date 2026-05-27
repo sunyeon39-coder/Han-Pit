@@ -37,6 +37,30 @@ function buildDedupKey(uid, after) {
   return `${uid}|${createdMs}|${eventId}|${boxId}|${seatId}`;
 }
 
+const PUSH_APP_TITLE = "Han Pit";
+
+function buildSeatAssignedPushBody(after = {}) {
+  const eventTitle = String(after.eventTitle || after.eventId || "").trim();
+  const seatLabel = String(after.seatLabel || after.seatId || "").trim();
+  if (eventTitle && seatLabel) {
+    return `${eventTitle} / Seat ${seatLabel}`;
+  }
+  if (eventTitle) return `${eventTitle} / Seat`;
+  if (seatLabel) return `Seat ${seatLabel}`;
+
+  const msg = String(after.message || "").trim();
+  if (msg) {
+    const stripped = msg
+      .replace(/\s*에 배치되었습니다\.?\s*$/u, "")
+      .replace(/^배치\s*알림\s*[:：]?\s*/u, "")
+      .trim();
+    if (stripped && !/^Seat에 배치되었습니다\.?$/i.test(stripped)) {
+      return stripped;
+    }
+  }
+  return "좌석이 배치되었습니다.";
+}
+
 function resolveTargetUrlForPush(raw) {
   const u = String(raw || "").trim() || "./layout.html";
   const origin = String(process.env.APP_ORIGIN || "").trim();
@@ -92,8 +116,8 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten("layout_notifications/{uid}
     return;
   }
 
-  const title = "배치 알림";
-  const body = String(after.message || "").trim() || "Seat에 배치되었습니다.";
+  const title = PUSH_APP_TITLE;
+  const body = buildSeatAssignedPushBody(after);
   const targetUrl = resolveTargetUrlForPush(after.targetUrl);
   const userRef = db.doc(`users/${uid}`);
 

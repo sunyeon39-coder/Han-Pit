@@ -2,7 +2,7 @@ importScripts("https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"
 importScripts("https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js");
 
 /** 배포마다 1 올리면 브라우저가 새 SW 로 인식해 controllerchange → 홈 화면 자동 새로고침이 걸립니다. */
-const SW_DEPLOY_REVISION = 5;
+const SW_DEPLOY_REVISION = 6;
 
 /** SW 갱신 시 홈 화면 웹앱이 오래된 탭에 머물지 않도록 즉시 활성화 */
 self.addEventListener("install", () => {
@@ -45,10 +45,10 @@ messaging.onBackgroundMessage((payload) => {
   console.debug("[firebase-messaging-sw.js] background message:", payload);
 
   const data = payload?.data || {};
-  const title = String(data.title || payload?.notification?.title || "").trim() || "배치 알림";
+  const title = String(data.title || payload?.notification?.title || "").trim() || "Han Pit";
   const body =
     String(data.body || payload?.notification?.body || data.message || "").trim() ||
-    "Seat에 배치되었습니다.";
+    "좌석이 배치되었습니다.";
 
   const targetUrl = data.targetUrl || "./layout.html";
   const notifyTag = String(data.dedupKey || "").trim() || "hanpit-seat";
