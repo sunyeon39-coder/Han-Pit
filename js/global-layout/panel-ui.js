@@ -255,7 +255,7 @@ export function renderWaiting(waiting = []) {
       const blockCheckedAtMs = Number(w.blockCheckedAt || 0) || 0;
       const deleteBtn = GL.isAdminUser
         ? `<div class="mobile-wait-inline-actions">
-            <button class="mobile-pill-btn danger" type="button" data-delete-wid="${escapeHtml(wid)}">삭제</button>
+            <button class="pill-inline danger" type="button" data-delete-wid="${escapeHtml(wid)}">삭제</button>
           </div>`
         : "";
       return `

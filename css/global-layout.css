@@ -844,13 +844,77 @@ body.global-seat-edit-modal-open {
   cursor: not-allowed;
 }
 
-/* 대기 탭: layout.html 모바일 대기열과 동일한 compact 행 (이름만 + 타이머 + 삭제) */
-.pc-panel .global-list .mobile-wait-row.compact {
-  margin-bottom: 12px;
+/* 대기 탭: 배치(seat-manage-row)와 동일한 행 크기 */
+body.page-global-layout .pc-panel .global-list .mobile-wait-row.compact {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 14px;
+  margin-bottom: 10px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
 }
 
-.pc-panel .global-list .mobile-wait-row.compact:last-child {
+body.page-global-layout .pc-panel .global-list .mobile-wait-row.compact:last-child {
   margin-bottom: 0;
+}
+
+body.page-global-layout .pc-panel .global-list .mobile-wait-row.compact .mobile-wait-mainline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+}
+
+body.page-global-layout .pc-panel .global-list .mobile-wait-row.compact .mobile-wait-inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: nowrap;
+}
+
+body.page-global-layout .pc-panel .global-list .mobile-wait-row.compact .mobile-wait-name {
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.25;
+  color: rgba(255, 255, 255, 0.92);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.page-global-layout .pc-panel .global-list .mobile-wait-row.compact .mobile-wait-inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+}
+
+body.page-global-layout .pc-panel .global-list .mobile-wait-row.compact .mobile-wait-inline-actions .pill-inline,
+body.page-global-layout .pc-panel .global-list .mobile-wait-row.compact .mobile-wait-inline-actions .mobile-pill-btn {
+  min-height: 30px;
+  height: 30px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+body.page-global-layout .pc-panel .global-list .mobile-wait-row.compact .mobile-wait-right {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+body.page-global-layout .pc-panel .global-list .mobile-wait-row.compact .mobile-wait-right .time-chip {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .pc-panel .global-list .wait-block-check-wrap {
