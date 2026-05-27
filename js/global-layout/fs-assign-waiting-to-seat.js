@@ -25,7 +25,11 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
 
   const ev0 = String(seat.currentEventId || seat.mappedEventId || "").trim();
   const bx0 = String(seat.boxId || "").trim();
-  const layoutGate = await validateLayoutEventForGlobalOps(ev0, bx0, { requireSeatId: targetSeatId });
+  const layoutGate = await validateLayoutEventForGlobalOps(ev0, bx0, {
+    requireSeatId: targetSeatId,
+    ensureShell: true,
+    trustGlobalSeats: true
+  });
   if (!layoutGate.ok) {
     alert(layoutGate.message);
     return;

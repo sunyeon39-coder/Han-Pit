@@ -1,7 +1,12 @@
 /**
  * 통합 배치도 Firestore 작업 — 구현은 fs-* 모듈에 분리, 이 파일은 호환용 re-export.
  */
-export { resolveTournamentEventTitle, validateLayoutEventForGlobalOps, syncLayoutProjection } from "./fs-layout-projection.js";
+export {
+  resolveTournamentEventTitle,
+  validateLayoutEventForGlobalOps,
+  ensureLayoutEventShellForGlobalOps,
+  syncLayoutProjection
+} from "./fs-layout-projection.js";
 export {
   updateGlobalWaiting,
   undoLastGlobalAction,

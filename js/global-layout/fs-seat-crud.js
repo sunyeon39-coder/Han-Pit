@@ -25,6 +25,7 @@ import {
 import {
   resolveTournamentEventTitle,
   syncLayoutProjection,
+  ensureLayoutEventShellForGlobalOps,
   validateLayoutEventForGlobalOps
 } from "./fs-layout-projection.js";
 import { syncSeatAddEventPickerFromHidden } from "./seat-add-event-picker.js";
@@ -172,16 +173,7 @@ export async function applyGlobalSeatRename(
 
   const prevLabel = String(seat.label ?? seat.no ?? "").trim();
   const moved = nextEventId !== prevEventId || nextBoxId !== prevBoxId;
-  const labelOnly = !moved && nextLabel === prevLabel;
-  if (labelOnly) return false;
-
-  // Seat 수정/이동은 target layout_events 안에 동일 seatId가 없어도 허용한다.
-  // (global_seats 소스 기준으로 syncLayoutProjection 시 대상 layout_events가 갱신됨)
-  const layoutGate = await validateLayoutEventForGlobalOps(nextEventId, nextBoxId);
-  if (!layoutGate.ok) {
-    alert(layoutGate.message);
-    return false;
-  }
+  if (!moved && nextLabel === prevLabel) return false;
 
   const oldDocId = buildGlobalSeatDocId(prevEventId, prevBoxId, targetSeatId);
   const newDocId = buildGlobalSeatDocId(nextEventId, nextBoxId, targetSeatId);
@@ -199,7 +191,26 @@ export async function applyGlobalSeatRename(
       },
       { merge: true }
     );
-  } else {
+
+    const idxLabel = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === targetSeatId);
+    if (idxLabel >= 0) GL.globalSeats[idxLabel] = { ...GL.globalSeats[idxLabel], label: nextLabel };
+    if (GL.activeTab === "seat") renderSeatPanel();
+    renderSeats(GL.globalSeats);
+    await syncLayoutProjection(nextEventId, nextBoxId);
+    return true;
+  }
+
+  await ensureLayoutEventShellForGlobalOps(nextEventId, nextBoxId);
+  const layoutGate = await validateLayoutEventForGlobalOps(nextEventId, nextBoxId, {
+    ensureShell: true,
+    trustGlobalSeats: true
+  });
+  if (!layoutGate.ok) {
+    alert(layoutGate.message);
+    return false;
+  }
+
+  if (moved) {
     if (oldDocId === newDocId) {
       await setDoc(
         oldRef,
@@ -352,7 +363,11 @@ export async function addGlobalSeat() {
     return;
   }
 
-  const layoutGate = await validateLayoutEventForGlobalOps(eventId, boxId);
+  await ensureLayoutEventShellForGlobalOps(eventId, boxId);
+  const layoutGate = await validateLayoutEventForGlobalOps(eventId, boxId, {
+    ensureShell: true,
+    trustGlobalSeats: true
+  });
   if (!layoutGate.ok) {
     alert(layoutGate.message);
     return;
