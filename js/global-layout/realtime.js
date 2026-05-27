@@ -2,6 +2,7 @@ import { db } from "../firebase.js";
 import { collection, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { attendanceDocBelongsToTournament } from "../index/dealer-attendance-refs.js";
 import { GL } from "./state.js";
+import { updateGlobalLayoutWaitingMeta } from "./meta-ui.js";
 import { renderSeats, renderSeatPanel, renderWaiting } from "./panel-ui.js";
 import { getCurrentTournamentWaiting } from "./waiting.js";
 
@@ -44,7 +45,7 @@ export function bindRealtime() {
       const data = snap.exists() ? (snap.data() || {}) : {};
       GL.globalWaiting = Array.isArray(data.waiting) ? data.waiting : [];
       const filtered = getCurrentTournamentWaiting();
-      GL.waitingCountEl.textContent = `WAIT: ${filtered.length}`;
+      updateGlobalLayoutWaitingMeta();
       renderWaiting(filtered);
     },
     (err) => console.error("global waiting watch error:", err)

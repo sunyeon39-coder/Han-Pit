@@ -1,5 +1,5 @@
 import { GL } from "./state.js";
-import { isEmptyPerson, makeUid, toMillis } from "./utils.js";
+import { fmtElapsed, isEmptyPerson, makeUid, timerClass, toMillis } from "./utils.js";
 
 function toPositiveMs(v) {
   const ms = toMillis(v);
@@ -17,6 +17,78 @@ export function getWaitingJoinMs(raw = {}) {
 
 export function isWaitingBlocked(raw = {}) {
   return raw?.blockChecked === true;
+}
+
+/** BLOCK 체크 직후 상단 카운트용 — Firestore 스냅샷 전 로컬 대기 목록 반영 */
+export function applyWaitingBlockLocal(waitingId = "", checked = false) {
+  const wid = String(waitingId || "").trim();
+  if (!wid || !Array.isArray(GL.globalWaiting)) return;
+
+  const now = Date.now();
+  const nextChecked = checked === true;
+  GL.globalWaiting = GL.globalWaiting.map((w) => {
+    if (String(w?.id || "").trim() !== wid) return w;
+    const base = { ...w };
+    if (nextChecked) {
+      base.blockChecked = true;
+      base.blockCheckedAt = now;
+    } else {
+      const startedAt = Number(base.blockCheckedAt || 0);
+      const elapsed = startedAt > 0 ? Math.max(0, now - startedAt) : 0;
+      base.blockChecked = false;
+      base.blockCheckedAt = null;
+      base.blockAccumulatedMs = Number(base.blockAccumulatedMs || 0) + elapsed;
+    }
+    return base;
+  });
+}
+
+/** 목록 행 DOM — BLOCK 체크 직후 타이머·뱃지 즉시 반영 */
+export function applyOptimisticWaitingBlockRow(row, checked) {
+  if (!row) return;
+  const now = Date.now();
+  const nextChecked = checked === true;
+
+  const joinMs = Number(row.getAttribute("data-wait-join-ms") || "0") || now;
+  const prevAccumMs = Number(row.getAttribute("data-block-accum-ms") || "0") || 0;
+  const prevCheckedAtMs = Number(row.getAttribute("data-block-checked-at-ms") || "0") || 0;
+  const chip = row.querySelector(".time-chip[data-wait-start]");
+
+  row.classList.toggle("is-blocked", nextChecked);
+
+  const nameEl = row.querySelector(".mobile-wait-name");
+  let badge = row.querySelector(".wait-block-badge");
+  if (nextChecked) {
+    if (!badge && nameEl?.parentElement) {
+      badge = document.createElement("span");
+      badge.className = "wait-block-badge";
+      badge.textContent = "BLOCK";
+      nameEl.insertAdjacentElement("afterend", badge);
+    }
+  } else if (badge) {
+    badge.remove();
+  }
+
+  let startMs = now;
+  if (nextChecked) {
+    row.setAttribute("data-block-checked-at-ms", String(now));
+    startMs = now;
+  } else {
+    const effectiveCheckedAt = prevCheckedAtMs > 0 ? prevCheckedAtMs : now;
+    const blockedElapsed = Math.max(0, now - effectiveCheckedAt);
+    const nextAccumMs = prevAccumMs + blockedElapsed;
+    row.setAttribute("data-block-accum-ms", String(nextAccumMs));
+    row.setAttribute("data-block-checked-at-ms", "0");
+    startMs = Math.min(now, joinMs + nextAccumMs);
+  }
+
+  if (!chip) return;
+  chip.setAttribute("data-wait-start", String(startMs));
+  const elapsed = Math.max(0, now - startMs);
+  chip.textContent = fmtElapsed(elapsed);
+  const cls = timerClass(elapsed);
+  chip.classList.remove("t-green", "t-yellow", "t-orange", "t-red");
+  chip.classList.add(cls);
 }
 
 export function getWaitingDisplayStartMs(raw = {}) {

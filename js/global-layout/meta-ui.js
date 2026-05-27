@@ -1,5 +1,17 @@
 import { GL } from "./state.js";
 import { isEmptyPerson } from "./utils.js";
+import { getCurrentTournamentWaiting, isWaitingBlocked } from "./waiting.js";
+
+export function updateGlobalLayoutWaitingMeta() {
+  const waiting = getCurrentTournamentWaiting();
+  if (GL.waitingCountEl) {
+    GL.waitingCountEl.textContent = `WAIT: ${waiting.length}`;
+  }
+  if (GL.blockedCountEl) {
+    const blocked = waiting.filter((w) => isWaitingBlocked(w)).length;
+    GL.blockedCountEl.textContent = `BLOCK: ${blocked}`;
+  }
+}
 
 export function updateGlobalLayoutMetaCounts(seats = []) {
   const list = Array.isArray(seats) ? seats : [];
@@ -8,4 +20,19 @@ export function updateGlobalLayoutMetaCounts(seats = []) {
     const assignedCount = list.filter((s) => !isEmptyPerson(String(s?.person || "").trim())).length;
     GL.assignedCountEl.textContent = `ASSIGNED: ${assignedCount}`;
   }
+  updateGlobalLayoutWaitingMeta();
+}
+
+export function syncGlobalLayoutMetaPills(root) {
+  if (!root) return;
+  const map = {
+    seat: GL.seatCountEl?.textContent || "SEAT: 0",
+    assigned: GL.assignedCountEl?.textContent || "ASSIGNED: 0",
+    wait: GL.waitingCountEl?.textContent || "WAIT: 0",
+    block: GL.blockedCountEl?.textContent || "BLOCK: 0"
+  };
+  root.querySelectorAll(".global-mobile-meta [data-meta]").forEach((el) => {
+    const key = String(el.dataset.meta || "").trim();
+    if (map[key]) el.textContent = map[key];
+  });
 }

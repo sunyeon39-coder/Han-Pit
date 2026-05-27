@@ -10,9 +10,15 @@ import {
   fmtElapsed,
   timerClass
 } from "./utils.js";
-import { getWaitingDisplayStartMs, isWaitingBlocked } from "./waiting.js";
+import {
+  applyOptimisticWaitingBlockRow,
+  applyWaitingBlockLocal,
+  getWaitingDisplayStartMs,
+  isWaitingBlocked
+} from "./waiting.js";
+import { updateGlobalLayoutWaitingMeta } from "./meta-ui.js";
 import { getEventBoxPaletteClass, buildEventBoxPaletteMap } from "./event-box-palette.js";
-import { updateGlobalLayoutMetaCounts } from "./meta-ui.js";
+import { updateGlobalLayoutMetaCounts, updateGlobalLayoutWaitingMeta, syncGlobalLayoutMetaPills } from "./meta-ui.js";
 import { openSeatEditModal } from "./seat-edit-modal.js";
 import {
   assignSelectedWaitingToSeat,
@@ -113,14 +119,8 @@ export function refreshGlobalLayoutMobileTimers() {
     chip.classList.add(tClass);
   });
 
-  root.querySelectorAll(".global-mobile-meta .hint-pill").forEach((pill, i) => {
-    const texts = [
-      GL.seatCountEl?.textContent || "SEAT: 0",
-      GL.assignedCountEl?.textContent || "ASSIGNED: 0",
-      GL.waitingCountEl?.textContent || "WAIT: 0"
-    ];
-    if (texts[i]) pill.textContent = texts[i];
-  });
+  updateGlobalLayoutWaitingMeta();
+  syncGlobalLayoutMetaPills(root);
 }
 
 export function renderGlobalLayoutMobile() {
@@ -140,9 +140,10 @@ export function renderGlobalLayoutMobile() {
 
   wrap.innerHTML = `
     <div class="global-mobile-meta">
-      <span class="hint-pill">${escapeHtml(GL.seatCountEl?.textContent || "SEAT: 0")}</span>
-      <span class="hint-pill">${escapeHtml(GL.assignedCountEl?.textContent || "ASSIGNED: 0")}</span>
-      <span class="hint-pill">${escapeHtml(GL.waitingCountEl?.textContent || "WAIT: 0")}</span>
+      <span class="hint-pill" data-meta="seat">${escapeHtml(GL.seatCountEl?.textContent || "SEAT: 0")}</span>
+      <span class="hint-pill" data-meta="assigned">${escapeHtml(GL.assignedCountEl?.textContent || "ASSIGNED: 0")}</span>
+      <span class="hint-pill" data-meta="wait">${escapeHtml(GL.waitingCountEl?.textContent || "WAIT: 0")}</span>
+      <span class="hint-pill hint-pill--block" data-meta="block">${escapeHtml(GL.blockedCountEl?.textContent || "BLOCK: 0")}</span>
     </div>
   `;
 
@@ -458,16 +459,22 @@ export function renderGlobalLayoutMobile() {
       e.stopPropagation();
       const wid = String(cb.getAttribute("data-mobile-block-w") || "").trim();
       if (!wid) return;
+      const row = cb.closest("[data-mobile-wait]");
+      const nextChecked = !!cb.checked;
+      applyOptimisticWaitingBlockRow(row, nextChecked);
+      applyWaitingBlockLocal(wid, nextChecked);
+      updateGlobalLayoutWaitingMeta();
+      syncGlobalLayoutMetaPills(getGlobalLayoutMobileScrollEl());
       cb.disabled = true;
       try {
-        await setWaitingBlocked(wid, !!cb.checked);
+        await setWaitingBlocked(wid, nextChecked);
       } catch (err) {
         console.error("mobile setWaitingBlocked error:", err);
         alert("BLOCK 변경에 실패했습니다.");
+        fullRender();
       } finally {
         cb.disabled = false;
       }
-      fullRender();
     });
   });
 }

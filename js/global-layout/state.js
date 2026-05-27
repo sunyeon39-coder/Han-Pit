@@ -14,6 +14,7 @@ export const GL = {
   seatCountEl: null,
   assignedCountEl: null,
   waitingCountEl: null,
+  blockedCountEl: null,
   pcPanel: null,
   panelContent: null,
   tabs: [],
@@ -76,6 +77,7 @@ export function initGlDomRefs() {
   GL.seatCountEl = document.getElementById("seatCount");
   GL.assignedCountEl = document.getElementById("assignedCount");
   GL.waitingCountEl = document.getElementById("waitingCount");
+  GL.blockedCountEl = document.getElementById("blockedCount");
   GL.pcPanel = document.getElementById("pcPanel");
   GL.panelContent = document.getElementById("panelContent");
   GL.tabs = Array.from(document.querySelectorAll(".tab"));

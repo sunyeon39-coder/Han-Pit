@@ -56,6 +56,12 @@ html, body {
   min-width: 0;
 }
 
+.hint-pill--block {
+  border-color: rgba(77, 163, 255, 0.55);
+  color: rgba(186, 220, 255, 0.95);
+  background: rgba(59, 130, 246, 0.12);
+}
+
 .global-meta-actions {
   display: flex;
   flex-shrink: 0;

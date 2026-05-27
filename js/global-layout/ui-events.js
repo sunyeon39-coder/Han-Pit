@@ -7,7 +7,12 @@ import {
   renderWaiting,
   setPanelOpen
 } from "./panel-ui.js";
-import { getCurrentTournamentWaiting } from "./waiting.js";
+import {
+  applyOptimisticWaitingBlockRow,
+  applyWaitingBlockLocal,
+  getCurrentTournamentWaiting
+} from "./waiting.js";
+import { updateGlobalLayoutWaitingMeta } from "./meta-ui.js";
 import {
   saveSeatPosition,
   assignSelectedWaitingToSeat,
@@ -86,53 +91,6 @@ function applyCanvasSeatSelectionClick(seatId, multi) {
     GL.selectedSeatIds.clear();
     GL.selectedSeatIds.add(sid);
   }
-}
-
-function applyOptimisticWaitingBlockRow(row, checked) {
-  if (!row) return;
-  const now = Date.now();
-  const nextChecked = checked === true;
-
-  const joinMs = Number(row.getAttribute("data-wait-join-ms") || "0") || now;
-  const prevAccumMs = Number(row.getAttribute("data-block-accum-ms") || "0") || 0;
-  const prevCheckedAtMs = Number(row.getAttribute("data-block-checked-at-ms") || "0") || 0;
-  const chip = row.querySelector(".time-chip[data-wait-start]");
-
-  row.classList.toggle("is-blocked", nextChecked);
-
-  const nameEl = row.querySelector(".mobile-wait-name");
-  let badge = row.querySelector(".wait-block-badge");
-  if (nextChecked) {
-    if (!badge && nameEl?.parentElement) {
-      badge = document.createElement("span");
-      badge.className = "wait-block-badge";
-      badge.textContent = "BLOCK";
-      nameEl.insertAdjacentElement("afterend", badge);
-    }
-  } else if (badge) {
-    badge.remove();
-  }
-
-  let startMs = now;
-  if (nextChecked) {
-    row.setAttribute("data-block-checked-at-ms", String(now));
-    startMs = now;
-  } else {
-    const effectiveCheckedAt = prevCheckedAtMs > 0 ? prevCheckedAtMs : now;
-    const blockedElapsed = Math.max(0, now - effectiveCheckedAt);
-    const nextAccumMs = prevAccumMs + blockedElapsed;
-    row.setAttribute("data-block-accum-ms", String(nextAccumMs));
-    row.setAttribute("data-block-checked-at-ms", "0");
-    startMs = Math.min(now, joinMs + nextAccumMs);
-  }
-
-  if (!chip) return;
-  chip.setAttribute("data-wait-start", String(startMs));
-  const elapsed = Math.max(0, now - startMs);
-  chip.textContent = fmtElapsed(elapsed);
-  const cls = timerClass(elapsed);
-  chip.classList.remove("t-green", "t-yellow", "t-orange", "t-red");
-  chip.classList.add(cls);
 }
 
 export function bindGlobalLayoutEventHandlers() {
@@ -307,6 +265,8 @@ export function bindGlobalLayoutEventHandlers() {
     const row = blockCb.closest("[data-wid]");
     const nextChecked = !!blockCb.checked;
     applyOptimisticWaitingBlockRow(row, nextChecked);
+    applyWaitingBlockLocal(wid, nextChecked);
+    updateGlobalLayoutWaitingMeta();
     blockCb.disabled = true;
     try {
       await setWaitingBlocked(wid, nextChecked);
