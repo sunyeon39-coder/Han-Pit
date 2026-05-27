@@ -170,12 +170,13 @@ html, body {
   margin: 0;
 }
 
-/* 라벨 / EVENT / BOX 동일 너비 */
+/* 라벨·Box는 좁게, 가운데 카드 선택은 남은 너비 전부 */
 .pc-panel .global-form-seat-add .seat-add-input--label,
 .pc-panel .global-form-seat-add .seat-add-input--meta {
   flex: 1 1 0;
   min-width: 0;
   width: 0;
+  max-width: 72px;
 }
 
 .pc-panel .global-form-seat-add .seat-add-input--label {
@@ -189,9 +190,9 @@ html, body {
 /* Seat 추가 줄 · 카드 ID (Firestore events 목록 드롭다운) */
 .pc-panel .global-form-seat-add .seat-add-event-pick {
   position: relative;
-  flex: 1 1 0;
+  flex: 1 1 auto;
   min-width: 0;
-  width: 0;
+  width: auto;
   height: 30px;
   min-height: 30px;
   max-height: 30px;
@@ -203,7 +204,7 @@ html, body {
 .pc-panel .global-form-seat-add .seat-add-event-trigger {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
@@ -230,11 +231,11 @@ html, body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 13px;
   font-weight: 750;
   line-height: 1;
-  text-align: center;
+  text-align: left;
+  padding: 0 2px;
 }
 
 .pc-panel .global-form-seat-add .seat-add-event-list {

@@ -390,6 +390,21 @@ export function renderSeatPanel() {
     : baseEb;
   const seatAddTitle = `카드 ID는 드롭다운에서 선택합니다. Box ID는 해당 카드(Firestore·기존 좌석) 기준으로 자동 채워지며 필요 시 수정할 수 있습니다. 비우면 ${defEb.eventId} / ${defEb.boxId} 사용.`;
 
+  const listHtml = rows || `<div class="empty-panel">전역 좌석이 없습니다.</div>`;
+  const existingList = GL.panelContent?.querySelector(".global-list");
+  const existingPicker = GL.panelContent?.querySelector("#seatAddEventPick");
+  if (existingList && existingPicker) {
+    existingList.innerHTML = listHtml;
+    const orderBtn = document.getElementById("sortSeatOrderBtn");
+    const timeBtn = document.getElementById("sortSeatTimeBtn");
+    if (orderBtn) orderBtn.classList.toggle("active", GL.seatSortMode === "seat");
+    if (timeBtn) timeBtn.classList.toggle("active", GL.seatSortMode === "time");
+    restorePanelScroll();
+    updateGlobalMetaToolbar();
+    refreshGlobalLayoutAlignButtonState();
+    return;
+  }
+
   GL.panelContent.innerHTML = `
     <div
       class="global-form-seat-add admin-only ${GL.isAdminUser ? "" : "hidden"}"
@@ -414,7 +429,7 @@ export function renderSeatPanel() {
             aria-expanded="false"
             aria-label="카드 ID 선택"
           >
-            <span class="seat-add-event-trigger-text" id="seatAddEventTriggerText" aria-hidden="true">${escapeHtml(defEb.eventId)} ▾</span>
+            <span class="seat-add-event-trigger-text" id="seatAddEventTriggerText" aria-hidden="true">카드 선택 ▾</span>
           </button>
           <ul class="seat-add-event-list global-seat-edit-modal__select-list" id="seatAddEventList" role="listbox" hidden></ul>
         </div>
@@ -442,7 +457,7 @@ export function renderSeatPanel() {
       <button id="sortSeatTimeBtn" class="pill-inline ${GL.seatSortMode === "time" ? "active" : ""}" type="button" title="앉은 지 오래된 순(타이머 긴 사람이 위), 빈 좌석은 아래">시간순</button>
     </div>
     <div class="global-list">
-      ${rows || `<div class="empty-panel">전역 좌석이 없습니다.</div>`}
+      ${listHtml}
     </div>
   `;
   restorePanelScroll();

@@ -4,6 +4,17 @@ import { resolveBoxIdForEventId } from "./event-box-resolve.js";
 import { writePersistedSeatAddForm } from "./seat-add-form-persist.js";
 
 let docListener = null;
+let seatAddEventsCache = [];
+
+function formatSeatAddTriggerLabel(eventId = "") {
+  const id = String(eventId || "").trim();
+  if (!id) return "카드 선택 ▾";
+  const found = seatAddEventsCache.find((e) => String(e.id || "") === id);
+  const label = found
+    ? String(found.title || found.cardId || id).trim()
+    : id;
+  return `${label} ▾`;
+}
 
 function detachDocListener() {
   if (docListener) {
@@ -100,9 +111,8 @@ function setTriggerAria(trigger, id, titleHint) {
   }
 }
 
-/** 패널이 다시 그려진 뒤 호출: Seat 추가 줄의 카드 ID를 드롭다운으로 연결 */
+/** 패널 최초 구성 시 1회만 리스너 연결; 이후는 목록·라벨만 갱신 */
 export async function wireSeatAddEventPicker() {
-  detachDocListener();
   const pick = document.getElementById("seatAddEventPick");
   const hidden = document.getElementById("seatEventInput");
   const trigger = document.getElementById("seatAddEventTrigger");
@@ -117,6 +127,7 @@ export async function wireSeatAddEventPicker() {
   } catch (err) {
     console.error("wireSeatAddEventPicker fetch error:", err);
   }
+  seatAddEventsCache = events;
 
   const currentId = String(hidden.value || "").trim();
   buildList(list, events, currentId);
@@ -124,11 +135,16 @@ export async function wireSeatAddEventPicker() {
   applySeatAddBoxForEvent(events, currentId, boxInput);
   persistSeatAddRow(hidden, boxInput);
 
+  if (pick.dataset.seatAddWired === "1") return;
+  pick.dataset.seatAddWired = "1";
+
+  detachDocListener();
+
   const applyRow = (li) => {
     const id = String(li?.dataset?.eventId || "").trim();
     if (!id) return;
     hidden.value = id;
-    text.textContent = `${id} ▾`;
+    text.textContent = formatSeatAddTriggerLabel(id);
     setTriggerAria(trigger, id, String(li.dataset.eventTitle || "").trim());
     applySeatAddBoxForEvent(events, id, boxInput, {
       boxId: String(li.dataset.eventBox || "").trim()
@@ -164,7 +180,8 @@ export function syncSeatAddEventPickerFromHidden() {
   const boxInput = document.getElementById("seatBoxInput");
   if (!hidden || !text) return;
   const id = String(hidden.value || "").trim();
-  text.textContent = id ? `${id} ▾` : "카드 ID 선택 ▾";
-  setTriggerAria(trigger, id, "");
+  const found = seatAddEventsCache.find((e) => String(e.id || "") === id);
+  text.textContent = formatSeatAddTriggerLabel(id);
+  setTriggerAria(trigger, id, found ? String(found.title || "").trim() : "");
   persistSeatAddRow(hidden, boxInput);
 }
