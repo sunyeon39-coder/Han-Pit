@@ -443,40 +443,59 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     margin-bottom: 4px;
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-seat-name-cluster {
+  /* Seat 행: 번호·이름·버튼·타이머 한 줄 (layout.html 과 동일) */
+  body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-mainline {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 5px;
     min-width: 0;
-    flex: 1 1 auto;
-    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-mainline {
+  body.page-global-layout .global-layout-mobile .mobile-seat-name-cluster {
+    display: flex;
+    flex-direction: row;
     align-items: center;
-    flex-wrap: wrap;
-    gap: 6px 8px;
-    overflow-x: visible;
+    gap: 5px;
+    min-width: 0;
+    flex: 1 1 0;
   }
 
   body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-person {
-    white-space: normal;
-    overflow: visible;
-    text-overflow: unset;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-    font-size: 14px;
-    line-height: 1.25;
-    flex: 1 1 4rem;
-    min-width: 3rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    overflow-wrap: normal;
+    word-break: normal;
+    font-size: 13px;
+    line-height: 1.2;
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-inline-actions {
-    flex: 1 1 100%;
-    justify-content: flex-end;
-    order: 3;
+    display: flex;
+    flex-shrink: 0;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 3px;
+    order: unset;
   }
 
   body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-right {
-    margin-left: auto;
-    order: 2;
+    flex-shrink: 0;
+    order: unset;
+    margin-left: 0;
+  }
+
+  body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-pill-btn {
+    padding: 4px 8px;
+    font-size: 11px;
+    min-height: 28px;
   }
 
   /* 모바일에서는 event/box 메타·카드 ID 라벨 숨김 (구버전 HTML·캐시 대비) */
