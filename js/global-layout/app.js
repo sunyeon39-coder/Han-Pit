@@ -13,6 +13,7 @@ import {
   setPanelOpen,
   isTypingInPanel
 } from "./panel-ui.js";
+import { refreshGlobalLayoutMobileTimers } from "./mobile-panel-render.js";
 import { getCurrentTournamentWaiting } from "./waiting.js";
 import { updateGlobalMetaToolbar } from "./toolbar.js";
 import { bindRealtime } from "./realtime.js";
@@ -88,7 +89,7 @@ export function startGlobalLayoutApp() {
       GL.timerHandle = setInterval(() => {
         if (isTypingInPanel()) return;
         if (layoutIsMobile()) {
-          renderSeats(GL.globalSeats);
+          refreshGlobalLayoutMobileTimers();
           return;
         }
         updateCanvasSeatTimerClasses();

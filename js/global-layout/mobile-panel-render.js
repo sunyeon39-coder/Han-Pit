@@ -52,9 +52,81 @@ function setMobileSeatSelection(seatId = "") {
   if (sid) GL.selectedSeatIds.add(sid);
 }
 
+function getGlobalLayoutMobileScrollEl() {
+  return GL.app?.querySelector(".global-layout-mobile") || null;
+}
+
+function captureGlobalLayoutMobileScroll() {
+  const el = getGlobalLayoutMobileScrollEl();
+  GL.mobileListScrollTop = el ? el.scrollTop : 0;
+}
+
+function restoreGlobalLayoutMobileScroll() {
+  const top = Number(GL.mobileListScrollTop) || 0;
+  const apply = () => {
+    const el = getGlobalLayoutMobileScrollEl();
+    if (el) el.scrollTop = top;
+  };
+  apply();
+  requestAnimationFrame(apply);
+}
+
+/** 1초 타이머용 — DOM 전체를 다시 그리지 않고 시간 칩만 갱신 (스크롤 유지) */
+export function refreshGlobalLayoutMobileTimers() {
+  if (!GL.app || !layoutIsMobile()) return;
+  const root = getGlobalLayoutMobileScrollEl();
+  if (!root) {
+    renderGlobalLayoutMobile();
+    return;
+  }
+
+  const now = Date.now();
+  const waiting = getCurrentTournamentWaiting();
+
+  root.querySelectorAll(".mobile-seat-row[data-mobile-seat]").forEach((row) => {
+    const sid = String(row.getAttribute("data-mobile-seat") || "").trim();
+    const seat = GL.globalSeats.find((s) => String(s.seatId || "").trim() === sid);
+    if (!seat) return;
+    const occupied = !isEmptyPerson(String(seat.person || "").trim());
+    const chip = row.querySelector(".mobile-seat-right .time-chip");
+    if (!occupied || !chip) return;
+    const seatedAt = toMillis(seat.seatedAt || 0);
+    const elapsed = seatedAt ? now - seatedAt : 0;
+    const tClass = timerClass(elapsed);
+    chip.textContent = fmtElapsed(elapsed);
+    chip.classList.remove("t-green", "t-yellow", "t-orange", "t-red");
+    chip.classList.add(tClass);
+  });
+
+  root.querySelectorAll(".mobile-wait-row[data-mobile-wait]").forEach((row) => {
+    const wid = String(row.getAttribute("data-mobile-wait") || "").trim();
+    const w = waiting.find((x) => String(x.id || "") === wid);
+    if (!w) return;
+    const chip = row.querySelector(".time-chip[data-wait-start]");
+    if (!chip) return;
+    const startMs = getWaitingDisplayStartMs(w);
+    const elapsed = Math.max(0, now - startMs);
+    const tClass = timerClass(elapsed);
+    chip.setAttribute("data-wait-start", String(startMs));
+    chip.textContent = fmtElapsed(elapsed);
+    chip.classList.remove("t-green", "t-yellow", "t-orange", "t-red");
+    chip.classList.add(tClass);
+  });
+
+  root.querySelectorAll(".global-mobile-meta .hint-pill").forEach((pill, i) => {
+    const texts = [
+      GL.seatCountEl?.textContent || "SEAT: 0",
+      GL.assignedCountEl?.textContent || "ASSIGNED: 0",
+      GL.waitingCountEl?.textContent || "WAIT: 0"
+    ];
+    if (texts[i]) pill.textContent = texts[i];
+  });
+}
+
 export function renderGlobalLayoutMobile() {
   if (!GL.app || !layoutIsMobile()) return;
 
+  captureGlobalLayoutMobileScroll();
   updateGlobalLayoutMetaCounts(GL.globalSeats);
 
   const wrap = document.createElement("div");
@@ -212,6 +284,7 @@ export function renderGlobalLayoutMobile() {
   GL.app.innerHTML = "";
   GL.app.appendChild(wrap);
   GL.app.classList.remove("with-panel");
+  restoreGlobalLayoutMobileScroll();
 
   const fullRender = () => renderGlobalLayoutMobile();
 

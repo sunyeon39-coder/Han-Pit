@@ -479,6 +479,22 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     order: 2;
   }
 
+  /* 모바일에서는 event/box 메타·카드 ID 라벨 숨김 (구버전 HTML·캐시 대비) */
+  body.page-global-layout .global-layout-mobile .seat-manage-submeta,
+  body.page-global-layout .global-layout-mobile .meta-line.seat-manage-submeta,
+  body.page-global-layout .global-layout-mobile [data-gl-event-meta] {
+    display: none !important;
+  }
+
+  body.page-global-layout .global-layout-mobile {
+    -webkit-overflow-scrolling: touch;
+    overflow-anchor: auto;
+  }
+
+  body.page-global-layout #app {
+    overflow: hidden;
+  }
+
   body.page-global-layout .seat-manage-row .seat-inline-actions {
     flex-wrap: wrap;
     justify-content: flex-end;

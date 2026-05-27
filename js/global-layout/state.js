@@ -49,6 +49,8 @@ export const GL = {
   lastGlobalUndo: null,
   waitListScrollTop: 0,
   seatListScrollTop: 0,
+  /** 모바일 카드 목록 스크롤 (전체 re-render 시 복원) */
+  mobileListScrollTop: 0,
   lastSeatTapAt: 0,
   lastSeatTapId: "",
 
