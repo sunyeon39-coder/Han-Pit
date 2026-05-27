@@ -64,17 +64,11 @@ function buildList(listEl, events, currentId) {
     li.dataset.eventTitle = ev.title || ev.id;
     li.dataset.eventBox = ev.boxId || "";
     const title = String(ev.title || "").trim() || ev.id;
-    const cardId = String(ev.cardId || ev.id || "").trim();
-    const boxId = String(ev.boxId || "").trim() || "1";
     const date = String(ev.date || "").trim();
-    const sub = [
-      date ? escapeHtml(date) : "",
-      `카드 ${escapeHtml(cardId)}`,
-      `box ${escapeHtml(boxId)}`
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    li.innerHTML = `${escapeHtml(title)}<span class="global-seat-edit-modal__opt-sub">${sub}</span>`;
+    const sub = date ? escapeHtml(date) : "";
+    li.innerHTML = sub
+      ? `${escapeHtml(title)}<span class="global-seat-edit-modal__opt-sub">${sub}</span>`
+      : escapeHtml(title);
     if (cur && ev.id === cur) li.classList.add("is-active");
     listEl.appendChild(li);
   }
