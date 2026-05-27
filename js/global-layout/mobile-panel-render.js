@@ -29,7 +29,7 @@ import {
   removeManualWaiting,
   setWaitingBlocked
 } from "./firestore-ops.js";
-import { getCurrentTournamentWaiting } from "./waiting.js";
+import { getCurrentTournamentWaiting, sortWaitingForDisplay } from "./waiting.js";
 
 const GLOBAL_MOBILE_SEAT_DOUBLE_MS = 350;
 
@@ -225,12 +225,7 @@ export function renderGlobalLayoutMobile() {
     </div>
   `;
 
-  const sortedWaiting = [...waiting].sort((a, b) => {
-    const da = getWaitingDisplayStartMs(a);
-    const db = getWaitingDisplayStartMs(b);
-    if (da !== db) return da - db;
-    return String(a.id || "").localeCompare(String(b.id || ""));
-  });
+  const sortedWaiting = sortWaitingForDisplay(waiting);
 
   if (!sortedWaiting.length) {
     waitCard.innerHTML += `<div class="row"><div>대기</div><div class="muted">없음</div></div>`;

@@ -104,6 +104,19 @@ export function getWaitingDisplayStartMs(raw = {}) {
   return shifted > now ? joinAnchor : shifted;
 }
 
+/** 비블락: 시간 오래된 순(위). 블락: 목록 맨 아래에서 블락끼리만 동일 규칙 */
+export function sortWaitingForDisplay(list = []) {
+  return [...list].sort((a, b) => {
+    const blockedA = isWaitingBlocked(a);
+    const blockedB = isWaitingBlocked(b);
+    if (blockedA !== blockedB) return blockedA ? 1 : -1;
+    const da = getWaitingDisplayStartMs(a);
+    const db = getWaitingDisplayStartMs(b);
+    if (da !== db) return da - db;
+    return String(a.id || "").localeCompare(String(b.id || ""));
+  });
+}
+
 export function isPersonSeatedInGlobalSeats(seats, person = {}) {
   const uid = String(person.uid || "").trim();
   const email = String(person.email || "").trim().toLowerCase();

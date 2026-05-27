@@ -12,7 +12,7 @@ import {
   timerClass,
   getSeatPosition
 } from "./utils.js";
-import { getWaitingDisplayStartMs, isWaitingBlocked } from "./waiting.js";
+import { getWaitingDisplayStartMs, isWaitingBlocked, sortWaitingForDisplay } from "./waiting.js";
 import { updateTabUi, updateGlobalMetaToolbar } from "./toolbar.js";
 import {
   applyGlobalLayoutCanvasTransform,
@@ -225,12 +225,7 @@ export function renderWaiting(waiting = []) {
     return;
   }
 
-  const sortedWaiting = [...waiting].sort((a, b) => {
-    const da = getWaitingDisplayStartMs(a);
-    const db = getWaitingDisplayStartMs(b);
-    if (da !== db) return da - db;
-    return String(a.id || "").localeCompare(String(b.id || ""));
-  });
+  const sortedWaiting = sortWaitingForDisplay(waiting);
 
   const waitingRows = sortedWaiting
     .map((w) => {
