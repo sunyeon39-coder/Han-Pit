@@ -559,11 +559,10 @@ input:focus{ border-color:rgba(77,163,255,.6); }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-  flex-wrap: wrap;
-  row-gap: 8px;
-  padding: 8px 10px;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: nowrap;
+  padding: 6px 8px;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02));
@@ -572,10 +571,24 @@ input:focus{ border-color:rgba(77,163,255,.6); }
 
 .pc-panel .global-meta-left {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  gap: 6px;
   align-items: center;
   min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.pc-panel .global-meta-left::-webkit-scrollbar {
+  display: none;
+}
+
+.pc-panel .global-meta .hint-pill {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .pc-panel .global-meta-actions {

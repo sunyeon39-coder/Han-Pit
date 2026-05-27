@@ -42,7 +42,7 @@ body.page-global-layout .pc-panel .panel-body {
   padding-top: 6px;
 }
 
-.pc-panel .global-meta {
+body.page-global-layout .pc-panel .global-meta {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -56,7 +56,7 @@ body.page-global-layout .pc-panel .panel-body {
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.16);
 }
 
-.global-meta-left {
+body.page-global-layout .pc-panel .global-meta-left {
   display: flex;
   flex: 1 1 auto;
   flex-wrap: nowrap;
@@ -67,28 +67,28 @@ body.page-global-layout .pc-panel .panel-body {
   scrollbar-width: none;
 }
 
-.global-meta-left::-webkit-scrollbar {
+body.page-global-layout .pc-panel .global-meta-left::-webkit-scrollbar {
   display: none;
 }
 
-.pc-panel .global-meta .hint-pill {
+body.page-global-layout .pc-panel .global-meta .hint-pill {
   flex-shrink: 0;
   padding: 4px 8px;
   font-size: 11px;
   white-space: nowrap;
 }
 
-.hint-pill--block {
-  border-color: rgba(77, 163, 255, 0.55);
-  color: rgba(186, 220, 255, 0.95);
-  background: rgba(59, 130, 246, 0.12);
-}
-
-.global-meta-actions {
+body.page-global-layout .pc-panel .global-meta-actions {
   display: flex;
   flex-shrink: 0;
   align-items: center;
   gap: 8px;
+}
+
+.hint-pill--block {
+  border-color: rgba(77, 163, 255, 0.55);
+  color: rgba(186, 220, 255, 0.95);
+  background: rgba(59, 130, 246, 0.12);
 }
 
 .global-meta-actions.hidden {
@@ -467,9 +467,22 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
 
   body.page-global-layout .global-mobile-meta {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    flex-wrap: nowrap;
+    gap: 6px;
     margin-bottom: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  body.page-global-layout .global-mobile-meta::-webkit-scrollbar {
+    display: none;
+  }
+
+  body.page-global-layout .global-mobile-meta .hint-pill {
+    flex-shrink: 0;
+    padding: 4px 8px;
+    font-size: 11px;
+    white-space: nowrap;
   }
 
   /* Seat 행: 번호·이름·버튼·타이머 한 줄 (layout.html 과 동일) */
