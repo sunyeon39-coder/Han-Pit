@@ -200,15 +200,8 @@ export async function applyGlobalSeatRename(
     return true;
   }
 
+  // global_seats에 이미 있는 Seat의 카드/Box 이동 — layout_events seats 목록 검증 없이 진행
   await ensureLayoutEventShellForGlobalOps(nextEventId, nextBoxId);
-  const layoutGate = await validateLayoutEventForGlobalOps(nextEventId, nextBoxId, {
-    ensureShell: true,
-    trustGlobalSeats: true
-  });
-  if (!layoutGate.ok) {
-    alert(layoutGate.message);
-    return false;
-  }
 
   if (moved) {
     if (oldDocId === newDocId) {

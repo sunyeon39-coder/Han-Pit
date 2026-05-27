@@ -125,6 +125,11 @@ export async function validateLayoutEventForGlobalOps(eventId = "", boxId = "", 
   const requireSeatId = String(opts.requireSeatId || "").trim();
   const trustGlobalSeats = opts.trustGlobalSeats !== false;
 
+  if (opts.allowSeatMigration) {
+    await ensureLayoutEventShellForGlobalOps(e, b);
+    return { ok: true };
+  }
+
   if (opts.ensureShell) {
     await ensureLayoutEventShellForGlobalOps(e, b);
   }

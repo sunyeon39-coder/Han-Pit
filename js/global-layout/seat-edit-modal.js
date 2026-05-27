@@ -130,6 +130,16 @@ function renderEventList(els, events, currentId) {
   }
 }
 
+/** 드롭다운 표시명(제목)이 hidden에 들어간 경우 실제 카드 doc id로 변환 */
+function resolveEventIdForSave(rawId = "", cachedEvents = []) {
+  const raw = String(rawId || "").trim();
+  if (!raw) return "";
+  if (cachedEvents.some((ev) => String(ev?.id || "").trim() === raw)) return raw;
+  const byTitle = cachedEvents.find((ev) => String(ev?.title || "").trim() === raw);
+  if (byTitle) return String(byTitle.id || "").trim();
+  return raw;
+}
+
 function syncTriggerLabel(els, events, currentId) {
   const id = String(currentId || "").trim();
   if (!id) {
@@ -192,9 +202,10 @@ export async function openSeatEditModal(seatId = "") {
   }
 
   seatEditModalEventsCache = events;
-  renderEventList(els, events, ev);
-  els.eventId.value = ev;
-  syncTriggerLabel(els, events, ev);
+  const resolvedEv = resolveEventIdForSave(ev, events);
+  renderEventList(els, events, resolvedEv || ev);
+  els.eventId.value = resolvedEv || ev;
+  syncTriggerLabel(els, events, resolvedEv || ev);
   const boxFromCard = resolveBoxIdForEventId(
     ev,
     events.find((e) => String(e.id || "") === String(ev)),
@@ -217,8 +228,9 @@ async function onSaveClick() {
   if (!els || !currentSeatId) return;
 
   const nextLabel = String(els.label?.value || "").trim();
-  const nextEventId = String(els.eventId?.value || "").trim();
+  const nextEventId = resolveEventIdForSave(els.eventId?.value, seatEditModalEventsCache);
   const nextBoxId = String(els.boxId?.value || "").trim();
+  if (els.eventId && nextEventId) els.eventId.value = nextEventId;
 
   if (!nextLabel) {
     alert("Seat 라벨은 비울 수 없습니다.");
