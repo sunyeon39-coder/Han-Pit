@@ -251,7 +251,7 @@ export async function applyGlobalSeatRename(
   const knownCard = eventCards.some((ev) => String(ev?.id || "").trim() === resolvedNextEventId);
   if (!knownCard && looksLikeDisplayTitleNotId(resolvedNextEventId)) {
     alert(
-      "카드는 목록에서 선택해 주세요.\nindex「카드 관리」에 등록된 카드 또는 layout에 열린 박스만 사용할 수 있습니다."
+      "카드는 목록에서 선택해 주세요.\nindex「카드 관리」에 등록된 카드만 사용할 수 있습니다."
     );
     return false;
   }
