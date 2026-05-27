@@ -337,8 +337,6 @@ export function renderSeatPanel() {
   const panelPaletteMap = buildEventBoxPaletteMap(sorted);
   const rows = sorted
     .map((s) => {
-      const eventId = s.currentEventId || s.mappedEventId || "-";
-      const boxId = s.boxId || "-";
       const occupied = !isEmptyPerson(String(s.person || "").trim());
       const name = occupied ? String(s.person || "").trim() : "-";
       const isSelf = occupied && isSeatAssignedToCurrentUser(s, auth.currentUser, GL.userProfile);
@@ -355,7 +353,6 @@ export function renderSeatPanel() {
             <span class="seat-manage-num">${escapeHtml(seatCanvasDigitsOnly(s.label, s.no))}</span>
             <div class="seat-manage-namecol">
               <span class="seat-manage-name ${occupied ? "" : "is-empty"} ${isSelf ? "is-self" : ""}">${escapeHtml(name)}</span>
-              <span class="meta-line seat-manage-submeta">event: ${escapeHtml(eventId)} / box: ${escapeHtml(boxId)}</span>
             </div>
           </div>
           <div class="seat-inline-actions">
