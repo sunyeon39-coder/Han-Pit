@@ -128,7 +128,7 @@ export function createLayoutPcPanelRender(deps) {
 
     const left = [];
     const seatCount = eventState.seats.length;
-    const waitCount = waitingAll.length;
+    const waitCount = waitingAll.filter((w) => w.blockChecked !== true).length;
     const metaActionsHidden = !canManageLayout();
 
     left.push(`

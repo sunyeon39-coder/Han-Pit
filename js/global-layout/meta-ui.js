@@ -4,11 +4,12 @@ import { getCurrentTournamentWaiting, isWaitingBlocked } from "./waiting.js";
 
 export function updateGlobalLayoutWaitingMeta() {
   const waiting = getCurrentTournamentWaiting();
+  const blocked = waiting.filter((w) => isWaitingBlocked(w)).length;
+  const waitAssignable = Math.max(0, waiting.length - blocked);
   if (GL.waitingCountEl) {
-    GL.waitingCountEl.textContent = `WAIT: ${waiting.length}`;
+    GL.waitingCountEl.textContent = `WAIT: ${waitAssignable}`;
   }
   if (GL.blockedCountEl) {
-    const blocked = waiting.filter((w) => isWaitingBlocked(w)).length;
     GL.blockedCountEl.textContent = `BLOCK: ${blocked}`;
   }
 }
