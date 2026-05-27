@@ -1,3 +1,4 @@
+import { getEventCardIdFromRecord } from "../shared/tournament-event-instance.js";
 import { getNowInAppTime, normalizeDateString, parseDateTime } from "./time-utils.js";
 import { IX } from "./state.js";
 
@@ -30,6 +31,7 @@ export function normalizeEvents(docs) {
       const data = d.data() || {};
       return {
         id: d.id,
+        cardId: getEventCardIdFromRecord({ id: d.id, cardId: data.cardId }),
         boxId: String(data.boxId || "").trim(),
         date: normalizeDateString(data.date || ""),
         title: String(data.title || d.id).trim(),

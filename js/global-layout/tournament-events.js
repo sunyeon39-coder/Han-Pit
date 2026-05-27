@@ -1,5 +1,10 @@
 import { db } from "../firebase.js";
 import { collection, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import {
+  filterEventsForOperationalDay,
+  getEventCardIdFromRecord,
+  normalizeEventCardDate
+} from "../shared/tournament-event-instance.js";
 import { GL } from "./state.js";
 
 /** 드롭다운 표시명(제목) → 실제 카드 doc id */
@@ -25,13 +30,18 @@ export async function fetchTournamentEvents() {
     const data = d.data() || {};
     return {
       id: d.id,
+      cardId: getEventCardIdFromRecord({ id: d.id, cardId: data.cardId }),
       title: String(data.title || d.id).trim(),
-      boxId: String(data.boxId || "").trim()
+      boxId: String(data.boxId || "").trim(),
+      date: normalizeEventCardDate(data.date || "")
     };
   });
   list.sort((a, b) => {
-    const ta = a.title || a.id;
-    const tb = b.title || b.id;
+    const da = a.date || "";
+    const db = b.date || "";
+    if (da !== db) return da.localeCompare(db);
+    const ta = a.title || a.cardId || a.id;
+    const tb = b.title || b.cardId || b.id;
     if (ta !== tb) return ta.localeCompare(tb, "ko");
     return a.id.localeCompare(b.id);
   });
@@ -39,9 +49,10 @@ export async function fetchTournamentEvents() {
 }
 
 /**
- * Seat 수정용 카드 목록 — index「카드 관리」(tournaments/.../events)에 등록된 카드만
- * @returns {Promise<Array<{ id: string, title: string, boxId: string }>>}
+ * Seat 수정·추가용 — 운영일(당일 06:00~익일 05:59) 카드만
+ * @returns {Promise<Array<{ id: string, cardId: string, title: string, boxId: string, date: string }>>}
  */
 export async function fetchEventCardsForSeatEdit() {
-  return fetchTournamentEvents();
+  const list = await fetchTournamentEvents();
+  return filterEventsForOperationalDay(list);
 }

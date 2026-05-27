@@ -114,7 +114,8 @@ function renderEventList(els, events, currentId) {
     const empty = document.createElement("li");
     empty.className = "global-seat-edit-modal__select-empty is-muted";
     empty.setAttribute("role", "presentation");
-    empty.textContent = "등록된 카드가 없습니다. index에서 카드를 먼저 만드세요.";
+    empty.textContent =
+      "운영일(06:00~익일 05:59)에 해당하는 카드가 없습니다. index에서 해당 날짜 카드를 만드세요.";
     els.eventList.appendChild(empty);
     return;
   }
@@ -127,10 +128,15 @@ function renderEventList(els, events, currentId) {
     li.dataset.eventBox = ev.boxId || "";
     const title = String(ev.title || "").trim() || ev.id;
     const boxId = String(ev.boxId || "").trim() || "1";
-    const sub =
-      title !== ev.id
-        ? `${escapeHtml(ev.id)} · box ${escapeHtml(boxId)}`
-        : `box ${escapeHtml(boxId)}`;
+    const cardId = String(ev.cardId || ev.id || "").trim();
+    const date = String(ev.date || "").trim();
+    const sub = [
+      date ? escapeHtml(date) : "",
+      `카드 ${escapeHtml(cardId)}`,
+      `box ${escapeHtml(boxId)}`
+    ]
+      .filter(Boolean)
+      .join(" · ");
     li.innerHTML = `${escapeHtml(title)}<span class="global-seat-edit-modal__opt-sub">${sub}</span>`;
     if (cur && ev.id === cur) li.classList.add("is-active");
     els.eventList.appendChild(li);

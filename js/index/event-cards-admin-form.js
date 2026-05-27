@@ -39,7 +39,7 @@ export function syncSelectedEventForm() {
     return;
   }
 
-  IX.eventCardId.value = selected.id || "";
+  IX.eventCardId.value = selected.cardId || selected.id || "";
   IX.eventCardBoxId.value = selected.boxId || "";
   IX.eventCardDate.value = selected.date || "";
   IX.eventCardTitle.value = selected.title || "";
@@ -59,7 +59,7 @@ export function populateEventSelect(preferredId = "") {
   IX.eventCardSelect.innerHTML = IX.events
     .map(
       (e) => `
-    <option value="${escapeHtml(e.id)}">${escapeHtml(e.title)} (${escapeHtml(e.start)})</option>
+    <option value="${escapeHtml(e.id)}">${escapeHtml(e.title)} · ${escapeHtml(e.date)} ${escapeHtml(e.start)} · ${escapeHtml(e.cardId || e.id)}/${escapeHtml(e.boxId)}</option>
   `
     )
     .join("");
@@ -86,7 +86,7 @@ export function renderEventAdminList() {
       <div class="event-admin-main">
         <div class="event-admin-name">${escapeHtml(e.title)}</div>
         <div class="event-admin-meta">
-          ${escapeHtml(e.date)} · ${escapeHtml(e.start)} ~ ${escapeHtml(e.close)} · ${escapeHtml(e.boxId)}
+          ${escapeHtml(e.date)} · ${escapeHtml(e.start)} ~ ${escapeHtml(e.close)} · 카드 ${escapeHtml(e.cardId || e.id)} · ${escapeHtml(e.boxId)}
         </div>
       </div>
       <button class="event-admin-pick" type="button" data-pick-id="${escapeHtml(e.id)}">지정</button>

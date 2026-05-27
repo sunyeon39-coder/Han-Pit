@@ -1,5 +1,5 @@
 import { escapeHtml } from "./utils.js";
-import { fetchTournamentEvents } from "./tournament-events.js";
+import { fetchEventCardsForSeatEdit } from "./tournament-events.js";
 import { resolveBoxIdForEventId } from "./event-box-resolve.js";
 import { writePersistedSeatAddForm } from "./seat-add-form-persist.js";
 
@@ -51,7 +51,8 @@ function buildList(listEl, events, currentId) {
     const empty = document.createElement("li");
     empty.className = "global-seat-edit-modal__select-empty is-muted";
     empty.setAttribute("role", "presentation");
-    empty.textContent = "등록된 카드가 없습니다.";
+    empty.textContent =
+      "운영일(06:00~익일 05:59)에 해당하는 카드가 없습니다. index에서 오늘 날짜 카드를 만드세요.";
     listEl.appendChild(empty);
     return;
   }
@@ -62,11 +63,18 @@ function buildList(listEl, events, currentId) {
     li.dataset.eventId = ev.id;
     li.dataset.eventTitle = ev.title || ev.id;
     li.dataset.eventBox = ev.boxId || "";
-    const title = String(ev.title || "").trim();
-    const sub = title && title !== ev.id ? escapeHtml(title) : "";
-    li.innerHTML = sub
-      ? `${escapeHtml(ev.id)}<span class="global-seat-edit-modal__opt-sub">${sub}</span>`
-      : escapeHtml(ev.id);
+    const title = String(ev.title || "").trim() || ev.id;
+    const cardId = String(ev.cardId || ev.id || "").trim();
+    const boxId = String(ev.boxId || "").trim() || "1";
+    const date = String(ev.date || "").trim();
+    const sub = [
+      date ? escapeHtml(date) : "",
+      `카드 ${escapeHtml(cardId)}`,
+      `box ${escapeHtml(boxId)}`
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    li.innerHTML = `${escapeHtml(title)}<span class="global-seat-edit-modal__opt-sub">${sub}</span>`;
     if (cur && ev.id === cur) li.classList.add("is-active");
     listEl.appendChild(li);
   }
@@ -111,7 +119,7 @@ export async function wireSeatAddEventPicker() {
 
   let events = [];
   try {
-    events = await fetchTournamentEvents();
+    events = await fetchEventCardsForSeatEdit();
   } catch (err) {
     console.error("wireSeatAddEventPicker fetch error:", err);
   }
