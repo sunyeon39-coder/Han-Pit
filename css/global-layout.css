@@ -856,61 +856,27 @@ body.global-seat-edit-modal-open {
   cursor: not-allowed;
 }
 
-/* 대기 탭: 체크 슬롯 = 배치 탭 seat-manage-num 과 동일 32×32 (세로 늘어남 방지) */
-body.page-global-layout .pc-panel .wait-panel-row .wait-check-slot {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  align-self: center;
-  box-sizing: border-box;
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-  min-height: 32px;
-  max-width: 32px;
-  max-height: 32px;
-  padding: 0;
-  margin: 0;
-  border-radius: var(--radius-pill);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.04);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  cursor: pointer;
-}
-
-body.page-global-layout .pc-panel .wait-panel-row .wait-check-slot .wait-block-check {
-  width: 18px;
-  height: 18px;
-  margin: 0;
-  accent-color: #6e86ff;
-  cursor: pointer;
-}
-
+/* 대기 탭: 체크박스만 표시 (주변 원·테두리 없음) */
+body.page-global-layout .pc-panel .wait-panel-row .wait-check-slot,
 body.page-global-layout .global-layout-mobile .mobile-wait-row .wait-check-slot {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
   align-self: center;
-  box-sizing: border-box;
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
-  min-height: 24px;
-  max-width: 24px;
-  max-height: 24px;
   padding: 0;
   margin: 0;
-  border-radius: var(--radius-pill);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.04);
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
   cursor: pointer;
 }
 
+body.page-global-layout .pc-panel .wait-panel-row .wait-check-slot .wait-block-check,
 body.page-global-layout .global-layout-mobile .mobile-wait-row .wait-check-slot .wait-block-check {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   margin: 0;
   accent-color: #6e86ff;
   cursor: pointer;
@@ -929,8 +895,8 @@ body.page-global-layout .wait-panel-row .wait-block-badge {
 }
 
 .pc-panel .global-list .wait-block-check {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   margin: 0;
   accent-color: #6e86ff;
   cursor: pointer;
