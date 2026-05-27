@@ -258,7 +258,7 @@ export function renderWaiting(waiting = []) {
         : "";
       return `
     <div
-      class="seat-manage-row wait-panel-row ${selected ? "selected" : ""} ${blocked ? "is-blocked" : ""}"
+      class="seat-manage-row wait-panel-row gl-panel-list-row ${selected ? "selected" : ""} ${blocked ? "is-blocked" : ""}"
       data-wid="${escapeHtml(wid)}"
       data-wait-join-ms="${joinedAtMs}"
       data-block-accum-ms="${blockAccumulatedMs}"
@@ -348,7 +348,7 @@ export function renderSeatPanel() {
       const elapsed = seatedAt ? Date.now() - seatedAt : 0;
       const tClass = timerClass(elapsed);
       return `
-      <div class="seat-manage-row ${paletteClass} ${selectedRowClass}" data-select-seat="${escapeHtml(seatId)}">
+      <div class="seat-manage-row gl-panel-list-row ${paletteClass} ${selectedRowClass}" data-select-seat="${escapeHtml(seatId)}">
         <div class="seat-manage-main seat-manage-main--oneline">
           <div class="seat-manage-namewrap seat-manage-namewrap--with-num">
             <span class="seat-manage-num">${escapeHtml(seatCanvasDigitsOnly(s.label, s.no))}</span>
