@@ -952,10 +952,25 @@ body {
   border-color: rgba(95,210,164,.7);
 }
 
+.map-seat.selected{
+  border: 2px solid #4da3ff;
+  box-shadow:
+    0 0 0 2px rgba(77, 163, 255, 0.28),
+    0 8px 20px rgba(0, 0, 0, 0.22);
+  z-index: 3;
+}
+
+.seat-map-editor-toolbar .mini-btn:disabled{
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .seat-map-editor-toolbar{
   display: flex;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 10px;
+  align-items: center;
 }
 
 /* =================================================

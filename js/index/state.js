@@ -43,6 +43,8 @@ export const IX = {
   seatMapScroll: null,
 
   addSeatBtn: null,
+  alignSeatMapRowBtn: null,
+  alignSeatMapColBtn: null,
   saveMapBtn: null,
 
   stopDealerAttendanceWatch: null,
@@ -134,5 +136,7 @@ export function refreshIndexDomRefs() {
   IX.seatMapScroll = $("seatMapScroll");
 
   IX.addSeatBtn = $("addSeatBtn");
+  IX.alignSeatMapRowBtn = $("alignSeatMapRowBtn");
+  IX.alignSeatMapColBtn = $("alignSeatMapColBtn");
   IX.saveMapBtn = $("saveMapBtn");
 }

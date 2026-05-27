@@ -20,6 +20,8 @@ const MAP_BASE_HEIGHT = 900;
 const MAP_SEAT_SIZE = 48;
 const MAP_PADDING = 120;
 let seatMapEditMode = false;
+/** 맵 편집 모드에서 정렬 대상 Seat (⌘/Ctrl+클릭 다중 선택) */
+const seatMapSelectedIds = new Set();
 
 /* ===============================
    MAP SIZE HELPERS
@@ -57,14 +59,87 @@ function applySeatMapCanvasSize(canvasEl, seats = []) {
   canvasEl.style.height = `${bounds.height}px`;
 }
 
-function centerSeatMapViewport(scrollEl, canvasEl) {
-  if (!scrollEl || !canvasEl) return;
+/** 기본 진입: 캔버스 왼쪽 위(0,0) 기준 */
+function focusSeatMapViewportTopLeft(scrollEl) {
+  if (!scrollEl) return;
+  scrollEl.scrollLeft = 0;
+  scrollEl.scrollTop = 0;
+}
 
-  const maxLeft = Math.max(0, canvasEl.scrollWidth - scrollEl.clientWidth);
-  const maxTop = Math.max(0, canvasEl.scrollHeight - scrollEl.clientHeight);
+function isSeatMapMultiSelectPointer(e) {
+  return !!(e && (e.metaKey || e.ctrlKey));
+}
 
-  scrollEl.scrollLeft = Math.min(maxLeft, Math.max(0, (canvasEl.scrollWidth - scrollEl.clientWidth) / 2));
-  scrollEl.scrollTop = Math.min(maxTop, Math.max(0, (canvasEl.scrollHeight - scrollEl.clientHeight) / 2));
+function applySeatMapSelectionClick(seatId = "", multi = false) {
+  const sid = String(seatId || "").trim();
+  if (!sid) return;
+  if (multi) {
+    if (seatMapSelectedIds.has(sid)) seatMapSelectedIds.delete(sid);
+    else seatMapSelectedIds.add(sid);
+    return;
+  }
+  if (seatMapSelectedIds.size === 1 && seatMapSelectedIds.has(sid)) {
+    seatMapSelectedIds.clear();
+  } else {
+    seatMapSelectedIds.clear();
+    seatMapSelectedIds.add(sid);
+  }
+}
+
+function syncSeatMapSelectionUi() {
+  if (!IX.seatMapCanvas) return;
+  IX.seatMapCanvas.querySelectorAll(".map-seat[data-seat-id]").forEach((el) => {
+    const sid = String(el.getAttribute("data-seat-id") || "").trim();
+    el.classList.toggle("selected", seatMapSelectedIds.has(sid));
+  });
+  refreshSeatMapAlignButtons();
+}
+
+function refreshSeatMapAlignButtons() {
+  const disabled = seatMapSelectedIds.size < 2;
+  if (IX.alignSeatMapRowBtn) IX.alignSeatMapRowBtn.disabled = disabled;
+  if (IX.alignSeatMapColBtn) IX.alignSeatMapColBtn.disabled = disabled;
+}
+
+function alignEditorSeats(axis = "") {
+  const ax = String(axis || "").trim();
+  if (ax !== "row" && ax !== "col") return;
+  if (!seatMapEditMode) return;
+
+  const ids = [...seatMapSelectedIds];
+  if (ids.length < 2) {
+    alert("정렬하려면 Seat을 2개 이상 선택해 주세요.\n(⌘ 또는 Ctrl을 누른 채 클릭하면 여러 개 선택)");
+    return;
+  }
+
+  const seats = ids
+    .map((id) => IX.editorSeats.find((s) => String(s.id || "") === id))
+    .filter(Boolean);
+  if (seats.length < 2) return;
+
+  const isRow = ax === "row";
+  let sum = 0;
+  for (const seat of seats) {
+    sum += isRow ? Number(seat.y) || 0 : Number(seat.x) || 0;
+  }
+  const aligned = Math.round(sum / seats.length);
+
+  seats.forEach((seat) => {
+    if (isRow) {
+      seat.y = aligned;
+      seat.x = Math.round(Number(seat.x) || 0);
+    } else {
+      seat.x = aligned;
+      seat.y = Math.round(Number(seat.y) || 0);
+    }
+  });
+
+  renderEditor();
+}
+
+function clearSeatMapSelection() {
+  seatMapSelectedIds.clear();
+  syncSeatMapSelectionUi();
 }
 
 /* ===============================
@@ -123,11 +198,13 @@ function renderSeatMap() {
 
 function setSeatMapEditMode(editing) {
   seatMapEditMode = editing === true;
+  if (!seatMapEditMode) clearSeatMapSelection();
   IX.seatMapEditActions?.classList.toggle("hidden", !seatMapEditMode);
   const canEdit = IX.seatMapOpenEditorBtn?.dataset.canEdit === "1";
   if (IX.seatMapOpenEditorBtn) {
     IX.seatMapOpenEditorBtn.classList.toggle("hidden", seatMapEditMode || !canEdit);
   }
+  refreshSeatMapAlignButtons();
 }
 
 /* ===============================
@@ -172,6 +249,7 @@ function bindSeatMapRealtime() {
 async function loadMapEditor() {
   const snap = await getDoc(doc(db, "layout_shared", "floor_map"));
 
+  clearSeatMapSelection();
   if (!snap.exists()) {
     IX.editorSeats = [];
   } else {
@@ -191,8 +269,11 @@ function renderEditor() {
   applySeatMapCanvasSize(IX.seatMapCanvas, IX.editorSeats);
 
   IX.editorSeats.forEach((seat) => {
+    const seatId = String(seat.id || "");
     const el = document.createElement("div");
     el.className = "map-seat";
+    if (seatMapSelectedIds.has(seatId)) el.classList.add("selected");
+    el.setAttribute("data-seat-id", seatId);
 
     el.innerText = seat.label;
     el.style.left = `${seat.x}px`;
@@ -201,37 +282,61 @@ function renderEditor() {
     enableDrag(el, seat);
     IX.seatMapCanvas.appendChild(el);
   });
+
+  refreshSeatMapAlignButtons();
 }
 
 /* drag */
 
 function enableDrag(el, seat) {
+  const seatId = String(seat.id || "");
   let offsetX = 0;
   let offsetY = 0;
+  let startClientX = 0;
+  let startClientY = 0;
   let dragging = false;
+  let moved = false;
 
   el.addEventListener("mousedown", (e) => {
-    dragging = true;
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    dragging = false;
+    moved = false;
     offsetX = e.offsetX;
     offsetY = e.offsetY;
-  });
+    startClientX = e.clientX;
+    startClientY = e.clientY;
 
-  window.addEventListener("mousemove", (e) => {
-    if (!dragging) return;
+    const onMove = (ev) => {
+      const dx = ev.clientX - startClientX;
+      const dy = ev.clientY - startClientY;
+      if (!moved && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+        moved = true;
+        dragging = true;
+      }
+      if (!dragging) return;
 
-    const rect = IX.seatMapCanvas.getBoundingClientRect();
+      const rect = IX.seatMapCanvas.getBoundingClientRect();
+      seat.x = ev.clientX - rect.left - offsetX;
+      seat.y = ev.clientY - rect.top - offsetY;
+      el.style.left = `${seat.x}px`;
+      el.style.top = `${seat.y}px`;
+    };
 
-    seat.x = e.clientX - rect.left - offsetX;
-    seat.y = e.clientY - rect.top - offsetY;
+    const onUp = (ev) => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      if (!moved) {
+        applySeatMapSelectionClick(seatId, isSeatMapMultiSelectPointer(ev));
+        syncSeatMapSelectionUi();
+        return;
+      }
+      dragging = false;
+      applySeatMapCanvasSize(IX.seatMapCanvas, IX.editorSeats);
+    };
 
-    el.style.left = `${seat.x}px`;
-    el.style.top = `${seat.y}px`;
-  });
-
-  window.addEventListener("mouseup", () => {
-    if (!dragging) return;
-    dragging = false;
-    applySeatMapCanvasSize(IX.seatMapCanvas, IX.editorSeats);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
   });
 }
 
@@ -252,7 +357,7 @@ export function wireSeatMapListeners() {
     openModal(IX.seatMapModal);
 
     requestAnimationFrame(() => {
-      centerSeatMapViewport(IX.seatMapScroll, IX.seatMapCanvas);
+      focusSeatMapViewportTopLeft(IX.seatMapScroll);
     });
   });
 
@@ -264,21 +369,32 @@ export function wireSeatMapListeners() {
   IX.addSeatBtn?.addEventListener("click", () => {
   const id = String(IX.editorSeats.length + 1);
 
+  const pad = MAP_PADDING / 2;
+  const step = MAP_SEAT_SIZE + 16;
+  const index = IX.editorSeats.length;
   IX.editorSeats.push({
     id,
     label: id,
-    x: 100,
-    y: 100
+    x: pad + (index % 8) * step,
+    y: pad + Math.floor(index / 8) * step
   });
 
+  seatMapSelectedIds.clear();
+  seatMapSelectedIds.add(id);
   renderEditor();
 
   requestAnimationFrame(() => {
-    if (!IX.seatMapScroll || !IX.seatMapCanvas) return;
-    IX.seatMapScroll.scrollLeft = Math.max(0, IX.editorSeats[IX.editorSeats.length - 1].x - 120);
-    IX.seatMapScroll.scrollTop = Math.max(0, IX.editorSeats[IX.editorSeats.length - 1].y - 120);
+    focusSeatMapViewportTopLeft(IX.seatMapScroll);
   });
 });
+
+  IX.alignSeatMapRowBtn?.addEventListener("click", () => {
+    alignEditorSeats("row");
+  });
+
+  IX.alignSeatMapColBtn?.addEventListener("click", () => {
+    alignEditorSeats("col");
+  });
 
 /* save */
 
@@ -300,8 +416,14 @@ export function wireSeatMapListeners() {
     await loadMapEditor();
 
     requestAnimationFrame(() => {
-      centerSeatMapViewport(IX.seatMapScroll, IX.seatMapCanvas);
+      focusSeatMapViewportTopLeft(IX.seatMapScroll);
     });
+  });
+
+  IX.seatMapCanvas?.addEventListener("mousedown", (e) => {
+    if (!seatMapEditMode) return;
+    if (e.target.closest(".map-seat")) return;
+    clearSeatMapSelection();
   });
 
   indexSeatMapControlsWired = true;
