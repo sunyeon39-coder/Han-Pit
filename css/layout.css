@@ -987,6 +987,13 @@ input:focus{ border-color:rgba(77,163,255,.6); }
   background: rgba(255,255,255,0.02);
 }
 
+/* 통합배치도 PC 패널: mobile-wait-row 는 seat-manage-row 와 동일 */
+body.page-global-layout .pc-panel .global-list > .mobile-wait-row {
+  padding: 4px 14px;
+  margin-bottom: 10px;
+  border-radius: 18px;
+}
+
 .mobile-seat-row.selected,
 .mobile-wait-row.selected {
   border-color: rgba(59,130,246,0.85);
