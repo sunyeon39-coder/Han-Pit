@@ -3,7 +3,6 @@ import { isSeatAssignedToCurrentUser } from "../layout/layout-main-identity.js";
 import { layoutIsMobile } from "../layout/layout-main-route-env.js";
 import { GL } from "./state.js";
 import { updateGlobalLayoutMetaCounts, updateGlobalLayoutWaitingMeta } from "./meta-ui.js";
-import { renderGlobalLayoutMobile } from "./mobile-panel-render.js";
 import {
   escapeHtml,
   isEmptyPerson,
@@ -124,11 +123,17 @@ export function getDefaultEventBoxForNewSeat() {
   return { eventId: "1", boxId: "1" };
 }
 
+function renderGlobalLayoutMobileView() {
+  void import("./mobile-panel-render.js")
+    .then((m) => m.renderGlobalLayoutMobile())
+    .catch((err) => console.error("renderGlobalLayoutMobile error:", err));
+}
+
 export function renderSeats(seats = []) {
   if (!GL.app) return;
   updateGlobalLayoutMetaCounts(seats);
   if (layoutIsMobile()) {
-    renderGlobalLayoutMobile();
+    renderGlobalLayoutMobileView();
     return;
   }
   if (!seats.length) {
