@@ -253,24 +253,24 @@ export function renderGlobalLayoutMobile() {
       const blockCheckedAtMs = Number(w.blockCheckedAt || 0) || 0;
       waitCard.innerHTML += `
         <div
-          class="mobile-wait-row compact ${selected ? "selected" : ""} ${blocked ? "is-blocked" : ""}"
+          class="mobile-seat-row mobile-wait-row compact ${selected ? "selected" : ""} ${blocked ? "is-blocked" : ""}"
           data-mobile-wait="${escapeHtml(wid)}"
           data-wait-join-ms="${joinedAtMs}"
           data-block-accum-ms="${blockAccumulatedMs}"
           data-block-checked-at-ms="${blockCheckedAtMs}"
         >
-          <div class="mobile-wait-mainline">
-            <div class="mobile-wait-inline">
-              <label class="wait-block-check-wrap" title="체크 시 배치 블락">
+          <div class="mobile-seat-mainline">
+            <div class="mobile-seat-name-cluster">
+              <label class="mobile-seat-num wait-check-slot" title="체크 시 배치 블락">
                 <input type="checkbox" class="wait-block-check" data-mobile-block-w="${escapeHtml(wid)}" ${blocked ? "checked" : ""} />
               </label>
-              <div class="mobile-wait-name">${escapeHtml(w.name || w.uid || "-")}</div>
+              <div class="mobile-seat-person">${escapeHtml(w.name || w.uid || "-")}</div>
               ${blocked ? `<span class="wait-block-badge">BLOCK</span>` : ""}
-              <div class="mobile-wait-inline-actions">
-                <button type="button" class="mobile-pill-btn danger" data-del-w="${escapeHtml(wid)}">삭제</button>
-              </div>
             </div>
-            <div class="mobile-wait-right">
+            <div class="mobile-seat-inline-actions">
+              <button type="button" class="mobile-pill-btn danger" data-del-w="${escapeHtml(wid)}">삭제</button>
+            </div>
+            <div class="mobile-seat-right">
               <span class="time-chip ${tClass}" data-wait-start="${startMs}">${escapeHtml(fmtElapsed(elapsed))}</span>
             </div>
           </div>

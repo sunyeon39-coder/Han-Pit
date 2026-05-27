@@ -56,7 +56,7 @@ export function applyOptimisticWaitingBlockRow(row, checked) {
 
   row.classList.toggle("is-blocked", nextChecked);
 
-  const nameEl = row.querySelector(".mobile-wait-name");
+  const nameEl = row.querySelector(".seat-manage-name, .mobile-wait-name, .mobile-seat-person");
   let badge = row.querySelector(".wait-block-badge");
   if (nextChecked) {
     if (!badge && nameEl?.parentElement) {

@@ -237,7 +237,7 @@ export function renderWaiting(waiting = []) {
       const elapsed = Date.now() - startMs;
       const tClass = timerClass(elapsed);
       const blockCheck = GL.isAdminUser
-        ? `<label class="wait-block-check-wrap" title="체크 시 배치 블락 + 체크 시각 기준 타이머">
+        ? `<label class="seat-manage-num wait-check-slot" title="체크 시 배치 블락 + 체크 시각 기준 타이머">
             <input type="checkbox" class="wait-block-check" data-block-wid="${escapeHtml(wid)}" ${blocked ? "checked" : ""} />
           </label>`
         : "";
@@ -254,26 +254,26 @@ export function renderWaiting(waiting = []) {
       const blockAccumulatedMs = Number(w.blockAccumulatedMs || 0) || 0;
       const blockCheckedAtMs = Number(w.blockCheckedAt || 0) || 0;
       const deleteBtn = GL.isAdminUser
-        ? `<div class="mobile-wait-inline-actions">
-            <button class="pill-inline danger" type="button" data-delete-wid="${escapeHtml(wid)}">삭제</button>
-          </div>`
+        ? `<button class="pill-inline danger" type="button" data-delete-wid="${escapeHtml(wid)}">삭제</button>`
         : "";
       return `
     <div
-      class="mobile-wait-row compact ${selected ? "selected" : ""} ${blocked ? "is-blocked" : ""}"
+      class="seat-manage-row wait-panel-row ${selected ? "selected" : ""} ${blocked ? "is-blocked" : ""}"
       data-wid="${escapeHtml(wid)}"
       data-wait-join-ms="${joinedAtMs}"
       data-block-accum-ms="${blockAccumulatedMs}"
       data-block-checked-at-ms="${blockCheckedAtMs}"
     >
-      <div class="mobile-wait-mainline">
-        <div class="mobile-wait-inline">
+      <div class="seat-manage-main seat-manage-main--oneline">
+        <div class="seat-manage-namewrap seat-manage-namewrap--with-num">
           ${blockCheck}
-          <div class="mobile-wait-name">${escapeHtml(w.name || w.uid || "-")}</div>
-          ${blockBadge}
-          ${deleteBtn}
+          <div class="seat-manage-namecol">
+            <span class="seat-manage-name">${escapeHtml(w.name || w.uid || "-")}</span>
+            ${blockBadge}
+          </div>
         </div>
-        <div class="mobile-wait-right">
+        <div class="seat-inline-actions">
+          ${deleteBtn}
           <span class="time-chip ${tClass}" data-wait-start="${startMs}" data-wait-id="${escapeHtml(wid)}">${fmtElapsed(elapsed)}</span>
         </div>
       </div>

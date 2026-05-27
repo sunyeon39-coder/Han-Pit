@@ -1514,7 +1514,9 @@ input:focus{ border-color:rgba(77,163,255,.6); }
   flex: 0 0 auto;
 }
 .mobile-wait-row.compact {
-  padding: 1px 12px;
+  padding: 5px 8px;
+  margin-bottom: 4px;
+  border-radius: 12px;
 }
 
 .mobile-wait-mainline {
