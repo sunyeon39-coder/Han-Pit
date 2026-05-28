@@ -963,11 +963,11 @@ body.global-seat-edit-modal-open {
 body.page-global-layout .pc-panel .global-list > .gl-panel-list-row:not(.wait-panel-row),
 body.page-global-layout .pc-panel .global-list > .seat-manage-row:not(.wait-panel-row) {
   box-sizing: border-box;
-  padding: 8px 16px !important;
+  padding: 10px 34px !important;
   margin-bottom: 0 !important;
-  border-radius: 18px !important;
+  border-radius: 20px !important;
   gap: 12px !important;
-  min-height: 0 !important;
+  min-height: 58px !important;
   align-items: center !important;
   overflow: hidden;
 }
