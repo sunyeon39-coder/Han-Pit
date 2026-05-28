@@ -1,6 +1,7 @@
 import { db } from "../firebase.js";
 import {
   doc,
+  getDoc,
   runTransaction,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
@@ -45,9 +46,6 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
     throw new Error("waiting_blocked");
   }
 
-  const { eventId: evForMsg, boxId: bxForMsg } = resolveSeatEventBox(seat);
-  const eventDisplayTitle = await resolveTournamentEventTitle(evForMsg);
-
   const fallbackPairs = (GL.globalSeats || [])
     .filter((s) => String(s?.seatId || "").trim() === targetSeatId)
     .map((s) => resolveSeatEventBox(s));
@@ -56,6 +54,28 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
     alert("Seat 문서를 찾을 수 없습니다. 잠시 후 다시 시도해 주세요.");
     return;
   }
+
+  let seatRef = null;
+  let canonicalSeatEventId = "";
+  let canonicalSeatBoxId = "";
+  for (const ref of seatRefs) {
+    const snap = await getDoc(ref);
+    if (!snap.exists()) continue;
+    seatRef = ref;
+    const data = snap.data() || {};
+    canonicalSeatEventId = String(data.currentEventId || data.mappedEventId || "").trim();
+    canonicalSeatBoxId = String(data.boxId || "").trim();
+    break;
+  }
+  if (!seatRef) {
+    throw new Error("seat_not_found");
+  }
+  if (!canonicalSeatEventId || !canonicalSeatBoxId) {
+    const fallback = resolveSeatEventBox(seat);
+    canonicalSeatEventId = canonicalSeatEventId || fallback.eventId;
+    canonicalSeatBoxId = canonicalSeatBoxId || fallback.boxId;
+  }
+  const eventDisplayTitle = await resolveTournamentEventTitle(canonicalSeatEventId);
 
   const now = Date.now();
   const waitingRef = doc(db, "layout_shared", "global_waiting");
@@ -72,17 +92,12 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
     const waitingName = String(waiting.name || "").trim();
     const waitingTournamentId = String(waiting.tournamentId || GL.tournamentId).trim();
 
-    let seatRef = null;
-    let seatSnap = null;
-    for (const ref of seatRefs) {
-      const snap = await tx.get(ref);
-      if (!snap.exists()) continue;
-      seatRef = ref;
-      seatSnap = snap;
-      break;
-    }
-    if (!seatRef || !seatSnap?.exists()) throw new Error("seat_not_found");
+    const seatSnap = await tx.get(seatRef);
+    if (!seatSnap?.exists()) throw new Error("seat_not_found");
     const seatData = seatSnap.data() || {};
+    canonicalSeatEventId =
+      String(seatData.currentEventId || seatData.mappedEventId || canonicalSeatEventId || "").trim();
+    canonicalSeatBoxId = String(seatData.boxId || canonicalSeatBoxId || "").trim();
     const wasOccupied = !isEmptyPerson(String(seatData.person || "").trim());
 
     if (wasOccupied) {
@@ -328,12 +343,12 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
           acknowledged: false,
           createdAt: now,
           tournamentId: GL.tournamentId,
-          eventId: evForMsg,
+          eventId: canonicalSeatEventId,
           eventTitle: eventDisplayTitle,
-          boxId: bxForMsg,
+          boxId: canonicalSeatBoxId,
           seatId: seat.seatId || "",
           seatLabel: seat.label || seat.no || "",
-          targetUrl: `./layout.html?tournamentId=${encodeURIComponent(GL.tournamentId)}&eventId=${encodeURIComponent(evForMsg)}&boxId=${encodeURIComponent(bxForMsg)}&focusSeatId=${encodeURIComponent(seat.seatId || "")}`,
+          targetUrl: `./layout.html?tournamentId=${encodeURIComponent(GL.tournamentId)}&eventId=${encodeURIComponent(canonicalSeatEventId)}&boxId=${encodeURIComponent(canonicalSeatBoxId)}&focusSeatId=${encodeURIComponent(seat.seatId || "")}`,
           message: `${eventDisplayTitle} / Seat ${seat.label || seat.no || ""}에 배치되었습니다.`,
           updatedAt: now,
           updatedAtServer: serverTimestamp()
@@ -346,7 +361,8 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   GL.selectedWaitingId = "";
   GL.selectedSeatIds.clear();
   GL.selectedSeatIds.add(targetSeatId);
-  const { eventId: ev, boxId: bx } = resolveSeatEventBox(seat);
+  const ev = String(canonicalSeatEventId || "").trim();
+  const bx = String(canonicalSeatBoxId || "").trim();
   pushGlobalUndo({
     kind: "assign",
     targetSeatId,
