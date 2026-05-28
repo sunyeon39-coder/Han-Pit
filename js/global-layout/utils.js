@@ -192,3 +192,25 @@ export function getSeatById(seatId = "") {
   if (!id) return null;
   return GL.globalSeats.find((s) => String(s.seatId || "").trim() === id) || null;
 }
+
+/** 모바일·시간순 정렬·타이머용 — seatedAt 없으면 updatedAt 보조 */
+export function getGlobalSeatSeatedAtMs(seat = {}) {
+  if (isEmptyPerson(String(seat.person || "").trim())) return 0;
+  const seated = toMillis(seat.seatedAt);
+  if (seated > 0) return seated;
+  const updated = toMillis(seat.updatedAt);
+  if (updated > 0) return updated;
+  return 0;
+}
+
+/** 점유 Seat: 앉은 시각 오래된 순(위), 빈 Seat: 아래에서 라벨순 */
+export function compareGlobalSeatsBySeatedTimeOldest(a = {}, b = {}) {
+  const aOccupied = !isEmptyPerson(String(a.person || "").trim());
+  const bOccupied = !isEmptyPerson(String(b.person || "").trim());
+  if (aOccupied !== bOccupied) return aOccupied ? -1 : 1;
+  if (!aOccupied && !bOccupied) return compareSeatsByCanvasLabel(a, b);
+  const aTime = getGlobalSeatSeatedAtMs(a);
+  const bTime = getGlobalSeatSeatedAtMs(b);
+  if (aTime !== bTime) return aTime - bTime;
+  return compareSeatsByCanvasLabel(a, b);
+}

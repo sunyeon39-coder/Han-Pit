@@ -8,6 +8,8 @@ import {
   isEmptyPerson,
   seatCanvasDigitsOnly,
   compareSeatsByCanvasLabel,
+  compareGlobalSeatsBySeatedTimeOldest,
+  getGlobalSeatSeatedAtMs,
   toMillis,
   fmtElapsed,
   timerClass,
@@ -316,23 +318,8 @@ export function renderSeatPanel() {
   if (!GL.panelContent) return;
   capturePanelScroll();
   updateTabUi();
-  const nowMs = Date.now();
-  const seatedElapsedMs = (s) => {
-    if (isEmptyPerson(String(s?.person || "").trim())) return -1;
-    const t = toMillis(s.seatedAt || 0);
-    if (!t) return -1;
-    return Math.max(0, nowMs - t);
-  };
-
   const sorted = [...GL.globalSeats].sort((a, b) => {
-    if (GL.seatSortMode === "time") {
-      const ea = seatedElapsedMs(a);
-      const eb = seatedElapsedMs(b);
-      if (ea >= 0 && eb >= 0 && ea !== eb) return eb - ea;
-      if (ea >= 0 && eb < 0) return -1;
-      if (ea < 0 && eb >= 0) return 1;
-      return compareSeatsByCanvasLabel(a, b);
-    }
+    if (GL.seatSortMode === "time") return compareGlobalSeatsBySeatedTimeOldest(a, b);
     return compareSeatsByCanvasLabel(a, b);
   });
   const panelPaletteMap = buildEventBoxPaletteMap(sorted);
@@ -344,7 +331,7 @@ export function renderSeatPanel() {
       const seatId = String(s.seatId || "").trim();
       const paletteClass = getEventBoxPaletteClass(s, panelPaletteMap);
       const selectedRowClass = GL.selectedSeatIds.has(seatId) ? "selected" : "";
-      const seatedAt = toMillis(s.seatedAt || 0);
+      const seatedAt = getGlobalSeatSeatedAtMs(s);
       const elapsed = seatedAt ? Date.now() - seatedAt : 0;
       const tClass = timerClass(elapsed);
       return `

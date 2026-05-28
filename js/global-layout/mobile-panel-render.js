@@ -6,7 +6,8 @@ import {
   escapeHtml,
   isEmptyPerson,
   seatCanvasDigitsOnly,
-  compareSeatsByCanvasLabel,
+  compareGlobalSeatsBySeatedTimeOldest,
+  getGlobalSeatSeatedAtMs,
   toMillis,
   fmtElapsed,
   timerClass
@@ -36,23 +37,9 @@ function loadFirestoreOps() {
 
 const GLOBAL_MOBILE_SEAT_DOUBLE_MS = 350;
 
-/** 모바일 Seat: 앉은 지 오래된 순(빈 좌석은 아래), Seat순 토글 무시 */
+/** 모바일 Seat: 앉은 지 오래된 순(빈 좌석은 아래), PC Seat순 토글 무시 */
 function getSortedSeatsForMobile() {
-  const nowMs = Date.now();
-  const seatedElapsedMs = (s) => {
-    if (isEmptyPerson(String(s?.person || "").trim())) return -1;
-    const t = toMillis(s.seatedAt || 0);
-    if (!t) return -1;
-    return Math.max(0, nowMs - t);
-  };
-  return [...GL.globalSeats].sort((a, b) => {
-    const ea = seatedElapsedMs(a);
-    const eb = seatedElapsedMs(b);
-    if (ea >= 0 && eb >= 0 && ea !== eb) return eb - ea;
-    if (ea >= 0 && eb < 0) return -1;
-    if (ea < 0 && eb >= 0) return 1;
-    return compareSeatsByCanvasLabel(a, b);
-  });
+  return [...GL.globalSeats].sort(compareGlobalSeatsBySeatedTimeOldest);
 }
 
 function setMobileSeatSelection(seatId = "") {
@@ -99,7 +86,7 @@ export function refreshGlobalLayoutMobileTimers() {
     const occupied = !isEmptyPerson(String(seat.person || "").trim());
     const chip = row.querySelector(".mobile-seat-right .time-chip");
     if (!occupied || !chip) return;
-    const seatedAt = toMillis(seat.seatedAt || 0);
+    const seatedAt = getGlobalSeatSeatedAtMs(seat);
     const elapsed = seatedAt ? now - seatedAt : 0;
     const tClass = timerClass(elapsed);
     chip.textContent = fmtElapsed(elapsed);
@@ -179,7 +166,7 @@ export function renderGlobalLayoutMobile() {
       const isSel = GL.selectedSeatIds.has(seatId);
       const isSelf = occupied && isSeatAssignedToCurrentUser(s, auth.currentUser, GL.userProfile);
       const paletteClass = getEventBoxPaletteClass(s, paletteMap);
-      const seatedAt = occupied ? toMillis(s.seatedAt || 0) : 0;
+      const seatedAt = occupied ? getGlobalSeatSeatedAtMs(s) || Date.now() : 0;
       const elapsed = seatedAt ? Date.now() - seatedAt : 0;
       const tClass = occupied ? timerClass(elapsed) : "";
       const assignLabel = selectedWaiting
