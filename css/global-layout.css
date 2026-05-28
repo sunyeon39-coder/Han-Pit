@@ -29,9 +29,8 @@ html, body {
 }
 
 .pc-canvas .seat-box {
-  min-width: 126px;
-  min-height: 74px;
-  padding: 12px 14px;
+  min-width: 92px;
+  padding: 10px 12px;
   touch-action: none;
 }
 
@@ -979,6 +978,18 @@ body.page-global-layout .pc-panel .global-list > .mobile-wait-row .mobile-wait-m
   min-height: 32px;
   align-items: center;
   gap: 8px;
+}
+
+/* 배치 탭(우측 패널)에서 좌측 번호 원형 + 이름 영역이 너무 좁아지지 않게 보강 */
+body.page-global-layout .pc-panel .global-list > .gl-panel-list-row .seat-manage-namewrap--with-num {
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+}
+
+body.page-global-layout .pc-panel .global-list > .gl-panel-list-row .seat-manage-num {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0 10px;
 }
 
 body.page-global-layout .pc-panel .global-list > .gl-panel-list-row .seat-inline-actions .pill-inline,
