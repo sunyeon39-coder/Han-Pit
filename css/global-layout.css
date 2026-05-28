@@ -1003,16 +1003,19 @@ body.global-seat-edit-modal-open {
   cursor: not-allowed;
 }
 
-/* 통합배치도 PC 패널: 대기·배치 동일 행 (gl-panel-list-row) */
+/* 통합배치도 PC 패널: 배치 탭 행 높이 48px 고정 (padding+내부 min-height 중복 방지) */
 body.page-global-layout .pc-panel .global-list > .gl-panel-list-row:not(.wait-panel-row),
 body.page-global-layout .pc-panel .global-list > .seat-manage-row:not(.wait-panel-row) {
   box-sizing: border-box;
-  padding: 10px 16px !important;
+  display: flex !important;
+  align-items: center !important;
+  height: 48px !important;
+  min-height: 48px !important;
+  max-height: 48px !important;
+  padding: 0 14px !important;
   margin-bottom: 0 !important;
   border-radius: 16px !important;
-  gap: 12px !important;
-  min-height: 48px !important;
-  align-items: center !important;
+  gap: 0 !important;
   overflow: hidden;
 }
 
@@ -1027,13 +1030,20 @@ body.page-global-layout .pc-panel .global-list > .mobile-wait-row.compact {
   align-items: center !important;
 }
 
+body.page-global-layout .pc-panel .global-list > .gl-panel-list-row:not(.wait-panel-row) .seat-manage-main,
 body.page-global-layout .pc-panel .global-list > .gl-panel-list-row:not(.wait-panel-row) .seat-manage-main--oneline {
-  display: flex;
+  display: flex !important;
+  flex: 1 1 auto !important;
   flex-wrap: nowrap;
   align-items: center;
   justify-content: flex-start;
+  width: 100%;
+  height: 100%;
+  min-height: 0 !important;
+  max-height: 100%;
   gap: 8px;
-  min-height: 46px;
+  margin: 0;
+  padding: 0;
 }
 
 body.page-global-layout .pc-panel .global-list > .gl-panel-list-row:not(.wait-panel-row) .seat-manage-namewrap--with-num {
@@ -1063,26 +1073,52 @@ body.page-global-layout .pc-panel .global-list > .mobile-wait-row .mobile-wait-m
 }
 
 body.page-global-layout .pc-panel .global-list > .gl-panel-list-row:not(.wait-panel-row) .seat-manage-num {
+  box-sizing: border-box;
+  width: 34px;
+  height: 34px;
   min-width: 34px;
   min-height: 34px;
-  padding: 0 9px;
+  max-width: 34px;
+  max-height: 34px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1;
+}
+
+body.page-global-layout .pc-panel .global-list > .gl-panel-list-row:not(.wait-panel-row) .seat-manage-name {
+  font-size: 13px;
+  line-height: 1.2;
 }
 
 body.page-global-layout .pc-panel .global-list > .gl-panel-list-row .seat-inline-actions .pill-inline,
 body.page-global-layout .pc-panel .global-list > .mobile-wait-row .mobile-wait-inline-actions .pill-inline,
 body.page-global-layout .pc-panel .global-list > .mobile-wait-row .mobile-wait-inline-actions .mobile-pill-btn {
-  min-height: 30px;
-  height: 30px;
-  padding: 0 12px;
-  font-size: 12px;
+  min-height: 28px;
+  height: 28px;
+  max-height: 28px;
+  padding: 0 10px;
+  font-size: 11px;
   box-sizing: border-box;
+}
+
+body.page-global-layout .pc-panel .global-list > .gl-panel-list-row:not(.wait-panel-row) .seat-inline-actions .seat-icon-btn {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  max-height: 28px;
+  font-size: 13px;
 }
 
 body.page-global-layout .pc-panel .global-list > .gl-panel-list-row .seat-inline-actions .time-chip,
 body.page-global-layout .pc-panel .global-list > .mobile-wait-row .mobile-wait-right .time-chip {
-  padding: 4px 10px;
-  font-size: 12px;
+  padding: 3px 8px;
+  font-size: 11px;
   line-height: 1;
+}
+
+body.page-global-layout .pc-panel .global-list > .gl-panel-list-row:not(.wait-panel-row) .seat-inline-actions {
+  gap: 6px;
 }
 
 /* 대기 탭: 왼쪽 슬롯 32×32 = 배치 탭 seat-manage-num, 체크만 표시(테두리 없음) */
