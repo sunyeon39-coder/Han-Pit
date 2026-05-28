@@ -29,8 +29,9 @@ html, body {
 }
 
 .pc-canvas .seat-box {
-  min-width: 92px;
-  padding: 10px 12px;
+  min-width: 126px;
+  min-height: 74px;
+  padding: 12px 14px;
   touch-action: none;
 }
 
