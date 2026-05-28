@@ -15,6 +15,7 @@ import {
   validateLayoutEventForGlobalOps
 } from "./fs-layout-projection.js";
 import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
+import { pushGlobalUndo } from "./undo-stack.js";
 
 export async function assignSelectedWaitingToSeat(seatId = "") {
   const targetSeatId = String(seatId || "").trim();
@@ -346,7 +347,7 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   GL.selectedSeatIds.clear();
   GL.selectedSeatIds.add(targetSeatId);
   const { eventId: ev, boxId: bx } = resolveSeatEventBox(seat);
-  GL.lastGlobalUndo = {
+  pushGlobalUndo({
     kind: "assign",
     targetSeatId,
     eventId: ev,
@@ -354,7 +355,7 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
     waiting: JSON.parse(JSON.stringify(waiting)),
     waitingBefore: Array.isArray(undoWaitingBefore) ? undoWaitingBefore : [],
     seatBefore: undoSeatBefore || null
-  };
+  });
   await syncLayoutProjection(ev, bx);
   await Promise.all(
     Array.from(touchedProjectionKeys).map(async (k) => {

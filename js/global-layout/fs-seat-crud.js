@@ -35,6 +35,7 @@ import {
 } from "./tournament-events.js";
 import { syncSeatAddEventPickerFromHidden } from "./seat-add-event-picker.js";
 import { writePersistedSeatAddForm } from "./seat-add-form-persist.js";
+import { pushGlobalUndo } from "./undo-stack.js";
 
 /** 멀티 선택된 좌석을 같은 y(가로 일렬) 또는 같은 x(세로 일렬)로 맞춥니다. */
 export async function alignSelectedGlobalSeats(axis = "") {
@@ -116,7 +117,7 @@ export async function deleteGlobalSeat(seatId = "") {
   const seatDoc = snap.data() || {};
   await deleteDoc(ref);
   GL.selectedSeatIds.delete(targetSeatId);
-  GL.lastGlobalUndo = { kind: "delete_seat", seatId: targetSeatId, eventId, boxId, seatDoc };
+  pushGlobalUndo({ kind: "delete_seat", seatId: targetSeatId, eventId, boxId, seatDoc });
   await syncLayoutProjection(eventId, boxId);
 }
 
@@ -544,7 +545,7 @@ async function addGlobalSeatCore({ label = "", eventId = "", boxId = "", clearFo
   await syncLayoutProjection(eid, bid);
   sessionStorage.setItem("eventId", eid);
   sessionStorage.setItem("boxId", bid);
-  GL.lastGlobalUndo = { kind: "add_seat", seatId, eventId: eid, boxId: bid };
+  pushGlobalUndo({ kind: "add_seat", seatId, eventId: eid, boxId: bid });
 
   if (clearFormInputs) {
     const seatLabelInput = document.getElementById("seatLabelInput");

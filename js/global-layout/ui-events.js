@@ -29,6 +29,7 @@ import {
 import { initGlobalSeatEditModal, openSeatEditModal } from "./seat-edit-modal.js";
 import { refreshGlobalLayoutAlignButtonState } from "./canvas-viewport.js";
 import { fmtElapsed, isEmptyPerson, timerClass } from "./utils.js";
+import { getGlobalUndoCount } from "./undo-stack.js";
 
 const GLOBAL_SEAT_DOUBLE_ACTIVATE_MS = 350;
 
@@ -104,7 +105,7 @@ export function bindGlobalLayoutEventHandlers() {
     if (!GL.isAdminUser || GL.activeTab !== "seat") return;
     if (e.target.closest("#globalUndoToolbarBtn")) {
       const btn = e.target.closest("#globalUndoToolbarBtn");
-      if (!GL.lastGlobalUndo || btn?.disabled) return;
+      if (getGlobalUndoCount() <= 0 || btn?.disabled) return;
       await undoLastGlobalAction();
     }
   });

@@ -12,6 +12,7 @@ import { getCurrentTournamentWaiting } from "./waiting.js";
 import { renderSeatPanel, renderWaiting } from "./panel-ui.js";
 import { updateGlobalMetaToolbar } from "./toolbar.js";
 import { syncLayoutProjection } from "./fs-layout-projection.js";
+import { popGlobalUndo, restoreGlobalUndo, pushGlobalUndo } from "./undo-stack.js";
 
 export async function updateGlobalWaiting(nextWaiting = []) {
   await setDoc(
@@ -131,9 +132,9 @@ async function undoAssignPayload(payload) {
 }
 
 export async function undoLastGlobalAction() {
-  if (!GL.isAdminUser || !GL.lastGlobalUndo) return;
-  const snap = GL.lastGlobalUndo;
-  GL.lastGlobalUndo = null;
+  if (!GL.isAdminUser) return;
+  const snap = popGlobalUndo();
+  if (!snap) return;
   try {
     if (snap.kind === "add_seat") {
       await deleteDoc(
@@ -167,7 +168,7 @@ export async function undoLastGlobalAction() {
     }
   } catch (err) {
     console.error("undoLastGlobalAction error:", err);
-    GL.lastGlobalUndo = snap;
+    restoreGlobalUndo(snap);
     alert("되돌리기에 실패했습니다.");
     updateGlobalMetaToolbar();
     return;
@@ -219,7 +220,7 @@ export async function removeManualWaiting(waitingId = "") {
   const snapshotBefore = JSON.parse(JSON.stringify(getCurrentTournamentWaiting()));
   const next = snapshotBefore.filter((w) => String(w?.id || "") !== wid);
   await updateGlobalWaiting(next);
-  GL.lastGlobalUndo = { kind: "remove_waiting", snapshotBefore };
+  pushGlobalUndo({ kind: "remove_waiting", snapshotBefore });
   if (GL.selectedWaitingId === wid) GL.selectedWaitingId = "";
 }
 

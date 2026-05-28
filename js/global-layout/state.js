@@ -47,6 +47,9 @@ export const GL = {
   seatSortMode: "seat",
   timerHandle: null,
   panelOpen: false,
+  /** 최근 작업 undo stack (최신이 끝) */
+  globalUndoStack: [],
+  /** 하위 호환용 최신 undo 1건 캐시 */
   lastGlobalUndo: null,
   waitListScrollTop: 0,
   seatListScrollTop: 0,

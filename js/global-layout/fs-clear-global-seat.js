@@ -9,6 +9,7 @@ import { getAttendanceRef, getGlobalSeatDocRefs, isEmptyPerson, resolveSeatEvent
 import { getCandidateSeatRefsForPerson } from "./seat-candidates.js";
 import { syncLayoutProjection } from "./fs-layout-projection.js";
 import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
+import { clearGlobalUndoStack } from "./undo-stack.js";
 
 export async function clearSeat(seatId = "") {
   const targetSeatId = String(seatId || "").trim();
@@ -140,5 +141,5 @@ export async function clearSeat(seatId = "") {
 
   const { eventId, boxId } = resolveSeatEventBox(seat);
   await syncLayoutProjection(eventId, boxId);
-  GL.lastGlobalUndo = null;
+  clearGlobalUndoStack();
 }
