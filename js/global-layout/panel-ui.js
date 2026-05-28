@@ -11,8 +11,10 @@ import {
   toMillis,
   fmtElapsed,
   timerClass,
-  getSeatPosition
+  getSeatPosition,
+  getSeatById
 } from "./utils.js";
+import { renderGlobalLayoutMobile } from "./mobile-panel-render.js";
 import { getWaitingDisplayStartMs, isWaitingBlocked, sortWaitingForDisplay } from "./waiting.js";
 import { updateTabUi, updateGlobalMetaToolbar } from "./toolbar.js";
 import {
@@ -88,11 +90,7 @@ export function isTypingInPanel() {
   return false;
 }
 
-export function getSeatById(seatId = "") {
-  const id = String(seatId || "").trim();
-  if (!id) return null;
-  return GL.globalSeats.find((s) => String(s.seatId || "").trim() === id) || null;
-}
+export { getSeatById };
 
 export function getDefaultEventBoxForNewSeat() {
   if (GL.urlEventId && GL.urlBoxId) return { eventId: GL.urlEventId, boxId: GL.urlBoxId };
@@ -125,9 +123,11 @@ export function getDefaultEventBoxForNewSeat() {
 }
 
 function renderGlobalLayoutMobileView() {
-  void import("./mobile-panel-render.js")
-    .then((m) => m.renderGlobalLayoutMobile())
-    .catch((err) => console.error("renderGlobalLayoutMobile error:", err));
+  try {
+    renderGlobalLayoutMobile();
+  } catch (err) {
+    console.error("renderGlobalLayoutMobile error:", err);
+  }
 }
 
 export function renderSeats(seats = []) {

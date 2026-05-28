@@ -1,5 +1,6 @@
 import { db } from "../firebase.js";
 import { doc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { GL } from "./state.js";
 
 export { getIsAdmin } from "../shared/auth-helpers.js";
 export { escapeHtml } from "../shared/dom-utils.js";
@@ -184,4 +185,10 @@ export function toMillis(v) {
   const n = Number(v);
   if (!Number.isFinite(n) || n <= 0) return 0;
   return n < 1e11 ? Math.floor(n * 1000) : Math.floor(n);
+}
+
+export function getSeatById(seatId = "") {
+  const id = String(seatId || "").trim();
+  if (!id) return null;
+  return GL.globalSeats.find((s) => String(s.seatId || "").trim() === id) || null;
 }

@@ -1,4 +1,4 @@
-import { getSeatById } from "./panel-ui.js";
+import { getSeatById } from "./utils.js";
 import { applyGlobalSeatRename } from "./firestore-ops.js";
 import { isValidSeatLabel, isValidLayoutRouteIdPart, looksLikeDisplayTitleNotId, escapeHtml } from "./utils.js";
 import {

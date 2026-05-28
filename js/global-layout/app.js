@@ -83,6 +83,9 @@ export function startGlobalLayoutApp() {
 
       setPanelOpen(false);
       bindRealtime();
+      if (layoutIsMobile()) {
+        renderSeats(GL.globalSeats);
+      }
       updateGlobalMetaToolbar();
       if (GL.timerHandle) clearInterval(GL.timerHandle);
       GL.timerHandle = setInterval(() => {

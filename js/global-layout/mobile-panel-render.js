@@ -15,7 +15,9 @@ import {
   applyOptimisticWaitingBlockRow,
   applyWaitingBlockLocal,
   getWaitingDisplayStartMs,
-  isWaitingBlocked
+  isWaitingBlocked,
+  getCurrentTournamentWaiting,
+  sortWaitingForDisplay
 } from "./waiting.js";
 import { getEventBoxPaletteClass, buildEventBoxPaletteMap } from "./event-box-palette.js";
 import {
@@ -23,17 +25,14 @@ import {
   updateGlobalLayoutWaitingMeta,
   syncGlobalLayoutMetaPills
 } from "./meta-ui.js";
-import { openSeatEditModal } from "./seat-edit-modal.js";
-import {
-  assignSelectedWaitingToSeat,
-  clearSeat,
-  deleteGlobalSeat,
-  addGlobalSeatQuick,
-  addManualWaitingByName,
-  removeManualWaiting,
-  setWaitingBlocked
-} from "./firestore-ops.js";
-import { getCurrentTournamentWaiting, sortWaitingForDisplay } from "./waiting.js";
+
+let firestoreOpsPromise = null;
+function loadFirestoreOps() {
+  if (!firestoreOpsPromise) {
+    firestoreOpsPromise = import("./firestore-ops.js");
+  }
+  return firestoreOpsPromise;
+}
 
 const GLOBAL_MOBILE_SEAT_DOUBLE_MS = 350;
 
@@ -294,6 +293,7 @@ export function renderGlobalLayoutMobile() {
     const label = prompt("Seat 라벨", "");
     if (label === null) return;
     try {
+      const { addGlobalSeatQuick } = await loadFirestoreOps();
       await addGlobalSeatQuick(label);
     } catch (err) {
       console.error("addGlobalSeatQuick error:", err);
@@ -305,6 +305,7 @@ export function renderGlobalLayoutMobile() {
     const name = prompt("대기자 이름", "");
     if (name === null) return;
     try {
+      const { addManualWaitingByName } = await loadFirestoreOps();
       await addManualWaitingByName(name);
     } catch (err) {
       console.error("addManualWaitingByName error:", err);
@@ -332,6 +333,7 @@ export function renderGlobalLayoutMobile() {
       if (GL.selectedWaitingId) {
         setMobileSeatSelection(sid);
         try {
+          const { assignSelectedWaitingToSeat } = await loadFirestoreOps();
           await assignSelectedWaitingToSeat(sid);
           GL.selectedWaitingId = "";
         } catch (err) {
@@ -357,6 +359,7 @@ export function renderGlobalLayoutMobile() {
           GL.lastSeatTapAt = 0;
           GL.lastSeatTapId = "";
           try {
+            const { clearSeat } = await loadFirestoreOps();
             await clearSeat(sid);
             setMobileSeatSelection("");
           } catch (err) {
@@ -396,6 +399,7 @@ export function renderGlobalLayoutMobile() {
       const sid = String(btn.getAttribute("data-mobile-assign") || "").trim();
       if (!GL.selectedWaitingId || !sid) return;
       try {
+        const { assignSelectedWaitingToSeat } = await loadFirestoreOps();
         await assignSelectedWaitingToSeat(sid);
         GL.selectedWaitingId = "";
       } catch (err) {
@@ -412,6 +416,7 @@ export function renderGlobalLayoutMobile() {
       const sid = String(btn.getAttribute("data-del-seat") || "").trim();
       if (!sid || !confirm("이 좌석을 삭제하시겠습니까?")) return;
       try {
+        const { deleteGlobalSeat } = await loadFirestoreOps();
         await deleteGlobalSeat(sid);
         GL.selectedSeatIds.delete(sid);
       } catch (err) {
@@ -428,6 +433,7 @@ export function renderGlobalLayoutMobile() {
       const sid = String(btn.getAttribute("data-clear-seat") || "").trim();
       if (!sid) return;
       try {
+        const { clearSeat } = await loadFirestoreOps();
         await clearSeat(sid);
       } catch (err) {
         console.error("mobile clearSeat error:", err);
@@ -437,10 +443,12 @@ export function renderGlobalLayoutMobile() {
   });
 
   wrap.querySelectorAll("[data-rename-seat]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
+    btn.addEventListener("click", async (e) => {
       e.stopPropagation();
       const sid = String(btn.getAttribute("data-rename-seat") || "").trim();
-      if (sid) openSeatEditModal(sid);
+      if (!sid) return;
+      const { openSeatEditModal } = await import("./seat-edit-modal.js");
+      openSeatEditModal(sid);
     });
   });
 
@@ -450,6 +458,7 @@ export function renderGlobalLayoutMobile() {
       const wid = String(btn.getAttribute("data-del-w") || "").trim();
       if (!wid || !confirm("대기자를 삭제하시겠습니까?")) return;
       try {
+        const { removeManualWaiting } = await loadFirestoreOps();
         await removeManualWaiting(wid);
       } catch (err) {
         console.error("mobile removeManualWaiting error:", err);
@@ -472,6 +481,7 @@ export function renderGlobalLayoutMobile() {
       syncGlobalLayoutMetaPills(getGlobalLayoutMobileScrollEl());
       cb.disabled = true;
       try {
+        const { setWaitingBlocked } = await loadFirestoreOps();
         await setWaitingBlocked(wid, nextChecked);
       } catch (err) {
         console.error("mobile setWaitingBlocked error:", err);

@@ -676,13 +676,26 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     display: none !important;
   }
 
-  body.page-global-layout .global-layout-mobile {
-    -webkit-overflow-scrolling: touch;
-    overflow-anchor: auto;
-  }
-
   body.page-global-layout #app {
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  /* 모바일 Seat·대기 카드 목록: #app 안에서 스크롤 (layout.html .mobile 과 동일) */
+  body.page-global-layout #app > .mobile,
+  body.page-global-layout #app > .global-layout-mobile {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overflow-anchor: auto;
+    padding-bottom: 96px;
   }
 
   body.page-global-layout .seat-manage-row .seat-inline-actions {
