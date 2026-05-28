@@ -95,6 +95,11 @@ body.page-global-layout .pc-panel .global-meta-actions {
   display: none !important;
 }
 
+/* PC에서는 모바일 하단 시트를 완전히 숨김 */
+body.page-global-layout #mobileSheet {
+  display: none !important;
+}
+
 .pc-panel .global-meta-actions .seat-meta-btn {
   min-height: 28px;
   padding: 0 10px;
@@ -566,6 +571,10 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
 
   body.page-global-layout #canvasZoomBar {
     display: none !important;
+  }
+
+  body.page-global-layout #mobileSheet {
+    display: block !important;
   }
 
   body.page-global-layout .global-mobile-meta {
