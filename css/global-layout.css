@@ -965,7 +965,7 @@ body.page-global-layout .pc-panel .global-list > .seat-manage-row:not(.wait-pane
   box-sizing: border-box;
   padding: 10px 16px !important;
   margin-bottom: 0 !important;
-  border-radius: 20px !important;
+  border-radius: 16px !important;
   gap: 12px !important;
   min-height: 48px !important;
   align-items: center !important;
