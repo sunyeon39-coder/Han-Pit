@@ -976,7 +976,7 @@ body.page-global-layout .pc-panel .global-list > .mobile-wait-row.compact {
 
 body.page-global-layout .pc-panel .global-list > .gl-panel-list-row .seat-manage-main--oneline,
 body.page-global-layout .pc-panel .global-list > .mobile-wait-row .mobile-wait-mainline {
-  min-height: 38px;
+  min-height: 42px;
   align-items: center;
   gap: 8px;
 }
