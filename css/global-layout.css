@@ -965,17 +965,18 @@ body.page-global-layout .pc-panel .global-list > .seat-manage-row,
 body.page-global-layout .pc-panel .global-list > .mobile-wait-row,
 body.page-global-layout .pc-panel .global-list > .mobile-wait-row.compact {
   box-sizing: border-box;
-  padding: 4px 14px !important;
+  padding: 6px 16px !important;
   margin-bottom: 0 !important;
   border-radius: 18px !important;
   gap: 12px !important;
   min-height: 0 !important;
   align-items: center !important;
+  overflow: hidden;
 }
 
 body.page-global-layout .pc-panel .global-list > .gl-panel-list-row .seat-manage-main--oneline,
 body.page-global-layout .pc-panel .global-list > .mobile-wait-row .mobile-wait-mainline {
-  min-height: 32px;
+  min-height: 38px;
   align-items: center;
   gap: 8px;
 }
@@ -987,9 +988,9 @@ body.page-global-layout .pc-panel .global-list > .gl-panel-list-row .seat-manage
 }
 
 body.page-global-layout .pc-panel .global-list > .gl-panel-list-row .seat-manage-num {
-  min-width: 36px;
-  min-height: 36px;
-  padding: 0 10px;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0 9px;
 }
 
 body.page-global-layout .pc-panel .global-list > .gl-panel-list-row .seat-inline-actions .pill-inline,
