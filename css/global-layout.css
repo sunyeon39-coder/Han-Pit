@@ -602,6 +602,23 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     white-space: nowrap;
   }
 
+  body.page-global-layout .global-layout-mobile .mobile-wait-group-label {
+    margin: 10px 0 6px;
+    padding: 0 2px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(186, 220, 255, 0.88);
+  }
+
+  body.page-global-layout .global-layout-mobile .mobile-wait-group-label--block {
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 180, 120, 0.95);
+  }
+
   /* Seat 행: 번호·이름·버튼·타이머 한 줄 (layout.html 과 동일) */
   body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-mainline {
     display: flex;

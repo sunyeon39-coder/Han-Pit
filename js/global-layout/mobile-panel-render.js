@@ -17,7 +17,7 @@ import {
   getWaitingDisplayStartMs,
   isWaitingBlocked,
   getCurrentTournamentWaiting,
-  sortWaitingForDisplay
+  partitionWaitingForMobileDisplay
 } from "./waiting.js";
 import { getEventBoxPaletteClass, buildEventBoxPaletteMap } from "./event-box-palette.js";
 import {
@@ -36,10 +36,8 @@ function loadFirestoreOps() {
 
 const GLOBAL_MOBILE_SEAT_DOUBLE_MS = 350;
 
+/** 모바일 Seat: 앉은 지 오래된 순(빈 좌석은 아래), Seat순 토글 무시 */
 function getSortedSeatsForMobile() {
-  if (GL.seatSortMode !== "time") {
-    return [...GL.globalSeats].sort(compareSeatsByCanvasLabel);
-  }
   const nowMs = Date.now();
   const seatedElapsedMs = (s) => {
     if (isEmptyPerson(String(s?.person || "").trim())) return -1;
@@ -221,39 +219,25 @@ export function renderGlobalLayoutMobile() {
     });
   }
 
-  const waitCard = document.createElement("div");
-  waitCard.className = "card";
-  waitCard.innerHTML = `
-    <div class="mobile-section-head">
-      <h3>대기</h3>
-      <button id="globalMobileAddWaitingInline" class="btn primary" type="button">+ 대기 추가</button>
-    </div>
-  `;
-
-  const sortedWaiting = sortWaitingForDisplay(waiting);
-
-  if (!sortedWaiting.length) {
-    waitCard.innerHTML += `<div class="row"><div>대기</div><div class="muted">없음</div></div>`;
-  } else {
-    sortedWaiting.forEach((w) => {
-      const wid = String(w.id || "");
-      const selected = GL.selectedWaitingId === wid;
-      const blocked = isWaitingBlocked(w);
-      const startMs = getWaitingDisplayStartMs(w);
-      const elapsed = Date.now() - startMs;
-      const tClass = timerClass(elapsed);
-      const joinedAtMs =
-        toMillis(
-          w.joinedAt ||
-            w.createdAt ||
-            w.joinedAtServer ||
-            w.addedAt ||
-            w.carryStartedAt ||
-            0
-        ) || 0;
-      const blockAccumulatedMs = Number(w.blockAccumulatedMs || 0) || 0;
-      const blockCheckedAtMs = Number(w.blockCheckedAt || 0) || 0;
-      waitCard.innerHTML += `
+  const appendMobileWaitRowHtml = (w) => {
+    const wid = String(w.id || "");
+    const selected = GL.selectedWaitingId === wid;
+    const blocked = isWaitingBlocked(w);
+    const startMs = getWaitingDisplayStartMs(w);
+    const elapsed = Date.now() - startMs;
+    const tClass = timerClass(elapsed);
+    const joinedAtMs =
+      toMillis(
+        w.joinedAt ||
+          w.createdAt ||
+          w.joinedAtServer ||
+          w.addedAt ||
+          w.carryStartedAt ||
+          0
+      ) || 0;
+    const blockAccumulatedMs = Number(w.blockAccumulatedMs || 0) || 0;
+    const blockCheckedAtMs = Number(w.blockCheckedAt || 0) || 0;
+    return `
         <div
           class="mobile-seat-row mobile-wait-row compact ${selected ? "selected" : ""} ${blocked ? "is-blocked" : ""}"
           data-mobile-wait="${escapeHtml(wid)}"
@@ -278,7 +262,36 @@ export function renderGlobalLayoutMobile() {
           </div>
         </div>
       `;
-    });
+  };
+
+  const waitCard = document.createElement("div");
+  waitCard.className = "card";
+  waitCard.innerHTML = `
+    <div class="mobile-section-head">
+      <h3>대기</h3>
+      <button id="globalMobileAddWaitingInline" class="btn primary" type="button">+ 대기 추가</button>
+    </div>
+  `;
+
+  const { normal: normalWaiting, blocked: blockedWaiting } = partitionWaitingForMobileDisplay(waiting);
+
+  if (!normalWaiting.length && !blockedWaiting.length) {
+    waitCard.innerHTML += `<div class="row"><div>대기</div><div class="muted">없음</div></div>`;
+  } else {
+    if (normalWaiting.length) {
+      if (blockedWaiting.length) {
+        waitCard.innerHTML += `<div class="mobile-wait-group-label">배치 가능</div>`;
+      }
+      normalWaiting.forEach((w) => {
+        waitCard.innerHTML += appendMobileWaitRowHtml(w);
+      });
+    }
+    if (blockedWaiting.length) {
+      waitCard.innerHTML += `<div class="mobile-wait-group-label mobile-wait-group-label--block">BLOCK</div>`;
+      blockedWaiting.forEach((w) => {
+        waitCard.innerHTML += appendMobileWaitRowHtml(w);
+      });
+    }
   }
 
   wrap.append(seatCard, waitCard);
