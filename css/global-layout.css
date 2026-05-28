@@ -960,10 +960,8 @@ body.global-seat-edit-modal-open {
 }
 
 /* 통합배치도 PC 패널: 대기·배치 동일 행 (gl-panel-list-row) */
-body.page-global-layout .pc-panel .global-list > .gl-panel-list-row,
-body.page-global-layout .pc-panel .global-list > .seat-manage-row,
-body.page-global-layout .pc-panel .global-list > .mobile-wait-row,
-body.page-global-layout .pc-panel .global-list > .mobile-wait-row.compact {
+body.page-global-layout .pc-panel .global-list > .gl-panel-list-row:not(.wait-panel-row),
+body.page-global-layout .pc-panel .global-list > .seat-manage-row:not(.wait-panel-row) {
   box-sizing: border-box;
   padding: 6px 16px !important;
   margin-bottom: 0 !important;
@@ -974,20 +972,36 @@ body.page-global-layout .pc-panel .global-list > .mobile-wait-row.compact {
   overflow: hidden;
 }
 
-body.page-global-layout .pc-panel .global-list > .gl-panel-list-row .seat-manage-main--oneline,
-body.page-global-layout .pc-panel .global-list > .mobile-wait-row .mobile-wait-mainline {
+body.page-global-layout .pc-panel .global-list > .mobile-wait-row,
+body.page-global-layout .pc-panel .global-list > .mobile-wait-row.compact {
+  box-sizing: border-box;
+  padding: 4px 14px !important;
+  margin-bottom: 0 !important;
+  border-radius: 18px !important;
+  gap: 12px !important;
+  min-height: 0 !important;
+  align-items: center !important;
+}
+
+body.page-global-layout .pc-panel .global-list > .gl-panel-list-row:not(.wait-panel-row) .seat-manage-main--oneline {
   min-height: 42px;
   align-items: center;
   gap: 8px;
 }
 
+body.page-global-layout .pc-panel .global-list > .mobile-wait-row .mobile-wait-mainline {
+  min-height: 32px;
+  align-items: center;
+  gap: 8px;
+}
+
 /* 배치 탭(우측 패널)에서 좌측 번호 원형 + 이름 영역이 너무 좁아지지 않게 보강 */
-body.page-global-layout .pc-panel .global-list > .gl-panel-list-row .seat-manage-namewrap--with-num {
+body.page-global-layout .pc-panel .global-list > .gl-panel-list-row:not(.wait-panel-row) .seat-manage-namewrap--with-num {
   grid-template-columns: 40px minmax(0, 1fr);
   gap: 12px;
 }
 
-body.page-global-layout .pc-panel .global-list > .gl-panel-list-row .seat-manage-num {
+body.page-global-layout .pc-panel .global-list > .gl-panel-list-row:not(.wait-panel-row) .seat-manage-num {
   min-width: 34px;
   min-height: 34px;
   padding: 0 9px;
