@@ -17,9 +17,12 @@ import {
   getWaitingDisplayStartMs,
   isWaitingBlocked
 } from "./waiting.js";
-import { updateGlobalLayoutWaitingMeta } from "./meta-ui.js";
 import { getEventBoxPaletteClass, buildEventBoxPaletteMap } from "./event-box-palette.js";
-import { updateGlobalLayoutMetaCounts, updateGlobalLayoutWaitingMeta, syncGlobalLayoutMetaPills } from "./meta-ui.js";
+import {
+  updateGlobalLayoutMetaCounts,
+  updateGlobalLayoutWaitingMeta,
+  syncGlobalLayoutMetaPills
+} from "./meta-ui.js";
 import { openSeatEditModal } from "./seat-edit-modal.js";
 import {
   assignSelectedWaitingToSeat,

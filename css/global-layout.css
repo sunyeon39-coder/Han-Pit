@@ -95,11 +95,6 @@ body.page-global-layout .pc-panel .global-meta-actions {
   display: none !important;
 }
 
-/* PC에서는 모바일 하단 시트를 완전히 숨김 */
-body.page-global-layout #mobileSheet {
-  display: none !important;
-}
-
 @media (min-width: 1181px) {
   body.page-global-layout #mobileSheet,
   body.page-global-layout .mobile-sheet {
