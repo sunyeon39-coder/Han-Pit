@@ -963,7 +963,7 @@ body.global-seat-edit-modal-open {
 body.page-global-layout .pc-panel .global-list > .gl-panel-list-row:not(.wait-panel-row),
 body.page-global-layout .pc-panel .global-list > .seat-manage-row:not(.wait-panel-row) {
   box-sizing: border-box;
-  padding: 6px 16px !important;
+  padding: 8px 16px !important;
   margin-bottom: 0 !important;
   border-radius: 18px !important;
   gap: 12px !important;
@@ -984,7 +984,7 @@ body.page-global-layout .pc-panel .global-list > .mobile-wait-row.compact {
 }
 
 body.page-global-layout .pc-panel .global-list > .gl-panel-list-row:not(.wait-panel-row) .seat-manage-main--oneline {
-  min-height: 42px;
+  min-height: 46px;
   align-items: center;
   gap: 8px;
 }
