@@ -100,6 +100,16 @@ body.page-global-layout #mobileSheet {
   display: none !important;
 }
 
+@media (min-width: 1181px) {
+  body.page-global-layout #mobileSheet,
+  body.page-global-layout .mobile-sheet {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+}
+
 .pc-panel .global-meta-actions .seat-meta-btn {
   min-height: 28px;
   padding: 0 10px;
