@@ -5,7 +5,7 @@ import {
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { GL } from "./state.js";
-import { getAttendanceRef, getGlobalSeatDocRef, isEmptyPerson, resolveSeatEventBox } from "./utils.js";
+import { getAttendanceRef, getGlobalSeatDocRefs, isEmptyPerson, resolveSeatEventBox } from "./utils.js";
 import { getCandidateSeatRefsForPerson } from "./seat-candidates.js";
 import { syncLayoutProjection } from "./fs-layout-projection.js";
 import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
@@ -16,15 +16,26 @@ export async function clearSeat(seatId = "") {
   const seat = GL.globalSeats.find((s) => String(s.seatId || "").trim() === targetSeatId);
   if (!seat) return;
 
-  const seatRef = getGlobalSeatDocRef(seat, GL.tournamentId);
-  if (!seatRef) return;
+  const fallbackPairs = (GL.globalSeats || [])
+    .filter((s) => String(s?.seatId || "").trim() === targetSeatId)
+    .map((s) => resolveSeatEventBox(s));
+  const seatRefs = getGlobalSeatDocRefs(seat, GL.tournamentId, fallbackPairs);
+  if (!seatRefs.length) return;
 
   const now = Date.now();
   const waitingRef = doc(db, "layout_shared", "global_waiting");
 
   await runTransaction(db, async (tx) => {
-    const seatSnap = await tx.get(seatRef);
-    if (!seatSnap.exists()) throw new Error("seat_not_found");
+    let seatRef = null;
+    let seatSnap = null;
+    for (const ref of seatRefs) {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) continue;
+      seatRef = ref;
+      seatSnap = snap;
+      break;
+    }
+    if (!seatRef || !seatSnap?.exists()) throw new Error("seat_not_found");
     const seatData = seatSnap.data() || {};
     const prevUid = String(seatData.personUid || "").trim();
     const prevEmail = String(seatData.personEmail || "").trim();

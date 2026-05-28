@@ -5,7 +5,7 @@ import {
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { GL } from "./state.js";
-import { getAttendanceRef, getGlobalSeatDocRef, isEmptyPerson, resolveSeatEventBox } from "./utils.js";
+import { getAttendanceRef, getGlobalSeatDocRefs, isEmptyPerson, resolveSeatEventBox } from "./utils.js";
 import { getCandidateSeatRefsForPerson } from "./seat-candidates.js";
 import { getCurrentTournamentWaiting, resolveSelectedWaitingForAssign } from "./waiting.js";
 import { renderWaiting } from "./panel-ui.js";
@@ -47,8 +47,11 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   const { eventId: evForMsg, boxId: bxForMsg } = resolveSeatEventBox(seat);
   const eventDisplayTitle = await resolveTournamentEventTitle(evForMsg);
 
-  const seatRef = getGlobalSeatDocRef(seat, GL.tournamentId);
-  if (!seatRef) {
+  const fallbackPairs = (GL.globalSeats || [])
+    .filter((s) => String(s?.seatId || "").trim() === targetSeatId)
+    .map((s) => resolveSeatEventBox(s));
+  const seatRefs = getGlobalSeatDocRefs(seat, GL.tournamentId, fallbackPairs);
+  if (!seatRefs.length) {
     alert("Seat 문서를 찾을 수 없습니다. 잠시 후 다시 시도해 주세요.");
     return;
   }
@@ -67,8 +70,16 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
     const waitingName = String(waiting.name || "").trim();
     const waitingTournamentId = String(waiting.tournamentId || GL.tournamentId).trim();
 
-    const seatSnap = await tx.get(seatRef);
-    if (!seatSnap.exists()) throw new Error("seat_not_found");
+    let seatRef = null;
+    let seatSnap = null;
+    for (const ref of seatRefs) {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) continue;
+      seatRef = ref;
+      seatSnap = snap;
+      break;
+    }
+    if (!seatRef || !seatSnap?.exists()) throw new Error("seat_not_found");
     const seatData = seatSnap.data() || {};
     const wasOccupied = !isEmptyPerson(String(seatData.person || "").trim());
 

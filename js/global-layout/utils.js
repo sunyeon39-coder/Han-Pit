@@ -74,6 +74,39 @@ export function getGlobalSeatDocRef(seat = {}, tournamentId = "") {
   return doc(db, "tournaments", tid, "global_seats", buildGlobalSeatDocId(eventId, boxId, sid));
 }
 
+/** 좌석 수정 직후 문서 ID가 바뀐 경우를 대비한 후보 ref 목록 */
+export function getGlobalSeatDocRefs(seat = {}, tournamentId = "", fallbackPairs = []) {
+  const tid = String(tournamentId || "").trim();
+  const sid = String(seat?.seatId || "").trim();
+  if (!tid || !sid) return [];
+
+  const refs = [];
+  const seen = new Set();
+  const pushRef = (docId = "") => {
+    const id = String(docId || "").trim();
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    refs.push(doc(db, "tournaments", tid, "global_seats", id));
+  };
+
+  const cachedId = String(seat?.__firestoreDocId || "").trim();
+  if (cachedId) pushRef(cachedId);
+
+  const { eventId, boxId } = resolveSeatEventBox(seat);
+  if (eventId && boxId) {
+    pushRef(buildGlobalSeatDocId(eventId, boxId, sid));
+  }
+
+  for (const pair of fallbackPairs || []) {
+    const e = String(pair?.eventId || "").trim();
+    const b = String(pair?.boxId || "").trim();
+    if (!e || !b) continue;
+    pushRef(buildGlobalSeatDocId(e, b, sid));
+  }
+
+  return refs;
+}
+
 /** global_seats 문서 ID → eventId / boxId (eventId에 __ 없음 가정) */
 export function parseGlobalSeatDocId(docId = "", seatId = "") {
   const id = String(docId || "").trim();
