@@ -60,7 +60,8 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   const waitingRef = doc(db, "layout_shared", "global_waiting");
   const touchedProjectionKeys = new Set();
 
-  let didSwap = false;
+  let undoSeatBefore = null;
+  let undoWaitingBefore = null;
 
   await runTransaction(db, async (tx) => {
     const waitingId = String(waiting.id || "").trim();
@@ -162,6 +163,7 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
     const waitingSnap = await tx.get(waitingRef);
     const waitingData = waitingSnap.exists() ? (waitingSnap.data() || {}) : { waiting: [] };
     const waitingArr = Array.isArray(waitingData.waiting) ? waitingData.waiting : [];
+    undoWaitingBefore = JSON.parse(JSON.stringify(waitingArr));
 
     let nextWaiting = waitingArr.filter((w) => {
       if (!w || typeof w !== "object") return false;
@@ -182,7 +184,6 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
     let bumpedPrevHasOtherSeat = false;
 
     if (wasOccupied) {
-      didSwap = true;
       const prevUid = String(seatData.personUid || "").trim();
       const prevEmail = String(seatData.personEmail || "").trim();
       const prevName = String(seatData.person || "").trim();
@@ -269,6 +270,14 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
       }
     }
 
+    undoSeatBefore = {
+      person: String(seatData.person || "").trim(),
+      personUid: String(seatData.personUid || "").trim(),
+      personEmail: String(seatData.personEmail || "").trim(),
+      seatedAt: seatData.seatedAt ? Number(seatData.seatedAt) : null,
+      status: isEmptyPerson(String(seatData.person || "").trim()) ? "empty" : "occupied"
+    };
+
     tx.set(
       seatRef,
       {
@@ -337,17 +346,15 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   GL.selectedSeatIds.clear();
   GL.selectedSeatIds.add(targetSeatId);
   const { eventId: ev, boxId: bx } = resolveSeatEventBox(seat);
-  if (didSwap) {
-    GL.lastGlobalUndo = null;
-  } else {
-    GL.lastGlobalUndo = {
-      kind: "assign",
-      targetSeatId,
-      eventId: ev,
-      boxId: bx,
-      waiting: JSON.parse(JSON.stringify(waiting))
-    };
-  }
+  GL.lastGlobalUndo = {
+    kind: "assign",
+    targetSeatId,
+    eventId: ev,
+    boxId: bx,
+    waiting: JSON.parse(JSON.stringify(waiting)),
+    waitingBefore: Array.isArray(undoWaitingBefore) ? undoWaitingBefore : [],
+    seatBefore: undoSeatBefore || null
+  };
   await syncLayoutProjection(ev, bx);
   await Promise.all(
     Array.from(touchedProjectionKeys).map(async (k) => {

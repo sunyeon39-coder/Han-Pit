@@ -38,26 +38,43 @@ async function undoAssignPayload(payload) {
   const now = Date.now();
   const waitingRow = payload.waiting && typeof payload.waiting === "object" ? payload.waiting : null;
   if (!waitingRow) throw new Error("undo_assign_missing_waiting");
+  const waitingBefore = Array.isArray(payload.waitingBefore) ? payload.waitingBefore : null;
+  const seatBefore = payload.seatBefore && typeof payload.seatBefore === "object" ? payload.seatBefore : null;
 
   await runTransaction(db, async (tx) => {
     const wSnap = await tx.get(waitingRef);
     const wData = wSnap.exists() ? wSnap.data() || {} : {};
     const arr = Array.isArray(wData.waiting) ? [...wData.waiting] : [];
-    const wid = String(waitingRow.id || "").trim();
-    const filtered = wid ? arr.filter((w) => String(w?.id || "").trim() !== wid) : arr;
-    filtered.push(waitingRow);
+    const nextWaiting = waitingBefore
+      ? JSON.parse(JSON.stringify(waitingBefore))
+      : (() => {
+          const wid = String(waitingRow.id || "").trim();
+          const filtered = wid ? arr.filter((w) => String(w?.id || "").trim() !== wid) : arr;
+          filtered.push(waitingRow);
+          return filtered;
+        })();
 
     tx.set(
       seatRef,
-      {
-        person: "비어있음",
-        personUid: "",
-        personEmail: "",
-        seatedAt: null,
-        status: "empty",
-        updatedAt: now,
-        updatedAtServer: serverTimestamp()
-      },
+      seatBefore
+        ? {
+            person: String(seatBefore.person || "").trim() || "비어있음",
+            personUid: String(seatBefore.personUid || "").trim(),
+            personEmail: String(seatBefore.personEmail || "").trim(),
+            seatedAt: seatBefore.seatedAt ? Number(seatBefore.seatedAt) : null,
+            status: String(seatBefore.status || "").trim() || "occupied",
+            updatedAt: now,
+            updatedAtServer: serverTimestamp()
+          }
+        : {
+            person: "비어있음",
+            personUid: "",
+            personEmail: "",
+            seatedAt: null,
+            status: "empty",
+            updatedAt: now,
+            updatedAtServer: serverTimestamp()
+          },
       { merge: true }
     );
 
@@ -66,7 +83,7 @@ async function undoAssignPayload(payload) {
       {
         ...wData,
         version: 2,
-        waiting: filtered,
+        waiting: nextWaiting,
         updatedAt: now,
         updatedAtServer: serverTimestamp()
       },
@@ -83,6 +100,24 @@ async function undoAssignPayload(payload) {
           name: String(waitingRow.name || "").trim(),
           tournamentId: GL.tournamentId,
           status: "waiting",
+          statusChangedAt: now,
+          updatedAt: now,
+          updatedAtServer: serverTimestamp()
+        },
+        { merge: true }
+      );
+    }
+
+    const seatUid = String(seatBefore?.personUid || "").trim();
+    if (seatUid) {
+      tx.set(
+        getAttendanceRef(db, GL.tournamentId, seatUid),
+        {
+          uid: seatUid,
+          email: String(seatBefore?.personEmail || "").trim(),
+          name: String(seatBefore?.person || "").trim(),
+          tournamentId: GL.tournamentId,
+          status: "assigned",
           statusChangedAt: now,
           updatedAt: now,
           updatedAtServer: serverTimestamp()
