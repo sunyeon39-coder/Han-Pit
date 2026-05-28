@@ -1,3 +1,4 @@
+import { db } from "../firebase.js";
 import { doc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 export { getIsAdmin } from "../shared/auth-helpers.js";
@@ -48,6 +49,29 @@ export function looksLikeDisplayTitleNotId(id = "") {
 
 export function buildGlobalSeatDocId(eventId = "", boxId = "", seatId = "") {
   return `${String(eventId || "").trim()}__${String(boxId || "").trim()}__${String(seatId || "").trim()}`;
+}
+
+export function resolveSeatEventBox(seat = {}) {
+  const eventId = String(seat?.currentEventId || seat?.mappedEventId || "").trim();
+  const boxId = String(seat?.boxId || "").trim();
+  return { eventId, boxId };
+}
+
+/** realtime __firestoreDocId 우선 — currentEventId만 있을 때 mappedEventId 불일치로 문서를 못 찾는 경우 방지 */
+export function getGlobalSeatDocRef(seat = {}, tournamentId = "") {
+  const tid = String(tournamentId || "").trim();
+  const sid = String(seat?.seatId || "").trim();
+  if (!tid || !sid) return null;
+
+  const cachedId = String(seat?.__firestoreDocId || "").trim();
+  if (cachedId) {
+    return doc(db, "tournaments", tid, "global_seats", cachedId);
+  }
+
+  const { eventId, boxId } = resolveSeatEventBox(seat);
+  if (!eventId || !boxId) return null;
+
+  return doc(db, "tournaments", tid, "global_seats", buildGlobalSeatDocId(eventId, boxId, sid));
 }
 
 /** global_seats 문서 ID → eventId / boxId (eventId에 __ 없음 가정) */

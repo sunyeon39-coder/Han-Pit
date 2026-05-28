@@ -190,6 +190,8 @@ export function bindGlobalLayoutEventHandlers() {
           alert("BLOCK 체크된 대기자는 배치할 수 없습니다.");
         } else if (String(err?.message || "").includes("waiting_not_found")) {
           alert("해당 대기자가 이미 처리되었습니다.");
+        } else if (String(err?.message || "").includes("seat_not_found")) {
+          alert("Seat 정보를 찾을 수 없습니다. 잠시 후 다시 시도해 주세요.");
         } else {
           console.error("assignSelectedWaitingToSeat error:", err);
           alert("대기 배치에 실패했습니다.");
@@ -448,6 +450,8 @@ export function bindGlobalLayoutEventHandlers() {
           alert("BLOCK 체크된 대기자는 배치할 수 없습니다.");
         } else if (String(err?.message || "").includes("waiting_not_found")) {
           alert("해당 대기자가 이미 처리되었습니다.");
+        } else if (String(err?.message || "").includes("seat_not_found")) {
+          alert("Seat 정보를 찾을 수 없습니다. 잠시 후 다시 시도해 주세요.");
         } else {
           console.error("canvas assignSelectedWaitingToSeat error:", err);
           alert("대기 배치에 실패했습니다.");

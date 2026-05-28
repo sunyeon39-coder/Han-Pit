@@ -5,7 +5,7 @@ import {
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { GL } from "./state.js";
-import { buildGlobalSeatDocId, getAttendanceRef, isEmptyPerson } from "./utils.js";
+import { getAttendanceRef, getGlobalSeatDocRef, isEmptyPerson, resolveSeatEventBox } from "./utils.js";
 import { getCandidateSeatRefsForPerson } from "./seat-candidates.js";
 import { syncLayoutProjection } from "./fs-layout-projection.js";
 import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
@@ -16,14 +16,10 @@ export async function clearSeat(seatId = "") {
   const seat = GL.globalSeats.find((s) => String(s.seatId || "").trim() === targetSeatId);
   if (!seat) return;
 
+  const seatRef = getGlobalSeatDocRef(seat, GL.tournamentId);
+  if (!seatRef) return;
+
   const now = Date.now();
-  const seatRef = doc(
-    db,
-    "tournaments",
-    GL.tournamentId,
-    "global_seats",
-    buildGlobalSeatDocId(seat.currentEventId, seat.boxId, seat.seatId)
-  );
   const waitingRef = doc(db, "layout_shared", "global_waiting");
 
   await runTransaction(db, async (tx) => {
@@ -131,6 +127,7 @@ export async function clearSeat(seatId = "") {
     }
   });
 
-  await syncLayoutProjection(seat.currentEventId, seat.boxId);
+  const { eventId, boxId } = resolveSeatEventBox(seat);
+  await syncLayoutProjection(eventId, boxId);
   GL.lastGlobalUndo = null;
 }

@@ -195,3 +195,44 @@ export function getCurrentTournamentWaiting() {
 
   return merged;
 }
+
+/** 패널에 선택된 대기자 — 목록 필터(이미 좌석)와 무관하게 배치 트랜잭션용으로 조회 */
+export function resolveSelectedWaitingForAssign() {
+  const selId = String(GL.selectedWaitingId || "").trim();
+  if (!selId) return null;
+
+  const inDisplay = getCurrentTournamentWaiting().find((w) => String(w.id || "").trim() === selId);
+  if (inDisplay) return inDisplay;
+
+  const inactive = GL.attendanceInactiveUids instanceof Set ? GL.attendanceInactiveUids : new Set();
+
+  const fromGlobal = GL.globalWaiting.find((w) => {
+    if (String(w?.tournamentId || "").trim() !== GL.tournamentId) return false;
+    if (String(w?.id || "").trim() !== selId) return false;
+    const uid = String(w?.uid || "").trim();
+    if (uid && inactive.has(uid)) return false;
+    return true;
+  });
+  if (fromGlobal) return fromGlobal;
+
+  for (const item of GL.attendanceWaiting || []) {
+    const uid = String(item?.uid || "").trim();
+    const attId = String(item.id || `att_${uid || makeUid("att")}`).trim();
+    if (attId !== selId && selId !== uid && `att_${uid}` !== selId) continue;
+    if (uid && inactive.has(uid)) return null;
+    return {
+      id: attId,
+      uid,
+      email: String(item.email || "").trim(),
+      name: String(item.name || item.nickname || "").trim() || uid || "-",
+      tournamentId: GL.tournamentId,
+      joinedAt: Number(item.statusChangedAt || item.checkedInAt || Date.now()) || Date.now(),
+      source: "attendance_fallback",
+      blockChecked: false,
+      blockCheckedAt: null,
+      blockAccumulatedMs: 0
+    };
+  }
+
+  return null;
+}

@@ -5,9 +5,9 @@ import {
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { GL } from "./state.js";
-import { buildGlobalSeatDocId, getAttendanceRef, isEmptyPerson } from "./utils.js";
+import { getAttendanceRef, getGlobalSeatDocRef, isEmptyPerson, resolveSeatEventBox } from "./utils.js";
 import { getCandidateSeatRefsForPerson } from "./seat-candidates.js";
-import { getCurrentTournamentWaiting } from "./waiting.js";
+import { getCurrentTournamentWaiting, resolveSelectedWaitingForAssign } from "./waiting.js";
 import { renderWaiting } from "./panel-ui.js";
 import {
   resolveTournamentEventTitle,
@@ -23,8 +23,7 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   const seat = GL.globalSeats.find((s) => String(s.seatId || "").trim() === targetSeatId);
   if (!seat) return;
 
-  const ev0 = String(seat.currentEventId || seat.mappedEventId || "").trim();
-  const bx0 = String(seat.boxId || "").trim();
+  const { eventId: ev0, boxId: bx0 } = resolveSeatEventBox(seat);
   const layoutGate = await validateLayoutEventForGlobalOps(ev0, bx0, {
     requireSeatId: targetSeatId,
     ensureShell: true,
@@ -35,28 +34,26 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
     return;
   }
 
-  const waitingList = getCurrentTournamentWaiting();
-  const waiting = waitingList.find((w) => String(w.id || "") === String(GL.selectedWaitingId || ""));
+  const waiting = resolveSelectedWaitingForAssign();
   if (!waiting) {
     GL.selectedWaitingId = "";
     renderWaiting(getCurrentTournamentWaiting());
-    return;
+    throw new Error("waiting_not_found");
   }
   if (waiting.blockChecked === true) {
     throw new Error("waiting_blocked");
   }
 
-  const evForMsg = String(seat.currentEventId || seat.mappedEventId || "").trim();
+  const { eventId: evForMsg, boxId: bxForMsg } = resolveSeatEventBox(seat);
   const eventDisplayTitle = await resolveTournamentEventTitle(evForMsg);
 
+  const seatRef = getGlobalSeatDocRef(seat, GL.tournamentId);
+  if (!seatRef) {
+    alert("Seat 문서를 찾을 수 없습니다. 잠시 후 다시 시도해 주세요.");
+    return;
+  }
+
   const now = Date.now();
-  const seatRef = doc(
-    db,
-    "tournaments",
-    GL.tournamentId,
-    "global_seats",
-    buildGlobalSeatDocId(seat.currentEventId, seat.boxId, seat.seatId)
-  );
   const waitingRef = doc(db, "layout_shared", "global_waiting");
   const touchedProjectionKeys = new Set();
 
@@ -310,12 +307,12 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
           acknowledged: false,
           createdAt: now,
           tournamentId: GL.tournamentId,
-          eventId: seat.currentEventId || "",
+          eventId: evForMsg,
           eventTitle: eventDisplayTitle,
-          boxId: seat.boxId || "",
+          boxId: bxForMsg,
           seatId: seat.seatId || "",
           seatLabel: seat.label || seat.no || "",
-          targetUrl: `./layout.html?tournamentId=${encodeURIComponent(GL.tournamentId)}&eventId=${encodeURIComponent(seat.currentEventId || "")}&boxId=${encodeURIComponent(seat.boxId || "")}&focusSeatId=${encodeURIComponent(seat.seatId || "")}`,
+          targetUrl: `./layout.html?tournamentId=${encodeURIComponent(GL.tournamentId)}&eventId=${encodeURIComponent(evForMsg)}&boxId=${encodeURIComponent(bxForMsg)}&focusSeatId=${encodeURIComponent(seat.seatId || "")}`,
           message: `${eventDisplayTitle} / Seat ${seat.label || seat.no || ""}에 배치되었습니다.`,
           updatedAt: now,
           updatedAtServer: serverTimestamp()
@@ -328,8 +325,7 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   GL.selectedWaitingId = "";
   GL.selectedSeatIds.clear();
   GL.selectedSeatIds.add(targetSeatId);
-  const ev = String(seat.currentEventId || seat.mappedEventId || "").trim();
-  const bx = String(seat.boxId || "").trim();
+  const { eventId: ev, boxId: bx } = resolveSeatEventBox(seat);
   if (didSwap) {
     GL.lastGlobalUndo = null;
   } else {
