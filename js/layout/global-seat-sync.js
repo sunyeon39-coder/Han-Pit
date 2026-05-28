@@ -33,6 +33,7 @@ export function mapLayoutSeatToGlobalSeatDoc(seat = {}, ctx) {
     currentEventId: eventId,
     boxId,
     sourceLayoutDocId: eventDocId,
+    managedByLayoutSync: true,
     updatedAt: Date.now(),
     updatedAtServer: serverTimestamp()
   };
@@ -48,6 +49,7 @@ export async function syncLayoutGlobalSeatsForCurrentLayout({
   boxId,
   eventDocId,
   seats = [],
+  eventUpdatedAt = 0,
   isEmptyPerson
 }) {
   if (!tournamentId) return;
@@ -80,10 +82,15 @@ export async function syncLayoutGlobalSeatsForCurrentLayout({
       ops.push({ kind: "set", ref: globalSeatRef, seat });
     });
 
+    const safeEventUpdatedAt = Number(eventUpdatedAt || 0) || 0;
     existingDocs.forEach((d) => {
       const data = d.data() || {};
       const seatId = String(data.seatId || "").trim();
       if (!seatId || nextSeatIds.has(seatId)) return;
+      if (data.managedByLayoutSync !== true) return;
+      const docUpdatedAt = Number(data.updatedAt || 0) || 0;
+      // 오래된 layout 탭이 newer global_seats를 지우는 것을 방지한다.
+      if (safeEventUpdatedAt > 0 && docUpdatedAt > safeEventUpdatedAt) return;
       ops.push({ kind: "del", ref: d.ref });
     });
 
