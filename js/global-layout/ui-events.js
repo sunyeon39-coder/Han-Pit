@@ -186,7 +186,7 @@ export function bindGlobalLayoutEventHandlers() {
         await assignSelectedWaitingToSeat(sid);
       } catch (err) {
         if (String(err?.message || "").includes("same_person_noop")) {
-          alert("이미 그 Seat에 있는 사람입니다.");
+          alert("이미 이 Seat에 있는 사람입니다. 다른 Seat를 선택하세요.");
         } else if (String(err?.message || "").includes("waiting_blocked")) {
           alert("BLOCK 체크된 대기자는 배치할 수 없습니다.");
         } else if (String(err?.message || "").includes("waiting_not_found")) {
@@ -446,7 +446,7 @@ export function bindGlobalLayoutEventHandlers() {
         renderSeats(GL.globalSeats);
       } catch (err) {
         if (String(err?.message || "").includes("same_person_noop")) {
-          alert("이미 그 Seat에 있는 사람입니다.");
+          alert("이미 이 Seat에 있는 사람입니다. 다른 Seat를 선택하세요.");
         } else if (String(err?.message || "").includes("waiting_blocked")) {
           alert("BLOCK 체크된 대기자는 배치할 수 없습니다.");
         } else if (String(err?.message || "").includes("waiting_not_found")) {

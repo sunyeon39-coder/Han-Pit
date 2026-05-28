@@ -104,24 +104,12 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
       const seatPersonUid = String(seatData.personUid || "").trim();
       const seatPersonEmail = String(seatData.personEmail || "").trim();
       const seatEmailLc = seatPersonEmail.toLowerCase();
-      const seatPersonName = String(seatData.person || "").trim();
 
-      const samePerson =
+      const samePersonOnTargetSeat =
         (waitingUid && seatPersonUid && waitingUid === seatPersonUid) ||
-        (!waitingUid &&
-          !seatPersonUid &&
-          waitingEmailLc &&
-          seatEmailLc &&
-          waitingEmailLc === seatEmailLc) ||
-        (!waitingUid &&
-          !seatPersonUid &&
-          !waitingEmail &&
-          !seatPersonEmail &&
-          waitingName &&
-          seatPersonName &&
-          waitingName === seatPersonName);
+        (waitingEmailLc && seatEmailLc && waitingEmailLc === seatEmailLc);
 
-      if (samePerson) {
+      if (samePersonOnTargetSeat) {
         throw new Error("same_person_noop");
       }
     }
