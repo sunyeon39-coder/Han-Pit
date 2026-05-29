@@ -22,10 +22,17 @@ service cloud.firestore {
         request.auth.token.email.lower() == "sunyeon9501@gmail.com";
     }
 
+    // app shared/auth-helpers.js — hasAnyDirectEventAllow 와 동기화
+    function hasDirectEventAllow() {
+      return userDocExists() &&
+        userDoc().data.get('allowedEvents', {}).size() > 0;
+    }
+
     function isAdmin() {
       return signedIn() && (
         isAdminEmailToken() ||
-        (userDocExists() && userDoc().data.role == "admin")
+        (userDocExists() && userDoc().data.role == "admin") ||
+        hasDirectEventAllow()
       );
     }
 
