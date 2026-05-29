@@ -61,13 +61,22 @@ function openEventPickList() {
   queueMicrotask(() => document.addEventListener("click", eventPickDocListener, true));
 }
 
-/** 트리거: `카드ID ▾` 한 줄 (▾는 드롭다운임을 드러냄). 제목은 aria-label·목록에서 안내 */
+function eventCardDisplayId(event = {}, fallbackId = "") {
+  const display = getEventCardIdFromRecord(event);
+  if (display) return display;
+  return String(fallbackId || event?.id || "").trim();
+}
+
+/** 트리거: 카드 ID만 표시. 긴 제목은 aria-label 보조 */
 function setEventSelection(els, eventId, titleHint = "") {
   if (!els?.eventId || !els.eventTriggerText) return;
   const id = String(eventId || "").trim();
   els.eventId.value = id;
   const found = seatEditModalEventsCache.find((ev) => String(ev.id || "").trim() === id);
-  const label = found ? String(found.title || id).trim() : id;
+  const parsed = parseEventInstanceDocId(id);
+  const label = found
+    ? eventCardDisplayId(found, id)
+    : parsed?.cardId || getEventCardIdFromRecord({ id }) || id;
   els.eventTriggerText.textContent = id ? `${label} ▾` : "카드 선택 ▾";
   if (els.eventTrigger) {
     const hint = String(titleHint || "").trim();
