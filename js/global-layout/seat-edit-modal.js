@@ -1,7 +1,10 @@
 import { getSeatById } from "./utils.js";
 import { applyGlobalSeatRename } from "./firestore-ops.js";
 import { isValidSeatLabel, isValidLayoutRouteIdPart, looksLikeDisplayTitleNotId, escapeHtml } from "./utils.js";
-import { getEventCardIdFromRecord } from "../shared/tournament-event-instance.js";
+import {
+  getEventCardIdFromRecord,
+  parseEventInstanceDocId
+} from "../shared/tournament-event-instance.js";
 import {
   fetchEventCardsForSeatEdit,
   resolveEventIdForSave
@@ -98,18 +101,6 @@ function renderEventList(els, events, currentId) {
   if (!els?.eventList) return;
   els.eventList.innerHTML = "";
   const cur = String(currentId || "").trim();
-  const ids = new Set(events.map((e) => e.id));
-
-  if (cur && !ids.has(cur)) {
-    const li = document.createElement("li");
-    li.setAttribute("role", "option");
-    li.className = "is-muted";
-    li.dataset.eventId = cur;
-    li.dataset.eventTitle = cur;
-    li.dataset.eventBox = "";
-    li.innerHTML = `${escapeHtml(cur)}<span class="global-seat-edit-modal__opt-sub">Firestore 목록에 없는 ID (현재 Seat 값)</span>`;
-    els.eventList.appendChild(li);
-  }
 
   if (!events.length && !cur) {
     const empty = document.createElement("li");

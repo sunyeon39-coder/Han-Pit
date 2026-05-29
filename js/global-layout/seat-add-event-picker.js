@@ -1,5 +1,8 @@
 import { escapeHtml } from "./utils.js";
-import { getEventCardIdFromRecord } from "../shared/tournament-event-instance.js";
+import {
+  getEventCardIdFromRecord,
+  parseEventInstanceDocId
+} from "../shared/tournament-event-instance.js";
 import { fetchEventCardsForSeatEdit } from "./tournament-events.js";
 import { resolveBoxIdForEventId } from "./event-box-resolve.js";
 import { writePersistedSeatAddForm } from "./seat-add-form-persist.js";
@@ -17,7 +20,10 @@ function formatSeatAddTriggerLabel(eventId = "") {
   const id = String(eventId || "").trim();
   if (!id) return "카드 선택 ▾";
   const found = seatAddEventsCache.find((e) => String(e.id || "") === id);
-  const label = found ? eventCardDisplayId(found, id) : id;
+  const parsed = parseEventInstanceDocId(id);
+  const label = found
+    ? eventCardDisplayId(found, id)
+    : parsed?.cardId || getEventCardIdFromRecord({ id }) || id;
   return `${label} ▾`;
 }
 
@@ -50,18 +56,6 @@ function buildList(listEl, events, currentId) {
   if (!listEl) return;
   listEl.innerHTML = "";
   const cur = String(currentId || "").trim();
-  const ids = new Set(events.map((e) => e.id));
-
-  if (cur && !ids.has(cur)) {
-    const li = document.createElement("li");
-    li.setAttribute("role", "option");
-    li.className = "is-muted";
-    li.dataset.eventId = cur;
-    li.dataset.eventTitle = cur;
-    li.dataset.eventBox = "";
-    li.innerHTML = `${escapeHtml(cur)}<span class="global-seat-edit-modal__opt-sub">목록에 없는 ID (현재 값)</span>`;
-    listEl.appendChild(li);
-  }
 
   if (!events.length && !cur) {
     const empty = document.createElement("li");
