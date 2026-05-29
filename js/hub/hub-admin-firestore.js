@@ -1,10 +1,12 @@
 import {
   doc,
+  getDoc,
   setDoc,
   updateDoc,
   deleteDoc,
   deleteField
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { pickUnusedLayoutAccentColor } from "../shared/layout-operator-colors.js";
 import { db } from "../firebase.js";
 import { isAdminEmail } from "../app_config.js";
 import { hasAnyDirectEventAllow } from "../shared/auth-helpers.js";
@@ -113,14 +115,23 @@ export async function grantEventDirectly(uid, eventId) {
   }
 
   try {
-    await updateDoc(doc(db, "users", uid), {
+    const userRef = doc(db, "users", uid);
+    const userSnap = await getDoc(userRef);
+    const prev = userSnap.exists() ? userSnap.data() || {} : {};
+    const layoutAccentColor =
+      String(prev.layoutAccentColor || "").trim() ||
+      pickUnusedLayoutAccentColor(hubState.usersCache, uid);
+
+    await updateDoc(userRef, {
       role: "admin",
+      layoutAccentColor,
       [`allowedEvents.${eventId}`]: true
     });
 
     const user = hubState.usersCache.find((u) => u.uid === uid);
     if (user) {
       user.role = "admin";
+      user.layoutAccentColor = layoutAccentColor;
       user.allowedEvents = {
         ...(user.allowedEvents || {}),
         [eventId]: true

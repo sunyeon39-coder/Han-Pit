@@ -11,6 +11,7 @@ import { GL } from "./state.js";
 import { updateGlobalLayoutWaitingMeta } from "./meta-ui.js";
 import { renderSeats, renderSeatPanel, renderWaiting } from "./panel-ui.js";
 import { getCurrentTournamentWaiting } from "./waiting.js";
+import { applyOperatorPicksFromDoc } from "./waiting-picks.js";
 import { getAttendanceRef, isEmptyPerson } from "./utils.js";
 import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
 
@@ -158,6 +159,7 @@ export function bindRealtime() {
     (snap) => {
       const data = snap.exists() ? (snap.data() || {}) : {};
       GL.globalWaiting = Array.isArray(data.waiting) ? data.waiting : [];
+      applyOperatorPicksFromDoc(data);
       const filtered = getCurrentTournamentWaiting();
       updateGlobalLayoutWaitingMeta();
       renderWaiting(filtered);

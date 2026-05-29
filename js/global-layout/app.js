@@ -3,6 +3,8 @@ import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/fi
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { GL, initGlFromUrl, initGlDomRefs } from "./state.js";
 import { getIsAdmin } from "./utils.js";
+import { resolveLayoutAccentColor } from "../shared/layout-operator-colors.js";
+import { clearMyWaitingPick } from "./waiting-picks.js";
 import { layoutIsMobile } from "../layout/layout-main-route-env.js";
 import {
   updateCanvasSeatTimerClasses,
@@ -56,8 +58,13 @@ export function startGlobalLayoutApp() {
   const flushAppBadgeIfVisible = bindAppBadgeClearOnForeground(db, auth);
   void ensureForegroundFcmBadgeListener();
 
+  window.addEventListener("beforeunload", () => {
+    void clearMyWaitingPick();
+  });
+
   onAuthStateChanged(auth, async (user) => {
     if (!user) {
+      void clearMyWaitingPick();
       location.replace("./login.html");
       return;
     }
@@ -69,8 +76,14 @@ export function startGlobalLayoutApp() {
         const { normalizeAndPersistUserRole } = await import("../login/user-sync.js");
         profile = await normalizeAndPersistUserRole(user.uid, profile, user.email || "");
       }
+      GL.currentUser = user;
       GL.userProfile = profile || {};
       GL.isAdminUser = getIsAdmin(user, GL.userProfile);
+      GL.layoutAccentColor = resolveLayoutAccentColor(
+        GL.userProfile,
+        user.uid,
+        user.email || ""
+      );
       if (!GL.isAdminUser) {
         alert("관리자만 접근할 수 있습니다.");
         location.replace("./index.html");

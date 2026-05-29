@@ -47,7 +47,8 @@ export function normalizeUserDoc(d) {
     email: data.email || "",
     role: data.role || "user",
     accessCode: data.accessCode || "",
-    allowedEvents: data.allowedEvents || {}
+    allowedEvents: data.allowedEvents || {},
+    layoutAccentColor: data.layoutAccentColor || ""
   };
 }
 

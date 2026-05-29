@@ -37,6 +37,11 @@ export const GL = {
   selectedSeatIds: new Set(),
 
   isAdminUser: false,
+  currentUser: null,
+  /** users.layoutAccentColor — 직접 허용 시 Hub에서 부여 */
+  layoutAccentColor: "#4DA3FF",
+  /** layout_shared/global_waiting.operatorPicks */
+  operatorPicks: {},
   /** 본인 좌석 강조용 (users 프로필 스냅샷) */
   userProfile: null,
   hasShownPermissionAlert: false,

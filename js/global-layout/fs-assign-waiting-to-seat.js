@@ -21,6 +21,7 @@ import {
 } from "./fs-layout-projection.js";
 import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
 import { pushGlobalUndo } from "./undo-stack.js";
+import { clearMyWaitingPick } from "./waiting-picks.js";
 
 export async function assignSelectedWaitingToSeat(seatId = "") {
   const targetSeatId = String(seatId || "").trim();
@@ -346,6 +347,7 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   });
 
   GL.selectedWaitingId = "";
+  void clearMyWaitingPick();
   GL.selectedSeatIds.clear();
   GL.selectedSeatIds.add(targetSeatId);
   const ev = String(canonicalSeatEventId || "").trim();

@@ -18,6 +18,11 @@ import {
 } from "./utils.js";
 import { renderGlobalLayoutMobile } from "./mobile-panel-render.js";
 import { getWaitingDisplayStartMs, isWaitingBlocked, sortWaitingForDisplay } from "./waiting.js";
+import {
+  buildOperatorLegendHtml,
+  buildWaitingPickBadgesHtml,
+  waitingRowPickClass
+} from "./waiting-picks.js";
 import { updateTabUi, updateGlobalMetaToolbar } from "./toolbar.js";
 import {
   applyGlobalLayoutCanvasTransform,
@@ -234,6 +239,7 @@ export function renderWaiting(waiting = []) {
     .map((w) => {
       const wid = String(w.id || "");
       const selected = GL.selectedWaitingId === wid;
+      const pickUi = waitingRowPickClass(wid, selected);
       const blocked = isWaitingBlocked(w);
       const startMs = getWaitingDisplayStartMs(w);
       const elapsed = Date.now() - startMs;
@@ -260,7 +266,8 @@ export function renderWaiting(waiting = []) {
         : "";
       return `
     <div
-      class="seat-manage-row wait-panel-row gl-panel-list-row ${selected ? "selected" : ""} ${blocked ? "is-blocked" : ""}"
+      class="seat-manage-row wait-panel-row gl-panel-list-row ${selected ? "selected" : ""} ${blocked ? "is-blocked" : ""} ${pickUi.classes}"
+      style="--wait-pick-color:${escapeHtml(pickUi.pickColor)}"
       data-wid="${escapeHtml(wid)}"
       data-wait-join-ms="${joinedAtMs}"
       data-block-accum-ms="${blockAccumulatedMs}"
@@ -271,6 +278,7 @@ export function renderWaiting(waiting = []) {
           ${blockCheck}
           <div class="seat-manage-namecol">
             <span class="seat-manage-name">${escapeHtml(w.name || w.uid || "-")}</span>
+            ${buildWaitingPickBadgesHtml(wid)}
             ${blockBadge}
           </div>
         </div>
@@ -289,6 +297,7 @@ export function renderWaiting(waiting = []) {
       <input id="manualWaitingNameInput" placeholder="-" autocomplete="off" />
       <button id="addManualWaitingBtn" class="pill-inline full" type="button">+ 대기 추가</button>
     </div>
+    ${buildOperatorLegendHtml()}
     <div class="global-list">
       ${waitingRows || `<div class="empty-panel">현재 대기자가 없습니다.</div>`}
     </div>

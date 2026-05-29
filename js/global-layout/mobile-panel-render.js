@@ -20,6 +20,12 @@ import {
   getCurrentTournamentWaiting,
   partitionWaitingForMobileDisplay
 } from "./waiting.js";
+import {
+  buildOperatorLegendHtml,
+  buildWaitingPickBadgesHtml,
+  waitingRowPickClass,
+  syncMyWaitingPick
+} from "./waiting-picks.js";
 import { getEventBoxPaletteClass, buildEventBoxPaletteMap } from "./event-box-palette.js";
 import {
   updateGlobalLayoutMetaCounts,
@@ -209,6 +215,7 @@ export function renderGlobalLayoutMobile() {
   const appendMobileWaitRowHtml = (w) => {
     const wid = String(w.id || "");
     const selected = GL.selectedWaitingId === wid;
+    const pickUi = waitingRowPickClass(wid, selected);
     const blocked = isWaitingBlocked(w);
     const startMs = getWaitingDisplayStartMs(w);
     const elapsed = Date.now() - startMs;
@@ -226,7 +233,8 @@ export function renderGlobalLayoutMobile() {
     const blockCheckedAtMs = Number(w.blockCheckedAt || 0) || 0;
     return `
         <div
-          class="mobile-seat-row mobile-wait-row compact ${selected ? "selected" : ""} ${blocked ? "is-blocked" : ""}"
+          class="mobile-seat-row mobile-wait-row compact ${selected ? "selected" : ""} ${blocked ? "is-blocked" : ""} ${pickUi.classes}"
+          style="--wait-pick-color:${escapeHtml(pickUi.pickColor)}"
           data-mobile-wait="${escapeHtml(wid)}"
           data-wait-join-ms="${joinedAtMs}"
           data-block-accum-ms="${blockAccumulatedMs}"
@@ -238,6 +246,7 @@ export function renderGlobalLayoutMobile() {
                 <input type="checkbox" class="wait-block-check" data-mobile-block-w="${escapeHtml(wid)}" ${blocked ? "checked" : ""} />
               </label>
               <div class="mobile-seat-person">${escapeHtml(w.name || w.uid || "-")}</div>
+              ${buildWaitingPickBadgesHtml(wid)}
               ${blocked ? `<span class="wait-block-badge">BLOCK</span>` : ""}
             </div>
             <div class="mobile-seat-inline-actions">
@@ -258,6 +267,7 @@ export function renderGlobalLayoutMobile() {
       <h3>대기</h3>
       <button id="globalMobileAddWaitingInline" class="btn primary" type="button">+ 대기 추가</button>
     </div>
+    ${buildOperatorLegendHtml()}
   `;
 
   const { normal: normalWaiting, blocked: blockedWaiting } = partitionWaitingForMobileDisplay(waiting);
@@ -389,6 +399,7 @@ export function renderGlobalLayoutMobile() {
       if (!wid) return;
       GL.selectedWaitingId = GL.selectedWaitingId === wid ? "" : wid;
       if (GL.selectedWaitingId) GL.selectedSeatIds.clear();
+      void syncMyWaitingPick(GL.selectedWaitingId);
       fullRender();
     });
   });
@@ -402,6 +413,7 @@ export function renderGlobalLayoutMobile() {
         const { assignSelectedWaitingToSeat } = await loadFirestoreOps();
         await assignSelectedWaitingToSeat(sid);
         GL.selectedWaitingId = "";
+        void syncMyWaitingPick("");
       } catch (err) {
         console.error("mobile assign button error:", err);
         alert("대기 배치에 실패했습니다.");

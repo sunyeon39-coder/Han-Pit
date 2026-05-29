@@ -10,6 +10,7 @@ import { GL } from "./state.js";
 import { buildGlobalSeatDocId, getAttendanceRef, makeUid } from "./utils.js";
 import { getCurrentTournamentWaiting } from "./waiting.js";
 import { renderSeatPanel, renderWaiting } from "./panel-ui.js";
+import { clearMyWaitingPick } from "./waiting-picks.js";
 import { updateGlobalMetaToolbar } from "./toolbar.js";
 import { syncLayoutProjection } from "./fs-layout-projection.js";
 import { popGlobalUndo, restoreGlobalUndo, pushGlobalUndo } from "./undo-stack.js";
@@ -221,7 +222,10 @@ export async function removeManualWaiting(waitingId = "") {
   const next = snapshotBefore.filter((w) => String(w?.id || "") !== wid);
   await updateGlobalWaiting(next);
   pushGlobalUndo({ kind: "remove_waiting", snapshotBefore });
-  if (GL.selectedWaitingId === wid) GL.selectedWaitingId = "";
+  if (GL.selectedWaitingId === wid) {
+    GL.selectedWaitingId = "";
+    void clearMyWaitingPick();
+  }
 }
 
 export async function setWaitingBlocked(waitingId = "", checked = false) {

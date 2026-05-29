@@ -1245,6 +1245,90 @@ body.page-global-layout .wait-panel-row .wait-block-badge {
   background: rgba(76, 114, 255, 0.2);
 }
 
+/* 운영자별 대기 선택 표시 */
+.gl-operator-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.gl-operator-legend-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 0.04em;
+}
+
+.gl-operator-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--op-color) 70%, transparent);
+  background: color-mix(in srgb, var(--op-color) 22%, transparent);
+  color: #f4f7ff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.gl-operator-chip::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--op-color);
+  flex-shrink: 0;
+}
+
+.wait-pick-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.wait-pick-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--pick-color) 75%, transparent);
+  background: color-mix(in srgb, var(--pick-color) 20%, transparent);
+  color: #eef3ff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.wait-pick-badge--self {
+  border-color: color-mix(in srgb, var(--pick-color) 90%, #fff);
+}
+
+body.page-global-layout .wait-panel-row.has-operator-pick-remote,
+body.page-global-layout .mobile-wait-row.has-operator-pick-remote {
+  box-shadow:
+    inset 4px 0 0 var(--wait-pick-color),
+    inset 0 0 0 1px color-mix(in srgb, var(--wait-pick-color) 35%, transparent);
+}
+
+body.page-global-layout .wait-panel-row.is-operator-pick-self.selected,
+body.page-global-layout .mobile-wait-row.is-operator-pick-self.selected {
+  border-color: color-mix(in srgb, var(--wait-pick-color) 85%, #fff);
+  box-shadow:
+    inset 4px 0 0 var(--wait-pick-color),
+    0 0 0 1px color-mix(in srgb, var(--wait-pick-color) 45%, transparent);
+}
+
 /* 통합 배치도: event/box 조합별 Seat 테두리 (선택 시 파란색은 layout.css .seat-box.selected 유지) */
 .pc-canvas .seat-box.eb-palette-0 {
   border-color: rgba(255, 255, 255, 0.16);
