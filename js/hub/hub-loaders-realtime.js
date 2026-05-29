@@ -21,19 +21,31 @@ import { hubRefs } from "./hub-dom-refs.js";
 import { renderTournaments } from "./hub-tournament-list.js";
 import { populateTournamentSelect, renderAdminUserList } from "./hub-admin-ui.js";
 
+async function readTournamentsSnap() {
+  const col = collection(db, "tournaments");
+  try {
+    return await getDocsFromServer(col);
+  } catch {
+    return await getDocs(col);
+  }
+}
+
+function applyTournamentsSnap(snap) {
+  if (!snap || snap.empty) {
+    hubState.tournamentsCache = [];
+    return hubState.tournamentsCache;
+  }
+  hubState.tournamentsCache = sortTournaments(snap.docs.map(normalizeTournamentDoc));
+  return hubState.tournamentsCache;
+}
+
 export async function loadTournaments() {
   try {
-    const snap = await getDocs(collection(db, "tournaments"));
-
-    if (snap.empty) {
-      hubState.tournamentsCache = [];
-      return hubState.tournamentsCache;
-    }
-
-    hubState.tournamentsCache = sortTournaments(snap.docs.map(normalizeTournamentDoc));
-    return hubState.tournamentsCache;
+    const snap = await readTournamentsSnap();
+    return applyTournamentsSnap(snap);
   } catch (err) {
     console.error("loadTournaments error:", err);
+    if (hubState.tournamentsCache.length) return hubState.tournamentsCache;
     hubState.tournamentsCache = sortTournaments(FALLBACK_TOURNAMENTS);
     return hubState.tournamentsCache;
   }
@@ -41,7 +53,13 @@ export async function loadTournaments() {
 
 export async function loadAllUsers() {
   try {
-    const snap = await getDocs(collection(db, "users"));
+    const col = collection(db, "users");
+    let snap;
+    try {
+      snap = await getDocsFromServer(col);
+    } catch {
+      snap = await getDocs(col);
+    }
     hubState.usersCache = snap.docs.map(normalizeUserDoc);
     return hubState.usersCache;
   } catch (err) {
@@ -50,22 +68,35 @@ export async function loadAllUsers() {
   }
 }
 
+async function readUserProfileSnap(uid) {
+  const userRef = doc(db, "users", uid);
+  try {
+    return await getDocFromServer(userRef);
+  } catch {
+    return await getDoc(userRef);
+  }
+}
+
+function profileFromUserSnap(snap, email = "") {
+  if (!snap?.exists()) return null;
+  const raw = snap.data() || {};
+  const profile = normalizeUserProfile(raw, email);
+  const prevRole = String(raw.role || "").trim();
+  if (profile.role !== prevRole) {
+    void updateDoc(doc(db, "users", snap.id), { role: profile.role }).catch((err) => {
+      console.warn("[loadUserProfile] role sync failed:", err);
+    });
+  }
+  return profile;
+}
+
 export async function loadUserProfile(uid, email = "") {
   try {
-    const snap = await getDoc(doc(db, "users", uid));
-    if (!snap.exists()) return null;
-    const raw = snap.data() || {};
-    const profile = normalizeUserProfile(raw, email);
-    const prevRole = String(raw.role || "").trim();
-    if (profile.role !== prevRole) {
-      void updateDoc(doc(db, "users", uid), { role: profile.role }).catch((err) => {
-        console.warn("[loadUserProfile] role sync failed:", err);
-      });
-    }
-    return profile;
+    const snap = await readUserProfileSnap(uid);
+    return profileFromUserSnap(snap, email);
   } catch (err) {
     console.error("loadUserProfile error:", err);
-    return null;
+    return hubState.currentUserProfile || null;
   }
 }
 
@@ -173,7 +204,10 @@ export function bindMyProfileRealtime(uid) {
         return;
       }
 
-      const patch = snap.data() || {};
+      const patch = normalizeUserProfile(
+        snap.data() || {},
+        hubState.currentUser?.email || hubState.currentUserProfile?.email || ""
+      );
       hubState.currentUserProfile = { ...(hubState.currentUserProfile || {}), ...patch };
 
       renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
@@ -218,22 +252,15 @@ export async function resyncHubAccessFromServer(uid) {
     }
 
     if (uSnap.exists()) {
-      const patch = uSnap.data() || {};
+      const patch = normalizeUserProfile(
+        uSnap.data() || {},
+        user.email || hubState.currentUserProfile?.email || ""
+      );
       hubState.currentUserProfile = { ...(hubState.currentUserProfile || {}), ...patch };
     }
 
-    let tSnap;
-    try {
-      tSnap = await getDocsFromServer(collection(db, "tournaments"));
-    } catch {
-      tSnap = await getDocs(collection(db, "tournaments"));
-    }
-
-    if (tSnap.empty) {
-      hubState.tournamentsCache = [];
-    } else {
-      hubState.tournamentsCache = sortTournaments(tSnap.docs.map(normalizeTournamentDoc));
-    }
+    const tSnap = await readTournamentsSnap();
+    applyTournamentsSnap(tSnap);
 
     renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
 

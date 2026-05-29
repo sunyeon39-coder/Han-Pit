@@ -3,9 +3,8 @@ import { auth, db } from "../firebase.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { logout } from "../auth.js";
 
-import { doc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
-import { resolveStoredUserRole } from "../shared/auth-helpers.js";
+import { normalizeUserProfile } from "../shared/auth-helpers.js";
+import { ensureUserDoc } from "../login/user-sync.js";
 import { getIsAdminUser } from "./hub-helpers.js";
 import { closeModal, openModal } from "../shared/dom-utils.js";
 import { isAppDebugEnabled } from "../shared/app-debug.js";
@@ -313,26 +312,28 @@ async function bootstrapHubSession(user) {
   const flow = ++hubState.hubAuthFlowGen;
   showHubListLoading();
 
-  const [profile] = await Promise.all([
+  let [profile] = await Promise.all([
     loadUserProfile(user.uid, user.email || ""),
     loadTournaments()
   ]);
   if (flow !== hubState.hubAuthFlowGen || hubState.currentUser?.uid !== user.uid) return;
 
-  hubState.currentUserProfile = profile;
-  if (!hubState.currentUserProfile) {
-    const fallbackProfile = {
-      email: user.email || "",
-      nickname: user.displayName || "",
-      role: resolveStoredUserRole(user.email || "", {}),
-      accessCode: "",
-      allowedEvents: {}
-    };
-
-    await setDoc(doc(db, "users", user.uid), fallbackProfile, { merge: true });
-    hubState.currentUserProfile = fallbackProfile;
+  if (!profile) {
+    const ensured = await ensureUserDoc(user);
+    if (ensured?.profile) {
+      profile = normalizeUserProfile(ensured.profile, user.email || "");
+    } else {
+      profile = await loadUserProfile(user.uid, user.email || "");
+    }
   }
 
+  if (!profile) {
+    throw new Error("사용자 프로필을 불러오지 못했습니다.");
+  }
+
+  hubState.currentUserProfile = profile;
+
+  await resyncHubAccessFromServer(user.uid);
   if (flow !== hubState.hubAuthFlowGen || hubState.currentUser?.uid !== user.uid) return;
 
   paintHubTournamentList();
@@ -352,9 +353,11 @@ async function bootstrapHubSession(user) {
   if (isAdmin) {
     adminBtn?.classList.remove("hidden");
     bindUsersRealtime();
-    void loadAllUsers().catch((err) => {
-      console.warn("loadAllUsers (background):", err);
-    });
+    try {
+      await loadAllUsers();
+    } catch (err) {
+      console.warn("loadAllUsers:", err);
+    }
   } else {
     adminBtn?.classList.add("hidden");
   }
