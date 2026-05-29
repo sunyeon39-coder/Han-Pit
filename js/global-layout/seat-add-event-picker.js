@@ -1,4 +1,5 @@
 import { escapeHtml } from "./utils.js";
+import { getEventCardIdFromRecord } from "../shared/tournament-event-instance.js";
 import { fetchEventCardsForSeatEdit } from "./tournament-events.js";
 import { resolveBoxIdForEventId } from "./event-box-resolve.js";
 import { writePersistedSeatAddForm } from "./seat-add-form-persist.js";
@@ -6,13 +7,17 @@ import { writePersistedSeatAddForm } from "./seat-add-form-persist.js";
 let docListener = null;
 let seatAddEventsCache = [];
 
+function eventCardDisplayId(event = {}, fallbackId = "") {
+  const display = getEventCardIdFromRecord(event);
+  if (display) return display;
+  return String(fallbackId || event?.id || "").trim();
+}
+
 function formatSeatAddTriggerLabel(eventId = "") {
   const id = String(eventId || "").trim();
   if (!id) return "카드 선택 ▾";
   const found = seatAddEventsCache.find((e) => String(e.id || "") === id);
-  const label = found
-    ? String(found.title || found.cardId || id).trim()
-    : id;
+  const label = found ? eventCardDisplayId(found, id) : id;
   return `${label} ▾`;
 }
 
@@ -74,12 +79,7 @@ function buildList(listEl, events, currentId) {
     li.dataset.eventId = ev.id;
     li.dataset.eventTitle = ev.title || ev.id;
     li.dataset.eventBox = ev.boxId || "";
-    const title = String(ev.title || "").trim() || ev.id;
-    const date = String(ev.date || "").trim();
-    const sub = date ? escapeHtml(date) : "";
-    li.innerHTML = sub
-      ? `${escapeHtml(title)}<span class="global-seat-edit-modal__opt-sub">${sub}</span>`
-      : escapeHtml(title);
+    li.innerHTML = escapeHtml(eventCardDisplayId(ev, ev.id));
     if (cur && ev.id === cur) li.classList.add("is-active");
     listEl.appendChild(li);
   }

@@ -1,6 +1,7 @@
 import { getSeatById } from "./utils.js";
 import { applyGlobalSeatRename } from "./firestore-ops.js";
 import { isValidSeatLabel, isValidLayoutRouteIdPart, looksLikeDisplayTitleNotId, escapeHtml } from "./utils.js";
+import { getEventCardIdFromRecord } from "../shared/tournament-event-instance.js";
 import {
   fetchEventCardsForSeatEdit,
   resolveEventIdForSave
@@ -126,12 +127,7 @@ function renderEventList(els, events, currentId) {
     li.dataset.eventId = ev.id;
     li.dataset.eventTitle = ev.title || ev.id;
     li.dataset.eventBox = ev.boxId || "";
-    const title = String(ev.title || "").trim() || ev.id;
-    const date = String(ev.date || "").trim();
-    const sub = date ? escapeHtml(date) : "";
-    li.innerHTML = sub
-      ? `${escapeHtml(title)}<span class="global-seat-edit-modal__opt-sub">${sub}</span>`
-      : escapeHtml(title);
+    li.innerHTML = escapeHtml(eventCardDisplayId(ev, ev.id));
     if (cur && ev.id === cur) li.classList.add("is-active");
     els.eventList.appendChild(li);
   }
