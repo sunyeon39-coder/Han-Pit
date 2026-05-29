@@ -1186,31 +1186,109 @@ body.page-global-layout .global-layout-mobile .mobile-wait-row .wait-check-slot 
   cursor: pointer;
 }
 
-body.page-global-layout .pc-panel .wait-panel-row .seat-manage-namecol {
-  flex-direction: row;
-  flex-wrap: wrap;
+/* 대기 탭 행: 이름·뱃지·시간 한 줄 고정 (시간 길어져도 줄바꿈 없음) */
+body.page-global-layout .pc-panel .global-list > .wait-panel-row.gl-panel-list-row {
+  box-sizing: border-box;
+  display: flex !important;
+  align-items: center !important;
+  min-height: 48px !important;
+  max-height: 48px !important;
+  height: 48px !important;
+  padding: 0 12px !important;
+  overflow: hidden;
+}
+
+body.page-global-layout .pc-panel .wait-panel-row .seat-manage-main--oneline {
+  display: flex !important;
+  flex: 1 1 auto;
+  flex-wrap: nowrap !important;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body.page-global-layout .pc-panel .wait-panel-row .seat-manage-namewrap--with-num {
+  display: flex !important;
+  flex: 1 1 auto;
+  flex-wrap: nowrap !important;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+body.page-global-layout .pc-panel .wait-panel-row .seat-manage-namecol {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap !important;
+  align-items: center;
+  gap: 5px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
 }
 
 body.page-global-layout .pc-panel .wait-panel-row .seat-manage-name {
   flex: 0 1 auto;
-  min-width: 0;
+  min-width: 2.8em;
+  max-width: 34%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 body.page-global-layout .pc-panel .wait-panel-row .wait-pick-badges {
   display: inline-flex;
-  flex-wrap: nowrap;
+  flex-wrap: nowrap !important;
   align-items: center;
   gap: 4px;
   margin-top: 0;
+  flex: 0 0 auto;
   flex-shrink: 0;
 }
 
+body.page-global-layout .pc-panel .wait-panel-row .wait-pick-badge {
+  padding: 0 6px;
+  min-height: 17px;
+  font-size: 9px;
+}
+
 body.page-global-layout .wait-panel-row .wait-block-badge {
+  flex: 0 0 auto;
   flex-shrink: 0;
   margin-top: 0;
+  height: 18px;
+  padding: 0 6px;
+  font-size: 9px;
+}
+
+body.page-global-layout .pc-panel .wait-panel-row .seat-inline-actions {
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  margin-left: auto;
+  gap: 5px;
+}
+
+body.page-global-layout .pc-panel .wait-panel-row .seat-inline-actions .pill-inline.danger {
+  padding: 0 8px;
+  min-width: 0;
+  font-size: 10px;
+}
+
+body.page-global-layout .pc-panel .wait-panel-row .seat-inline-actions .time-chip {
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 6px;
+  min-width: 4.85em;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .pc-panel .global-list .wait-block-check {
