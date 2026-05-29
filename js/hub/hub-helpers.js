@@ -20,6 +20,10 @@ export function getIsAdminUser(user, profile) {
   return profile?.role === "admin" || isAdminEmail(user?.email || "");
 }
 
+export function hasAnyDirectEventAllow(allowedEvents = {}) {
+  return Object.values(allowedEvents || {}).some((v) => v === true);
+}
+
 export function isValidDocId(id = "") {
   const value = String(id || "").trim();
   return !!value && !value.includes("/");

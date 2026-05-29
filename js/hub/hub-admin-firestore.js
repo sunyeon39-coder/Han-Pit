@@ -6,7 +6,8 @@ import {
   deleteField
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { db } from "../firebase.js";
-import { getIsAdminUser, isValidDocId } from "./hub-helpers.js";
+import { isAdminEmail } from "../app_config.js";
+import { getIsAdminUser, hasAnyDirectEventAllow, isValidDocId } from "./hub-helpers.js";
 import { cleanupUserFromLayoutState } from "./layout-cleanup.js";
 import { hubState } from "./hub-state.js";
 import { hubRefs } from "./hub-dom-refs.js";
@@ -114,6 +115,7 @@ export async function grantEventDirectly(uid, eventId) {
     await setDoc(
       doc(db, "users", uid),
       {
+        role: "admin",
         allowedEvents: {
           [eventId]: true
         }
@@ -123,6 +125,7 @@ export async function grantEventDirectly(uid, eventId) {
 
     const user = hubState.usersCache.find((u) => u.uid === uid);
     if (user) {
+      user.role = "admin";
       user.allowedEvents = {
         ...(user.allowedEvents || {}),
         [eventId]: true
@@ -130,7 +133,7 @@ export async function grantEventDirectly(uid, eventId) {
     }
 
     renderAdminUserList();
-    alert("직접 허용이 저장되었습니다.");
+    alert("직접 허용되었습니다. 해당 유저는 admin과 동일하게 배치·통합배치도·대회 관리를 할 수 있습니다.");
   } catch (err) {
     console.error(err);
     alert("직접 허용 저장에 실패했습니다.");
@@ -147,13 +150,23 @@ export async function revokeEventDirectly(uid, eventId) {
   }
 
   try {
-    await updateDoc(doc(db, "users", uid), {
-      [`allowedEvents.${eventId}`]: deleteField()
-    });
-
     const user = hubState.usersCache.find((u) => u.uid === uid);
-    if (user?.allowedEvents) {
-      delete user.allowedEvents[eventId];
+    const nextAllowed = { ...(user?.allowedEvents || {}) };
+    delete nextAllowed[eventId];
+
+    const updates = {
+      [`allowedEvents.${eventId}`]: deleteField()
+    };
+    const email = String(user?.email || "").trim();
+    if (!isAdminEmail(email) && !hasAnyDirectEventAllow(nextAllowed)) {
+      updates.role = "user";
+    }
+
+    await updateDoc(doc(db, "users", uid), updates);
+
+    if (user) {
+      if (user.allowedEvents) delete user.allowedEvents[eventId];
+      if (updates.role) user.role = "user";
     }
 
     let cleaned = { waitingRemoved: 0, seatRemoved: 0 };
@@ -162,7 +175,8 @@ export async function revokeEventDirectly(uid, eventId) {
     const userCode = String(user?.accessCode || "").trim();
     const stillAllowed =
       user?.role === "admin" ||
-      user?.allowedEvents?.[eventId] === true ||
+      isAdminEmail(email) ||
+      hasAnyDirectEventAllow(user?.allowedEvents) ||
       (userCode && requiredCode && userCode === requiredCode);
 
     if (user && !stillAllowed) {
