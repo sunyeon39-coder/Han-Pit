@@ -62,6 +62,7 @@ import {
 import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
 
 initHubRefs();
+showHubListLoading();
 
 const flushAppBadgeIfVisible = bindAppBadgeClearOnForeground(db, auth);
 void ensureForegroundFcmBadgeListener();
@@ -285,105 +286,128 @@ userManageModal?.addEventListener("click", (e) => {
   if (e.target === userManageModal) closeUserManageModal();
 });
 
-onAuthStateChanged(auth, async (user) => {
+function paintHubTournamentList() {
+  renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
+}
+
+function disposeHubSessionWatches() {
+  hubState.hubProfileWatchUid = null;
+  clearHubProfileCacheResyncDebounce();
+  disposeHubPeriodicAccessResync();
+  if (hubState.stopMyProfileWatch) {
+    hubState.stopMyProfileWatch();
+    hubState.stopMyProfileWatch = null;
+  }
+  if (hubState.stopTournamentsWatch) {
+    hubState.stopTournamentsWatch();
+    hubState.stopTournamentsWatch = null;
+  }
+  if (hubState.stopUsersWatch) {
+    hubState.stopUsersWatch();
+    hubState.stopUsersWatch = null;
+  }
+  disposeHubForegroundAccessResync();
+}
+
+async function bootstrapHubSession(user) {
+  const flow = ++hubState.hubAuthFlowGen;
+  showHubListLoading();
+
+  const [profile] = await Promise.all([
+    loadUserProfile(user.uid, user.email || ""),
+    loadTournaments()
+  ]);
+  if (flow !== hubState.hubAuthFlowGen || hubState.currentUser?.uid !== user.uid) return;
+
+  hubState.currentUserProfile = profile;
+  if (!hubState.currentUserProfile) {
+    const fallbackProfile = {
+      email: user.email || "",
+      nickname: user.displayName || "",
+      role: resolveStoredUserRole(user.email || "", {}),
+      accessCode: "",
+      allowedEvents: {}
+    };
+
+    await setDoc(doc(db, "users", user.uid), fallbackProfile, { merge: true });
+    hubState.currentUserProfile = fallbackProfile;
+  }
+
+  if (flow !== hubState.hubAuthFlowGen || hubState.currentUser?.uid !== user.uid) return;
+
+  paintHubTournamentList();
+
+  if (isAppDebugEnabled()) {
+    console.debug("[HUB AUTH]", {
+      uid: user.uid,
+      email: user.email || "",
+      profile: hubState.currentUserProfile,
+      isAdmin: hubState.currentUserProfile?.role === "admin"
+    });
+  }
+
+  const isAdmin = getIsAdminUser(user, hubState.currentUserProfile);
+  if (flow !== hubState.hubAuthFlowGen || hubState.currentUser?.uid !== user.uid) return;
+
+  if (isAdmin) {
+    adminBtn?.classList.remove("hidden");
+    bindUsersRealtime();
+    void loadAllUsers().catch((err) => {
+      console.warn("loadAllUsers (background):", err);
+    });
+  } else {
+    adminBtn?.classList.add("hidden");
+  }
+
+  syncPushOfferButton(hubRefs.hubEnablePushBtn, user.uid);
+  void refreshFcmTokenIfGranted(user.uid);
+  flushAppBadgeIfVisible();
+
+  if (flow !== hubState.hubAuthFlowGen || hubState.currentUser?.uid !== user.uid) return;
+
+  bindTournamentsRealtime();
+  bindMyProfileRealtime(user.uid);
+  bindHubForegroundAccessResync(user.uid);
+
+  if (!isAdmin) {
+    bindHubPeriodicAccessResync(user.uid);
+  } else {
+    disposeHubPeriodicAccessResync();
+  }
+
+  window.setTimeout(() => {
+    if (flow !== hubState.hubAuthFlowGen) return;
+    if (hubState.currentUser?.uid !== user.uid) return;
+    void resyncHubAccessFromServer(user.uid);
+  }, 450);
+}
+
+onAuthStateChanged(auth, (user) => {
   if (!user) {
     hubState.hubAuthFlowGen = 0;
-    hubState.hubProfileWatchUid = null;
-    clearHubProfileCacheResyncDebounce();
-    disposeHubPeriodicAccessResync();
-    if (hubState.stopMyProfileWatch) {
-      hubState.stopMyProfileWatch();
-      hubState.stopMyProfileWatch = null;
-    }
-    disposeHubForegroundAccessResync();
+    hubState.currentUser = null;
+    hubState.currentUserProfile = null;
+    disposeHubSessionWatches();
     location.replace("./login.html");
     return;
   }
 
   hubState.currentUser = user;
+  showHubListLoading();
 
-  if (hubState.stopMyProfileWatch && hubState.hubProfileWatchUid === user.uid) {
-    renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
-    syncPushOfferButton(hubRefs.hubEnablePushBtn, user.uid);
-    return;
-  }
+  const run = bootstrapHubSession(user)
+    .catch((err) => {
+      console.error("hub auth init error:", err);
+      paintHubTournamentList();
+      alert("허브 데이터를 불러오지 못했습니다.");
+    })
+    .finally(() => {
+      if (hubState.currentUser?.uid === user.uid) {
+        paintHubTournamentList();
+      }
+    });
 
-  try {
-    const initGen = ++hubState.hubAuthFlowGen;
-    showHubListLoading();
-
-    const [profile] = await Promise.all([
-      loadUserProfile(user.uid, user.email || ""),
-      loadTournaments()
-    ]);
-    if (initGen !== hubState.hubAuthFlowGen) return;
-
-    hubState.currentUserProfile = profile;
-    if (!hubState.currentUserProfile) {
-      const fallbackProfile = {
-        email: user.email || "",
-        nickname: user.displayName || "",
-        role: resolveStoredUserRole(user.email || "", {}),
-        accessCode: "",
-        allowedEvents: {}
-      };
-
-      await setDoc(doc(db, "users", user.uid), fallbackProfile, { merge: true });
-      hubState.currentUserProfile = fallbackProfile;
-    }
-
-    if (initGen !== hubState.hubAuthFlowGen) return;
-
-    if (isAppDebugEnabled()) {
-      console.debug("[HUB AUTH]", {
-        uid: user.uid,
-        email: user.email || "",
-        profile: hubState.currentUserProfile,
-        isAdmin: hubState.currentUserProfile?.role === "admin"
-      });
-    }
-
-    const isAdmin = getIsAdminUser(user, hubState.currentUserProfile);
-
-    if (initGen !== hubState.hubAuthFlowGen) return;
-
-    if (isAdmin) {
-      adminBtn?.classList.remove("hidden");
-      bindUsersRealtime();
-      void loadAllUsers().catch((err) => {
-        console.warn("loadAllUsers (background):", err);
-      });
-    } else {
-      adminBtn?.classList.add("hidden");
-    }
-
-    syncPushOfferButton(hubRefs.hubEnablePushBtn, user.uid);
-    void refreshFcmTokenIfGranted(user.uid);
-    flushAppBadgeIfVisible();
-
-    if (initGen !== hubState.hubAuthFlowGen) return;
-
-    renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
-    bindTournamentsRealtime();
-    bindMyProfileRealtime(user.uid);
-    bindHubForegroundAccessResync(user.uid);
-
-    if (!isAdmin) {
-      bindHubPeriodicAccessResync(user.uid);
-    } else {
-      disposeHubPeriodicAccessResync();
-    }
-
-    window.setTimeout(() => {
-      if (initGen !== hubState.hubAuthFlowGen) return;
-      if (hubState.currentUser?.uid !== user.uid) return;
-      void resyncHubAccessFromServer(user.uid);
-    }, 450);
-  } catch (err) {
-    console.error("hub auth init error:", err);
-    renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
-    alert("허브 데이터를 불러오지 못했습니다.");
-  }
+  void run;
 });
 
 window.addEventListener("beforeunload", () => {

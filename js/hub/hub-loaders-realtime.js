@@ -6,15 +6,16 @@ import {
   getDocFromServer,
   getDocsFromServer,
   doc,
-  onSnapshot
+  onSnapshot,
+  updateDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { normalizeUserProfile } from "../shared/auth-helpers.js";
 import {
   normalizeTournamentDoc,
   normalizeUserDoc,
   sortTournaments,
   getIsAdminUser
 } from "./hub-helpers.js";
-import { normalizeAndPersistUserRole } from "../login/user-sync.js";
 import { hubState, FALLBACK_TOURNAMENTS } from "./hub-state.js";
 import { hubRefs } from "./hub-dom-refs.js";
 import { renderTournaments } from "./hub-tournament-list.js";
@@ -53,7 +54,15 @@ export async function loadUserProfile(uid, email = "") {
   try {
     const snap = await getDoc(doc(db, "users", uid));
     if (!snap.exists()) return null;
-    return normalizeAndPersistUserRole(uid, snap.data() || {}, email);
+    const raw = snap.data() || {};
+    const profile = normalizeUserProfile(raw, email);
+    const prevRole = String(raw.role || "").trim();
+    if (profile.role !== prevRole) {
+      void updateDoc(doc(db, "users", uid), { role: profile.role }).catch((err) => {
+        console.warn("[loadUserProfile] role sync failed:", err);
+      });
+    }
+    return profile;
   } catch (err) {
     console.error("loadUserProfile error:", err);
     return null;
@@ -159,7 +168,10 @@ export function bindMyProfileRealtime(uid) {
     doc(db, "users", uid),
     { includeMetadataChanges: true },
     (snap) => {
-      if (!snap.exists()) return;
+      if (!snap.exists()) {
+        renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
+        return;
+      }
 
       const patch = snap.data() || {};
       hubState.currentUserProfile = { ...(hubState.currentUserProfile || {}), ...patch };
