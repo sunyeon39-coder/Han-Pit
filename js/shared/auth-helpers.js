@@ -1,5 +1,7 @@
 import { isAdminEmail } from "../app_config.js";
 
+export { isAdminEmail };
+
 export function hasAnyDirectEventAllow(allowedEvents = {}) {
   return Object.values(allowedEvents || {}).some((v) => v === true);
 }
