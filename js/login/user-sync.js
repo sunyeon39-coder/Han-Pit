@@ -136,7 +136,9 @@ export async function normalizeAndPersistUserRole(uid, profile, email = "") {
   };
   const prevRole = String(profile.role || "").trim();
   if (normalized.role !== prevRole) {
-    await updateDoc(doc(db, "users", uid), { role: normalized.role });
+    void updateDoc(doc(db, "users", uid), { role: normalized.role }).catch((err) => {
+      console.warn("[normalizeAndPersistUserRole] update failed:", err);
+    });
   }
   return normalized;
 }

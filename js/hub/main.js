@@ -5,14 +5,14 @@ import { logout } from "../auth.js";
 
 import { doc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-import { isAdminEmail } from "../app_config.js";
+import { resolveStoredUserRole } from "../shared/auth-helpers.js";
 import { getIsAdminUser } from "./hub-helpers.js";
 import { closeModal, openModal } from "../shared/dom-utils.js";
 import { isAppDebugEnabled } from "../shared/app-debug.js";
 
 import { initHubRefs, hubRefs } from "./hub-dom-refs.js";
 import { hubState } from "./hub-state.js";
-import { renderTournaments } from "./hub-tournament-list.js";
+import { renderTournaments, showHubListLoading } from "./hub-tournament-list.js";
 import {
   populateTournamentSelect,
   renderAdminUserList,
@@ -303,11 +303,14 @@ onAuthStateChanged(auth, async (user) => {
   hubState.currentUser = user;
 
   if (hubState.stopMyProfileWatch && hubState.hubProfileWatchUid === user.uid) {
+    renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
+    syncPushOfferButton(hubRefs.hubEnablePushBtn, user.uid);
     return;
   }
 
   try {
     const initGen = ++hubState.hubAuthFlowGen;
+    showHubListLoading();
 
     const [profile] = await Promise.all([
       loadUserProfile(user.uid, user.email || ""),
@@ -320,7 +323,7 @@ onAuthStateChanged(auth, async (user) => {
       const fallbackProfile = {
         email: user.email || "",
         nickname: user.displayName || "",
-        role: isAdminEmail(user.email || "") ? "admin" : "user",
+        role: resolveStoredUserRole(user.email || "", {}),
         accessCode: "",
         allowedEvents: {}
       };
@@ -345,10 +348,11 @@ onAuthStateChanged(auth, async (user) => {
     if (initGen !== hubState.hubAuthFlowGen) return;
 
     if (isAdmin) {
-      hubState.usersCache = await loadAllUsers();
-      if (initGen !== hubState.hubAuthFlowGen) return;
       adminBtn?.classList.remove("hidden");
       bindUsersRealtime();
+      void loadAllUsers().catch((err) => {
+        console.warn("loadAllUsers (background):", err);
+      });
     } else {
       adminBtn?.classList.add("hidden");
     }
@@ -377,6 +381,7 @@ onAuthStateChanged(auth, async (user) => {
     }, 450);
   } catch (err) {
     console.error("hub auth init error:", err);
+    renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
     alert("허브 데이터를 불러오지 못했습니다.");
   }
 });

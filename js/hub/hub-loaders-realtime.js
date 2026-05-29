@@ -14,6 +14,7 @@ import {
   sortTournaments,
   getIsAdminUser
 } from "./hub-helpers.js";
+import { normalizeAndPersistUserRole } from "../login/user-sync.js";
 import { hubState, FALLBACK_TOURNAMENTS } from "./hub-state.js";
 import { hubRefs } from "./hub-dom-refs.js";
 import { renderTournaments } from "./hub-tournament-list.js";
@@ -52,8 +53,7 @@ export async function loadUserProfile(uid, email = "") {
   try {
     const snap = await getDoc(doc(db, "users", uid));
     if (!snap.exists()) return null;
-    const { normalizeAndPersistUserRole } = await import("../login/user-sync.js");
-    return await normalizeAndPersistUserRole(uid, snap.data() || {}, email);
+    return normalizeAndPersistUserRole(uid, snap.data() || {}, email);
   } catch (err) {
     console.error("loadUserProfile error:", err);
     return null;
