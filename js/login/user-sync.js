@@ -43,12 +43,17 @@ export async function ensureUserDoc(user) {
   if (currentSnap.exists()) {
     const prev = currentSnap.data() || {};
     const nextRole = resolveStoredUserRole(email, prev);
-    await updateDoc(userRef, {
+    const prevRole = String(prev.role || "").trim();
+    const patch = {
       email: user.email || "",
       photoURL: String(user.photoURL || "").trim(),
-      lastLogin: serverTimestamp(),
-      role: nextRole
-    });
+      lastLogin: serverTimestamp()
+    };
+    // 본인 문서는 Firestore rules상 role 변경 불가(운영진만 가능). 메모리 프로필만 보정.
+    if (nextRole === prevRole) {
+      patch.role = nextRole;
+    }
+    await updateDoc(userRef, patch);
 
     return {
       created: false,

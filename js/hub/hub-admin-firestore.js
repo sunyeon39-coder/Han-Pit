@@ -127,6 +127,18 @@ export async function grantEventDirectly(uid, eventId) {
       };
     }
 
+    if (hubState.currentUser?.uid === uid) {
+      hubState.currentUserProfile = {
+        ...(hubState.currentUserProfile || {}),
+        role: "admin",
+        allowedEvents: {
+          ...(hubState.currentUserProfile?.allowedEvents || {}),
+          [eventId]: true
+        }
+      };
+      renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
+    }
+
     renderAdminUserList();
     alert("직접 허용되었습니다. 해당 유저는 admin과 동일하게 배치·통합배치도·대회 관리를 할 수 있습니다.");
   } catch (err) {

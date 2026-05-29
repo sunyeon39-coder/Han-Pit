@@ -6,8 +6,7 @@ import {
   getDocFromServer,
   getDocsFromServer,
   doc,
-  onSnapshot,
-  updateDoc
+  onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { normalizeUserProfile } from "../shared/auth-helpers.js";
 import {
@@ -21,13 +20,23 @@ import { hubRefs } from "./hub-dom-refs.js";
 import { renderTournaments } from "./hub-tournament-list.js";
 import { populateTournamentSelect, renderAdminUserList } from "./hub-admin-ui.js";
 
+/** 오프라인·PWA에서 빈 캐시 스냅샷이 서버로 읽은 목록을 지우는 것을 막음 */
+function shouldSkipEmptyCacheSnapshot(snap, cachedCount = 0) {
+  return Boolean(snap?.empty && snap.metadata?.fromCache && cachedCount > 0);
+}
+
 async function readTournamentsSnap() {
   const col = collection(db, "tournaments");
+  let serverSnap = null;
   try {
-    return await getDocsFromServer(col);
-  } catch {
-    return await getDocs(col);
+    serverSnap = await getDocsFromServer(col);
+    if (!serverSnap.empty) return serverSnap;
+  } catch (err) {
+    console.warn("readTournamentsSnap server:", err?.code || err);
   }
+  const cacheSnap = await getDocs(col);
+  if (!cacheSnap.empty) return cacheSnap;
+  return serverSnap || cacheSnap;
 }
 
 function applyTournamentsSnap(snap) {
@@ -79,15 +88,7 @@ async function readUserProfileSnap(uid) {
 
 function profileFromUserSnap(snap, email = "") {
   if (!snap?.exists()) return null;
-  const raw = snap.data() || {};
-  const profile = normalizeUserProfile(raw, email);
-  const prevRole = String(raw.role || "").trim();
-  if (profile.role !== prevRole) {
-    void updateDoc(doc(db, "users", snap.id), { role: profile.role }).catch((err) => {
-      console.warn("[loadUserProfile] role sync failed:", err);
-    });
-  }
-  return profile;
+  return normalizeUserProfile(snap.data() || {}, email);
 }
 
 export async function loadUserProfile(uid, email = "") {
@@ -108,7 +109,10 @@ export function bindTournamentsRealtime() {
 
   hubState.stopTournamentsWatch = onSnapshot(
     collection(db, "tournaments"),
+    { includeMetadataChanges: true },
     (snap) => {
+      if (shouldSkipEmptyCacheSnapshot(snap, hubState.tournamentsCache.length)) return;
+
       if (snap.empty) {
         hubState.tournamentsCache = [];
       } else {
@@ -141,7 +145,10 @@ export function bindUsersRealtime() {
 
   hubState.stopUsersWatch = onSnapshot(
     collection(db, "users"),
+    { includeMetadataChanges: true },
     (snap) => {
+      if (shouldSkipEmptyCacheSnapshot(snap, hubState.usersCache.length)) return;
+
       hubState.usersCache = snap.docs.map(normalizeUserDoc);
       if (getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) {
         renderAdminUserList();
@@ -200,6 +207,7 @@ export function bindMyProfileRealtime(uid) {
     { includeMetadataChanges: true },
     (snap) => {
       if (!snap.exists()) {
+        if (snap.metadata?.fromCache && hubState.currentUserProfile) return;
         renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
         return;
       }

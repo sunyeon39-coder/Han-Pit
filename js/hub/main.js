@@ -328,15 +328,31 @@ async function bootstrapHubSession(user) {
   }
 
   if (!profile) {
-    throw new Error("사용자 프로필을 불러오지 못했습니다.");
+    profile = normalizeUserProfile(
+      {
+        email: user.email || "",
+        nickname: user.displayName || "",
+        accessCode: "",
+        allowedEvents: {}
+      },
+      user.email || ""
+    );
+    void ensureUserDoc(user).catch((err) => {
+      console.warn("ensureUserDoc (background):", err);
+    });
   }
 
   hubState.currentUserProfile = profile;
-
-  await resyncHubAccessFromServer(user.uid);
+  paintHubTournamentList();
   if (flow !== hubState.hubAuthFlowGen || hubState.currentUser?.uid !== user.uid) return;
 
-  paintHubTournamentList();
+  try {
+    await resyncHubAccessFromServer(user.uid);
+    paintHubTournamentList();
+  } catch (err) {
+    console.warn("resyncHubAccessFromServer:", err);
+  }
+  if (flow !== hubState.hubAuthFlowGen || hubState.currentUser?.uid !== user.uid) return;
 
   if (isAppDebugEnabled()) {
     console.debug("[HUB AUTH]", {
@@ -350,14 +366,20 @@ async function bootstrapHubSession(user) {
   const isAdmin = getIsAdminUser(user, hubState.currentUserProfile);
   if (flow !== hubState.hubAuthFlowGen || hubState.currentUser?.uid !== user.uid) return;
 
+  bindTournamentsRealtime();
+  bindMyProfileRealtime(user.uid);
+
   if (isAdmin) {
     adminBtn?.classList.remove("hidden");
     bindUsersRealtime();
-    try {
-      await loadAllUsers();
-    } catch (err) {
-      console.warn("loadAllUsers:", err);
-    }
+    void loadAllUsers()
+      .then(() => {
+        if (flow !== hubState.hubAuthFlowGen) return;
+        if (hubRefs.adminModal?.classList.contains("show")) renderAdminUserList();
+      })
+      .catch((err) => {
+        console.warn("loadAllUsers:", err);
+      });
   } else {
     adminBtn?.classList.add("hidden");
   }
@@ -367,9 +389,6 @@ async function bootstrapHubSession(user) {
   flushAppBadgeIfVisible();
 
   if (flow !== hubState.hubAuthFlowGen || hubState.currentUser?.uid !== user.uid) return;
-
-  bindTournamentsRealtime();
-  bindMyProfileRealtime(user.uid);
   bindHubForegroundAccessResync(user.uid);
 
   if (!isAdmin) {
