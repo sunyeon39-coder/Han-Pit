@@ -1,5 +1,15 @@
 import { db } from "../firebase.js";
-import { doc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  query,
+  serverTimestamp,
+  setDoc,
+  where
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { GL } from "./state.js";
 
 export { getIsAdmin } from "../shared/auth-helpers.js";
@@ -106,6 +116,108 @@ export function getGlobalSeatDocRefs(seat = {}, tournamentId = "", fallbackPairs
   }
 
   return refs;
+}
+
+/** Firestore global_seats 문서 조회 — doc id 후보 + seatId 쿼리 */
+export async function resolveGlobalSeatFirestoreDoc(
+  seat = {},
+  tournamentId = "",
+  fallbackPairs = []
+) {
+  const tid = String(tournamentId || "").trim();
+  const sid = String(seat?.seatId || "").trim();
+  if (!tid || !sid) return null;
+
+  const refs = getGlobalSeatDocRefs(seat, tid, fallbackPairs);
+  for (const ref of refs) {
+    try {
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        return { ref, snap, data: snap.data() || {}, docId: snap.id };
+      }
+    } catch (err) {
+      console.warn("resolveGlobalSeatFirestoreDoc getDoc:", err?.code || err);
+    }
+  }
+
+  try {
+    const qs = await getDocs(
+      query(
+        collection(db, "tournaments", tid, "global_seats"),
+        where("seatId", "==", sid),
+        limit(20)
+      )
+    );
+    if (!qs.empty) {
+      const pick =
+        qs.docs.find((d) => {
+          const data = d.data() || {};
+          const { eventId, boxId } = resolveSeatEventBox(seat);
+          const e = String(data.currentEventId || data.mappedEventId || "").trim();
+          const b = String(data.boxId || "").trim();
+          return !eventId || !boxId || (e === eventId && b === boxId);
+        }) || qs.docs[0];
+      return {
+        ref: pick.ref,
+        snap: pick,
+        data: pick.data() || {},
+        docId: pick.id
+      };
+    }
+  } catch (err) {
+    console.warn("resolveGlobalSeatFirestoreDoc query:", err?.code || err);
+  }
+
+  return null;
+}
+
+/** 메모리에만 있는 좌석이면 Firestore 문서를 복구(merge) */
+export async function ensureGlobalSeatFirestoreDoc(
+  seat = {},
+  tournamentId = "",
+  fallbackPairs = []
+) {
+  const found = await resolveGlobalSeatFirestoreDoc(seat, tournamentId, fallbackPairs);
+  if (found) return found;
+
+  const tid = String(tournamentId || "").trim();
+  const sid = String(seat?.seatId || "").trim();
+  const { eventId, boxId } = resolveSeatEventBox(seat);
+  if (!tid || !sid || !eventId || !boxId) return null;
+
+  const docId = buildGlobalSeatDocId(eventId, boxId, sid);
+  const ref = doc(db, "tournaments", tid, "global_seats", docId);
+  const now = Date.now();
+  const person = String(seat.person || "비어있음").trim();
+
+  await setDoc(
+    ref,
+    {
+      seatId: sid,
+      label: String(seat.label ?? seat.no ?? sid).trim(),
+      no: Number(seat.no || 0) || 0,
+      order: Number(seat.order || 0) || 0,
+      x: Number(seat.x || 0) || 0,
+      y: Number(seat.y || 0) || 0,
+      person,
+      personUid: String(seat.personUid || "").trim(),
+      personEmail: String(seat.personEmail || "").trim(),
+      seatedAt: seat.seatedAt ?? null,
+      status: isEmptyPerson(person) ? "empty" : "occupied",
+      tournamentId: tid,
+      mappedEventId: eventId,
+      currentEventId: eventId,
+      boxId,
+      sourceLayoutDocId: getProjectionDocId(eventId, boxId),
+      updatedAt: now,
+      updatedAtServer: serverTimestamp()
+    },
+    { merge: true }
+  );
+
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return null;
+  return { ref, snap, data: snap.data() || {}, docId };
 }
 
 /** global_seats 문서 ID → eventId / boxId (eventId에 __ 없음 가정) */

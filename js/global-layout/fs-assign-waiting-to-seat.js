@@ -1,12 +1,16 @@
 import { db } from "../firebase.js";
 import {
   doc,
-  getDoc,
   runTransaction,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { GL } from "./state.js";
-import { getAttendanceRef, getGlobalSeatDocRefs, isEmptyPerson, resolveSeatEventBox } from "./utils.js";
+import {
+  ensureGlobalSeatFirestoreDoc,
+  getAttendanceRef,
+  isEmptyPerson,
+  resolveSeatEventBox
+} from "./utils.js";
 import { getCandidateSeatRefsForPerson } from "./seat-candidates.js";
 import { getCurrentTournamentWaiting, resolveSelectedWaitingForAssign } from "./waiting.js";
 import { renderWaiting } from "./panel-ui.js";
@@ -49,26 +53,21 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   const fallbackPairs = (GL.globalSeats || [])
     .filter((s) => String(s?.seatId || "").trim() === targetSeatId)
     .map((s) => resolveSeatEventBox(s));
-  const seatRefs = getGlobalSeatDocRefs(seat, GL.tournamentId, fallbackPairs);
-  if (!seatRefs.length) {
-    alert("Seat 문서를 찾을 수 없습니다. 잠시 후 다시 시도해 주세요.");
-    return;
+
+  const seatDoc = await ensureGlobalSeatFirestoreDoc(seat, GL.tournamentId, fallbackPairs);
+  if (!seatDoc?.ref) {
+    throw new Error("seat_not_found");
   }
 
-  let seatRef = null;
-  let canonicalSeatEventId = "";
-  let canonicalSeatBoxId = "";
-  for (const ref of seatRefs) {
-    const snap = await getDoc(ref);
-    if (!snap.exists()) continue;
-    seatRef = ref;
-    const data = snap.data() || {};
-    canonicalSeatEventId = String(data.currentEventId || data.mappedEventId || "").trim();
-    canonicalSeatBoxId = String(data.boxId || "").trim();
-    break;
-  }
-  if (!seatRef) {
-    throw new Error("seat_not_found");
+  const seatRef = seatDoc.ref;
+  let canonicalSeatEventId = String(
+    seatDoc.data.currentEventId || seatDoc.data.mappedEventId || ""
+  ).trim();
+  let canonicalSeatBoxId = String(seatDoc.data.boxId || "").trim();
+
+  const idx = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === targetSeatId);
+  if (idx >= 0 && seatDoc.docId) {
+    GL.globalSeats[idx] = { ...GL.globalSeats[idx], __firestoreDocId: seatDoc.docId };
   }
   if (!canonicalSeatEventId || !canonicalSeatBoxId) {
     const fallback = resolveSeatEventBox(seat);

@@ -1,3 +1,4 @@
+import { GL } from "./state.js";
 import { getSeatById } from "./utils.js";
 import { applyGlobalSeatRename } from "./firestore-ops.js";
 import { isValidSeatLabel, isValidLayoutRouteIdPart, looksLikeDisplayTitleNotId, escapeHtml } from "./utils.js";
@@ -253,9 +254,27 @@ async function onSaveClick() {
 
   if (els.saveBtn) els.saveBtn.disabled = true;
   try {
-    const ok = await applyGlobalSeatRename(currentSeatId, nextLabel, nextEventId, nextBoxId);
-    if (ok) {
+    const savedSeatId = currentSeatId;
+    const result = await applyGlobalSeatRename(savedSeatId, nextLabel, nextEventId, nextBoxId);
+    if (result?.ok) {
       closeSeatEditModal();
+      const nav = result.shouldOfferLayout;
+      if (nav?.eventId && nav?.boxId) {
+        requestAnimationFrame(() => {
+          const layoutUrl = `./layout.html?tournamentId=${encodeURIComponent(
+            GL.tournamentId || ""
+          )}&eventId=${encodeURIComponent(nav.eventId)}&boxId=${encodeURIComponent(nav.boxId)}&focusSeatId=${encodeURIComponent(savedSeatId)}`;
+          if (
+            window.confirm(
+              "변경된 카드·Box의 배치 화면(layout.html)으로 이동할까요?\n(취소하면 통합 배치도에 그대로 있으며, 나중에 직접 열어도 됩니다.)"
+            )
+          ) {
+            sessionStorage.setItem("eventId", nav.eventId);
+            sessionStorage.setItem("boxId", nav.boxId);
+            location.href = layoutUrl;
+          }
+        });
+      }
     } else {
       alert("저장되지 않았습니다. 카드·Box·라벨을 확인한 뒤 다시 시도해 주세요.");
     }

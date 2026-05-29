@@ -113,7 +113,11 @@ export function bindRealtime() {
   let prevSeats = [];
   GL.stopSeatWatch = onSnapshot(
     collection(db, "tournaments", GL.tournamentId, "global_seats"),
+    { includeMetadataChanges: true },
     (snap) => {
+      if (snap.empty && snap.metadata?.fromCache && GL.globalSeats.length > 0) {
+        return;
+      }
       const nextSeats = snap.docs.map((d) => ({
         ...(d.data() || {}),
         __firestoreDocId: d.id

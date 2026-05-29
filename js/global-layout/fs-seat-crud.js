@@ -12,6 +12,9 @@ import {
   getAttendanceRef,
   getProjectionDocId,
   parseGlobalSeatDocId,
+  resolveSeatEventBox,
+  resolveGlobalSeatFirestoreDoc,
+  ensureGlobalSeatFirestoreDoc,
   isValidLayoutRouteIdPart,
   isValidSeatLabel,
   looksLikeDisplayTitleNotId,
@@ -132,76 +135,60 @@ function seatCardPairDiffers(prevE, prevB, nextE, nextB, eventCards = []) {
   return false;
 }
 
-/** Firestore global_seats 문서 — 실제 doc id 우선, seatId 기준 fallback */
+/** Firestore global_seats 문서 — doc id·seatId 쿼리·로컬 복구 */
 async function findGlobalSeatDocRef(seatId = "", eventCards = []) {
   const sid = String(seatId || "").trim();
   if (!sid || !GL.tournamentId) return null;
 
   const seat = getSeatById(sid);
-  const docIdFromSnap = String(seat?.__firestoreDocId || "").trim();
-  if (docIdFromSnap) {
-    const ref = doc(db, "tournaments", GL.tournamentId, "global_seats", docIdFromSnap);
-    const snap = await getDoc(ref);
-    if (snap.exists()) {
-      const data = snap.data() || {};
-      const parsed = parseGlobalSeatDocId(docIdFromSnap, sid);
-      return {
-        ref,
-        snap,
-        eventId: String(data.currentEventId || data.mappedEventId || parsed?.eventId || "").trim(),
-        boxId: String(data.boxId || parsed?.boxId || "").trim() || "1"
+  const pairs = [];
+  if (seat) {
+    pairs.push(resolveSeatEventBox(seat));
+  }
+  for (const s of GL.globalSeats || []) {
+    if (String(s.seatId || "").trim() !== sid) continue;
+    pairs.push(resolveSeatEventBox(s));
+  }
+
+  let resolved =
+    (await resolveGlobalSeatFirestoreDoc(seat || { seatId: sid }, GL.tournamentId, pairs)) ||
+    (await ensureGlobalSeatFirestoreDoc(seat || { seatId: sid }, GL.tournamentId, pairs));
+
+  if (!resolved?.snap?.exists()) return null;
+
+  const data = resolved.data || {};
+  const parsed = parseGlobalSeatDocId(resolved.docId, sid);
+  const rawE = String(seat?.currentEventId || seat?.mappedEventId || "").trim();
+  const eventId =
+    String(data.currentEventId || data.mappedEventId || parsed?.eventId || "").trim() ||
+    resolveEventIdForSave(rawE, eventCards) ||
+    rawE;
+  const boxId = String(data.boxId || parsed?.boxId || "").trim() || "1";
+
+  if (seat && resolved.docId) {
+    const idx = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === sid);
+    if (idx >= 0) {
+      GL.globalSeats[idx] = {
+        ...GL.globalSeats[idx],
+        __firestoreDocId: resolved.docId,
+        currentEventId: eventId,
+        mappedEventId: eventId,
+        boxId
       };
     }
   }
 
-  const pairs = [];
-  if (seat) {
-    pairs.push([
-      String(seat.currentEventId || seat.mappedEventId || "").trim(),
-      String(seat.boxId || "").trim()
-    ]);
-  }
-  for (const s of GL.globalSeats || []) {
-    if (String(s.seatId || "").trim() !== sid) continue;
-    pairs.push([
-      String(s.currentEventId || s.mappedEventId || "").trim(),
-      String(s.boxId || "").trim()
-    ]);
-  }
-
-  const seen = new Set();
-  for (const [rawE, rawB] of pairs) {
-    const b = String(rawB || "").trim() || "1";
-    const tryEvents = [String(rawE || "").trim(), resolveEventIdForSave(rawE, eventCards) || ""].filter(Boolean);
-    for (const e of tryEvents) {
-      const key = `${e}\t${b}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const ref = doc(
-        db,
-        "tournaments",
-        GL.tournamentId,
-        "global_seats",
-        buildGlobalSeatDocId(e, b, sid)
-      );
-      const snap = await getDoc(ref);
-      if (snap.exists()) {
-        const data = snap.data() || {};
-        return {
-          ref,
-          snap,
-          eventId: String(data.currentEventId || data.mappedEventId || e).trim(),
-          boxId: String(data.boxId || b).trim() || "1"
-        };
-      }
-    }
-  }
-  return null;
+  return {
+    ref: resolved.ref,
+    snap: resolved.snap,
+    eventId,
+    boxId
+  };
 }
 
 /**
  * Seat 라벨·카드 ID(eventId)·Box ID 변경 (모달 등에서 호출)
- * @returns {Promise<boolean>} 성공 시 true
+ * @returns {Promise<{ ok: boolean, shouldOfferLayout?: { eventId: string, boxId: string } | null }>}
  */
 export async function applyGlobalSeatRename(
   targetSeatIdIn = "",
@@ -214,31 +201,31 @@ export async function applyGlobalSeatRename(
   const nextEventId = String(nextEventIdIn || "").trim();
   const nextBoxId = String(nextBoxIdIn || "").trim();
 
-  if (!targetSeatId) return false;
+  if (!targetSeatId) return { ok: false };
 
   if (!nextLabel) {
     alert("Seat 라벨은 비울 수 없습니다.");
-    return false;
+    return { ok: false };
   }
   if (!isValidSeatLabel(nextLabel)) {
     alert("Seat 라벨은 영문/숫자 기준으로 입력해주세요. (예: 1, A1, VIP_1)");
-    return false;
+    return { ok: false };
   }
   if (!nextEventId || !nextBoxId) {
     alert("카드 ID(eventId)와 Box ID를 모두 입력해주세요.");
-    return false;
+    return { ok: false };
   }
 
   if (!isValidLayoutRouteIdPart(nextEventId) || !isValidLayoutRouteIdPart(nextBoxId)) {
     alert(
       "카드 ID / Box ID 형식이 올바르지 않습니다. (비어 있지 않고, / 나 __ 는 사용할 수 없습니다.)\nindex「카드 관리」·layout 주소창의 eventId·boxId를 확인하세요."
     );
-    return false;
+    return { ok: false };
   }
   const seat = getSeatById(targetSeatId);
   if (!seat) {
     alert("Seat를 찾을 수 없습니다.");
-    return false;
+    return { ok: false };
   }
 
   let eventCards = [];
@@ -254,13 +241,13 @@ export async function applyGlobalSeatRename(
     alert(
       "카드는 목록에서 선택해 주세요.\nindex「카드 관리」에 등록된 카드만 사용할 수 있습니다."
     );
-    return false;
+    return { ok: false };
   }
 
   const foundDoc = await findGlobalSeatDocRef(targetSeatId, eventCards);
   if (!foundDoc?.snap?.exists()) {
     alert("Firestore에서 이 Seat 문서를 찾을 수 없습니다. 새로고침 후 다시 시도해 주세요.");
-    return false;
+    return { ok: false };
   }
 
   const prevEventId = foundDoc.eventId;
@@ -277,7 +264,7 @@ export async function applyGlobalSeatRename(
   );
   if (!moved && nextLabel === prevLabel) {
     alert("변경된 내용이 없습니다. 다른 카드를 선택했는지 확인해 주세요.");
-    return false;
+    return { ok: false };
   }
 
   const oldRef = foundDoc.ref;
@@ -301,7 +288,7 @@ export async function applyGlobalSeatRename(
     if (GL.activeTab === "seat") renderSeatPanel();
     renderSeats(GL.globalSeats);
     await syncLayoutProjection(resolvedNextEventId, nextBoxId);
-    return true;
+    return { ok: true, shouldOfferLayout: null };
   }
 
   await ensureLayoutEventShellForGlobalOps(resolvedNextEventId, nextBoxId);
@@ -334,12 +321,12 @@ export async function applyGlobalSeatRename(
           `대상 카드(${nextEventId}) / Box(${nextBoxId})에 이미 같은 Seat ID(${targetSeatId})가 있습니다.\n` +
             `대기 중인 문서를 정리하거나 다른 Seat ID를 쓰는 배치도를 선택해 주세요.`
         );
-        return false;
+        return { ok: false };
       }
       const oldSnap = foundDoc?.snap || (await getDoc(oldRef));
       if (!oldSnap.exists()) {
         alert("원본 Seat 문서를 찾을 수 없습니다.");
-        return false;
+        return { ok: false };
       }
       const base = oldSnap.data() || {};
       await setDoc(
@@ -419,26 +406,19 @@ export async function applyGlobalSeatRename(
       currentEventId: resolvedNextEventId,
       mappedEventId: resolvedNextEventId,
       boxId: nextBoxId,
-      sourceLayoutDocId: getProjectionDocId(resolvedNextEventId, nextBoxId)
+      sourceLayoutDocId: getProjectionDocId(resolvedNextEventId, nextBoxId),
+      __firestoreDocId: moved && oldDocId !== newDocId ? newDocId : foundDoc.ref.id
     };
   }
   if (GL.activeTab === "seat") renderSeatPanel();
   renderSeats(GL.globalSeats);
 
-  if (moved && oldDocId !== newDocId) {
-    const layoutUrl = `./layout.html?tournamentId=${encodeURIComponent(GL.tournamentId)}&eventId=${encodeURIComponent(resolvedNextEventId)}&boxId=${encodeURIComponent(nextBoxId)}&focusSeatId=${encodeURIComponent(targetSeatId)}`;
-    if (
-      window.confirm(
-        "변경된 카드·Box의 배치 화면(layout.html)으로 이동할까요?\n(취소하면 통합 배치도에 그대로 있으며, 나중에 직접 열어도 됩니다.)"
-      )
-    ) {
-      sessionStorage.setItem("eventId", resolvedNextEventId);
-      sessionStorage.setItem("boxId", nextBoxId);
-      location.href = layoutUrl;
-    }
-  }
+  const shouldOfferLayout =
+    moved && oldDocId !== newDocId
+      ? { eventId: resolvedNextEventId, boxId: nextBoxId }
+      : null;
 
-  return true;
+  return { ok: true, shouldOfferLayout };
 }
 
 export async function addGlobalSeatQuick(rawLabel = "") {
@@ -546,6 +526,31 @@ async function addGlobalSeatCore({ label = "", eventId = "", boxId = "", clearFo
   sessionStorage.setItem("eventId", eid);
   sessionStorage.setItem("boxId", bid);
   pushGlobalUndo({ kind: "add_seat", seatId, eventId: eid, boxId: bid });
+
+  const optimistic = {
+    seatId,
+    label: lid,
+    no: order,
+    order,
+    x: 0,
+    y: 0,
+    person: "비어있음",
+    personUid: "",
+    personEmail: "",
+    seatedAt: null,
+    status: "empty",
+    tournamentId: GL.tournamentId,
+    mappedEventId: eid,
+    currentEventId: eid,
+    boxId: bid,
+    sourceLayoutDocId: `${eid}__${bid}`,
+    __firestoreDocId: docId
+  };
+  const existingIdx = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === seatId);
+  if (existingIdx >= 0) GL.globalSeats[existingIdx] = { ...GL.globalSeats[existingIdx], ...optimistic };
+  else GL.globalSeats.push(optimistic);
+  renderSeats(GL.globalSeats);
+  if (GL.activeTab === "seat") renderSeatPanel();
 
   if (clearFormInputs) {
     const seatLabelInput = document.getElementById("seatLabelInput");
