@@ -7,7 +7,13 @@ import {
   signOut
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { createGoogleAuthProvider } from "../shared/google-auth-provider.js";
-import { doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import {
+  doc,
+  getDoc,
+  setDoc,
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { resolveStoredUserRole } from "../shared/auth-helpers.js";
 import { isAdminEmail } from "../app_config.js";
 import { isAppDebugEnabled } from "../shared/app-debug.js";
 import { syncUserProfile } from "./user-sync.js";
@@ -206,7 +212,9 @@ async function saveProfile() {
     const user = auth.currentUser;
     const uid = user.uid;
     const email = String(user.email || "").trim().toLowerCase();
-    const role = isAdminEmail(email) ? "admin" : "user";
+    const existingSnap = await getDoc(doc(db, "users", uid));
+    const prev = existingSnap.exists() ? existingSnap.data() || {} : {};
+    const role = resolveStoredUserRole(email, prev);
 
     await setDoc(
       doc(db, "users", uid),

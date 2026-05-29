@@ -1,4 +1,6 @@
-import { isAdminEmail } from "../app_config.js";
+import { getIsAdmin, hasAnyDirectEventAllow, isAdminEmail } from "../shared/auth-helpers.js";
+
+export { hasAnyDirectEventAllow };
 
 /** 토너먼트 카드 / 유저 관리에서 동일 규칙으로 접근 가능 여부를 판별합니다. */
 export function hasEventAccess(userProfile, tournament, authUser) {
@@ -17,11 +19,7 @@ export function hasEventAccess(userProfile, tournament, authUser) {
 }
 
 export function getIsAdminUser(user, profile) {
-  return profile?.role === "admin" || isAdminEmail(user?.email || "");
-}
-
-export function hasAnyDirectEventAllow(allowedEvents = {}) {
-  return Object.values(allowedEvents || {}).some((v) => v === true);
+  return getIsAdmin(user, profile);
 }
 
 export function isValidDocId(id = "") {

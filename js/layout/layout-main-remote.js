@@ -16,7 +16,12 @@ export async function layoutLoadMyUserProfile() {
   try {
     const snap = await getDoc(doc(db, "users", auth.currentUser.uid));
     if (!snap.exists()) return null;
-    return snap.data() || null;
+    const { normalizeAndPersistUserRole } = await import("../login/user-sync.js");
+    return await normalizeAndPersistUserRole(
+      auth.currentUser.uid,
+      snap.data() || {},
+      auth.currentUser.email || ""
+    );
   } catch (err) {
     console.error("loadMyUserProfile error:", err);
     return null;

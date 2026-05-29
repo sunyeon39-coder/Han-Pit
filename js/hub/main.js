@@ -309,7 +309,10 @@ onAuthStateChanged(auth, async (user) => {
   try {
     const initGen = ++hubState.hubAuthFlowGen;
 
-    const [profile] = await Promise.all([loadUserProfile(user.uid), loadTournaments()]);
+    const [profile] = await Promise.all([
+      loadUserProfile(user.uid, user.email || ""),
+      loadTournaments()
+    ]);
     if (initGen !== hubState.hubAuthFlowGen) return;
 
     hubState.currentUserProfile = profile;

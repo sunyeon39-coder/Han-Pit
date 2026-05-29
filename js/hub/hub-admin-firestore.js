@@ -7,7 +7,8 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { db } from "../firebase.js";
 import { isAdminEmail } from "../app_config.js";
-import { getIsAdminUser, hasAnyDirectEventAllow, isValidDocId } from "./hub-helpers.js";
+import { hasAnyDirectEventAllow } from "../shared/auth-helpers.js";
+import { getIsAdminUser, isValidDocId } from "./hub-helpers.js";
 import { cleanupUserFromLayoutState } from "./layout-cleanup.js";
 import { hubState } from "./hub-state.js";
 import { hubRefs } from "./hub-dom-refs.js";
@@ -112,16 +113,10 @@ export async function grantEventDirectly(uid, eventId) {
   }
 
   try {
-    await setDoc(
-      doc(db, "users", uid),
-      {
-        role: "admin",
-        allowedEvents: {
-          [eventId]: true
-        }
-      },
-      { merge: true }
-    );
+    await updateDoc(doc(db, "users", uid), {
+      role: "admin",
+      [`allowedEvents.${eventId}`]: true
+    });
 
     const user = hubState.usersCache.find((u) => u.uid === uid);
     if (user) {

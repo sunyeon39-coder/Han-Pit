@@ -11,7 +11,8 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 import { isAdminEmail } from "../app_config.js";
-import { getIsAdmin } from "../shared/auth-helpers.js";
+import { getIsAdmin, resolveStoredUserRole } from "../shared/auth-helpers.js";
+import { normalizeAndPersistUserRole } from "../login/user-sync.js";
 import { isAppDebugEnabled } from "../shared/app-debug.js";
 import { openModal, closeModal, escapeHtml } from "../shared/dom-utils.js";
 import { getTournamentId, resolveRelativePage } from "./core-utils.js";
@@ -345,11 +346,17 @@ onAuthStateChanged(auth, async (user) => {
       IX.currentUserProfile = {
         email: user.email || "",
         nickname: user.displayName || "",
-        role: isAdminEmail(user.email || "") ? "admin" : "user",
+        role: resolveStoredUserRole(user.email || "", {}),
         accessCode: "",
         allowedEvents: {}
       };
       await setDoc(userRef, IX.currentUserProfile, { merge: true });
+    } else {
+      IX.currentUserProfile = await normalizeAndPersistUserRole(
+        user.uid,
+        IX.currentUserProfile,
+        user.email || ""
+      );
     }
 
     const isAdmin = getIsAdmin(auth.currentUser, IX.currentUserProfile);

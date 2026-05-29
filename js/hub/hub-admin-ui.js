@@ -1,4 +1,5 @@
 import { escapeHtml, openModal, closeModal } from "../shared/dom-utils.js";
+import { resolveStoredUserRole } from "../shared/auth-helpers.js";
 import { hasEventAccess, sortUsersForAdminList } from "./hub-helpers.js";
 import { hubState } from "./hub-state.js";
 import { hubRefs } from "./hub-dom-refs.js";
@@ -170,7 +171,7 @@ export function renderUserManageModal(uid) {
   hubState.selectedManageUid = uid;
 
   const directAllowed = user.allowedEvents?.[selectedEventId] === true;
-  const isOpsAdmin = user.role === "admin";
+  const isOpsAdmin = resolveStoredUserRole(user.email, user) === "admin";
   const codeMatched =
     !!user.accessCode &&
     !!selectedTournament?.requiredCode &&
@@ -253,7 +254,7 @@ export function renderAdminUserList() {
   adminUserList.innerHTML = users
     .map((user) => {
       const directAllowed = user.allowedEvents?.[selectedEventId] === true;
-      const isOpsAdmin = user.role === "admin";
+      const isOpsAdmin = resolveStoredUserRole(user.email, user) === "admin";
       const roleLabel = isOpsAdmin ? "운영 admin" : user.role || "user";
       const codeMatched =
         !!user.accessCode &&

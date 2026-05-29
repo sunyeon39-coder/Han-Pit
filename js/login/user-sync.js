@@ -11,6 +11,7 @@ import {
   getDocs,
   limit
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { resolveStoredUserRole } from "../shared/auth-helpers.js";
 import { isAdminEmail } from "../app_config.js";
 
 export async function findLegacyUserDocByEmail(user) {
@@ -38,11 +39,10 @@ export async function ensureUserDoc(user) {
   const currentSnap = await getDoc(userRef);
 
   const email = String(user.email || "").trim().toLowerCase();
-  const role = isAdminEmail(email) ? "admin" : "user";
 
   if (currentSnap.exists()) {
     const prev = currentSnap.data() || {};
-    const nextRole = isAdminEmail(email) ? "admin" : "user";
+    const nextRole = resolveStoredUserRole(email, prev);
     await updateDoc(userRef, {
       email: user.email || "",
       photoURL: String(user.photoURL || "").trim(),
@@ -67,8 +67,7 @@ export async function ensureUserDoc(user) {
 
   if (legacy) {
     const legacyData = legacy.data || {};
-    const legacyRole = String(legacyData.role || "user").trim();
-    const nextRole = isAdminEmail(email) ? "admin" : legacyRole || "user";
+    const nextRole = resolveStoredUserRole(email, legacyData);
 
     const profile = {
       email: user.email || "",
@@ -105,7 +104,7 @@ export async function ensureUserDoc(user) {
     phone: "",
     gender: "none",
     photoURL: String(user.photoURL || "").trim(),
-    role,
+    role: resolveStoredUserRole(email, {}),
     accessCode: "",
     allowedEvents: {}
   };
@@ -123,9 +122,23 @@ export async function ensureUserDoc(user) {
   return {
     created: true,
     migrated: false,
-    role,
+    role: profile.role,
     profile
   };
+}
+
+/** 직접 허용 등으로 role이 user로 깨진 문서를 로드 시 보정 */
+export async function normalizeAndPersistUserRole(uid, profile, email = "") {
+  if (!uid || !profile) return profile;
+  const normalized = {
+    ...profile,
+    role: resolveStoredUserRole(email || profile.email, profile)
+  };
+  const prevRole = String(profile.role || "").trim();
+  if (normalized.role !== prevRole) {
+    await updateDoc(doc(db, "users", uid), { role: normalized.role });
+  }
+  return normalized;
 }
 
 export async function syncUserProfile(user) {

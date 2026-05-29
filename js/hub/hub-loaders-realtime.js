@@ -48,11 +48,12 @@ export async function loadAllUsers() {
   }
 }
 
-export async function loadUserProfile(uid) {
+export async function loadUserProfile(uid, email = "") {
   try {
     const snap = await getDoc(doc(db, "users", uid));
     if (!snap.exists()) return null;
-    return snap.data() || null;
+    const { normalizeAndPersistUserRole } = await import("../login/user-sync.js");
+    return await normalizeAndPersistUserRole(uid, snap.data() || {}, email);
   } catch (err) {
     console.error("loadUserProfile error:", err);
     return null;

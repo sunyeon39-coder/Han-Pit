@@ -64,9 +64,13 @@ export function startGlobalLayoutApp() {
 
     try {
       const userSnap = await getDoc(doc(db, "users", user.uid));
-      const profile = userSnap.exists() ? (userSnap.data() || {}) : null;
+      let profile = userSnap.exists() ? (userSnap.data() || {}) : null;
+      if (profile) {
+        const { normalizeAndPersistUserRole } = await import("../login/user-sync.js");
+        profile = await normalizeAndPersistUserRole(user.uid, profile, user.email || "");
+      }
       GL.userProfile = profile || {};
-      GL.isAdminUser = getIsAdmin(user, profile);
+      GL.isAdminUser = getIsAdmin(user, GL.userProfile);
       if (!GL.isAdminUser) {
         alert("관리자만 접근할 수 있습니다.");
         location.replace("./index.html");
