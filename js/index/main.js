@@ -109,6 +109,12 @@ function buildGlobalLayoutHref() {
 
 let indexHadOps = false;
 
+function indexTournamentMeta() {
+  const t = IX.currentTournament;
+  if (!t) return null;
+  return { id: t.id, name: t.name, logoText: t.logoText };
+}
+
 function resolveIndexBootProfile(user) {
   if (!user?.uid) return null;
   const hadCache = !!readLoginProfileCache(user.uid);
@@ -149,7 +155,7 @@ function applyIndexOpsPermissions(user = auth.currentUser, meta = {}) {
 
   const tid = getTournamentId();
   const email = user.email || "";
-  const canOps = canUseTournamentOps(email, IX.currentUserProfile, tid);
+  const canOps = canUseTournamentOps(email, IX.currentUserProfile, tid, indexTournamentMeta());
 
   if (!canOps && meta.fromCache && indexHadOps) return;
 
@@ -250,6 +256,8 @@ async function init() {
   setupAttendanceLogEvents();
   setupWorkSummaryEvents();
   bindAttendanceLogsRealtime();
+
+  applyIndexOpsPermissions(auth.currentUser);
 }
 
 function wireIndexPageControls() {
@@ -564,7 +572,6 @@ onAuthStateChanged(auth, async (user) => {
         profile = IX.currentUserProfile;
       } else {
         IX.currentUserProfile = profile;
-        applyIndexOpsPermissions(user);
         void normalizeAndPersistUserRole(user.uid, IX.currentUserProfile, user.email || "").then(
           (normalized) => {
             if (normalized) {
@@ -577,7 +584,6 @@ onAuthStateChanged(auth, async (user) => {
       seedMyUserProfileCache(IX.currentUserProfile);
       writeLoginProfileCache(user.uid, IX.currentUserProfile);
       if (!boot) {
-        applyIndexOpsPermissions(user);
         bindMyUserProfileRealtime(user.uid, {
           email: user.email || "",
           onProfileChange: (p, meta) => {
@@ -589,18 +595,22 @@ onAuthStateChanged(auth, async (user) => {
         void refreshFcmTokenIfGranted(user.uid);
         flushAppBadgeIfVisible();
       }
+      applyIndexOpsPermissions(user);
       return profile;
     })();
 
-    void profilePromise;
+    await Promise.all([profilePromise, init(), periodPromise]);
 
-    await Promise.all([init(), periodPromise]);
-
-    void profilePromise.then(() => refreshIndexOpsFromServer(user));
+    applyIndexOpsPermissions(user);
+    void refreshIndexOpsFromServer(user);
   } catch (err) {
     console.error("index auth init error:", err);
     alert("인덱스 데이터를 불러오지 못했습니다.");
   }
+});
+
+window.addEventListener("hanpit-index-tournament-ready", () => {
+  applyIndexOpsPermissions(auth.currentUser);
 });
 
 document.addEventListener("visibilitychange", () => {

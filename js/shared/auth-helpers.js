@@ -73,6 +73,32 @@ export function hasDirectEventAllowFor(allowedEvents = {}, eventId = "") {
   );
 }
 
+/** 대회 문서 id 외 name·logoText 키로 저장된 직접 허용도 인정 */
+export function hasDirectEventAllowForTournament(
+  allowedEvents = {},
+  tournamentId = "",
+  tournamentMeta = null
+) {
+  if (hasDirectEventAllowFor(allowedEvents, tournamentId)) return true;
+  const meta = tournamentMeta && typeof tournamentMeta === "object" ? tournamentMeta : null;
+  if (!meta) return false;
+
+  const sanitized = sanitizeAllowedEvents(allowedEvents);
+  const aliases = [
+    String(meta.name || "").trim().toLowerCase(),
+    String(meta.logoText || "").trim().toLowerCase()
+  ].filter(Boolean);
+
+  for (const alias of aliases) {
+    if (Object.entries(sanitized).some(
+      ([key, value]) => value === true && String(key || "").trim().toLowerCase() === alias
+    )) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** 직접 허용 변경 후 Firestore role — 시스템 admin / 허용 있음 → admin, 없음 → user */
 export function resolveDirectOpsRole(email = "", allowedEvents = {}) {
   if (isSystemAdminEmail(email)) return "admin";
@@ -156,10 +182,16 @@ export function canManageTournamentOps(email = "", profile = {}, tournamentId = 
 }
 
 /** index·layout 운영 UI — 시스템 admin 또는 직접 허용(role admin) */
-export function canUseTournamentOps(email = "", profile = {}, tournamentId = "") {
+export function canUseTournamentOps(
+  email = "",
+  profile = {},
+  tournamentId = "",
+  tournamentMeta = null
+) {
   if (!profile || typeof profile !== "object") profile = {};
   if (isSystemAdminEmail(email || profile?.email)) return true;
-  return hasDirectEventAllowFor(opsAllowedEventsFromProfile(profile), tournamentId);
+  const allowed = opsAllowedEventsFromProfile(profile);
+  return hasDirectEventAllowForTournament(allowed, tournamentId, tournamentMeta);
 }
 
 export function getIsAdmin(user, profile) {

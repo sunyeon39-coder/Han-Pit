@@ -67,6 +67,7 @@ async function initTournamentPeriodWatch() {
       id: snap.id,
       ...(snap.data() || {})
     };
+    window.dispatchEvent(new CustomEvent("hanpit-index-tournament-ready"));
 
     if (IX.topbarTournamentName) {
       const name = IX.currentTournament.name || "Tournament Events";
@@ -91,6 +92,7 @@ async function initTournamentPeriodWatch() {
           id: docSnap.id,
           ...(docSnap.data() || {})
         };
+        window.dispatchEvent(new CustomEvent("hanpit-index-tournament-ready"));
 
         if (IX.topbarTournamentName) {
           const name = IX.currentTournament.name || "Tournament Events";

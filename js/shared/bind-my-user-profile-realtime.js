@@ -1,6 +1,7 @@
 import { db } from "../firebase.js";
 import { doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { mergeOpsProfile, normalizeUserProfile } from "./auth-helpers.js";
+import { enrichProfileWithEmailAllows } from "./load-user-profile.js";
 
 let stopMyProfileWatch = null;
 let lastProfile = null;
@@ -16,9 +17,14 @@ export function bindMyUserProfileRealtime(uid, { email = "", onProfileChange } =
     (snap) => {
       if (!snap.exists()) return;
       const raw = normalizeUserProfile(snap.data() || {}, email);
-      const profile = mergeOpsProfile(lastProfile, raw, snap.metadata || {});
-      lastProfile = profile;
-      onProfileChange(profile, snap.metadata || {});
+      const merged = mergeOpsProfile(lastProfile, raw, snap.metadata || {});
+      const fromCache = snap.metadata?.fromCache === true;
+      void enrichProfileWithEmailAllows(uid, email, merged, { preferCacheFirst: fromCache }).then(
+        (profile) => {
+          lastProfile = profile;
+          onProfileChange(profile, snap.metadata || {});
+        }
+      );
     },
     (err) => {
       console.error("bindMyUserProfileRealtime error:", err);

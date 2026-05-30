@@ -182,32 +182,48 @@ export async function loadUserProfileFresh(uid, email = "", options = {}) {
   return profile;
 }
 
-/** index·통합배치도 — 해당 대회 운영 권한이 캐시에 없으면 로그인 캐시를 건너뛰고 재조회 */
-export async function loadUserProfileForTournamentOps(uid, email = "", tournamentId = "", options = {}) {
-  let profile = await loadUserProfileFresh(uid, email, {
-    preferCacheFirst: options.preferCacheFirst !== false,
-    skipLoginCache: options.skipLoginCache === true
+/** 같은 이메일 다른 uid 문서의 allowedEvents 를 프로필에 합침 */
+export async function enrichProfileWithEmailAllows(uid, email, profile, options = {}) {
+  if (!profile || typeof profile !== "object") return profile;
+  const resolvedEmail = String(email || profile.email || "").trim();
+  if (!resolvedEmail) return profile;
+
+  const mergedAllowed = await loadMergedAllowedEventsByEmail(resolvedEmail, uid, {
+    preferCacheFirst: options.preferCacheFirst !== false
   });
+  if (!Object.keys(mergedAllowed).length) return profile;
+  return normalizeUserProfile({ ...profile, allowedEvents: mergedAllowed }, resolvedEmail);
+}
+
+/** index·통합배치도 — 로그인·Firestore 캐시보다 서버·이메일 병합 우선 */
+export async function loadUserProfileForTournamentOps(uid, email = "", tournamentId = "", options = {}) {
   const tid = String(tournamentId || "").trim();
-  if (tid && profile && !canUseTournamentOps(email, profile, tid)) {
-    const fresh = await loadUserProfileFresh(uid, email, {
-      preferCacheFirst: true,
-      skipLoginCache: true
-    });
-    if (fresh) profile = fresh;
-  }
+  const tournamentMeta = options.tournamentMeta || null;
+
+  let profile = await loadUserProfileFresh(uid, email, {
+    preferCacheFirst: false,
+    skipLoginCache: true
+  });
+  profile = await enrichProfileWithEmailAllows(uid, email, profile, { preferCacheFirst: false });
+
+  if (!tid || !profile) return profile;
+  if (canUseTournamentOps(email, profile, tid, tournamentMeta)) return profile;
+
+  const fresh = await loadUserProfileFresh(uid, email, {
+    preferCacheFirst: false,
+    skipLoginCache: true
+  });
+  profile = await enrichProfileWithEmailAllows(uid, email, fresh || profile, {
+    preferCacheFirst: false
+  });
   return profile;
 }
 
-/** 허브 — 로그인 캐시가 fresh면 서버·이메일 병합으로 allowedEvents 재검증 */
+/** 허브 — allowedEvents 를 서버·이메일 병합으로 재검증 */
 export async function loadUserProfileRevalidated(uid, email = "") {
-  let profile = await loadUserProfileFresh(uid, email, { preferCacheFirst: true });
-  if (uid && isLoginProfileCacheFresh(uid)) {
-    const fresh = await loadUserProfileFresh(uid, email, {
-      preferCacheFirst: false,
-      skipLoginCache: true
-    });
-    if (fresh) profile = fresh;
-  }
-  return profile;
+  let profile = await loadUserProfileFresh(uid, email, {
+    preferCacheFirst: false,
+    skipLoginCache: true
+  });
+  return enrichProfileWithEmailAllows(uid, email, profile, { preferCacheFirst: false });
 }
