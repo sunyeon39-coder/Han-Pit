@@ -1,7 +1,7 @@
 import { auth, db } from "../firebase.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { GL, initGlFromUrl, initGlDomRefs } from "./state.js";
-import { canManageTournamentOps, canUseTournamentOps, isAdminEmail } from "../shared/auth-helpers.js";
+import { canManageTournamentOps } from "../shared/auth-helpers.js";
 import { resolveLayoutAccentColor } from "../shared/layout-operator-colors.js";
 import { clearMyWaitingPick } from "./waiting-picks.js";
 import { layoutIsMobile, ALERT_VOLUME, SOUND_ENABLED_KEY } from "../layout/layout-main-route-env.js";
@@ -50,6 +50,8 @@ import {
 } from "../shared/bind-my-user-profile-realtime.js";
 import { readBootUserProfile } from "../shared/login-profile-cache.js";
 import { loadUserProfileForTournamentOps } from "../shared/load-user-profile.js";
+import { writeLoginProfileCache } from "../shared/login-profile-cache.js";
+import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
 
 let globalLayoutMobileSeatNotify = null;
 
@@ -126,12 +128,7 @@ export function startGlobalLayoutApp() {
 
   function applyGlobalLayoutOpsPermissions(user, meta = {}) {
     GL.userProfile = GL.userProfile || {};
-    const hadOps = GL.isAdminUser === true;
-    const canOps =
-      isAdminEmail(user?.email || "") ||
-      canUseTournamentOps(user?.email, GL.userProfile, GL.tournamentId);
-
-    if (!canOps && meta.fromCache && hadOps) return;
+    const canOps = canShowTournamentOpsUi(user?.email, GL.userProfile, GL.tournamentId);
 
     GL.isAdminUser = canOps;
     GL.layoutAccentColor = resolveLayoutAccentColor(
@@ -168,9 +165,19 @@ export function startGlobalLayoutApp() {
       GL.currentUser = user;
       GL.userProfile = readBootUserProfile(user);
       seedMyUserProfileCache(GL.userProfile);
-      GL.isAdminUser =
-        isAdminEmail(user.email || "") ||
-        canUseTournamentOps(user.email, GL.userProfile, GL.tournamentId);
+
+      const serverProfile = await loadUserProfileForTournamentOps(
+        user.uid,
+        user.email || "",
+        GL.tournamentId
+      );
+      if (serverProfile) {
+        GL.userProfile = serverProfile;
+        seedMyUserProfileCache(GL.userProfile);
+        writeLoginProfileCache(user.uid, GL.userProfile);
+      }
+
+      GL.isAdminUser = canShowTournamentOpsUi(user.email, GL.userProfile, GL.tournamentId);
       GL.layoutAccentColor = resolveLayoutAccentColor(
         GL.userProfile,
         user.uid,
@@ -178,19 +185,9 @@ export function startGlobalLayoutApp() {
       );
 
       if (!GL.isAdminUser) {
-        const serverProfile = await loadUserProfileFresh(user.uid, user.email || "", {
-          preferCacheFirst: true
-        });
-        GL.userProfile = serverProfile || GL.userProfile;
-        seedMyUserProfileCache(GL.userProfile);
-        GL.isAdminUser =
-          isAdminEmail(user.email || "") ||
-          canUseTournamentOps(user.email, GL.userProfile, GL.tournamentId);
-        if (!GL.isAdminUser) {
-          alert("운영 권한이 없습니다. 허브에서「직접 허용」을 받았는지, 같은 대회로 들어왔는지 확인해 주세요.");
-          location.replace("./index.html");
-          return;
-        }
+        alert("운영 권한이 없습니다. 허브에서「직접 허용」을 받았는지, 같은 대회로 들어왔는지 확인해 주세요.");
+        location.replace("./index.html");
+        return;
       }
 
       bindMyUserProfileRealtime(user.uid, {
@@ -222,9 +219,8 @@ export function startGlobalLayoutApp() {
       ).then((fresh) => {
         if (!fresh) return;
         GL.userProfile = fresh;
-        GL.isAdminUser =
-          isAdminEmail(user.email || "") ||
-          canManageTournamentOps(user.email, GL.userProfile, GL.tournamentId);
+        GL.isAdminUser = canShowTournamentOpsUi(user.email, GL.userProfile, GL.tournamentId);
+        writeLoginProfileCache(user.uid, GL.userProfile);
         refreshGlobalLayoutAdminUi();
       });
 
@@ -232,9 +228,8 @@ export function startGlobalLayoutApp() {
         .then((profile) => {
           if (!profile) return;
           GL.userProfile = profile;
-          GL.isAdminUser =
-            isAdminEmail(user.email || "") ||
-            canManageTournamentOps(user.email, GL.userProfile, GL.tournamentId);
+          GL.isAdminUser = canShowTournamentOpsUi(user.email, GL.userProfile, GL.tournamentId);
+          writeLoginProfileCache(user.uid, GL.userProfile);
           refreshGlobalLayoutAdminUi();
         })
         .catch((err) => {

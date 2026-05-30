@@ -11,17 +11,24 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getEventCardIdFromRecord } from "../shared/tournament-event-instance.js";
 import { normalizeAndPersistUserRole } from "../login/user-sync.js";
-import { loadUserProfileFresh } from "../shared/load-user-profile.js";
+import { loadUserProfileForTournamentOps } from "../shared/load-user-profile.js";
+import { writeLoginProfileCache } from "../shared/login-profile-cache.js";
 
-export async function layoutLoadMyUserProfile() {
+export async function layoutLoadMyUserProfile(tournamentId = "") {
   if (!auth.currentUser) return null;
 
+  const tid =
+    String(tournamentId || "").trim() ||
+    String(sessionStorage.getItem("tournamentId") || "").trim();
+
   try {
-    const profile = await loadUserProfileFresh(auth.currentUser.uid, auth.currentUser.email || "", {
-      preferCacheFirst: true,
-      deferEmailMerge: false
-    });
+    const profile = await loadUserProfileForTournamentOps(
+      auth.currentUser.uid,
+      auth.currentUser.email || "",
+      tid
+    );
     if (!profile) return null;
+    writeLoginProfileCache(auth.currentUser.uid, profile);
     void normalizeAndPersistUserRole(
       auth.currentUser.uid,
       profile,

@@ -247,12 +247,9 @@ import {
 
   function applyLayoutOpsPermissions(meta = {}) {
     if (!currentUser) return;
-    const hadOps = isAdminUser === true;
     const canOps =
       isAdminEmail(currentUser.email || "") ||
       canUseTournamentOps(currentUser.email, currentUserProfile, TOURNAMENT_ID);
-
-    if (!canOps && meta.fromCache && hadOps) return;
 
     isAdminUser = canOps;
     syncLayoutMobileAdminChrome();
@@ -663,15 +660,16 @@ import {
 
   seatNotify.bindMyNotificationWatch();
 
-  await layoutBootstrap.init();
-  markPageBootLoaded(app);
-
-  void layoutLoadMyUserProfile().then((profile) => {
-    if (!profile) return;
+  const profile = await layoutLoadMyUserProfile(TOURNAMENT_ID);
+  if (profile) {
     currentUserProfile = profile;
     seedMyUserProfileCache(profile);
     applyLayoutOpsPermissions();
-  });
+  }
+
+  await layoutBootstrap.init();
+  markPageBootLoaded(app);
+  applyLayoutOpsPermissions();
 
   requestAnimationFrame(() => {
     void seatNotify.showPendingSeatNotificationOnce();

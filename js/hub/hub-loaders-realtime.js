@@ -17,10 +17,12 @@ import {
   sanitizeAllowedEvents
 } from "../shared/auth-helpers.js";
 import {
+  enrichProfileWithEmailAllows,
   loadUserProfileFresh,
   loadUserProfileRevalidated
 } from "../shared/load-user-profile.js";
 import { writeLoginProfileCache } from "../shared/login-profile-cache.js";
+import { syncLoginCacheForOpsProfile } from "../shared/tournament-ops-access.js";
 import {
   normalizeTournamentDoc,
   normalizeUserDoc,
@@ -515,23 +517,27 @@ export function bindMyProfileRealtime(uid) {
         return;
       }
 
-      const patch = mergeOpsProfile(
+      const email =
+        hubState.currentUser?.email || hubState.currentUserProfile?.email || "";
+      const merged = mergeOpsProfile(
         hubState.currentUserProfile,
-        normalizeUserProfile(
-          snap.data() || {},
-          hubState.currentUser?.email || hubState.currentUserProfile?.email || ""
-        ),
+        normalizeUserProfile(snap.data() || {}, email),
         snap.metadata || {}
       );
-      hubState.currentUserProfile = { ...(hubState.currentUserProfile || {}), ...patch };
+      const fromCache = snap.metadata?.fromCache === true;
+      void enrichProfileWithEmailAllows(uid, email, merged, { preferCacheFirst: fromCache }).then(
+        (profile) => {
+          hubState.currentUserProfile = { ...(hubState.currentUserProfile || {}), ...profile };
+          syncLoginCacheForOpsProfile(uid, hubState.currentUserProfile);
+          scheduleHubTournamentsRender();
 
-      scheduleHubTournamentsRender();
-
-      const isAdmin = getIsAdminUser(hubState.currentUser, hubState.currentUserProfile);
-      if (isAdmin && hubRefs.adminModal?.classList.contains("show")) {
-        populateTournamentSelect();
-        scheduleHubAdminRender();
-      }
+          const isAdmin = getIsAdminUser(hubState.currentUser, hubState.currentUserProfile);
+          if (isAdmin && hubRefs.adminModal?.classList.contains("show")) {
+            populateTournamentSelect();
+            scheduleHubAdminRender();
+          }
+        }
+      );
 
       if (snap.metadata.fromCache) {
         clearHubProfileCacheResyncDebounce();

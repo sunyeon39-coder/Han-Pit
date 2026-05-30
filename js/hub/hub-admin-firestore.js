@@ -19,6 +19,10 @@ import {
   resolveDirectOpsRole,
   sanitizeAllowedEvents
 } from "../shared/auth-helpers.js";
+import {
+  buildOpsProfilePatch,
+  syncLoginCacheForOpsProfile
+} from "../shared/tournament-ops-access.js";
 import { getIsAdminUser, isValidDocId } from "./hub-helpers.js";
 import { cleanupUserFromLayoutState } from "./layout-cleanup.js";
 import { hubState } from "./hub-state.js";
@@ -198,17 +202,16 @@ export async function grantEventDirectly(uid, eventId) {
         ...(hubState.currentUserProfile?.allowedEvents || {}),
         [eventId]: true
       });
-      hubState.currentUserProfile = normalizeUserProfile(
+      hubState.currentUserProfile = buildOpsProfilePatch(
         {
           ...(hubState.currentUserProfile || {}),
-          role: "admin",
           layoutAccentColor:
-            hubState.currentUserProfile?.layoutAccentColor || layoutAccentColor,
-          allowedEvents: selfAllowed,
-          opsTournamentIds: buildOpsTournamentIds(selfAllowed)
+            hubState.currentUserProfile?.layoutAccentColor || layoutAccentColor
         },
-        hubState.currentUser?.email || ""
+        hubState.currentUser?.email || "",
+        selfAllowed
       );
+      syncLoginCacheForOpsProfile(hubState.currentUser.uid, hubState.currentUserProfile);
       renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
     }
 
@@ -267,15 +270,12 @@ export async function revokeEventDirectly(uid, eventId) {
       }
 
       if (hubState.currentUser?.uid === targetUid) {
-        hubState.currentUserProfile = normalizeUserProfile(
-          {
-            ...(hubState.currentUserProfile || {}),
-            role: updates.role,
-            allowedEvents: nextAllowed,
-            opsTournamentIds: updates.opsTournamentIds
-          },
-          email
+        hubState.currentUserProfile = buildOpsProfilePatch(
+          hubState.currentUserProfile || {},
+          email,
+          nextAllowed
         );
+        syncLoginCacheForOpsProfile(hubState.currentUser.uid, hubState.currentUserProfile);
         scheduleHubTournamentsRender();
       }
 

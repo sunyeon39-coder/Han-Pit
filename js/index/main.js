@@ -11,10 +11,8 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 import { isAdminEmail } from "../app_config.js";
-import {
-  canUseTournamentOps,
-  resolveStoredUserRole
-} from "../shared/auth-helpers.js";
+import { resolveStoredUserRole } from "../shared/auth-helpers.js";
+import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
 import { normalizeAndPersistUserRole } from "../login/user-sync.js";
 import { isAppDebugEnabled } from "../shared/app-debug.js";
 import { openModal, closeModal, escapeHtml } from "../shared/dom-utils.js";
@@ -155,9 +153,7 @@ function applyIndexOpsPermissions(user = auth.currentUser, meta = {}) {
 
   const tid = getTournamentId();
   const email = user.email || "";
-  const canOps = canUseTournamentOps(email, IX.currentUserProfile, tid, indexTournamentMeta());
-
-  if (!canOps && meta.fromCache && indexHadOps) return;
+  const canOps = canShowTournamentOpsUi(email, IX.currentUserProfile, tid, indexTournamentMeta());
 
   indexHadOps = canOps;
   renderDealerOps();
@@ -423,7 +419,12 @@ function wireIndexPageControls() {
 
       const user = auth.currentUser;
       const tid = getTournamentId();
-      const canOps = canUseTournamentOps(user?.email, IX.currentUserProfile, tid);
+      const canOps = canShowTournamentOpsUi(
+        user?.email,
+        IX.currentUserProfile,
+        tid,
+        indexTournamentMeta()
+      );
 
       if (canOps) {
         const adminBtn = e.target.closest("[data-admin-action]");

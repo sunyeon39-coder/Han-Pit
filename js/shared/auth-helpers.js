@@ -134,11 +134,12 @@ export function normalizeUserProfile(profile = {}, email = "") {
   return next;
 }
 
-/** PWA·오프라인 캐시 스냅샷이 allowedEvents 를 비우는 것을 막음 */
+/** PWA·오프라인 캐시 스냅샷이 allowedEvents 를 비우는 것을 막음 (서버 스냅샷은 그대로 적용) */
 export function mergeOpsProfile(prev = null, next = null, meta = {}) {
   if (!next || typeof next !== "object") return prev || null;
   const normalized = normalizeUserProfile(next, next.email || prev?.email || "");
-  if (!meta.fromCache || !prev) return normalized;
+  if (meta.fromCache !== true) return normalized;
+  if (!prev) return normalized;
 
   const prevAllowed = opsAllowedEventsFromProfile(prev);
   const nextAllowed = opsAllowedEventsFromProfile(normalized);

@@ -1,5 +1,5 @@
 import {
-  canManageTournament,
+  canUseTournamentOps,
   hasAnyDirectEventAllow,
   isAdminEmail,
   isSystemAdminEmail,
@@ -17,7 +17,7 @@ export { hasAnyDirectEventAllow };
 export function hasEventAccess(userProfile, tournament, authUser) {
   if (!userProfile || !tournament) return false;
   if (isAdminEmail(authUser?.email || userProfile.email || "")) return true;
-  if (canManageTournament(authUser?.email || userProfile.email, userProfile, tournament.id)) {
+  if (canUseTournamentOps(authUser?.email || userProfile.email, userProfile, tournament.id)) {
     return true;
   }
 
@@ -32,9 +32,19 @@ export function hasEventAccess(userProfile, tournament, authUser) {
   return false;
 }
 
-/** Hub Access Manage·유저 권한 — 시스템 admin 이메일만 */
+/** Hub「Access Manage」·대회/유저 CRUD — 시스템 admin 이메일만 */
 export function getIsAdminUser(user, profile) {
   return isSystemAdminEmail(user?.email || profile?.email);
+}
+
+/** index·layout·통합배치도 운영 버튼 — 직접 허용 또는 시스템 admin */
+export function canUseHubTournamentOps(user, profile, tournamentId = "", tournamentMeta = null) {
+  return canUseTournamentOps(
+    user?.email || profile?.email,
+    profile,
+    tournamentId,
+    tournamentMeta
+  );
 }
 
 export function isValidDocId(id = "") {
