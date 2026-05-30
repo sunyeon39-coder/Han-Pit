@@ -3,10 +3,14 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   buildInlineAppUpdateSnippet,
+  buildAppAssetInlineFixSnippet,
+  APP_ASSET_FIX_MARKER,
   CRITICAL_SHELL_STYLE_TAG
 } from "./inline-app-update-snippet.mjs";
 
 const CRITICAL_SHELL_MARKER = "<!-- han-pit-critical-shell -->";
+const ASSET_FIX_END = "<!-- /han-pit-asset-fix -->";
+const assetFixSnippet = buildAppAssetInlineFixSnippet();
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const v = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
@@ -53,6 +57,17 @@ for (const name of htmlFiles) {
     html = html.replace(
       /<head([^>]*)>/i,
       `<head$1>\n  ${CRITICAL_SHELL_MARKER}\n  ${CRITICAL_SHELL_STYLE_TAG}\n  <!-- /han-pit-critical-shell -->`
+    );
+  }
+  if (html.includes(APP_ASSET_FIX_MARKER)) {
+    html = html.replace(
+      new RegExp(`${APP_ASSET_FIX_MARKER}[\\s\\S]*?${ASSET_FIX_END}`, "m"),
+      `${APP_ASSET_FIX_MARKER}\n  ${assetFixSnippet}\n  ${ASSET_FIX_END}`
+    );
+  } else if (html.includes("<!-- /han-pit-critical-shell -->")) {
+    html = html.replace(
+      "<!-- /han-pit-critical-shell -->",
+      `<!-- /han-pit-critical-shell -->\n  ${APP_ASSET_FIX_MARKER}\n  ${assetFixSnippet}\n  ${ASSET_FIX_END}`
     );
   }
   if (html.includes('name="han-pit-build"')) {
