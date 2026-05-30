@@ -40,6 +40,28 @@ export function hasAnyDirectEventAllow(allowedEvents = {}) {
   return Object.values(sanitizeAllowedEvents(allowedEvents)).some((v) => v === true);
 }
 
+/** Firestore users 문서(allowedEvents + opsTournamentIds) 기준 직접 허용 여부 */
+export function hasPersistedDirectOpsAllow(profile = {}) {
+  return hasAnyDirectEventAllow(opsAllowedEventsFromProfile(profile));
+}
+
+/** 직접 허용 유저 Firestore 동기화용 — role·allowedEvents·opsTournamentIds */
+export function buildDirectOpsPersistPatch(profile = {}, email = "") {
+  const normalized = normalizeUserProfile(profile, email || profile?.email || "");
+  const allowed = opsAllowedEventsFromProfile(normalized);
+  if (!hasAnyDirectEventAllow(allowed)) return null;
+
+  const ids = Array.isArray(profile?.opsTournamentIds)
+    ? profile.opsTournamentIds.map((id) => String(id || "").trim()).filter(Boolean)
+    : Object.keys(allowed);
+
+  return {
+    role: "admin",
+    allowedEvents: allowed,
+    opsTournamentIds: [...new Set(ids)]
+  };
+}
+
 export function hasDirectEventAllowFor(allowedEvents = {}, eventId = "") {
   const sanitized = sanitizeAllowedEvents(allowedEvents);
   const id = String(eventId || "").trim();
@@ -109,8 +131,18 @@ export function mergeOpsProfile(prev = null, next = null, meta = {}) {
     );
   }
 
-  if (prevRole === "admin" && nextRole !== "admin") {
-    patched = { ...patched, role: "admin" };
+  const prevHadOps = hasPersistedDirectOpsAllow(prev);
+  const mergedHadOps = hasAnyDirectEventAllow(mergedAllowed);
+
+  if ((prevRole === "admin" || prevHadOps || mergedHadOps) && nextRole !== "admin") {
+    patched = normalizeUserProfile(
+      {
+        ...patched,
+        role: "admin",
+        allowedEvents: mergedAllowed
+      },
+      normalized.email || prev?.email || ""
+    );
   }
 
   return patched;

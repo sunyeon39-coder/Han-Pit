@@ -3,6 +3,7 @@ import {
   hasAnyDirectEventAllow,
   isAdminEmail,
   isSystemAdminEmail,
+  opsAllowedEventsFromProfile,
   resolveStoredUserRole,
   sanitizeAllowedEvents
 } from "../shared/auth-helpers.js";
@@ -53,20 +54,30 @@ export function normalizeTournamentDoc(d) {
 export function normalizeUserDoc(d) {
   const data = d.data() || {};
   const email = String(data.email || "").trim();
-  const allowedEvents = sanitizeAllowedEvents(data.allowedEvents);
-  const role = resolveStoredUserRole(email, { ...data, allowedEvents });
+  const opsAllowed = opsAllowedEventsFromProfile(data);
+  const role = resolveStoredUserRole(email, { ...data, allowedEvents: opsAllowed });
   return {
     uid: d.id,
     nickname: data.nickname || "",
     email,
     role,
     accessCode: data.accessCode || "",
-    allowedEvents,
+    allowedEvents: opsAllowed,
     layoutAccentColor: data.layoutAccentColor || "",
     /** Firestore 원본 — 자동 보정용 */
     _rawRole: String(data.role || "").trim() || "user",
-    _rawAllowedEvents: data.allowedEvents || {}
+    _rawAllowedEvents: data.allowedEvents || {},
+    _rawOpsTournamentIds: Array.isArray(data.opsTournamentIds) ? data.opsTournamentIds : []
   };
+}
+
+export function userRecordHasDirectOpsAllow(user = {}) {
+  return hasAnyDirectEventAllow(
+    opsAllowedEventsFromProfile({
+      allowedEvents: user._rawAllowedEvents ?? user.allowedEvents,
+      opsTournamentIds: user._rawOpsTournamentIds
+    })
+  );
 }
 
 export function sortTournaments(list) {

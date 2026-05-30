@@ -10,6 +10,7 @@ import {
   updateDoc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
+  buildDirectOpsPersistPatch,
   mergeOpsProfile,
   normalizeUserProfile,
   sanitizeAllowedEvents
@@ -19,8 +20,10 @@ import {
   normalizeTournamentDoc,
   normalizeUserDoc,
   sortTournaments,
-  getIsAdminUser
+  getIsAdminUser,
+  userRecordHasDirectOpsAllow
 } from "./hub-helpers.js";
+import { isSystemAdminEmail } from "../shared/auth-helpers.js";
 import { hubState, FALLBACK_TOURNAMENTS } from "./hub-state.js";
 import { hubRefs } from "./hub-dom-refs.js";
 import { scheduleHubTournamentsRender, scheduleHubAdminRender } from "./hub-realtime-ui.js";
@@ -116,13 +119,67 @@ export async function loadTournaments() {
   }
 }
 
+/** 직접 허용 유저는 role 이 user 로 깨져도 admin + allowedEvents 를 서버에 유지 */
+async function reconcileDirectAllowOpsOnServer(users = []) {
+  if (!getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) return { fixed: 0 };
+
+  let fixed = 0;
+  for (const u of users || []) {
+    if (!u?.uid || isSystemAdminEmail(u.email)) continue;
+    if (!userRecordHasDirectOpsAllow(u)) continue;
+
+    const patch = buildDirectOpsPersistPatch(
+      {
+        role: u._rawRole || u.role,
+        allowedEvents: u._rawAllowedEvents ?? u.allowedEvents,
+        opsTournamentIds: u._rawOpsTournamentIds,
+        email: u.email
+      },
+      u.email
+    );
+    if (!patch) continue;
+
+    const rawRole = String(u._rawRole || u.role || "")
+      .trim()
+      .toLowerCase();
+    const rawAllowed = sanitizeAllowedEvents(u._rawAllowedEvents || {});
+    const needsRole = rawRole !== "admin";
+    const needsEvents =
+      Object.keys(rawAllowed).length < Object.keys(patch.allowedEvents || {}).length;
+
+    if (!needsRole && !needsEvents) continue;
+
+    try {
+      await updateDoc(doc(db, "users", u.uid), patch);
+      u.role = "admin";
+      u._rawRole = "admin";
+      u.allowedEvents = patch.allowedEvents;
+      u._rawAllowedEvents = { ...patch.allowedEvents };
+      u._rawOpsTournamentIds = patch.opsTournamentIds;
+      fixed += 1;
+    } catch (err) {
+      console.warn("[reconcileDirectAllowOpsOnServer]", u.uid, err?.code || err);
+    }
+  }
+  return { fixed };
+}
+
 function healStaleUserRolesFromCache(users = []) {
   for (const u of users) {
     if (!u?.uid) continue;
-    const raw = String(u._rawRole || "").trim();
-    const resolved = String(u.role || "user").trim();
+    if (userRecordHasDirectOpsAllow(u)) continue;
+
+    const raw = String(u._rawRole || "")
+      .trim()
+      .toLowerCase();
+    const resolved = String(u.role || "user")
+      .trim()
+      .toLowerCase();
     if (!raw || raw === resolved) continue;
-    void updateDoc(doc(db, "users", u.uid), { role: resolved }).catch((err) => {
+    if (raw === "admin" && resolved === "user") continue;
+    if (resolved !== "admin") continue;
+
+    void updateDoc(doc(db, "users", u.uid), { role: "admin" }).catch((err) => {
       console.warn("[healStaleUserRole]", u.uid, err?.code || err);
     });
   }
@@ -142,6 +199,8 @@ export async function healNonAdminUsersToBasic(users = [], options = {}) {
   const toFix = (users || []).filter((u) => {
     if (!u?.uid) return false;
     if (isSystemAdminEmail(u.email)) return false;
+    if (userRecordHasDirectOpsAllow(u)) return false;
+
     const rawRole = String(u._rawRole || u.role || "")
       .trim()
       .toLowerCase();
@@ -189,11 +248,14 @@ export async function healNonAdminUsersToBasic(users = [], options = {}) {
 function healStaleAllowedEventsFromCache(users = []) {
   for (const u of users) {
     if (!u?.uid) continue;
+    if (userRecordHasDirectOpsAllow(u)) continue;
+
     const raw = u._rawAllowedEvents;
     if (!raw || typeof raw !== "object") continue;
     const sanitized = sanitizeAllowedEvents(raw);
     const rawKeys = Object.keys(raw);
     const sanKeys = Object.keys(sanitized);
+    if (rawKeys.length > 0 && sanKeys.length === 0) continue;
     const mismatch =
       rawKeys.length !== sanKeys.length ||
       rawKeys.some((k) => raw[k] === true && !sanitized[k]) ||
@@ -231,14 +293,14 @@ export async function loadAllUsers() {
     healStaleAllowedEventsFromCache(hubState.usersCache);
     if (!hubState.usersRoleHealDone) {
       hubState.usersRoleHealDone = true;
-      void healNonAdminUsersToBasic(hubState.usersCache)
+      void reconcileDirectAllowOpsOnServer(hubState.usersCache)
         .then(({ fixed }) => {
           if (fixed > 0) {
-            console.info(`[healNonAdminUsersToBasic] ${fixed}명을 user로 정리했습니다.`);
+            console.info(`[reconcileDirectAllowOpsOnServer] 직접 허용 ${fixed}명 role/allowedEvents 복구`);
           }
         })
         .catch((err) => {
-          console.error("healNonAdminUsersToBasic on loadAllUsers:", err);
+          console.error("reconcileDirectAllowOpsOnServer on loadAllUsers:", err);
         });
     }
     return hubState.usersCache;
@@ -328,6 +390,9 @@ export function bindUsersRealtime() {
       hubState.usersCache = snap.docs.map(normalizeUserDoc);
       healStaleUserRolesFromCache(hubState.usersCache);
       healStaleAllowedEventsFromCache(hubState.usersCache);
+      void reconcileDirectAllowOpsOnServer(hubState.usersCache).catch((err) => {
+        console.warn("reconcileDirectAllowOpsOnServer on users realtime:", err);
+      });
       scheduleHubAdminRender();
     },
     (err) => {

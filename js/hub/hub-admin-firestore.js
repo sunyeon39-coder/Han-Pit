@@ -275,7 +275,8 @@ export async function revokeEventDirectly(uid, eventId) {
         {
           ...(hubState.currentUserProfile || {}),
           role: updates.role,
-          allowedEvents: nextAllowed
+          allowedEvents: nextAllowed,
+          opsTournamentIds: updates.opsTournamentIds
         },
         email
       );

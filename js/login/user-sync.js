@@ -11,7 +11,12 @@ import {
   getDocs,
   limit
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { resolveStoredUserRole, normalizeUserProfile } from "../shared/auth-helpers.js";
+import {
+  resolveStoredUserRole,
+  normalizeUserProfile,
+  buildDirectOpsPersistPatch,
+  sanitizeAllowedEvents
+} from "../shared/auth-helpers.js";
 
 export async function findLegacyUserDocByEmail(user) {
   if (!user?.email) return null;
@@ -81,7 +86,10 @@ export async function ensureUserDoc(user) {
       photoURL: String(legacyData.photoURL || user.photoURL || "").trim(),
       role: nextRole,
       accessCode: legacyData.accessCode || "",
-      allowedEvents: legacyData.allowedEvents || {}
+      allowedEvents: legacyData.allowedEvents || {},
+      opsTournamentIds: Array.isArray(legacyData.opsTournamentIds)
+        ? legacyData.opsTournamentIds
+        : []
     };
 
     await setDoc(
@@ -131,18 +139,27 @@ export async function ensureUserDoc(user) {
   };
 }
 
-/** 직접 허용 등으로 role이 user로 깨진 문서를 로드 시 보정 */
+/** 직접 허용 — role/allowedEvents 가 서버에서 깨졌을 때 복구 시도 (운영진 규칙으로 본인은 실패할 수 있음) */
 export async function normalizeAndPersistUserRole(uid, profile, email = "") {
   if (!uid || !profile) return profile;
-  const normalized = {
-    ...profile,
-    role: resolveStoredUserRole(email || profile.email, profile)
-  };
-  const prevRole = String(profile.role || "").trim();
-  if (normalized.role !== prevRole) {
-    void updateDoc(doc(db, "users", uid), { role: normalized.role }).catch((err) => {
-      console.warn("[normalizeAndPersistUserRole] update failed:", err);
-    });
+  const normalized = normalizeUserProfile(profile, email || profile.email || "");
+  const patch = buildDirectOpsPersistPatch(profile, email || profile.email || "");
+  if (!patch) return normalized;
+
+  const prevRole = String(profile.role || "")
+    .trim()
+    .toLowerCase();
+  const prevAllowed = sanitizeAllowedEvents(profile.allowedEvents || {});
+  const needsPersist =
+    prevRole !== "admin" ||
+    Object.keys(prevAllowed).length < Object.keys(patch.allowedEvents || {}).length;
+
+  if (needsPersist) {
+    try {
+      await updateDoc(doc(db, "users", uid), patch);
+    } catch (err) {
+      console.warn("[normalizeAndPersistUserRole] update failed:", err?.code || err);
+    }
   }
   return normalized;
 }
