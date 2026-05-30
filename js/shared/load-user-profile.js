@@ -1,5 +1,4 @@
 import { db } from "../firebase.js";
-import { enableNetwork } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   collection,
   doc,
@@ -21,6 +20,18 @@ import { readLoginProfileCache, isLoginProfileCacheFresh } from "./login-profile
 import { canUseTournamentOps } from "./auth-helpers.js";
 
 const profileRefreshInflight = new Map();
+const DEFAULT_FIRESTORE_TIMEOUT_MS = 10000;
+
+/** 모바일·오프라인에서 getDocFromServer 가 끝나지 않을 때 UI 멈춤 방지 */
+export function raceFirestoreTimeout(promise, ms = DEFAULT_FIRESTORE_TIMEOUT_MS) {
+  if (!promise || ms <= 0) return promise;
+  return Promise.race([
+    promise,
+    new Promise((resolve) => {
+      setTimeout(() => resolve(undefined), ms);
+    })
+  ]);
+}
 
 async function readUserDocSnap(uid, options = {}) {
   const forceServer = options.forceServer === true;
@@ -213,37 +224,40 @@ export async function enrichProfileWithEmailAllows(uid, email, profile, options 
   return normalizeUserProfile({ ...profile, allowedEvents: mergedAllowed }, resolvedEmail);
 }
 
-async function ensureFirestoreNetwork() {
-  try {
-    await enableNetwork(db);
-  } catch {
-    /* ignore */
-  }
-}
-
 /** index·통합배치도 — 모바일 포함 서버·이메일 병합만 사용 (로컬 캐시 우회) */
 export async function loadUserProfileForTournamentOps(uid, email = "", tournamentId = "", options = {}) {
   const tid = String(tournamentId || "").trim();
   const tournamentMeta = options.tournamentMeta || null;
   const serverOpts = { preferCacheFirst: false, skipLoginCache: true, forceServer: true };
 
-  await ensureFirestoreNetwork();
+  let profile = await raceFirestoreTimeout(loadUserProfileFresh(uid, email, serverOpts));
+  profile =
+    (await raceFirestoreTimeout(
+      enrichProfileWithEmailAllows(uid, email, profile, {
+        preferCacheFirst: false,
+        forceServer: true
+      })
+    )) || profile;
 
-  let profile = await loadUserProfileFresh(uid, email, serverOpts);
-  profile = await enrichProfileWithEmailAllows(uid, email, profile, {
-    preferCacheFirst: false,
-    forceServer: true
-  });
+  if (!profile && uid) {
+    profile = await loadUserProfileFresh(uid, email, {
+      preferCacheFirst: true,
+      skipLoginCache: false
+    });
+  }
 
   if (!tid || !profile) return profile;
   if (canUseTournamentOps(email, profile, tid, tournamentMeta)) return profile;
 
-  await ensureFirestoreNetwork();
-  const fresh = await loadUserProfileFresh(uid, email, serverOpts);
-  profile = await enrichProfileWithEmailAllows(uid, email, fresh || profile, {
-    preferCacheFirst: false,
-    forceServer: true
-  });
+  const fresh = await raceFirestoreTimeout(loadUserProfileFresh(uid, email, serverOpts), 6000);
+  profile =
+    (await raceFirestoreTimeout(
+      enrichProfileWithEmailAllows(uid, email, fresh || profile, {
+        preferCacheFirst: false,
+        forceServer: true
+      }),
+      6000
+    )) || profile;
   return profile;
 }
 

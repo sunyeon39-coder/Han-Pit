@@ -18,7 +18,8 @@ import { ensureDocumentShellBackground } from "../shared/page-boot-shell.js";
 import { initHubRefs, hubRefs } from "./hub-dom-refs.js";
 import { showHubListLoading } from "./hub-tournament-list.js";
 import { FALLBACK_TOURNAMENTS, hubState } from "./hub-state.js";
-import { applyHubOpsChrome, sortTournaments } from "./hub-helpers.js";
+import { sortTournaments } from "./hub-helpers.js";
+import { applyHubOpsChrome } from "./hub-ops-chrome.js";
 import {
   populateTournamentSelect,
   renderAdminUserList,
@@ -31,6 +32,7 @@ import {
   applyAdminBulkSelectAll,
   syncAdminBulkSelectAllCheckbox
 } from "./hub-admin-ui.js";
+import { loadUserProfileFresh, loadUserProfileRevalidated, raceFirestoreTimeout } from "../shared/load-user-profile.js";
 import {
   bindHubForegroundAccessResync,
   bindHubPeriodicAccessResync,
@@ -382,12 +384,26 @@ async function bootstrapHubSession(user) {
     hubState.tournamentsListReady = true;
     hubState.tournamentsBootstrapping = false;
     paintHubTournamentList();
-  }, 8000);
+  }, 4000);
 
   let [profile] = await Promise.all([
-    loadUserProfile(user.uid, user.email || ""),
-    loadTournaments()
+    raceFirestoreTimeout(
+      loadUserProfileFresh(user.uid, user.email || "", { preferCacheFirst: true }),
+      8000
+    ).catch(() => hubState.currentUserProfile || null),
+    raceFirestoreTimeout(loadTournaments(), 8000).catch(() => hubState.tournamentsCache)
   ]);
+
+  void loadUserProfileRevalidated(user.uid, user.email || "")
+    .then((fresh) => {
+      if (flow !== hubState.hubAuthFlowGen || hubState.currentUser?.uid !== user.uid) return;
+      if (!fresh) return;
+      hubState.currentUserProfile = fresh;
+      writeLoginProfileCache(user.uid, fresh);
+      applyHubOpsChrome(user);
+      paintHubTournamentList();
+    })
+    .catch((err) => console.warn("hub profile revalidate:", err));
   if (flow !== hubState.hubAuthFlowGen || hubState.currentUser?.uid !== user.uid) return;
 
   if (!profile) {
@@ -483,6 +499,9 @@ async function bootstrapHubSession(user) {
     if (bootTimeoutId) clearTimeout(bootTimeoutId);
     hubState.tournamentsBootstrapping = false;
     if (!hubState.tournamentsListReady) hubState.tournamentsListReady = true;
+    if (flow === hubState.hubAuthFlowGen && hubState.currentUser?.uid === user.uid) {
+      paintHubTournamentList();
+    }
   }
 }
 
@@ -497,6 +516,7 @@ onAuthStateChanged(auth, (user) => {
   }
 
   hubState.currentUser = user;
+  disposeHubSessionWatches();
   if (!hubState.tournamentsCache.length) {
     showHubListLoading();
   }

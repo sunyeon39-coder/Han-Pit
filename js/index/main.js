@@ -79,7 +79,12 @@ import {
   disposeMyUserProfileRealtime,
   seedMyUserProfileCache
 } from "../shared/bind-my-user-profile-realtime.js";
-import { loadUserProfileForTournamentOps } from "../shared/load-user-profile.js";
+import { disposeIndexRealtimeWatches } from "./index-realtime-dispose.js";
+import {
+  loadUserProfileForTournamentOps,
+  loadUserProfileFresh,
+  raceFirestoreTimeout
+} from "../shared/load-user-profile.js";
 import {
   readBootUserProfile,
   readLoginProfileCache,
@@ -106,6 +111,8 @@ function buildGlobalLayoutHref() {
 }
 
 let indexHadOps = false;
+/** onAuthStateChanged·모바일 토큰 갱신 시 이전 init 이 리스너를 중복 등록하지 않도록 */
+let indexAuthFlowGen = 0;
 
 function indexTournamentMeta() {
   const t = IX.currentTournament;
@@ -270,7 +277,7 @@ async function init() {
     .catch((err) => console.error("loadDealerAttendanceOnce error:", err))
     .finally(() => scheduleRenderDealerOps());
 
-  await loadEvents();
+  await raceFirestoreTimeout(loadEvents(), 12000);
 
   void ensureMeRecovered(auth.currentUser)
     .catch((err) => {
@@ -567,16 +574,15 @@ function bindIndexPushUiOnce() {
 
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
+    indexAuthFlowGen += 1;
     indexHadOps = false;
-    disposeMyUserProfileRealtime();
-    if (IX.stopMySeatNotificationWatch) {
-      IX.stopMySeatNotificationWatch();
-      IX.stopMySeatNotificationWatch = null;
-    }
+    disposeIndexRealtimeWatches();
     location.replace("./login.html");
     return;
   }
 
+  const flow = ++indexAuthFlowGen;
+  disposeIndexRealtimeWatches();
   bindMySeatAssignment(user);
 
   try {
@@ -600,7 +606,14 @@ onAuthStateChanged(auth, async (user) => {
     }
 
     const profilePromise = (async () => {
-      let profile = await loadIndexUserProfile(user);
+      if (flow !== indexAuthFlowGen) return null;
+      let profile = await raceFirestoreTimeout(
+        loadUserProfileFresh(user.uid, user.email || "", {
+          preferCacheFirst: true,
+          mergeEmailAllows: true
+        }),
+        8000
+      );
       if (!profile) {
         IX.currentUserProfile = {
           email: user.email || "",
@@ -645,11 +658,36 @@ onAuthStateChanged(auth, async (user) => {
         flushAppBadgeIfVisible();
       }
       applyIndexOpsPermissions(user);
+      void loadIndexUserProfile(user)
+        .then((fresh) => {
+          if (!fresh) return;
+          IX.currentUserProfile = fresh;
+          seedMyUserProfileCache(fresh);
+          writeLoginProfileCache(user.uid, fresh);
+          applyIndexOpsPermissions(user);
+        })
+        .catch((err) => console.warn("index ops profile refresh:", err));
       return profile;
     })();
 
-    await Promise.all([profilePromise, init(), periodPromise]);
+    const bootUiTimeout = window.setTimeout(() => {
+      if (IX.root?.dataset.pageBootLoaded !== "1") markPageBootLoaded(IX.root);
+    }, 5000);
 
+    try {
+      await Promise.all([init(), periodPromise]);
+      if (flow !== indexAuthFlowGen) return;
+      void profilePromise;
+    } finally {
+      clearTimeout(bootUiTimeout);
+      if (flow === indexAuthFlowGen && IX.root?.dataset.pageBootLoaded !== "1") {
+        markPageBootLoaded(IX.root);
+      }
+    }
+
+    if (flow !== indexAuthFlowGen) return;
+    await profilePromise.catch(() => null);
+    if (flow !== indexAuthFlowGen) return;
     await ensureIndexOpsChrome(user);
     void refreshIndexOpsFromServer(user);
   } catch (err) {
@@ -678,10 +716,5 @@ setInterval(() => {
 }, 60000);
 
 window.addEventListener("beforeunload", () => {
-  if (IX.stopTournamentWatch) IX.stopTournamentWatch();
-  if (IX.stopMySeatNotificationWatch) IX.stopMySeatNotificationWatch();
-  if (IX.stopEventsWatch) IX.stopEventsWatch();
-  if (IX.stopLayoutEventsWatch) IX.stopLayoutEventsWatch();
-  if (IX.stopDealerAttendanceWatch) IX.stopDealerAttendanceWatch();
-  if (IX.stopDealerSeatWatch) IX.stopDealerSeatWatch();
+  disposeIndexRealtimeWatches();
 });

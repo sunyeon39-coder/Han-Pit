@@ -80,6 +80,19 @@ export function buildInlineAppUpdateSnippet(v) {
     location.replace(loc.toString());
   }
 
+  function isPlaceholderBust(v){
+    v=String(v||"").trim();
+    return !v||v==="boot"||v==="net";
+  }
+
+  function syncBustInPlace(remote){
+    if(!remote||!pageBuild||pageBuild!==remote)return;
+    if(!isPlaceholderBust(bust)&&bust===remote)return;
+    persist(remote);
+    loc.searchParams.set("_hanpit_v",remote);
+    try{history.replaceState(null,"",loc.toString());}catch(e){}
+  }
+
   function needsReload(remote){
     if(isLegacyShell())return true;
     if(!pageBuild)return true;
@@ -104,6 +117,7 @@ export function buildInlineAppUpdateSnippet(v) {
     .then(function(d){
       var remote=String((d&&(d.v||d.version))||"").trim();
       if(needsReload(remote))reload(remote);
+      else syncBustInPlace(remote);
     })
     .catch(function(){
       if(isLegacyShell()||!pageBuild)reload("net");

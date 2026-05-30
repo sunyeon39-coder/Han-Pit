@@ -80,6 +80,11 @@ async function initTournamentPeriodWatch() {
       return;
     }
 
+    if (IX.stopTournamentWatch) {
+      IX.stopTournamentWatch();
+      IX.stopTournamentWatch = null;
+    }
+
     IX.stopTournamentWatch = onSnapshot(
       tournamentRef,
       (docSnap) => {

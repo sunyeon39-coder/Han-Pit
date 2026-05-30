@@ -31,7 +31,7 @@ import {
   userRecordHasDirectOpsAllow
 } from "./hub-helpers.js";
 import { isSystemAdminEmail } from "../shared/auth-helpers.js";
-import { applyHubOpsChrome } from "./hub-helpers.js";
+import { applyHubOpsChrome } from "./hub-ops-chrome.js";
 import { hubState, FALLBACK_TOURNAMENTS } from "./hub-state.js";
 import { hubRefs } from "./hub-dom-refs.js";
 import { scheduleHubTournamentsRender, scheduleHubAdminRender } from "./hub-realtime-ui.js";

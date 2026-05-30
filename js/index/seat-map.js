@@ -277,8 +277,18 @@ function setSeatMapEditMode(editing) {
    WATCH SEAT DATA
 =============================== */
 
+let stopSeatMapWatch = null;
+
+export function disposeSeatMapRealtime() {
+  if (stopSeatMapWatch) {
+    stopSeatMapWatch();
+    stopSeatMapWatch = null;
+  }
+}
+
 function bindSeatMapRealtime() {
-  onSnapshot(
+  disposeSeatMapRealtime();
+  stopSeatMapWatch = onSnapshot(
     collection(db, "layout_events"),
     (snap) => {
       IX.seatMapData.clear();
