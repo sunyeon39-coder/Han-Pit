@@ -554,6 +554,22 @@ body {
   box-shadow: 0 0 0 2px rgba(95, 210, 164, 0.25);
 }
 
+.event-access-ops {
+  color: rgba(239, 208, 141, 0.98);
+}
+
+.top-btn--ops-admin {
+  border-color: rgba(239, 208, 141, 0.55);
+  box-shadow: 0 0 0 1px rgba(239, 208, 141, 0.2);
+}
+
+.profile-role-hint {
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(239, 208, 141, 0.92);
+}
+
 .event-right {
   display: flex;
   align-items: center;

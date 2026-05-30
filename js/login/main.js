@@ -25,6 +25,7 @@ import {
   readLoginProfileCache,
   writeLoginProfileCache
 } from "../shared/login-profile-cache.js";
+import { loadUserProfileRevalidated } from "../shared/load-user-profile.js";
 import { refreshFcmTokenIfGranted } from "../shared/fcm-web-push.js";
 import { prefetchHubTournamentsCache } from "../hub/hub-loaders-realtime.js";
 import { syncUserDisplayNameAfterNicknameChange } from "../shared/sync-user-waiting-display.js";
@@ -140,38 +141,33 @@ function hasValidNickname(profile = null) {
 }
 
 async function resolveProfileForLogin(user) {
-  const cached = readLoginProfileCache(user.uid);
-  let profile =
-    cached && String(cached.email || "").trim().toLowerCase() === String(user.email || "").trim().toLowerCase()
-      ? cached
-      : buildOptimisticProfileFromAuthUser(user, cached || {});
+  const email = user.email || "";
+  let profile = buildOptimisticProfileFromAuthUser(user, readLoginProfileCache(user.uid) || {});
 
-  if (hasValidNickname(profile)) {
-    writeLoginProfileCache(user.uid, profile);
-    scheduleBackgroundUserProfileSync(user);
-    void syncUserProfileFast(user).then((fast) => {
-      if (fast.ok && fast.profile) writeLoginProfileCache(user.uid, fast.profile);
-    });
-    return profile;
+  try {
+    const server = await loadUserProfileRevalidated(user.uid, email);
+    if (server) profile = server;
+  } catch (err) {
+    console.warn("[resolveProfileForLogin] server profile:", err);
   }
 
-  setLoginBusy(true, "profile");
-  const fast = await syncUserProfileFast(user);
-  if (fast.ok && fast.profile) {
-    profile = fast.profile;
-    writeLoginProfileCache(user.uid, profile);
-    if (hasValidNickname(profile)) {
-      scheduleBackgroundUserProfileSync(user);
-      return profile;
+  if (!hasValidNickname(profile)) {
+    const fast = await syncUserProfileFast(user);
+    if (fast.ok && fast.profile) profile = fast.profile;
+    if (!hasValidNickname(profile)) {
+      const full = await syncUserProfile(user);
+      if (!full.ok) throw full.error || new Error("profile-sync-failed");
+      profile = full.profile || profile;
     }
   }
 
-  const full = await syncUserProfile(user);
-  if (!full.ok) {
-    throw full.error || new Error("profile-sync-failed");
-  }
-  profile = full.profile || buildOptimisticProfileFromAuthUser(user, profile);
   writeLoginProfileCache(user.uid, profile);
+  scheduleBackgroundUserProfileSync(user);
+  void loadUserProfileRevalidated(user.uid, email)
+    .then((fresh) => {
+      if (fresh) writeLoginProfileCache(user.uid, fresh);
+    })
+    .catch(() => {});
   return profile;
 }
 

@@ -5,6 +5,7 @@
  */
 import { escapeHtml } from "../shared/dom-utils.js";
 import { getIsAdminUser, hasEventAccess, routeToTournament } from "./hub-helpers.js";
+import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
 import { prefetchPageOnce } from "../shared/page-prefetch.js";
 import { prefetchIndexEventsCache } from "../index/event-cards-loaders.js";
 import { hubRefs } from "./hub-dom-refs.js";
@@ -92,6 +93,13 @@ export function renderTournaments(tournaments, userProfile, user) {
 
   list.forEach((tournament) => {
     const enabled = hasEventAccess(userProfile, tournament, user);
+    const canOps = canShowTournamentOpsUi(
+      user?.email || userProfile?.email,
+      userProfile,
+      tournament.id,
+      { id: tournament.id, name: tournament.name, logoText: tournament.logoText },
+      user?.uid
+    );
 
     const card = document.createElement("article");
     card.className = `event-card ${enabled ? "is-enabled" : "is-locked"}`;
@@ -109,6 +117,7 @@ export function renderTournaments(tournaments, userProfile, user) {
             </div>
             <div class="event-access ${enabled ? "event-access--ok" : ""}">
               ${enabled ? "접속 가능" : "허용된 계정만 입장 가능"}
+              ${canOps ? ' · <strong class="event-access-ops">운영 admin</strong>' : ""}
             </div>
           </div>
         </div>

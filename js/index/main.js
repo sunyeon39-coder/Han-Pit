@@ -154,7 +154,7 @@ function indexOpsAccessOk(user = auth.currentUser) {
 /** 모바일·PWA — Firestore 지연 시 운영 UI 가 늦게 켜지는 것 재시도 */
 async function ensureIndexOpsChrome(user = auth.currentUser) {
   if (!user?.uid) return;
-  for (let attempt = 0; attempt < 5; attempt += 1) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
     applyIndexOpsPermissions(user);
     if (indexOpsAccessOk(user)) return;
 

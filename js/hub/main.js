@@ -18,7 +18,7 @@ import { ensureDocumentShellBackground } from "../shared/page-boot-shell.js";
 import { initHubRefs, hubRefs } from "./hub-dom-refs.js";
 import { showHubListLoading } from "./hub-tournament-list.js";
 import { FALLBACK_TOURNAMENTS, hubState } from "./hub-state.js";
-import { sortTournaments } from "./hub-helpers.js";
+import { applyHubOpsChrome, sortTournaments } from "./hub-helpers.js";
 import {
   populateTournamentSelect,
   renderAdminUserList,
@@ -149,6 +149,14 @@ profileBtn?.addEventListener("click", () => {
   hubRefs.profileEmail.value = hubState.currentUser.email || "";
   hubRefs.profileNickname.value = hubState.currentUserProfile.nickname || "";
   hubRefs.profileAccessCode.value = hubState.currentUserProfile.accessCode || "";
+  const role = String(hubState.currentUserProfile.role || "user").trim();
+  const opsHint = hubRefs.profileModal?.querySelector("[data-profile-role-hint]");
+  if (opsHint) {
+    opsHint.textContent =
+      role === "admin"
+        ? "권한: 운영 admin (직접 허용 — 대회 카드에서「자세히 보기」 후 운영 메뉴 사용)"
+        : `권한: ${role}`;
+  }
   openModal(hubRefs.profileModal);
 });
 
@@ -408,6 +416,7 @@ async function bootstrapHubSession(user) {
 
   hubState.currentUserProfile = profile;
   writeLoginProfileCache(user.uid, profile);
+  applyHubOpsChrome(user);
   paintHubTournamentList();
   if (flow !== hubState.hubAuthFlowGen || hubState.currentUser?.uid !== user.uid) return;
 

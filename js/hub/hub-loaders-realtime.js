@@ -31,6 +31,7 @@ import {
   userRecordHasDirectOpsAllow
 } from "./hub-helpers.js";
 import { isSystemAdminEmail } from "../shared/auth-helpers.js";
+import { applyHubOpsChrome } from "./hub-helpers.js";
 import { hubState, FALLBACK_TOURNAMENTS } from "./hub-state.js";
 import { hubRefs } from "./hub-dom-refs.js";
 import { scheduleHubTournamentsRender, scheduleHubAdminRender } from "./hub-realtime-ui.js";
@@ -529,6 +530,7 @@ export function bindMyProfileRealtime(uid) {
         (profile) => {
           hubState.currentUserProfile = { ...(hubState.currentUserProfile || {}), ...profile };
           syncLoginCacheForOpsProfile(uid, hubState.currentUserProfile);
+          applyHubOpsChrome(hubState.currentUser);
           scheduleHubTournamentsRender();
 
           const isAdmin = getIsAdminUser(hubState.currentUser, hubState.currentUserProfile);
@@ -568,6 +570,7 @@ export async function resyncHubAccessFromServer(uid) {
     if (profile) {
       hubState.currentUserProfile = profile;
       writeLoginProfileCache(uid, profile);
+      applyHubOpsChrome(user);
     }
 
     const tSnap = await readTournamentsSnap();
