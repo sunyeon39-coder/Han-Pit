@@ -77,11 +77,24 @@ export function prefetchHubTournamentsCache() {
 
 function applyTournamentsSnap(snap) {
   if (!snap || snap.empty) {
+    if (hubState.tournamentsCache.length > 0 && snap?.metadata?.fromCache) {
+      return hubState.tournamentsCache;
+    }
     hubState.tournamentsCache = [];
     return hubState.tournamentsCache;
   }
   hubState.tournamentsCache = sortTournaments(snap.docs.map(normalizeTournamentDoc));
+  writeHubTournamentsSessionCache(hubState.tournamentsCache);
   return hubState.tournamentsCache;
+}
+
+/** 허브 진입 직후 sessionStorage 목록으로 즉시 카드 표시 */
+export function seedHubTournamentsFromSessionCache() {
+  const cached = readHubTournamentsSessionCache();
+  if (!cached?.length) return false;
+  hubState.tournamentsCache = sortTournaments(cached);
+  hubState.tournamentsListReady = true;
+  return true;
 }
 
 export async function loadTournaments() {
@@ -270,10 +283,10 @@ export function bindTournamentsRealtime() {
       if (shouldSkipEmptyCacheSnapshot(snap, hubState.tournamentsCache.length)) return;
 
       if (snap.empty) {
-        if (!snap.metadata?.fromCache) {
-          hubState.tournamentsCache = [];
-          hubState.tournamentsListReady = true;
-        }
+        if (shouldSkipEmptyCacheSnapshot(snap, hubState.tournamentsCache.length)) return;
+        if (snap.metadata?.fromCache) return;
+        hubState.tournamentsCache = [];
+        hubState.tournamentsListReady = true;
       } else {
         hubState.tournamentsCache = sortTournaments(snap.docs.map(normalizeTournamentDoc));
         hubState.tournamentsListReady = true;
@@ -293,6 +306,9 @@ export function bindTournamentsRealtime() {
     (err) => {
       console.error("bindTournamentsRealtime error:", err);
       hubState.tournamentsCache = sortTournaments(FALLBACK_TOURNAMENTS);
+      hubState.tournamentsListReady = true;
+      hubState.tournamentsBootstrapping = false;
+      writeHubTournamentsSessionCache(hubState.tournamentsCache);
       scheduleHubTournamentsRender();
     }
   );

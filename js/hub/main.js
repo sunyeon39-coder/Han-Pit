@@ -371,7 +371,7 @@ async function bootstrapHubSession(user) {
     hubState.tournamentsListReady = true;
     hubState.tournamentsBootstrapping = false;
     paintHubTournamentList();
-  }, 15000);
+  }, 8000);
 
   let [profile] = await Promise.all([
     loadUserProfile(user.uid, user.email || ""),
@@ -491,6 +491,8 @@ onAuthStateChanged(auth, (user) => {
   const run = bootstrapHubSession(user)
     .catch((err) => {
       console.error("hub auth init error:", err);
+      hubState.tournamentsBootstrapping = false;
+      hubState.tournamentsListReady = true;
       if (!hubState.tournamentsCache.length) {
         hubState.tournamentsCache = sortTournaments(FALLBACK_TOURNAMENTS);
       }
@@ -498,6 +500,8 @@ onAuthStateChanged(auth, (user) => {
       alert("허브 데이터를 불러오지 못했습니다.");
     })
     .finally(() => {
+      hubState.tournamentsBootstrapping = false;
+      if (!hubState.tournamentsListReady) hubState.tournamentsListReady = true;
       if (hubState.currentUser?.uid === user.uid) {
         paintHubTournamentList();
       }

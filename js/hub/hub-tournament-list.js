@@ -70,10 +70,7 @@ export function renderTournaments(tournaments, userProfile, user) {
 
   const list = Array.isArray(tournaments) ? tournaments : [];
 
-  if (
-    !list.length &&
-    (hubState.tournamentsBootstrapping || !hubState.tournamentsListReady)
-  ) {
+  if (!list.length && hubState.tournamentsBootstrapping && !hubState.tournamentsListReady) {
     showHubListLoading();
     return;
   }
