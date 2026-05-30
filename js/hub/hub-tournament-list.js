@@ -6,6 +6,7 @@
 import { escapeHtml } from "../shared/dom-utils.js";
 import { getIsAdminUser, hasEventAccess, routeToTournament } from "./hub-helpers.js";
 import { hubRefs } from "./hub-dom-refs.js";
+import { hubState } from "./hub-state.js";
 
 function buildHubEmptyStateHtml(isAdmin) {
   const adminActions = isAdmin
@@ -67,9 +68,17 @@ export function renderTournaments(tournaments, userProfile, user) {
   const { eventListEl } = hubRefs;
   if (!eventListEl) return;
 
-  eventListEl.classList.remove("event-list--loading");
-
   const list = Array.isArray(tournaments) ? tournaments : [];
+
+  if (
+    !list.length &&
+    (hubState.tournamentsBootstrapping || !hubState.tournamentsListReady)
+  ) {
+    showHubListLoading();
+    return;
+  }
+
+  eventListEl.classList.remove("event-list--loading");
 
   if (!list.length) {
     eventListEl.classList.add("event-list--empty");

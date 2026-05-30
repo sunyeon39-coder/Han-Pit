@@ -26,6 +26,7 @@ import {
   writeLoginProfileCache
 } from "../shared/login-profile-cache.js";
 import { refreshFcmTokenIfGranted } from "../shared/fcm-web-push.js";
+import { prefetchHubTournamentsCache } from "../hub/hub-loaders-realtime.js";
 import { syncUserDisplayNameAfterNicknameChange } from "../shared/sync-user-waiting-display.js";
 import {
   isGoogleOAuthLikelyBlockedBrowser,
@@ -174,6 +175,18 @@ async function resolveProfileForLogin(user) {
   return profile;
 }
 
+async function redirectToHubWithTournamentPrefetch() {
+  try {
+    await Promise.race([
+      prefetchHubTournamentsCache(),
+      new Promise((resolve) => setTimeout(resolve, 1200))
+    ]);
+  } catch (prefetchErr) {
+    console.warn("[login] tournament prefetch:", prefetchErr);
+  }
+  location.replace("./hub.html");
+}
+
 async function finalizeLoginFlow(user) {
   if (!user) return;
 
@@ -201,7 +214,7 @@ async function finalizeLoginFlow(user) {
     }
 
     setLoginBusy(true, "entering");
-    location.replace("./hub.html");
+    await redirectToHubWithTournamentPrefetch();
   } catch (err) {
     console.error("[finalizeLoginFlow]", err);
     setLoginBusy(false);
@@ -336,7 +349,7 @@ async function saveProfile() {
     }
 
     void refreshFcmTokenIfGranted(user.uid);
-    location.replace("./hub.html");
+    await redirectToHubWithTournamentPrefetch();
   } catch (error) {
     console.error("save profile error:", error);
     setLoginBusy(false);

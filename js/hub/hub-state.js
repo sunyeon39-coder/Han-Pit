@@ -27,5 +27,9 @@ export const hubState = {
   hubAuthFlowGen: 0,
   adminActionInFlight: false,
   usersRoleHealDone: false,
-  usersRoleHealInFlight: false
+  usersRoleHealInFlight: false,
+  /** false 인 동안 목록이 비어 있으면 "대회 없음" 대신 로딩 유지 */
+  tournamentsBootstrapping: true,
+  /** Firestore 1회 이상 반영 후에만 빈 목록 UI 허용 */
+  tournamentsListReady: false
 };

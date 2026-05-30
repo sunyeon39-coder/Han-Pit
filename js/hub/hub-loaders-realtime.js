@@ -25,6 +25,10 @@ import { hubState, FALLBACK_TOURNAMENTS } from "./hub-state.js";
 import { hubRefs } from "./hub-dom-refs.js";
 import { scheduleHubTournamentsRender, scheduleHubAdminRender } from "./hub-realtime-ui.js";
 import { populateTournamentSelect } from "./hub-admin-ui.js";
+import {
+  readHubTournamentsSessionCache,
+  writeHubTournamentsSessionCache
+} from "./hub-tournaments-session-cache.js";
 
 /** 오프라인·PWA에서 빈 캐시 스냅샷이 서버로 읽은 목록을 지우는 것을 막음 */
 function shouldSkipEmptyCacheSnapshot(snap, cachedCount = 0) {
@@ -48,6 +52,7 @@ async function refreshTournamentsFromServer() {
     const serverSnap = await getDocsFromServer(collection(db, "tournaments"));
     if (serverSnap.empty) return;
     applyTournamentsSnap(serverSnap);
+    hubState.tournamentsListReady = true;
     scheduleHubTournamentsRender();
   } catch (err) {
     console.warn("refreshTournamentsFromServer:", err?.code || err);
@@ -61,6 +66,7 @@ export function prefetchHubTournamentsCache() {
       if (shouldSkipEmptyCacheSnapshot(snap, hubState.tournamentsCache.length)) return;
       if (!snap.empty) {
         applyTournamentsSnap(snap);
+        hubState.tournamentsListReady = true;
         scheduleHubTournamentsRender();
       }
     })
@@ -82,14 +88,17 @@ export async function loadTournaments() {
   try {
     const snap = await readTournamentsSnap();
     applyTournamentsSnap(snap);
+    hubState.tournamentsListReady = true;
     if (snap.metadata?.fromCache && !snap.empty) {
       void refreshTournamentsFromServer();
     }
     return hubState.tournamentsCache;
   } catch (err) {
     console.error("loadTournaments error:", err);
+    hubState.tournamentsListReady = true;
     if (hubState.tournamentsCache.length) return hubState.tournamentsCache;
     hubState.tournamentsCache = sortTournaments(FALLBACK_TOURNAMENTS);
+    writeHubTournamentsSessionCache(hubState.tournamentsCache);
     return hubState.tournamentsCache;
   }
 }
@@ -261,9 +270,14 @@ export function bindTournamentsRealtime() {
       if (shouldSkipEmptyCacheSnapshot(snap, hubState.tournamentsCache.length)) return;
 
       if (snap.empty) {
-        hubState.tournamentsCache = [];
+        if (!snap.metadata?.fromCache) {
+          hubState.tournamentsCache = [];
+          hubState.tournamentsListReady = true;
+        }
       } else {
         hubState.tournamentsCache = sortTournaments(snap.docs.map(normalizeTournamentDoc));
+        hubState.tournamentsListReady = true;
+        writeHubTournamentsSessionCache(hubState.tournamentsCache);
       }
 
       scheduleHubTournamentsRender();

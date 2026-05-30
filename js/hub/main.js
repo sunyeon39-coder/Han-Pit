@@ -43,7 +43,8 @@ import {
   loadUserProfile,
   resyncHubAccessFromServer,
   healNonAdminUsersToBasic,
-  prefetchHubTournamentsCache
+  prefetchHubTournamentsCache,
+  seedHubTournamentsFromSessionCache
 } from "./hub-loaders-realtime.js";
 import { scheduleHubTournamentsRender } from "./hub-realtime-ui.js";
 import { saveNickname } from "./hub-profile.js";
@@ -69,7 +70,13 @@ import {
 import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
 
 initHubRefs();
-showHubListLoading();
+hubState.tournamentsBootstrapping = true;
+hubState.tournamentsListReady = false;
+if (seedHubTournamentsFromSessionCache()) {
+  scheduleHubTournamentsRender();
+} else {
+  showHubListLoading();
+}
 void prefetchHubTournamentsCache();
 
 const flushAppBadgeIfVisible = bindAppBadgeClearOnForeground(db, auth);
@@ -339,13 +346,18 @@ function disposeHubSessionWatches() {
 async function bootstrapHubSession(user) {
   const flow = ++hubState.hubAuthFlowGen;
   let bootTimeoutId = 0;
-  showHubListLoading();
+  hubState.tournamentsBootstrapping = true;
+  if (!hubState.tournamentsCache.length) {
+    showHubListLoading();
+  }
 
   const cachedProfile =
     isLoginProfileCacheFresh(user.uid) ? readLoginProfileCache(user.uid) : null;
   if (cachedProfile) {
     hubState.currentUserProfile = normalizeUserProfile(cachedProfile, user.email || "");
-    paintHubTournamentList();
+    if (hubState.tournamentsCache.length > 0) {
+      paintHubTournamentList();
+    }
   }
 
   try {
@@ -356,6 +368,8 @@ async function bootstrapHubSession(user) {
     if (!hubState.tournamentsCache.length) {
       hubState.tournamentsCache = sortTournaments(FALLBACK_TOURNAMENTS);
     }
+    hubState.tournamentsListReady = true;
+    hubState.tournamentsBootstrapping = false;
     paintHubTournamentList();
   }, 15000);
 
@@ -454,6 +468,8 @@ async function bootstrapHubSession(user) {
   }, 450);
   } finally {
     if (bootTimeoutId) clearTimeout(bootTimeoutId);
+    hubState.tournamentsBootstrapping = false;
+    if (!hubState.tournamentsListReady) hubState.tournamentsListReady = true;
   }
 }
 
@@ -468,7 +484,9 @@ onAuthStateChanged(auth, (user) => {
   }
 
   hubState.currentUser = user;
-  showHubListLoading();
+  if (!hubState.tournamentsCache.length) {
+    showHubListLoading();
+  }
 
   const run = bootstrapHubSession(user)
     .catch((err) => {
