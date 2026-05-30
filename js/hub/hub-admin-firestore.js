@@ -23,6 +23,7 @@ import {
   buildOpsProfilePatch,
   syncLoginCacheForOpsProfile
 } from "../shared/tournament-ops-access.js";
+import { clearOpsSessionSnapshot } from "../shared/login-profile-cache.js";
 import { getIsAdminUser, isValidDocId } from "./hub-helpers.js";
 import { cleanupUserFromLayoutState } from "./layout-cleanup.js";
 import { hubState } from "./hub-state.js";
@@ -276,6 +277,7 @@ export async function revokeEventDirectly(uid, eventId) {
           nextAllowed
         );
         syncLoginCacheForOpsProfile(hubState.currentUser.uid, hubState.currentUserProfile);
+        if (!hasAnyDirectEventAllow(nextAllowed)) clearOpsSessionSnapshot();
         scheduleHubTournamentsRender();
       }
 

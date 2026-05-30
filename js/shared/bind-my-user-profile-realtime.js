@@ -18,8 +18,10 @@ export function bindMyUserProfileRealtime(uid, { email = "", onProfileChange } =
       if (!snap.exists()) return;
       const raw = normalizeUserProfile(snap.data() || {}, email);
       const merged = mergeOpsProfile(lastProfile, raw, snap.metadata || {});
-      const fromCache = snap.metadata?.fromCache === true;
-      void enrichProfileWithEmailAllows(uid, email, merged, { preferCacheFirst: fromCache }).then(
+      void enrichProfileWithEmailAllows(uid, email, merged, {
+        preferCacheFirst: false,
+        forceServer: true
+      }).then(
         (profile) => {
           lastProfile = profile;
           onProfileChange(profile, snap.metadata || {});

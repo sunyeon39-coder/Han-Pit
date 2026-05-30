@@ -1,18 +1,36 @@
 import {
   canUseTournamentOps,
+  hasDirectEventAllowFor,
   isSystemAdminEmail,
   normalizeUserProfile,
   opsAllowedEventsFromProfile,
   resolveStoredUserRole
 } from "./auth-helpers.js";
-import { writeLoginProfileCache } from "./login-profile-cache.js";
+import {
+  readOpsSessionSnapshot,
+  writeLoginProfileCache
+} from "./login-profile-cache.js";
 
 /**
  * 대회 운영 UI(통합 배치도·카드 관리·맵 편집 등) 표시 여부.
  * 시스템 admin 또는 해당 대회 직접 허용(allowedEvents) 만 인정 — 입장 코드만으로는 false.
  */
-export function canShowTournamentOpsUi(email = "", profile = {}, tournamentId = "", tournamentMeta = null) {
-  return canUseTournamentOps(email, profile, tournamentId, tournamentMeta);
+export function canShowTournamentOpsUi(
+  email = "",
+  profile = {},
+  tournamentId = "",
+  tournamentMeta = null,
+  uid = ""
+) {
+  if (canUseTournamentOps(email, profile, tournamentId, tournamentMeta)) return true;
+
+  const tid = String(tournamentId || "").trim();
+  const id = String(uid || profile?.uid || "").trim();
+  if (!tid || !id) return false;
+
+  const snap = readOpsSessionSnapshot(id);
+  if (!snap) return false;
+  return hasDirectEventAllowFor(snap.allowedEvents, tid);
 }
 
 /** Firestore users.role 과 동기화되는 운영 admin 여부(직접 허용·시스템 admin) */

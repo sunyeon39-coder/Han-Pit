@@ -1,4 +1,5 @@
 import { db } from "../firebase.js";
+import { enableNetwork } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   collection,
   doc,
@@ -22,8 +23,16 @@ import { canUseTournamentOps } from "./auth-helpers.js";
 const profileRefreshInflight = new Map();
 
 async function readUserDocSnap(uid, options = {}) {
-  const preferCacheFirst = options.preferCacheFirst !== false;
+  const forceServer = options.forceServer === true;
+  const preferCacheFirst = !forceServer && options.preferCacheFirst !== false;
   const userRef = doc(db, "users", uid);
+  if (forceServer) {
+    try {
+      return await getDocFromServer(userRef);
+    } catch {
+      return await getDoc(userRef);
+    }
+  }
   if (preferCacheFirst) {
     const cached = await getDoc(userRef);
     if (cached.exists()) return cached;
@@ -41,8 +50,16 @@ async function readUserDocSnap(uid, options = {}) {
 }
 
 async function readUsersByEmailVariant(variant, options = {}) {
-  const preferCacheFirst = options.preferCacheFirst !== false;
+  const forceServer = options.forceServer === true;
+  const preferCacheFirst = !forceServer && options.preferCacheFirst !== false;
   const q = query(collection(db, "users"), where("email", "==", variant), limit(12));
+  if (forceServer) {
+    try {
+      return await getDocsFromServer(q);
+    } catch {
+      return await getDocs(q);
+    }
+  }
   if (preferCacheFirst) {
     const cached = await getDocs(q);
     if (!cached.empty) return cached;
@@ -189,32 +206,43 @@ export async function enrichProfileWithEmailAllows(uid, email, profile, options 
   if (!resolvedEmail) return profile;
 
   const mergedAllowed = await loadMergedAllowedEventsByEmail(resolvedEmail, uid, {
-    preferCacheFirst: options.preferCacheFirst !== false
+    preferCacheFirst: options.preferCacheFirst !== false,
+    forceServer: options.forceServer === true
   });
   if (!Object.keys(mergedAllowed).length) return profile;
   return normalizeUserProfile({ ...profile, allowedEvents: mergedAllowed }, resolvedEmail);
 }
 
-/** index·통합배치도 — 로그인·Firestore 캐시보다 서버·이메일 병합 우선 */
+async function ensureFirestoreNetwork() {
+  try {
+    await enableNetwork(db);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** index·통합배치도 — 모바일 포함 서버·이메일 병합만 사용 (로컬 캐시 우회) */
 export async function loadUserProfileForTournamentOps(uid, email = "", tournamentId = "", options = {}) {
   const tid = String(tournamentId || "").trim();
   const tournamentMeta = options.tournamentMeta || null;
+  const serverOpts = { preferCacheFirst: false, skipLoginCache: true, forceServer: true };
 
-  let profile = await loadUserProfileFresh(uid, email, {
+  await ensureFirestoreNetwork();
+
+  let profile = await loadUserProfileFresh(uid, email, serverOpts);
+  profile = await enrichProfileWithEmailAllows(uid, email, profile, {
     preferCacheFirst: false,
-    skipLoginCache: true
+    forceServer: true
   });
-  profile = await enrichProfileWithEmailAllows(uid, email, profile, { preferCacheFirst: false });
 
   if (!tid || !profile) return profile;
   if (canUseTournamentOps(email, profile, tid, tournamentMeta)) return profile;
 
-  const fresh = await loadUserProfileFresh(uid, email, {
-    preferCacheFirst: false,
-    skipLoginCache: true
-  });
+  await ensureFirestoreNetwork();
+  const fresh = await loadUserProfileFresh(uid, email, serverOpts);
   profile = await enrichProfileWithEmailAllows(uid, email, fresh || profile, {
-    preferCacheFirst: false
+    preferCacheFirst: false,
+    forceServer: true
   });
   return profile;
 }

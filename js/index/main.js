@@ -16,7 +16,7 @@ import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
 import { normalizeAndPersistUserRole } from "../login/user-sync.js";
 import { isAppDebugEnabled } from "../shared/app-debug.js";
 import { openModal, closeModal, escapeHtml } from "../shared/dom-utils.js";
-import { getTournamentId, resolveRelativePage } from "./core-utils.js";
+import { getTournamentId, resolveRelativePage, sleep } from "./core-utils.js";
 import { isTournamentActive } from "./time-utils.js";
 import { IX, refreshIndexDomRefs } from "./state.js";
 
@@ -134,11 +134,41 @@ function applyIndexBootProfile(user) {
 
 async function loadIndexUserProfile(user) {
   if (!user?.uid) return null;
-  return loadUserProfileForTournamentOps(
-    user.uid,
+  return loadUserProfileForTournamentOps(user.uid, user.email || "", getTournamentId(), {
+    tournamentMeta: indexTournamentMeta()
+  });
+}
+
+function indexOpsAccessOk(user = auth.currentUser) {
+  const tid = getTournamentId();
+  if (!tid || !user) return false;
+  return canShowTournamentOpsUi(
     user.email || "",
-    getTournamentId()
+    IX.currentUserProfile,
+    tid,
+    indexTournamentMeta(),
+    user.uid
   );
+}
+
+/** 모바일·PWA — Firestore 지연 시 운영 UI 가 늦게 켜지는 것 재시도 */
+async function ensureIndexOpsChrome(user = auth.currentUser) {
+  if (!user?.uid) return;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    applyIndexOpsPermissions(user);
+    if (indexOpsAccessOk(user)) return;
+
+    const profile = await loadIndexUserProfile(user);
+    if (profile) {
+      IX.currentUserProfile = profile;
+      seedMyUserProfileCache(profile);
+      writeLoginProfileCache(user.uid, profile);
+    }
+    applyIndexOpsPermissions(user);
+    if (indexOpsAccessOk(user)) return;
+
+    await sleep(600 + attempt * 400);
+  }
 }
 
 function tryEarlyIndexChromePaint() {
@@ -153,7 +183,13 @@ function applyIndexOpsPermissions(user = auth.currentUser, meta = {}) {
 
   const tid = getTournamentId();
   const email = user.email || "";
-  const canOps = canShowTournamentOpsUi(email, IX.currentUserProfile, tid, indexTournamentMeta());
+  const canOps = canShowTournamentOpsUi(
+    email,
+    IX.currentUserProfile,
+    tid,
+    indexTournamentMeta(),
+    user.uid
+  );
 
   indexHadOps = canOps;
   renderDealerOps();
@@ -423,7 +459,8 @@ function wireIndexPageControls() {
         user?.email,
         IX.currentUserProfile,
         tid,
-        indexTournamentMeta()
+        indexTournamentMeta(),
+        user?.uid
       );
 
       if (canOps) {
@@ -602,7 +639,7 @@ onAuthStateChanged(auth, async (user) => {
 
     await Promise.all([profilePromise, init(), periodPromise]);
 
-    applyIndexOpsPermissions(user);
+    await ensureIndexOpsChrome(user);
     void refreshIndexOpsFromServer(user);
   } catch (err) {
     console.error("index auth init error:", err);
@@ -611,12 +648,12 @@ onAuthStateChanged(auth, async (user) => {
 });
 
 window.addEventListener("hanpit-index-tournament-ready", () => {
-  applyIndexOpsPermissions(auth.currentUser);
+  void ensureIndexOpsChrome(auth.currentUser);
 });
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return;
-  void refreshIndexOpsFromServer(auth.currentUser);
+  void ensureIndexOpsChrome(auth.currentUser);
 });
 
 setInterval(() => {

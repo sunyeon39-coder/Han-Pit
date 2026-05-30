@@ -128,7 +128,13 @@ export function startGlobalLayoutApp() {
 
   function applyGlobalLayoutOpsPermissions(user, meta = {}) {
     GL.userProfile = GL.userProfile || {};
-    const canOps = canShowTournamentOpsUi(user?.email, GL.userProfile, GL.tournamentId);
+    const canOps = canShowTournamentOpsUi(
+      user?.email,
+      GL.userProfile,
+      GL.tournamentId,
+      null,
+      user?.uid
+    );
 
     GL.isAdminUser = canOps;
     GL.layoutAccentColor = resolveLayoutAccentColor(
@@ -177,7 +183,13 @@ export function startGlobalLayoutApp() {
         writeLoginProfileCache(user.uid, GL.userProfile);
       }
 
-      GL.isAdminUser = canShowTournamentOpsUi(user.email, GL.userProfile, GL.tournamentId);
+      GL.isAdminUser = canShowTournamentOpsUi(
+        user.email,
+        GL.userProfile,
+        GL.tournamentId,
+        null,
+        user.uid
+      );
       GL.layoutAccentColor = resolveLayoutAccentColor(
         GL.userProfile,
         user.uid,
@@ -219,7 +231,13 @@ export function startGlobalLayoutApp() {
       ).then((fresh) => {
         if (!fresh) return;
         GL.userProfile = fresh;
-        GL.isAdminUser = canShowTournamentOpsUi(user.email, GL.userProfile, GL.tournamentId);
+        GL.isAdminUser = canShowTournamentOpsUi(
+        user.email,
+        GL.userProfile,
+        GL.tournamentId,
+        null,
+        user.uid
+      );
         writeLoginProfileCache(user.uid, GL.userProfile);
         refreshGlobalLayoutAdminUi();
       });
@@ -228,7 +246,13 @@ export function startGlobalLayoutApp() {
         .then((profile) => {
           if (!profile) return;
           GL.userProfile = profile;
-          GL.isAdminUser = canShowTournamentOpsUi(user.email, GL.userProfile, GL.tournamentId);
+          GL.isAdminUser = canShowTournamentOpsUi(
+        user.email,
+        GL.userProfile,
+        GL.tournamentId,
+        null,
+        user.uid
+      );
           writeLoginProfileCache(user.uid, GL.userProfile);
           refreshGlobalLayoutAdminUi();
         })

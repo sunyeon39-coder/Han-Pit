@@ -1,6 +1,14 @@
-import { normalizeUserProfile, resolveStoredUserRole } from "./auth-helpers.js";
+import {
+  mergeAllowedEventsMaps,
+  normalizeUserProfile,
+  opsAllowedEventsFromProfile,
+  resolveStoredUserRole,
+  sanitizeAllowedEvents
+} from "./auth-helpers.js";
 
 const LOGIN_PROFILE_CACHE_KEY = "hanpit_login_profile_cache_v1";
+const OPS_SESSION_KEY = "hanpit_ops_session_v1";
+const OPS_SESSION_MAX_AGE_MS = 86400000;
 
 export function buildOptimisticProfileFromAuthUser(user, prev = {}) {
   const email = String(user?.email || prev.email || "").trim();
@@ -19,21 +27,78 @@ export function buildOptimisticProfileFromAuthUser(user, prev = {}) {
   );
 }
 
-/** 앱 부트 시 — 만료 여부와 관계없이 session 캐시 + opsTournamentIds 병합 */
+export function readOpsSessionSnapshot(uid = "") {
+  const id = String(uid || "").trim();
+  if (!id) return null;
+  try {
+    const raw = sessionStorage.getItem(OPS_SESSION_KEY);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    if (String(o?.uid || "").trim() !== id) return null;
+    const age = Date.now() - Number(o.savedAt || 0);
+    if (age < 0 || age > OPS_SESSION_MAX_AGE_MS) return null;
+    return {
+      allowedEvents: sanitizeAllowedEvents(o.allowedEvents || {}),
+      savedAt: Number(o.savedAt || 0)
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** 허브→index 직후 모바일에서 운영 UI 가 즉시 켜지도록 allowedEvents 스냅샷 저장 */
+export function writeOpsSessionSnapshot(uid = "", profile = null) {
+  const id = String(uid || "").trim();
+  if (!id || !profile) return;
+  const allowed = opsAllowedEventsFromProfile(profile);
+  if (!Object.keys(allowed).length) {
+    try {
+      sessionStorage.removeItem(OPS_SESSION_KEY);
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+  try {
+    sessionStorage.setItem(
+      OPS_SESSION_KEY,
+      JSON.stringify({
+        uid: id,
+        savedAt: Date.now(),
+        allowedEvents: allowed
+      })
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+export function clearOpsSessionSnapshot() {
+  try {
+    sessionStorage.removeItem(OPS_SESSION_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** 앱 부트 시 — session 캐시 + 직접 허용 스냅샷 병합 */
 export function readBootUserProfile(user, prev = {}) {
   const uid = String(user?.uid || "").trim();
   const cached = uid ? readLoginProfileCache(uid) : null;
+  const opsSnap = uid ? readOpsSessionSnapshot(uid) : null;
   const email = String(user?.email || cached?.email || prev.email || "").trim();
+  const mergedAllowed = mergeAllowedEventsMaps(
+    cached?.allowedEvents && typeof cached.allowedEvents === "object" ? cached.allowedEvents : {},
+    opsSnap?.allowedEvents || {},
+    prev.allowedEvents && typeof prev.allowedEvents === "object" ? prev.allowedEvents : {}
+  );
   return normalizeUserProfile(
     {
       ...(cached || prev),
       email: email || cached?.email || "",
       opsTournamentIds:
         cached?.opsTournamentIds ?? prev.opsTournamentIds ?? [],
-      allowedEvents:
-        cached?.allowedEvents && typeof cached.allowedEvents === "object"
-          ? cached.allowedEvents
-          : prev.allowedEvents
+      allowedEvents: mergedAllowed
     },
     email
   );
@@ -58,18 +123,20 @@ export function readLoginProfileCache(uid = "") {
 export function writeLoginProfileCache(uid = "", profile = null) {
   const id = String(uid || "").trim();
   if (!id || !profile) return;
+  const normalized = normalizeUserProfile(profile, profile.email || "");
   try {
     sessionStorage.setItem(
       LOGIN_PROFILE_CACHE_KEY,
       JSON.stringify({
         uid: id,
         savedAt: Date.now(),
-        profile: normalizeUserProfile(profile, profile.email || "")
+        profile: normalized
       })
     );
   } catch {
     /* ignore */
   }
+  writeOpsSessionSnapshot(id, normalized);
 }
 
 export function clearLoginProfileCache() {

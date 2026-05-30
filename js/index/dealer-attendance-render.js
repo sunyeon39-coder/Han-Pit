@@ -1,6 +1,6 @@
 import { auth } from "../firebase.js";
 
-import { canUseTournamentOps } from "../shared/auth-helpers.js";
+import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
 import { getTournamentId } from "./core-utils.js";
 import { escapeHtml } from "../shared/dom-utils.js";
 import { IX, refreshIndexDomRefs } from "./state.js";
@@ -24,7 +24,16 @@ export function renderDealerOps() {
   }
 
   const user = auth.currentUser;
-  const isAdmin = canUseTournamentOps(user?.email, IX.currentUserProfile, getTournamentId());
+  const tid = getTournamentId();
+  const t = IX.currentTournament;
+  const tournamentMeta = t ? { id: t.id, name: t.name, logoText: t.logoText } : null;
+  const isAdmin = canShowTournamentOpsUi(
+    user?.email,
+    IX.currentUserProfile,
+    tid,
+    tournamentMeta,
+    user?.uid
+  );
   const me = user ? getDerivedAttendance(user) : null;
 
   const myStatus = me?.status || "off";
