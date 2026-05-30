@@ -188,7 +188,7 @@ export function renderGlobalLayoutMobile() {
       const assignLabel = selectedWaiting
         ? escapeHtml(`${selectedWaiting.name || ""} 이 Seat에 배치`)
         : "";
-      const ebMeta = formatMobileSeatEventBoxMeta(s);
+      const ebMeta = occupied ? "" : formatMobileSeatEventBoxMeta(s);
       seatCard.innerHTML += `
         <div class="mobile-seat-row compact ${paletteClass} ${isSel ? "selected" : ""}" data-mobile-seat="${escapeHtml(seatId)}">
           <div class="mobile-seat-mainline">
