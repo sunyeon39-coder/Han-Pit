@@ -7,6 +7,8 @@ import {
   resolveStoredUserRole,
   sanitizeAllowedEvents
 } from "../shared/auth-helpers.js";
+import { writeLoginProfileCache } from "../shared/login-profile-cache.js";
+import { hubState } from "./hub-state.js";
 
 export { hasAnyDirectEventAllow };
 
@@ -87,6 +89,9 @@ export function sortTournaments(list) {
 export function routeToTournament(tournamentId) {
   if (!tournamentId) return;
   sessionStorage.setItem("tournamentId", tournamentId);
+  const uid = hubState.currentUser?.uid;
+  const profile = hubState.currentUserProfile;
+  if (uid && profile) writeLoginProfileCache(uid, profile);
   try {
     const url = new URL("./index.html", location.href);
     url.searchParams.set("tournamentId", tournamentId);

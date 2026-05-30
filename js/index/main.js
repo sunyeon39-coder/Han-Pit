@@ -37,6 +37,7 @@ import {
   deleteEventCardCurrent,
   bindMySeatAssignment
 } from "./event-cards.js";
+import { seedIndexEventsFromSessionCache } from "./event-cards-loaders.js";
 
 import {
   loadDealerAttendanceOnce,
@@ -82,8 +83,10 @@ import {
 } from "../shared/bind-my-user-profile-realtime.js";
 import { loadUserProfileFresh } from "../shared/load-user-profile.js";
 import {
+  buildOptimisticProfileFromAuthUser,
   readLoginProfileCache,
-  isLoginProfileCacheFresh
+  isLoginProfileCacheFresh,
+  writeLoginProfileCache
 } from "../shared/login-profile-cache.js";
 
 const flushAppBadgeIfVisible = bindAppBadgeClearOnForeground(db, auth);
@@ -105,6 +108,39 @@ function buildGlobalLayoutHref() {
 }
 
 let indexHadOps = false;
+
+function resolveIndexBootProfile(user) {
+  if (!user?.uid) return null;
+  const cached = readLoginProfileCache(user.uid);
+  if (cached) {
+    return {
+      profile: cached,
+      fromCache: true,
+      stale: !isLoginProfileCacheFresh(user.uid)
+    };
+  }
+  return {
+    profile: buildOptimisticProfileFromAuthUser(user, {}),
+    fromCache: false,
+    stale: false
+  };
+}
+
+function applyIndexBootProfile(user) {
+  const boot = resolveIndexBootProfile(user);
+  if (!boot?.profile) return null;
+  IX.currentUserProfile = boot.profile;
+  seedMyUserProfileCache(boot.profile);
+  applyIndexOpsPermissions(user, { fromCache: boot.fromCache });
+  return boot;
+}
+
+function tryEarlyIndexChromePaint() {
+  const user = auth.currentUser;
+  if (!user) return;
+  refreshIndexDomRefs();
+  applyIndexBootProfile(user);
+}
 
 function applyIndexOpsPermissions(user = auth.currentUser, meta = {}) {
   if (!user) return;
@@ -179,7 +215,12 @@ async function init() {
     return;
   }
 
-  render();
+  const paintedFromSession = seedIndexEventsFromSessionCache();
+  if (paintedFromSession) {
+    render();
+    markPageBootLoaded(IX.root);
+  }
+
   renderDealerOps();
 
   bindEventsRealtime();
@@ -187,7 +228,11 @@ async function init() {
   bindDealerAttendanceRealtime();
   bindDealerSeatRealtime();
 
-  await Promise.all([loadEvents(), loadDealerAttendanceOnce()]);
+  void loadDealerAttendanceOnce()
+    .catch((err) => console.error("loadDealerAttendanceOnce error:", err))
+    .finally(() => scheduleRenderDealerOps());
+
+  await loadEvents();
 
   void ensureMeRecovered(auth.currentUser)
     .catch((err) => {
@@ -200,6 +245,7 @@ async function init() {
   render();
   renderDealerOps();
   refreshCardStatuses();
+  if (!paintedFromSession) markPageBootLoaded(IX.root);
 
   setupAttendanceLogEvents();
   setupWorkSummaryEvents();
@@ -440,8 +486,10 @@ function wireIndexPageControls() {
 
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", wireIndexPageControls, { once: true });
+  document.addEventListener("DOMContentLoaded", tryEarlyIndexChromePaint, { once: true });
 } else {
   wireIndexPageControls();
+  tryEarlyIndexChromePaint();
 }
 
 function bindIndexPushUiOnce() {
@@ -480,12 +528,8 @@ onAuthStateChanged(auth, async (user) => {
     const userRef = doc(db, "users", user.uid);
     const periodPromise = initTournamentPeriodWatch();
 
-    const cachedProfile =
-      isLoginProfileCacheFresh(user.uid) ? readLoginProfileCache(user.uid) : null;
-    if (cachedProfile) {
-      IX.currentUserProfile = cachedProfile;
-      seedMyUserProfileCache(cachedProfile);
-      applyIndexOpsPermissions(user);
+    const boot = applyIndexBootProfile(user);
+    if (boot) {
       bindMyUserProfileRealtime(user.uid, {
         email: user.email || "",
         onProfileChange: (profile, meta) => {
@@ -532,7 +576,8 @@ onAuthStateChanged(auth, async (user) => {
         );
       }
       seedMyUserProfileCache(IX.currentUserProfile);
-      if (!cachedProfile) {
+      writeLoginProfileCache(user.uid, IX.currentUserProfile);
+      if (!boot) {
         applyIndexOpsPermissions(user);
         bindMyUserProfileRealtime(user.uid, {
           email: user.email || "",
@@ -548,11 +593,11 @@ onAuthStateChanged(auth, async (user) => {
       return profile;
     })();
 
-    await Promise.all([init(), periodPromise]);
-    markPageBootLoaded(IX.root);
+    void profilePromise;
 
-    await profilePromise;
-    void refreshIndexOpsFromServer(user);
+    await Promise.all([init(), periodPromise]);
+
+    void profilePromise.then(() => refreshIndexOpsFromServer(user));
   } catch (err) {
     console.error("index auth init error:", err);
     alert("인덱스 데이터를 불러오지 못했습니다.");

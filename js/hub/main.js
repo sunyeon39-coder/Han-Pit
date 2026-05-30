@@ -7,7 +7,8 @@ import { normalizeUserProfile } from "../shared/auth-helpers.js";
 import { ensureUserDoc, scheduleBackgroundUserProfileSync } from "../login/user-sync.js";
 import {
   readLoginProfileCache,
-  isLoginProfileCacheFresh
+  isLoginProfileCacheFresh,
+  writeLoginProfileCache
 } from "../shared/login-profile-cache.js";
 import { getIsAdminUser } from "./hub-helpers.js";
 import { closeModal, openModal } from "../shared/dom-utils.js";
@@ -357,6 +358,7 @@ async function bootstrapHubSession(user) {
     isLoginProfileCacheFresh(user.uid) ? readLoginProfileCache(user.uid) : null;
   if (cachedProfile) {
     hubState.currentUserProfile = normalizeUserProfile(cachedProfile, user.email || "");
+    writeLoginProfileCache(user.uid, hubState.currentUserProfile);
     if (hubState.tournamentsCache.length > 0) {
       paintHubTournamentList();
     }
@@ -406,6 +408,7 @@ async function bootstrapHubSession(user) {
   }
 
   hubState.currentUserProfile = profile;
+  writeLoginProfileCache(user.uid, profile);
   paintHubTournamentList();
   if (flow !== hubState.hubAuthFlowGen || hubState.currentUser?.uid !== user.uid) return;
 

@@ -6,6 +6,7 @@
 import { escapeHtml } from "../shared/dom-utils.js";
 import { getIsAdminUser, hasEventAccess, routeToTournament } from "./hub-helpers.js";
 import { prefetchPageOnce } from "../shared/page-prefetch.js";
+import { prefetchIndexEventsCache } from "../index/event-cards-loaders.js";
 import { hubRefs } from "./hub-dom-refs.js";
 import { hubState } from "./hub-state.js";
 
@@ -133,6 +134,7 @@ export function renderTournaments(tournaments, userProfile, user) {
             `./index.html?tournamentId=${encodeURIComponent(tournament.id)}`
           );
         }
+        void prefetchIndexEventsCache(tournament.id);
       };
       card.addEventListener("pointerenter", prefetchIndex, { passive: true });
       card.addEventListener("focusin", prefetchIndex, { passive: true });
