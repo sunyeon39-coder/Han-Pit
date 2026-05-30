@@ -498,10 +498,21 @@ function wireIndexPageControls() {
       if (!action) return;
 
       if (action === "waiting") {
-        const ok = await joinSharedWaitingOnCheckIn(user);
+        const joinResult = await joinSharedWaitingOnCheckIn(user);
+        const ok = joinResult === true || joinResult?.ok === true;
         if (!ok) return;
 
-        await updateMyAttendanceStatus("waiting");
+        try {
+          await updateMyAttendanceStatus("waiting");
+        } catch (err) {
+          console.error("updateMyAttendanceStatus(waiting):", err);
+          alert(
+            String(err?.code || "") === "permission-denied"
+              ? "출근 기록 저장 권한이 없습니다. 다시 로그인해 주세요."
+              : "출근 기록 저장에 실패했습니다."
+          );
+          return;
+        }
         await loadDealerAttendanceOnce();
         renderDealerOps();
         return;

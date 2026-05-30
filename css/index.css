@@ -1451,6 +1451,21 @@ label.dealer-time-chip--editable{
   gap:8px;
 }
 
+.dealer-self-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.dealer-action-row--inline {
+  flex-wrap: nowrap;
+}
+
 .dealer-action-btn.ghost{
   background:rgba(255,255,255,.06);
   color:var(--text-2);

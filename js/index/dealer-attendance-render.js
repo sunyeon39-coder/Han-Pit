@@ -77,8 +77,18 @@ export function renderDealerOps() {
       return;
     }
 
+    const adminCanCheckIn = myStatus === "off" || myStatus === "checked_out";
+    const adminCanCheckOut = myStatus === "waiting";
+
     adminHtml = `
       <section class="dealer-admin-card">
+        <div class="dealer-self-inline">
+          <span class="dealer-status-pill ${escapeHtml(myStatus)}">${escapeHtml(getAttendanceStatusLabel(myStatus))}</span>
+          <div class="dealer-action-row dealer-action-row--inline">
+            <button class="dealer-action-btn primary" data-self-action="waiting" type="button" ${adminCanCheckIn ? "" : "disabled"}>내 출근</button>
+            <button class="dealer-action-btn danger" data-self-action="checked_out" type="button" ${adminCanCheckOut ? "" : "disabled"}>내 퇴근</button>
+          </div>
+        </div>
         <div class="dealer-ops-head">
   <div>
     <div class="dealer-ops-title">딜러 운영 현황</div>

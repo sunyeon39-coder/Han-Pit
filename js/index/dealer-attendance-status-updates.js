@@ -2,6 +2,7 @@ import { auth } from "../firebase.js";
 import { setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 import { getTournamentId, ensureTournamentContextOrAlert } from "./core-utils.js";
+import { buildOptimisticProfileFromAuthUser } from "../shared/login-profile-cache.js";
 import { IX } from "./state.js";
 import { getAttendanceDocId, getAttendanceRef } from "./dealer-attendance-refs.js";
 import { writeAttendanceLog } from "./dealer-attendance-logs.js";
@@ -11,7 +12,11 @@ import { getNowMs } from "./dealer-attendance-format.js";
 export async function updateMyAttendanceStatus(nextStatus) {
   const tournamentId = getTournamentId();
   const user = auth.currentUser;
-  if (!user || !tournamentId || !IX.currentUserProfile) return;
+  if (!user || !tournamentId) return;
+
+  if (!IX.currentUserProfile) {
+    IX.currentUserProfile = buildOptimisticProfileFromAuthUser(user, {});
+  }
 
   const current = getDerivedAttendance(user);
   const now = getNowMs();
