@@ -1,28 +1,35 @@
 import { escapeHtml, openModal, closeModal } from "../shared/dom-utils.js";
 import {
   hasDirectEventAllowFor,
-  isAdminEmail,
   isSystemAdminEmail,
+  opsAllowedEventsFromProfile,
   sanitizeAllowedEvents
 } from "../shared/auth-helpers.js";
 import { hasEventAccess, sortUsersForAdminList } from "./hub-helpers.js";
 import { hubState } from "./hub-state.js";
 import { hubRefs } from "./hub-dom-refs.js";
 
+function userOpsAllowedForMeta(user = {}) {
+  const merged = opsAllowedEventsFromProfile({
+    allowedEvents: user._rawAllowedEvents,
+    opsTournamentIds: user._rawOpsTournamentIds
+  });
+  if (Object.keys(merged).length) return merged;
+  return sanitizeAllowedEvents(user.allowedEvents);
+}
+
 function userRoleMetaForEvent(user, eventId = "") {
   if (isSystemAdminEmail(user?.email)) {
     return { label: "시스템 admin", ok: true };
   }
-  const rawAllowed = sanitizeAllowedEvents(user?._rawAllowedEvents ?? user?.allowedEvents);
-  if (hasDirectEventAllowFor(rawAllowed, eventId)) {
+  if (hasDirectEventAllowFor(userOpsAllowedForMeta(user), eventId)) {
     return { label: "운영 admin", ok: true };
   }
   return { label: "user", ok: false };
 }
 
 function isDirectAllowedForEvent(user, eventId = "") {
-  const rawAllowed = sanitizeAllowedEvents(user?._rawAllowedEvents ?? user?.allowedEvents);
-  return hasDirectEventAllowFor(rawAllowed, eventId);
+  return hasDirectEventAllowFor(userOpsAllowedForMeta(user), eventId);
 }
 
 export function getSelectedTournament() {

@@ -48,7 +48,7 @@ import {
   disposeMyUserProfileRealtime,
   seedMyUserProfileCache
 } from "../shared/bind-my-user-profile-realtime.js";
-import { readLoginProfileCache, buildOptimisticProfileFromAuthUser, isLoginProfileCacheFresh } from "../shared/login-profile-cache.js";
+import { readBootUserProfile } from "../shared/login-profile-cache.js";
 import { loadUserProfileFresh } from "../shared/load-user-profile.js";
 
 let globalLayoutMobileSeatNotify = null;
@@ -166,10 +166,7 @@ export function startGlobalLayoutApp() {
 
     try {
       GL.currentUser = user;
-      const cached =
-        isLoginProfileCacheFresh(user.uid) ? readLoginProfileCache(user.uid) : null;
-      GL.userProfile =
-        cached || buildOptimisticProfileFromAuthUser(user, cached || {});
+      GL.userProfile = readBootUserProfile(user);
       seedMyUserProfileCache(GL.userProfile);
       GL.isAdminUser =
         isAdminEmail(user.email || "") ||

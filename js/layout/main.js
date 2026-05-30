@@ -13,9 +13,7 @@ import {
 } from "./dealer-attendance-remote.js";
 import { createLayoutSeatNotifyController } from "./seat-notify-controller.js";
 import {
-  readLoginProfileCache,
-  buildOptimisticProfileFromAuthUser,
-  isLoginProfileCacheFresh
+  readBootUserProfile
 } from "../shared/login-profile-cache.js";
 import {
   maybeShowOptimisticSeatAlertFromSeats,
@@ -647,9 +645,7 @@ import {
   }
 
   currentUser = user;
-  const loginCached =
-    isLoginProfileCacheFresh(user.uid) ? readLoginProfileCache(user.uid) : null;
-  currentUserProfile = loginCached || buildOptimisticProfileFromAuthUser(user, loginCached || {});
+  currentUserProfile = readBootUserProfile(user);
   seedMyUserProfileCache(currentUserProfile);
   applyLayoutOpsPermissions();
 

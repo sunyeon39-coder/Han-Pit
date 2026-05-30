@@ -19,6 +19,26 @@ export function buildOptimisticProfileFromAuthUser(user, prev = {}) {
   );
 }
 
+/** 앱 부트 시 — 만료 여부와 관계없이 session 캐시 + opsTournamentIds 병합 */
+export function readBootUserProfile(user, prev = {}) {
+  const uid = String(user?.uid || "").trim();
+  const cached = uid ? readLoginProfileCache(uid) : null;
+  const email = String(user?.email || cached?.email || prev.email || "").trim();
+  return normalizeUserProfile(
+    {
+      ...(cached || prev),
+      email: email || cached?.email || "",
+      opsTournamentIds:
+        cached?.opsTournamentIds ?? prev.opsTournamentIds ?? [],
+      allowedEvents:
+        cached?.allowedEvents && typeof cached.allowedEvents === "object"
+          ? cached.allowedEvents
+          : prev.allowedEvents
+    },
+    email
+  );
+}
+
 export function readLoginProfileCache(uid = "") {
   const id = String(uid || "").trim();
   if (!id) return null;

@@ -354,10 +354,9 @@ async function bootstrapHubSession(user) {
     showHubListLoading();
   }
 
-  const cachedProfile =
-    isLoginProfileCacheFresh(user.uid) ? readLoginProfileCache(user.uid) : null;
+  const cachedProfile = readLoginProfileCache(user.uid);
   if (cachedProfile) {
-    hubState.currentUserProfile = normalizeUserProfile(cachedProfile, user.email || "");
+    hubState.currentUserProfile = cachedProfile;
     writeLoginProfileCache(user.uid, hubState.currentUserProfile);
     if (hubState.tournamentsCache.length > 0) {
       paintHubTournamentList();

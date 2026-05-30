@@ -83,7 +83,7 @@ import {
 } from "../shared/bind-my-user-profile-realtime.js";
 import { loadUserProfileFresh } from "../shared/load-user-profile.js";
 import {
-  buildOptimisticProfileFromAuthUser,
+  readBootUserProfile,
   readLoginProfileCache,
   isLoginProfileCacheFresh,
   writeLoginProfileCache
@@ -111,18 +111,11 @@ let indexHadOps = false;
 
 function resolveIndexBootProfile(user) {
   if (!user?.uid) return null;
-  const cached = readLoginProfileCache(user.uid);
-  if (cached) {
-    return {
-      profile: cached,
-      fromCache: true,
-      stale: !isLoginProfileCacheFresh(user.uid)
-    };
-  }
+  const hadCache = !!readLoginProfileCache(user.uid);
   return {
-    profile: buildOptimisticProfileFromAuthUser(user, {}),
-    fromCache: false,
-    stale: false
+    profile: readBootUserProfile(user),
+    fromCache: hadCache,
+    stale: hadCache && !isLoginProfileCacheFresh(user.uid)
   };
 }
 
