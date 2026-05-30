@@ -1428,8 +1428,10 @@ body.page-global-layout .mobile-wait-row.has-operator-pick-remote {
     inset 0 0 0 1px color-mix(in srgb, var(--wait-pick-color) 35%, transparent);
 }
 
-body.page-global-layout .wait-panel-row.is-operator-pick-self.selected,
-body.page-global-layout .mobile-wait-row.is-operator-pick-self.selected {
+body.page-global-layout .wait-panel-row.is-operator-pick-self,
+body.page-global-layout .wait-panel-row.selected,
+body.page-global-layout .mobile-wait-row.is-operator-pick-self,
+body.page-global-layout .mobile-wait-row.selected {
   border-color: color-mix(in srgb, var(--wait-pick-color) 85%, #fff);
   box-shadow:
     inset 4px 0 0 var(--wait-pick-color),

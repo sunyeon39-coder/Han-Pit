@@ -274,8 +274,8 @@ export function renderWaiting(waiting = []) {
   const waitingRows = sortedWaiting
     .map((w) => {
       const wid = String(w.id || "");
-      const selected = GL.selectedWaitingId === wid;
-      const pickUi = waitingRowPickClass(wid, selected);
+      const pickUi = waitingRowPickClass(wid);
+      const selected = pickUi.isSelected;
       const blocked = isWaitingBlocked(w);
       const startMs = getWaitingDisplayStartMs(w);
       const elapsed = Date.now() - startMs;

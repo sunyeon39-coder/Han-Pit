@@ -27,6 +27,51 @@ export function getOperatorDisplayName(profile = {}, user = null) {
 export function applyOperatorPicksFromDoc(data = {}) {
   const raw = data?.operatorPicks;
   GL.operatorPicks = raw && typeof raw === "object" && !Array.isArray(raw) ? { ...raw } : {};
+  syncSelectedWaitingFromMyOperatorPick();
+}
+
+/** Firestore operatorPicks 와 패널 selectedWaitingId 를 맞춤 (한 번만 눌러도 배치 가능) */
+export function syncSelectedWaitingFromMyOperatorPick() {
+  const myUid = String(GL.currentUser?.uid || auth.currentUser?.uid || "").trim();
+  if (!myUid) return;
+  const mine = GL.operatorPicks?.[myUid];
+  const pickWid = mine?.waitingId ? String(mine.waitingId).trim() : "";
+  const cur = String(GL.selectedWaitingId || "").trim();
+  if (pickWid && !cur) {
+    GL.selectedWaitingId = pickWid;
+  }
+}
+
+/** Firestore 반영 전 로컬에 내 선택을 즉시 표시 */
+export function applyOptimisticMyWaitingPick(waitingId = "") {
+  const uid = String(GL.currentUser?.uid || auth.currentUser?.uid || "").trim();
+  if (!uid || !GL.isAdminUser) return;
+  const wid = String(waitingId || "").trim();
+  if (!wid) {
+    const next = { ...(GL.operatorPicks || {}) };
+    delete next[uid];
+    GL.operatorPicks = next;
+    return;
+  }
+  GL.operatorPicks = {
+    ...(GL.operatorPicks || {}),
+    [uid]: {
+      waitingId: wid,
+      tournamentId: String(GL.tournamentId || "").trim(),
+      displayName: getOperatorDisplayName(GL.userProfile, GL.currentUser),
+      color: GL.layoutAccentColor,
+      updatedAt: Date.now()
+    }
+  };
+}
+
+/** 대기 행 선택 — 토글 해제 없이 한 번에 선택 + 운영자 pick 동기화 */
+export function setWaitingRowSelection(waitingId = "") {
+  const wid = String(waitingId || "").trim();
+  GL.selectedWaitingId = wid;
+  if (wid && GL.selectedSeatIds?.clear) GL.selectedSeatIds.clear();
+  applyOptimisticMyWaitingPick(wid);
+  void syncMyWaitingPick(wid);
 }
 
 export function getActiveOperatorPicks() {
@@ -134,9 +179,12 @@ export async function clearMyWaitingPick() {
 }
 
 export function waitingRowPickClass(waitingId = "", selected = false) {
+  const wid = String(waitingId || "").trim();
+  const cur = String(GL.selectedWaitingId || "").trim();
+  const isSelected = selected || (wid && cur === wid);
   const { primaryColor, hasRemote, selfPick } = getWaitingRowPickState(waitingId);
   const classes = [];
-  if (selected || selfPick) classes.push("is-operator-pick-self");
+  if (isSelected || selfPick) classes.push("is-operator-pick-self");
   if (hasRemote) classes.push("has-operator-pick-remote");
-  return { classes: classes.join(" "), pickColor: primaryColor };
+  return { classes: classes.join(" "), pickColor: primaryColor, isSelected };
 }

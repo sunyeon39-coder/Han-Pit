@@ -24,7 +24,7 @@ import {
   buildOperatorLegendHtml,
   buildWaitingPickBadgesHtml,
   waitingRowPickClass,
-  syncMyWaitingPick
+  setWaitingRowSelection
 } from "./waiting-picks.js";
 import { getEventBoxPaletteClass, buildEventBoxPaletteMap } from "./event-box-palette.js";
 import {
@@ -214,8 +214,8 @@ export function renderGlobalLayoutMobile() {
 
   const appendMobileWaitRowHtml = (w) => {
     const wid = String(w.id || "");
-    const selected = GL.selectedWaitingId === wid;
-    const pickUi = waitingRowPickClass(wid, selected);
+    const pickUi = waitingRowPickClass(wid);
+    const selected = pickUi.isSelected;
     const blocked = isWaitingBlocked(w);
     const startMs = getWaitingDisplayStartMs(w);
     const elapsed = Date.now() - startMs;
@@ -397,9 +397,8 @@ export function renderGlobalLayoutMobile() {
       if (e.target.closest("[data-del-w]") || e.target.closest("[data-mobile-block-w]")) return;
       const wid = String(row.getAttribute("data-mobile-wait") || "").trim();
       if (!wid) return;
-      GL.selectedWaitingId = GL.selectedWaitingId === wid ? "" : wid;
-      if (GL.selectedWaitingId) GL.selectedSeatIds.clear();
-      void syncMyWaitingPick(GL.selectedWaitingId);
+      if (GL.selectedWaitingId === wid) return;
+      setWaitingRowSelection(wid);
       fullRender();
     });
   });

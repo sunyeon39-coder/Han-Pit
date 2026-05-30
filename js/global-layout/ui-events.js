@@ -27,7 +27,7 @@ import {
   undoLastGlobalAction
 } from "./firestore-ops.js";
 import { initGlobalSeatEditModal, openSeatEditModal } from "./seat-edit-modal.js";
-import { syncMyWaitingPick } from "./waiting-picks.js";
+import { setWaitingRowSelection } from "./waiting-picks.js";
 import { refreshGlobalLayoutAlignButtonState } from "./canvas-viewport.js";
 import { fmtElapsed, isEmptyPerson, timerClass } from "./utils.js";
 import { getGlobalUndoCount } from "./undo-stack.js";
@@ -251,11 +251,8 @@ export function bindGlobalLayoutEventHandlers() {
     if (!row) return;
     const wid = String(row.getAttribute("data-wid") || "");
     if (!wid) return;
-    const togglingOff = GL.selectedWaitingId === wid;
-    GL.selectedWaitingId = togglingOff ? "" : wid;
-
-    if (GL.selectedWaitingId) GL.selectedSeatIds.clear();
-    void syncMyWaitingPick(GL.selectedWaitingId);
+    if (GL.selectedWaitingId === wid) return;
+    setWaitingRowSelection(wid);
     renderWaiting(getCurrentTournamentWaiting());
   });
 
