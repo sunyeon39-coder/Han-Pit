@@ -16,7 +16,11 @@ import {
   resolveDirectOpsRole,
   sanitizeAllowedEvents
 } from "../shared/auth-helpers.js";
-import { loadUserProfileFresh } from "../shared/load-user-profile.js";
+import {
+  loadUserProfileFresh,
+  loadUserProfileRevalidated
+} from "../shared/load-user-profile.js";
+import { writeLoginProfileCache } from "../shared/login-profile-cache.js";
 import {
   normalizeTournamentDoc,
   normalizeUserDoc,
@@ -385,7 +389,7 @@ function profileFromUserSnap(snap, email = "") {
 
 export async function loadUserProfile(uid, email = "") {
   try {
-    return await loadUserProfileFresh(uid, email, { preferCacheFirst: true });
+    return await loadUserProfileRevalidated(uid, email);
   } catch (err) {
     console.error("loadUserProfile error:", err);
     return hubState.currentUserProfile || null;
@@ -554,20 +558,10 @@ export async function resyncHubAccessFromServer(uid) {
   if (!uid || !user?.uid || uid !== user.uid) return;
 
   try {
-    const userRef = doc(db, "users", uid);
-    let uSnap;
-    try {
-      uSnap = await getDocFromServer(userRef);
-    } catch {
-      uSnap = await getDoc(userRef);
-    }
-
-    if (uSnap.exists()) {
-      const patch = normalizeUserProfile(
-        uSnap.data() || {},
-        user.email || hubState.currentUserProfile?.email || ""
-      );
-      hubState.currentUserProfile = { ...(hubState.currentUserProfile || {}), ...patch };
+    const profile = await loadUserProfileRevalidated(uid, user.email || "");
+    if (profile) {
+      hubState.currentUserProfile = profile;
+      writeLoginProfileCache(uid, profile);
     }
 
     const tSnap = await readTournamentsSnap();

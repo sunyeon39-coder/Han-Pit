@@ -81,7 +81,7 @@ import {
   disposeMyUserProfileRealtime,
   seedMyUserProfileCache
 } from "../shared/bind-my-user-profile-realtime.js";
-import { loadUserProfileFresh } from "../shared/load-user-profile.js";
+import { loadUserProfileForTournamentOps } from "../shared/load-user-profile.js";
 import {
   readBootUserProfile,
   readLoginProfileCache,
@@ -128,6 +128,15 @@ function applyIndexBootProfile(user) {
   return boot;
 }
 
+async function loadIndexUserProfile(user) {
+  if (!user?.uid) return null;
+  return loadUserProfileForTournamentOps(
+    user.uid,
+    user.email || "",
+    getTournamentId()
+  );
+}
+
 function tryEarlyIndexChromePaint() {
   const user = auth.currentUser;
   if (!user) return;
@@ -165,9 +174,7 @@ function applyIndexOpsPermissions(user = auth.currentUser, meta = {}) {
 async function refreshIndexOpsFromServer(user = auth.currentUser) {
   if (!user?.uid) return;
   try {
-    const profile = await loadUserProfileFresh(user.uid, user.email || "", {
-      preferCacheFirst: true
-    });
+    const profile = await loadIndexUserProfile(user);
     if (profile) {
       IX.currentUserProfile = profile;
       seedMyUserProfileCache(profile);
@@ -536,9 +543,7 @@ onAuthStateChanged(auth, async (user) => {
     }
 
     const profilePromise = (async () => {
-      let profile = await loadUserProfileFresh(user.uid, user.email || "", {
-        preferCacheFirst: true
-      });
+      let profile = await loadIndexUserProfile(user);
       if (!profile) {
         IX.currentUserProfile = {
           email: user.email || "",
@@ -559,6 +564,7 @@ onAuthStateChanged(auth, async (user) => {
         profile = IX.currentUserProfile;
       } else {
         IX.currentUserProfile = profile;
+        applyIndexOpsPermissions(user);
         void normalizeAndPersistUserRole(user.uid, IX.currentUserProfile, user.email || "").then(
           (normalized) => {
             if (normalized) {

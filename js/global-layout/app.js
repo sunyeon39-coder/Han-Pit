@@ -49,7 +49,7 @@ import {
   seedMyUserProfileCache
 } from "../shared/bind-my-user-profile-realtime.js";
 import { readBootUserProfile } from "../shared/login-profile-cache.js";
-import { loadUserProfileFresh } from "../shared/load-user-profile.js";
+import { loadUserProfileForTournamentOps } from "../shared/load-user-profile.js";
 
 let globalLayoutMobileSeatNotify = null;
 
@@ -215,16 +215,18 @@ export function startGlobalLayoutApp() {
       markPageBootLoaded(GL.app);
       refreshGlobalLayoutAdminUi();
 
-      void loadUserProfileFresh(user.uid, user.email || "", { preferCacheFirst: true }).then(
-        (fresh) => {
-          if (!fresh) return;
-          GL.userProfile = fresh;
-          GL.isAdminUser =
-            isAdminEmail(user.email || "") ||
-            canManageTournamentOps(user.email, GL.userProfile, GL.tournamentId);
-          refreshGlobalLayoutAdminUi();
-        }
-      );
+      void loadUserProfileForTournamentOps(
+        user.uid,
+        user.email || "",
+        GL.tournamentId
+      ).then((fresh) => {
+        if (!fresh) return;
+        GL.userProfile = fresh;
+        GL.isAdminUser =
+          isAdminEmail(user.email || "") ||
+          canManageTournamentOps(user.email, GL.userProfile, GL.tournamentId);
+        refreshGlobalLayoutAdminUi();
+      });
 
       void normalizeAndPersistUserRole(user.uid, GL.userProfile, user.email || "")
         .then((profile) => {

@@ -17,6 +17,7 @@ import {
   opsAllowedEventsFromProfile
 } from "./auth-helpers.js";
 import { readLoginProfileCache, isLoginProfileCacheFresh } from "./login-profile-cache.js";
+import { canUseTournamentOps } from "./auth-helpers.js";
 
 const profileRefreshInflight = new Map();
 
@@ -178,5 +179,35 @@ export async function loadUserProfileFresh(uid, email = "", options = {}) {
     return null;
   }
 
+  return profile;
+}
+
+/** index·통합배치도 — 해당 대회 운영 권한이 캐시에 없으면 로그인 캐시를 건너뛰고 재조회 */
+export async function loadUserProfileForTournamentOps(uid, email = "", tournamentId = "", options = {}) {
+  let profile = await loadUserProfileFresh(uid, email, {
+    preferCacheFirst: options.preferCacheFirst !== false,
+    skipLoginCache: options.skipLoginCache === true
+  });
+  const tid = String(tournamentId || "").trim();
+  if (tid && profile && !canUseTournamentOps(email, profile, tid)) {
+    const fresh = await loadUserProfileFresh(uid, email, {
+      preferCacheFirst: true,
+      skipLoginCache: true
+    });
+    if (fresh) profile = fresh;
+  }
+  return profile;
+}
+
+/** 허브 — 로그인 캐시가 fresh면 서버·이메일 병합으로 allowedEvents 재검증 */
+export async function loadUserProfileRevalidated(uid, email = "") {
+  let profile = await loadUserProfileFresh(uid, email, { preferCacheFirst: true });
+  if (uid && isLoginProfileCacheFresh(uid)) {
+    const fresh = await loadUserProfileFresh(uid, email, {
+      preferCacheFirst: false,
+      skipLoginCache: true
+    });
+    if (fresh) profile = fresh;
+  }
   return profile;
 }

@@ -8,6 +8,7 @@ import {
   sanitizeAllowedEvents
 } from "../shared/auth-helpers.js";
 import { writeLoginProfileCache } from "../shared/login-profile-cache.js";
+import { loadUserProfileRevalidated } from "../shared/load-user-profile.js";
 import { hubState } from "./hub-state.js";
 
 export { hasAnyDirectEventAllow };
@@ -85,8 +86,14 @@ export function routeToTournament(tournamentId) {
   if (!tournamentId) return;
   sessionStorage.setItem("tournamentId", tournamentId);
   const uid = hubState.currentUser?.uid;
-  const profile = hubState.currentUserProfile;
-  if (uid && profile) writeLoginProfileCache(uid, profile);
+  const email = hubState.currentUser?.email || "";
+  if (uid) {
+    void loadUserProfileRevalidated(uid, email).then((fresh) => {
+      if (fresh) writeLoginProfileCache(uid, fresh);
+    });
+    const profile = hubState.currentUserProfile;
+    if (profile) writeLoginProfileCache(uid, profile);
+  }
   try {
     const url = new URL("./index.html", location.href);
     url.searchParams.set("tournamentId", tournamentId);
