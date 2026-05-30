@@ -3,7 +3,7 @@ import {
   doc,
   getDoc,
   onSnapshot
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 import { getTournamentId, resolveRelativePage } from "./core-utils.js";
 import { isTournamentActive } from "./time-utils.js";
@@ -32,6 +32,11 @@ async function initTournamentPeriodWatch() {
   }
 
   sessionStorage.setItem("tournamentId", tournamentId);
+
+  const cachedName = sessionStorage.getItem(`tournamentName:${tournamentId}`);
+  if (cachedName && IX.topbarTournamentName) {
+    IX.topbarTournamentName.textContent = cachedName;
+  }
 
   const tournamentRef = doc(db, "tournaments", tournamentId);
 
@@ -64,7 +69,9 @@ async function initTournamentPeriodWatch() {
     };
 
     if (IX.topbarTournamentName) {
-      IX.topbarTournamentName.textContent = IX.currentTournament.name || "Tournament Events";
+      const name = IX.currentTournament.name || "Tournament Events";
+      IX.topbarTournamentName.textContent = name;
+      sessionStorage.setItem(`tournamentName:${tournamentId}`, name);
     }
 
     if (!isTournamentActive(IX.currentTournament)) {
@@ -86,7 +93,9 @@ async function initTournamentPeriodWatch() {
         };
 
         if (IX.topbarTournamentName) {
-          IX.topbarTournamentName.textContent = IX.currentTournament.name || "Tournament Events";
+          const name = IX.currentTournament.name || "Tournament Events";
+          IX.topbarTournamentName.textContent = name;
+          sessionStorage.setItem(`tournamentName:${tournamentId}`, name);
         }
 
         if (!isTournamentActive(IX.currentTournament)) {

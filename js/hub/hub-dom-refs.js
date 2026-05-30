@@ -45,6 +45,7 @@ export function initHubRefs() {
     adminBulkSelectAll: $("adminBulkSelectAll"),
     adminBulkAssignCodeBtn: $("adminBulkAssignCodeBtn"),
     adminBulkRemoveCodeBtn: $("adminBulkRemoveCodeBtn"),
+    adminResetBasicRolesBtn: $("adminResetBasicRolesBtn"),
     adminUserList: $("adminUserList"),
     userManageModal: $("userManageModal"),
     closeUserManageBtn: $("closeUserManageBtn"),

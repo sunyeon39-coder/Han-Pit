@@ -42,19 +42,31 @@ export function createLayoutUiRender(deps) {
     }
   }
 
-  function render() {
-    app.innerHTML = "";
+  function renderCanvasOnly() {
+    if (isMobile()) return false;
+    if (typeof layoutCanvas.syncCanvas === "function" && layoutCanvas.syncCanvas()) {
+      layoutTimers.updateTimers();
+      return true;
+    }
+    return false;
+  }
 
+  function render() {
     if (isMobile()) {
+      app.innerHTML = "";
       layoutPanels.renderMobile();
       layoutTimers.updateTimers();
       mobileSheet?.classList.remove("open");
-    } else {
-      app.appendChild(layoutCanvas.buildCanvas());
-      renderPanel();
-      layoutTimers.updateTimers();
+      return;
     }
+
+    if (!renderCanvasOnly()) {
+      app.innerHTML = "";
+      app.appendChild(layoutCanvas.buildCanvas());
+    }
+    renderPanel();
+    layoutTimers.updateTimers();
   }
 
-  return { render, renderPanel, renderBoxPanel };
+  return { render, renderCanvasOnly, renderPanel, renderBoxPanel };
 }

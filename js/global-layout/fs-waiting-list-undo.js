@@ -5,7 +5,7 @@ import {
   runTransaction,
   setDoc,
   serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { GL } from "./state.js";
 import { buildGlobalSeatDocId, getAttendanceRef, makeUid } from "./utils.js";
 import { getCurrentTournamentWaiting } from "./waiting.js";
@@ -132,6 +132,77 @@ async function undoAssignPayload(payload) {
   await syncLayoutProjection(payload.eventId, payload.boxId);
 }
 
+async function undoClearSeatPayload(payload) {
+  const waitingRef = doc(db, "layout_shared", "global_waiting");
+  const seatRef = doc(
+    db,
+    "tournaments",
+    GL.tournamentId,
+    "global_seats",
+    buildGlobalSeatDocId(payload.eventId, payload.boxId, payload.targetSeatId)
+  );
+  const seatBefore = payload.seatBefore && typeof payload.seatBefore === "object" ? payload.seatBefore : null;
+  if (!seatBefore) throw new Error("undo_clear_missing_seat");
+  const waitingBefore = Array.isArray(payload.waitingBefore) ? payload.waitingBefore : null;
+  const now = Date.now();
+
+  await runTransaction(db, async (tx) => {
+    const wSnap = await tx.get(waitingRef);
+    const wData = wSnap.exists() ? wSnap.data() || {} : {};
+    const nextWaiting = waitingBefore
+      ? JSON.parse(JSON.stringify(waitingBefore))
+      : Array.isArray(wData.waiting)
+        ? [...wData.waiting]
+        : [];
+
+    tx.set(
+      seatRef,
+      {
+        person: String(seatBefore.person || "").trim() || "비어있음",
+        personUid: String(seatBefore.personUid || "").trim(),
+        personEmail: String(seatBefore.personEmail || "").trim(),
+        seatedAt: seatBefore.seatedAt ? Number(seatBefore.seatedAt) : null,
+        status: String(seatBefore.status || "").trim() || "occupied",
+        updatedAt: now,
+        updatedAtServer: serverTimestamp()
+      },
+      { merge: true }
+    );
+
+    tx.set(
+      waitingRef,
+      {
+        ...wData,
+        version: 2,
+        waiting: nextWaiting,
+        updatedAt: now,
+        updatedAtServer: serverTimestamp()
+      },
+      { merge: true }
+    );
+
+    const uid = String(seatBefore.personUid || "").trim();
+    if (uid) {
+      tx.set(
+        getAttendanceRef(db, GL.tournamentId, uid),
+        {
+          uid,
+          email: String(seatBefore.personEmail || "").trim(),
+          name: String(seatBefore.person || "").trim(),
+          tournamentId: GL.tournamentId,
+          status: "assigned",
+          statusChangedAt: now,
+          updatedAt: now,
+          updatedAtServer: serverTimestamp()
+        },
+        { merge: true }
+      );
+    }
+  });
+
+  await syncLayoutProjection(payload.eventId, payload.boxId);
+}
+
 export async function undoLastGlobalAction() {
   if (!GL.isAdminUser) return;
   const snap = popGlobalUndo();
@@ -150,6 +221,8 @@ export async function undoLastGlobalAction() {
       await syncLayoutProjection(snap.eventId, snap.boxId);
     } else if (snap.kind === "assign") {
       await undoAssignPayload(snap);
+    } else if (snap.kind === "clear_seat") {
+      await undoClearSeatPayload(snap);
     } else if (snap.kind === "delete_seat") {
       const d = snap.seatDoc && typeof snap.seatDoc === "object" ? snap.seatDoc : {};
       const sid = String(snap.seatId || d.seatId || "").trim();
@@ -177,6 +250,7 @@ export async function undoLastGlobalAction() {
 
   if (GL.activeTab === "seat") renderSeatPanel();
   else renderWaiting(getCurrentTournamentWaiting());
+  updateGlobalMetaToolbar();
 }
 
 export async function addManualWaitingByName(rawName = "") {

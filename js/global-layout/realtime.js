@@ -5,15 +5,115 @@ import {
   onSnapshot,
   runTransaction,
   serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { attendanceDocBelongsToTournament } from "../index/dealer-attendance-refs.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  dealerAttendanceQueryForTournament,
+  filterAttendanceDocsForTournament
+} from "../shared/dealer-attendance-query.js";
 import { GL } from "./state.js";
 import { updateGlobalLayoutWaitingMeta } from "./meta-ui.js";
-import { renderSeats, renderSeatPanel, renderWaiting } from "./panel-ui.js";
-import { getCurrentTournamentWaiting } from "./waiting.js";
 import { applyOperatorPicksFromDoc } from "./waiting-picks.js";
-import { getAttendanceRef, isEmptyPerson } from "./utils.js";
+import { getAttendanceRef, isEmptyPerson, getGlobalSeatSeatedAtMs } from "./utils.js";
 import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
+import {
+  bumpGlobalLayoutDataRevision,
+  scheduleGlobalLayoutRealtimeUi
+} from "./realtime-ui.js";
+import { layoutIsMobile } from "../layout/layout-main-route-env.js";
+import {
+  maybeShowOptimisticSeatAlertFromSeats,
+  triggerOptimisticMobileSeatAssignedAlert
+} from "../shared/optimistic-seat-assigned-notify.js";
+
+/** Firestore 전파 전 캐시 스냅샷이 방금 배치한 좌석을 비우는 것 방지 */
+const RECENT_LOCAL_SEAT_MS = 12000;
+let seatRecoverDebounceTimer = null;
+
+function disposeGlobalLayoutRealtime() {
+  if (GL.stopSeatWatch) {
+    GL.stopSeatWatch();
+    GL.stopSeatWatch = null;
+  }
+  if (GL.stopWaitingWatch) {
+    GL.stopWaitingWatch();
+    GL.stopWaitingWatch = null;
+  }
+  if (GL.stopAttendanceWatch) {
+    GL.stopAttendanceWatch();
+    GL.stopAttendanceWatch = null;
+  }
+  if (seatRecoverDebounceTimer) {
+    clearTimeout(seatRecoverDebounceTimer);
+    seatRecoverDebounceTimer = null;
+  }
+}
+
+function scheduleRecoverRemovedSeatPeople(removedSeats, currentSeats) {
+  if (seatRecoverDebounceTimer) clearTimeout(seatRecoverDebounceTimer);
+  seatRecoverDebounceTimer = setTimeout(() => {
+    seatRecoverDebounceTimer = null;
+    void recoverRemovedSeatPeopleToWaiting(removedSeats, currentSeats).catch((err) => {
+      console.error("recoverRemovedSeatPeopleToWaiting error:", err);
+    });
+  }, 600);
+}
+
+function applyDealerAttendanceSnap(snap) {
+  const inactive = new Set();
+  const docs = filterAttendanceDocsForTournament(snap.docs, GL.tournamentId);
+  docs.forEach((d) => {
+    const data = d.data() || {};
+    const uid = String(data.uid || "").trim();
+    const status = String(data.status || "").trim();
+    if (uid && (status === "checked_out" || status === "off")) inactive.add(uid);
+  });
+  GL.attendanceInactiveUids = inactive;
+
+  GL.attendanceWaiting = docs
+    .map((d) => ({ id: d.id, ...(d.data() || {}) }))
+    .filter((row) => {
+      const status = String(row.status || "").trim();
+      return status === "waiting" || status === "checked_in";
+    })
+    .map(({ id: _id, ...rest }) => rest);
+
+  bumpGlobalLayoutDataRevision();
+  if (GL.activeTab === "wait") {
+    scheduleGlobalLayoutRealtimeUi({ waiting: true });
+  } else {
+    scheduleGlobalLayoutRealtimeUi({ metaOnly: true });
+  }
+}
+
+function shouldKeepLocalSeatOverRemoteEmpty(prevSeat, nextSeat) {
+  const prevName = String(prevSeat?.person || "").trim();
+  const nextName = String(nextSeat?.person || "").trim();
+  if (isEmptyPerson(prevName) || !isEmptyPerson(nextName)) return false;
+  const seatedAt = getGlobalSeatSeatedAtMs(prevSeat);
+  if (!seatedAt) return false;
+  return Date.now() - seatedAt < RECENT_LOCAL_SEAT_MS;
+}
+
+function mergeGlobalSeatsFromSnapshot(prevSeats = [], nextSeats = []) {
+  const prevById = new Map();
+  for (const seat of prevSeats) {
+    const sid = String(seat?.seatId || "").trim();
+    if (sid) prevById.set(sid, seat);
+  }
+  return nextSeats.map((next) => {
+    const sid = String(next?.seatId || "").trim();
+    const prev = sid ? prevById.get(sid) : null;
+    if (!prev || !shouldKeepLocalSeatOverRemoteEmpty(prev, next)) return next;
+    return {
+      ...next,
+      person: prev.person,
+      personUid: prev.personUid,
+      personEmail: prev.personEmail,
+      seatedAt: prev.seatedAt,
+      status: prev.status || next.status || "occupied"
+    };
+  });
+}
 
 function personIdentityKey(person = {}) {
   const uid = String(person.uid || "").trim();
@@ -101,6 +201,8 @@ async function recoverRemovedSeatPeopleToWaiting(removedSeats = [], currentSeats
   });
 }
 
+export { disposeGlobalLayoutRealtime };
+
 export function bindRealtime() {
   if (!GL.tournamentId) {
     alert("대회 정보가 없습니다.");
@@ -109,13 +211,12 @@ export function bindRealtime() {
   }
 
   sessionStorage.setItem("tournamentId", GL.tournamentId);
-
-  if (GL.stopSeatWatch) GL.stopSeatWatch();
+  disposeGlobalLayoutRealtime();
   let prevSeats = [];
   GL.stopSeatWatch = onSnapshot(
     collection(db, "tournaments", GL.tournamentId, "global_seats"),
-    { includeMetadataChanges: true },
     (snap) => {
+      if (GL.seatMutationInFlight) return;
       if (snap.empty && snap.metadata?.fromCache && GL.globalSeats.length > 0) {
         return;
       }
@@ -123,25 +224,38 @@ export function bindRealtime() {
         ...(d.data() || {}),
         __firestoreDocId: d.id
       }));
-      const nextSeatIds = new Set(nextSeats.map((s) => String(s?.seatId || "").trim()).filter(Boolean));
+      const mergedSeats = mergeGlobalSeatsFromSnapshot(GL.globalSeats, nextSeats);
+      const nextSeatIds = new Set(mergedSeats.map((s) => String(s?.seatId || "").trim()).filter(Boolean));
       const removedOccupiedSeats = prevSeats.filter((s) => {
         const sid = String(s?.seatId || "").trim();
         if (!sid || nextSeatIds.has(sid)) return false;
         return !isEmptyPerson(String(s?.person || "").trim());
       });
 
-      GL.globalSeats = nextSeats;
-      renderSeats(GL.globalSeats);
-      if (GL.activeTab === "seat") renderSeatPanel();
-      if (GL.activeTab === "wait") {
-        renderWaiting(getCurrentTournamentWaiting());
-      }
-      prevSeats = nextSeats;
+      GL.globalSeats = mergedSeats;
+      bumpGlobalLayoutDataRevision();
+      prevSeats = mergedSeats;
 
-      if (removedOccupiedSeats.length) {
-        void recoverRemovedSeatPeopleToWaiting(removedOccupiedSeats, nextSeats).catch((err) => {
-          console.error("recoverRemovedSeatPeopleToWaiting error:", err);
+      if (layoutIsMobile()) {
+        maybeShowOptimisticSeatAlertFromSeats(mergedSeats, {
+          user: GL.currentUser || auth.currentUser,
+          profile: GL.userProfile,
+          buildTargetUrl: (eventId, boxId, seatId) =>
+            `./layout.html?tournamentId=${encodeURIComponent(GL.tournamentId)}&eventId=${encodeURIComponent(eventId)}&boxId=${encodeURIComponent(boxId)}&focusSeatId=${encodeURIComponent(seatId)}`,
+          showAlert: (payload) => triggerOptimisticMobileSeatAssignedAlert(payload)
         });
+      }
+
+      const flags = { seats: true, seatPanel: GL.activeTab === "seat" };
+      if (GL.activeTab === "wait") flags.waiting = true;
+      scheduleGlobalLayoutRealtimeUi(flags);
+
+      if (
+        removedOccupiedSeats.length &&
+        !snap.metadata?.fromCache &&
+        !snap.metadata?.hasPendingWrites
+      ) {
+        scheduleRecoverRemovedSeatPeople(removedOccupiedSeats, nextSeats);
       }
     },
     (err) => {
@@ -157,43 +271,28 @@ export function bindRealtime() {
   GL.stopWaitingWatch = onSnapshot(
     doc(db, "layout_shared", "global_waiting"),
     (snap) => {
-      const data = snap.exists() ? (snap.data() || {}) : {};
+      if (GL.seatMutationInFlight) return;
+      const data = snap.exists() ? snap.data() || {} : {};
       GL.globalWaiting = Array.isArray(data.waiting) ? data.waiting : [];
       applyOperatorPicksFromDoc(data);
-      const filtered = getCurrentTournamentWaiting();
+      bumpGlobalLayoutDataRevision();
       updateGlobalLayoutWaitingMeta();
-      renderWaiting(filtered);
+      scheduleGlobalLayoutRealtimeUi(
+        GL.activeTab === "wait" ? { waiting: true } : { metaOnly: true }
+      );
     },
     (err) => console.error("global waiting watch error:", err)
   );
 
-  if (GL.stopAttendanceWatch) GL.stopAttendanceWatch();
   GL.stopAttendanceWatch = onSnapshot(
-    collection(db, "dealer_attendance"),
-    (snap) => {
-      const inactive = new Set();
-      snap.docs.forEach((d) => {
-        if (!attendanceDocBelongsToTournament(d.id, GL.tournamentId)) return;
-        const data = d.data() || {};
-        const uid = String(data.uid || "").trim();
-        const status = String(data.status || "").trim();
-        if (uid && (status === "checked_out" || status === "off")) inactive.add(uid);
-      });
-      GL.attendanceInactiveUids = inactive;
-
-      GL.attendanceWaiting = snap.docs
-        .map((d) => ({ id: d.id, ...(d.data() || {}) }))
-        .filter((row) => {
-          if (!attendanceDocBelongsToTournament(row.id, GL.tournamentId)) return false;
-          const status = String(row.status || "").trim();
-          return status === "waiting" || status === "checked_in";
-        })
-        .map(({ id: _id, ...rest }) => rest);
-
-      renderWaiting(getCurrentTournamentWaiting());
-    },
+    dealerAttendanceQueryForTournament(GL.tournamentId),
+    applyDealerAttendanceSnap,
     (err) => {
-      console.error("dealer attendance watch error:", err);
+      console.warn("dealer attendance watch error (대기 병합만 제한):", err?.code || err);
+      GL.attendanceWaiting = [];
+      GL.attendanceInactiveUids = new Set();
+      bumpGlobalLayoutDataRevision();
+      scheduleGlobalLayoutRealtimeUi({ metaOnly: true });
     }
   );
 }

@@ -10,9 +10,8 @@ import {
   where,
   getDocs,
   limit
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { resolveStoredUserRole } from "../shared/auth-helpers.js";
-import { isAdminEmail } from "../app_config.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { resolveStoredUserRole, normalizeUserProfile } from "../shared/auth-helpers.js";
 
 export async function findLegacyUserDocByEmail(user) {
   if (!user?.email) return null;
@@ -178,4 +177,66 @@ export async function syncUserProfile(user) {
       error
     };
   }
+}
+
+/**
+ * 로그인 직후 빠른 경로: users/{uid} 문서가 있으면 캐시 getDoc만으로 프로필 반환.
+ * lastLogin 갱신·레거시 이메일 마이그레이션은 백그라운드(syncUserProfile)에 맡긴다.
+ */
+export async function syncUserProfileFast(user) {
+  if (!user?.uid) {
+    return { ok: false, reason: "no-user" };
+  }
+
+  const uid = user.uid;
+  const userRef = doc(db, "users", uid);
+  const email = String(user.email || "").trim().toLowerCase();
+
+  try {
+    const snap = await getDoc(userRef);
+    if (!snap.exists()) {
+      return { ok: false, reason: "no-doc", needsFullSync: true };
+    }
+
+    const prev = snap.data() || {};
+    const nextRole = resolveStoredUserRole(email, prev);
+    const profile = normalizeUserProfile(
+      {
+        ...prev,
+        email: user.email || prev.email || "",
+        photoURL: String(user.photoURL || prev.photoURL || "").trim(),
+        role: nextRole
+      },
+      email
+    );
+
+    const patch = {
+      email: user.email || "",
+      photoURL: String(user.photoURL || "").trim(),
+      lastLogin: serverTimestamp()
+    };
+    if (nextRole === String(prev.role || "").trim()) {
+      patch.role = nextRole;
+    }
+    void updateDoc(userRef, patch).catch((err) => {
+      console.warn("[syncUserProfileFast] lastLogin update:", err);
+    });
+
+    return {
+      ok: true,
+      fast: true,
+      profile
+    };
+  } catch (error) {
+    console.error("[syncUserProfileFast] error:", error);
+    return { ok: false, error, needsFullSync: true };
+  }
+}
+
+/** 허브 진입 후 lastLogin·레거시 병합 등 — UI는 막지 않음 */
+export function scheduleBackgroundUserProfileSync(user) {
+  if (!user?.uid) return;
+  void syncUserProfile(user).catch((err) => {
+    console.warn("[scheduleBackgroundUserProfileSync]", err);
+  });
 }

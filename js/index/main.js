@@ -2,16 +2,19 @@ import { auth, db } from "../firebase.js";
 
 import {
   onAuthStateChanged
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 import {
   doc,
   getDoc,
   setDoc
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 import { isAdminEmail } from "../app_config.js";
-import { getIsAdmin, resolveStoredUserRole } from "../shared/auth-helpers.js";
+import {
+  canUseTournamentOps,
+  resolveStoredUserRole
+} from "../shared/auth-helpers.js";
 import { normalizeAndPersistUserRole } from "../login/user-sync.js";
 import { isAppDebugEnabled } from "../shared/app-debug.js";
 import { openModal, closeModal, escapeHtml } from "../shared/dom-utils.js";
@@ -41,14 +44,19 @@ import {
   bindDealerSeatRealtime,
   ensureMeRecovered,
   renderDealerOps,
+  scheduleRenderDealerOps,
   setupAttendanceLogEvents,
+  setupWorkSummaryEvents,
+  handleShowWorkSummaryClick,
   bindAttendanceLogsRealtime,
   joinSharedWaitingOnCheckIn,
   removeFromSharedWaitingOnCheckOut,
   updateMyAttendanceStatus,
   forceSelfCheckedOut,
   forceAdminCheckedOut,
-  getAdminAttendanceList
+  getAdminAttendanceList,
+  adjustMyCheckedInAt,
+  adjustMyCheckedOutAt
 } from "./dealer-attendance.js";
 
 import { routeToHub, initTournamentPeriodWatch } from "./tournament-period.js";
@@ -62,9 +70,71 @@ import {
   syncPushOfferButton
 } from "../shared/fcm-web-push.js";
 import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
+import { markPageBootLoaded } from "../shared/page-boot-shell.js";
+import {
+  bindMyUserProfileRealtime,
+  disposeMyUserProfileRealtime,
+  seedMyUserProfileCache
+} from "../shared/bind-my-user-profile-realtime.js";
+import { loadUserProfileFresh } from "../shared/load-user-profile.js";
+import {
+  readLoginProfileCache,
+  isLoginProfileCacheFresh
+} from "../shared/login-profile-cache.js";
 
 const flushAppBadgeIfVisible = bindAppBadgeClearOnForeground(db, auth);
 void ensureForegroundFcmBadgeListener();
+
+let indexHadOps = false;
+
+function applyIndexOpsPermissions(user = auth.currentUser, meta = {}) {
+  if (!user) return;
+
+  const tid = getTournamentId();
+  const email = user.email || "";
+  const canOps = canUseTournamentOps(email, IX.currentUserProfile, tid);
+
+  if (!canOps && meta.fromCache && indexHadOps) return;
+
+  indexHadOps = canOps;
+  renderDealerOps();
+
+  if (canOps) {
+    IX.globalLayoutBtn?.classList.remove("hidden");
+    IX.seatMapOpenEditorBtn?.classList.remove("hidden");
+    IX.eventAdminBtn?.classList.remove("hidden");
+    IX.attendanceLogBtn?.classList.remove("hidden");
+    if (IX.seatMapOpenEditorBtn) IX.seatMapOpenEditorBtn.dataset.canEdit = "1";
+  } else {
+    IX.globalLayoutBtn?.classList.add("hidden");
+    IX.seatMapOpenEditorBtn?.classList.add("hidden");
+    IX.eventAdminBtn?.classList.add("hidden");
+    IX.attendanceLogBtn?.classList.add("hidden");
+    if (IX.seatMapOpenEditorBtn) IX.seatMapOpenEditorBtn.dataset.canEdit = "0";
+  }
+}
+
+async function refreshIndexOpsFromServer(user = auth.currentUser) {
+  if (!user?.uid) return;
+  try {
+    const profile = await loadUserProfileFresh(user.uid, user.email || "", {
+      preferCacheFirst: true
+    });
+    if (profile) {
+      IX.currentUserProfile = profile;
+      seedMyUserProfileCache(profile);
+    }
+    const hadOps = indexHadOps;
+    applyIndexOpsPermissions(user);
+    if (getTournamentId() && hadOps !== indexHadOps) {
+      bindDealerAttendanceRealtime();
+      bindAttendanceLogsRealtime();
+      await loadDealerAttendanceOnce();
+    }
+  } catch (err) {
+    console.warn("refreshIndexOpsFromServer:", err);
+  }
+}
 
 async function init() {
   refreshIndexDomRefs();
@@ -90,35 +160,69 @@ async function init() {
     return;
   }
 
-  /* Firestore 대기 전에도 목록 영역·딜러 패널을 먼저 그려 빈 화면을 줄입니다. */
   render();
   renderDealerOps();
 
-  await loadEvents();
-
   bindEventsRealtime();
   bindLayoutSeatSummaryRealtime();
-
-  await loadDealerAttendanceOnce();
   bindDealerAttendanceRealtime();
   bindDealerSeatRealtime();
 
-  try {
-    await ensureMeRecovered(auth.currentUser);
-  } catch (err) {
-    console.error("ensureMeRecovered error:", err);
-  }
+  await Promise.all([loadEvents(), loadDealerAttendanceOnce()]);
+
+  void ensureMeRecovered(auth.currentUser)
+    .catch((err) => {
+      console.error("ensureMeRecovered error:", err);
+    })
+    .finally(() => {
+      scheduleRenderDealerOps();
+    });
 
   render();
   renderDealerOps();
   refreshCardStatuses();
 
   setupAttendanceLogEvents();
+  setupWorkSummaryEvents();
   bindAttendanceLogsRealtime();
 }
 
 function wireIndexPageControls() {
   refreshIndexDomRefs();
+
+  IX.dealerOpsMount?.addEventListener("click", (e) => {
+    const chip = e.target.closest(".dealer-time-chip--editable");
+    if (!chip || e.target.closest(".dealer-time-chip-input")) return;
+    const input = chip.querySelector("[data-edit-check-in],[data-edit-check-out]");
+    if (!input) return;
+    input.focus();
+    try {
+      if (typeof input.showPicker === "function") input.showPicker();
+    } catch (_) {
+      /* iOS 구버전: focus만으로 네이티브 피커 */
+    }
+  });
+
+  IX.dealerOpsMount?.addEventListener("change", async (e) => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const checkInInput = e.target.closest("[data-edit-check-in]");
+    const checkOutInput = e.target.closest("[data-edit-check-out]");
+    if (!checkInInput && !checkOutInput) return;
+
+    try {
+      const ok = checkOutInput
+        ? await adjustMyCheckedOutAt(new Date(checkOutInput.value).getTime())
+        : await adjustMyCheckedInAt(new Date(checkInInput.value).getTime());
+      if (ok) {
+        await loadDealerAttendanceOnce();
+        renderDealerOps();
+      }
+    } catch (err) {
+      console.error("adjust attendance time change error:", err);
+    }
+  });
 
   IX.root?.addEventListener("click", (e) => {
     const card = e.target.closest(".event-card");
@@ -170,11 +274,14 @@ function wireIndexPageControls() {
     location.href = `./global-layout.html?${q.toString()}`;
   });
 
-  IX.eventAdminBtn?.addEventListener("click", async () => {
-    await loadEvents();
+  IX.eventAdminBtn?.addEventListener("click", () => {
     populateEventSelect();
     renderEventAdminList();
     openModal(IX.eventAdminModal);
+    void loadEvents().then(() => {
+      populateEventSelect();
+      renderEventAdminList();
+    });
   });
 
   IX.closeEventAdminBtn?.addEventListener("click", () => {
@@ -238,9 +345,10 @@ function wireIndexPageControls() {
       }
 
       const user = auth.currentUser;
-      const isAdmin = getIsAdmin(user, IX.currentUserProfile);
+      const tid = getTournamentId();
+      const canOps = canUseTournamentOps(user?.email, IX.currentUserProfile, tid);
 
-      if (isAdmin) {
+      if (canOps) {
         const adminBtn = e.target.closest("[data-admin-action]");
         if (adminBtn) {
           const action = String(adminBtn.getAttribute("data-admin-action") || "").trim();
@@ -259,6 +367,12 @@ function wireIndexPageControls() {
           }
         }
 
+        return;
+      }
+
+      const summaryBtn = e.target.closest("[data-show-work-summary]");
+      if (summaryBtn && user) {
+        handleShowWorkSummaryClick();
         return;
       }
 
@@ -325,6 +439,8 @@ function bindIndexPushUiOnce() {
 
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
+    indexHadOps = false;
+    disposeMyUserProfileRealtime();
     if (IX.stopMySeatNotificationWatch) {
       IX.stopMySeatNotificationWatch();
       IX.stopMySeatNotificationWatch = null;
@@ -339,63 +455,90 @@ onAuthStateChanged(auth, async (user) => {
     refreshIndexDomRefs();
 
     const userRef = doc(db, "users", user.uid);
-    const userSnap = await getDoc(userRef);
-    IX.currentUserProfile = userSnap.exists() ? (userSnap.data() || {}) : null;
+    const periodPromise = initTournamentPeriodWatch();
 
-    if (!IX.currentUserProfile) {
-      IX.currentUserProfile = {
+    const cachedProfile =
+      isLoginProfileCacheFresh(user.uid) ? readLoginProfileCache(user.uid) : null;
+    if (cachedProfile) {
+      IX.currentUserProfile = cachedProfile;
+      seedMyUserProfileCache(cachedProfile);
+      applyIndexOpsPermissions(user);
+      bindMyUserProfileRealtime(user.uid, {
         email: user.email || "",
-        nickname: user.displayName || "",
-        role: resolveStoredUserRole(user.email || "", {}),
-        accessCode: "",
-        allowedEvents: {}
-      };
-      await setDoc(userRef, IX.currentUserProfile, { merge: true });
-    } else {
-      IX.currentUserProfile = await normalizeAndPersistUserRole(
-        user.uid,
-        IX.currentUserProfile,
-        user.email || ""
-      );
-    }
-
-    const isAdmin = getIsAdmin(auth.currentUser, IX.currentUserProfile);
-
-    if (isAppDebugEnabled()) {
-      console.debug("[INDEX AUTH]", {
-        uid: user.uid,
-        email: user.email || "",
-        profile: IX.currentUserProfile,
-        isAdmin
+        onProfileChange: (profile, meta) => {
+          IX.currentUserProfile = profile;
+          applyIndexOpsPermissions(user, meta);
+        }
       });
+      syncPushOfferButton(IX.enablePushBtn, user.uid);
+      void refreshFcmTokenIfGranted(user.uid);
+      flushAppBadgeIfVisible();
     }
 
-    renderDealerOps();
+    const profilePromise = (async () => {
+      let profile = await loadUserProfileFresh(user.uid, user.email || "", {
+        preferCacheFirst: true
+      });
+      if (!profile) {
+        IX.currentUserProfile = {
+          email: user.email || "",
+          nickname: user.displayName || "",
+          role: resolveStoredUserRole(user.email || "", {}),
+          accessCode: ""
+        };
+        await setDoc(
+          userRef,
+          {
+            email: user.email || "",
+            nickname: user.displayName || "",
+            role: IX.currentUserProfile.role,
+            accessCode: ""
+          },
+          { merge: true }
+        );
+        profile = IX.currentUserProfile;
+      } else {
+        IX.currentUserProfile = profile;
+        void normalizeAndPersistUserRole(user.uid, IX.currentUserProfile, user.email || "").then(
+          (normalized) => {
+            if (normalized) {
+              IX.currentUserProfile = normalized;
+              applyIndexOpsPermissions(user);
+            }
+          }
+        );
+      }
+      seedMyUserProfileCache(IX.currentUserProfile);
+      if (!cachedProfile) {
+        applyIndexOpsPermissions(user);
+        bindMyUserProfileRealtime(user.uid, {
+          email: user.email || "",
+          onProfileChange: (p, meta) => {
+            IX.currentUserProfile = p;
+            applyIndexOpsPermissions(user, meta);
+          }
+        });
+        syncPushOfferButton(IX.enablePushBtn, user.uid);
+        void refreshFcmTokenIfGranted(user.uid);
+        flushAppBadgeIfVisible();
+      }
+      return profile;
+    })();
 
-    if (isAdmin) {
-      IX.globalLayoutBtn?.classList.remove("hidden");
-      IX.eventAdminBtn?.classList.remove("hidden");
-      IX.attendanceLogBtn?.classList.remove("hidden");
-      IX.seatMapOpenEditorBtn?.classList.remove("hidden");
-      if (IX.seatMapOpenEditorBtn) IX.seatMapOpenEditorBtn.dataset.canEdit = "1";
-    } else {
-      IX.globalLayoutBtn?.classList.add("hidden");
-      IX.eventAdminBtn?.classList.add("hidden");
-      IX.attendanceLogBtn?.classList.add("hidden");
-      IX.seatMapOpenEditorBtn?.classList.add("hidden");
-      if (IX.seatMapOpenEditorBtn) IX.seatMapOpenEditorBtn.dataset.canEdit = "0";
-    }
+    await Promise.all([init(), periodPromise]);
+    markPageBootLoaded(IX.root);
 
-    syncPushOfferButton(IX.enablePushBtn, user.uid);
-    void refreshFcmTokenIfGranted(user.uid);
-    flushAppBadgeIfVisible();
-
-    await init();
-    await initTournamentPeriodWatch();
+    await profilePromise;
+    void refreshIndexOpsFromServer(user);
   } catch (err) {
     console.error("index auth init error:", err);
     alert("인덱스 데이터를 불러오지 못했습니다.");
   }
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  void refreshIndexOpsFromServer(auth.currentUser);
 });
 
 setInterval(() => {

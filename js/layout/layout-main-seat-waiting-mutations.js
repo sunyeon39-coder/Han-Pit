@@ -1,6 +1,7 @@
 /**
  * layout.html: 좌석/대기열 뮤테이션, 표시용 대기 목록, 전역 좌석과 정체성 기반 필터
  */
+import { buildSeatAssignedNotifyMessage } from "../shared/seat-notification-label.js";
 import { normalizeWaitingName } from "./layout-main-waiting-normalize.js";
 import { layoutGetBestDisplayName, layoutSyncDisplayNameFallback } from "./layout-main-remote.js";
 import { createSeatWaitingMutationQueue } from "./layout-seat-waiting-mutation-queue.js";
@@ -34,10 +35,18 @@ export function createLayoutSeatWaitingMutations(deps) {
     clearUserSeatNotification,
     getCurrentEventTitle,
     buildSeatTargetUrl,
-    render
+    render,
+    renderPanel,
+    showOptimisticSeatAssignedAlert
   } = deps;
 
-  const { runSeatWaitingMutationSerialized, enqueueHealAfterMutation } = createSeatWaitingMutationQueue();
+  const {
+    runSeatWaitingMutationSerialized,
+    enqueueHealAfterMutation,
+    beginLayoutOptimisticMutation,
+    endLayoutOptimisticMutation,
+    isLayoutOptimisticMutationInFlight
+  } = createSeatWaitingMutationQueue();
 
   const {
     isIdentitySeatedAnywhereInTournament,
@@ -281,6 +290,32 @@ export function createLayoutSeatWaitingMutations(deps) {
     return before - waitingState.waiting.length;
   }
 
+  function ensurePersonInWaitingLocally({ uid = "", email = "", name = "", carryStartedAt = null } = {}) {
+    const trimmedName = String(name || "").trim();
+    if (!trimmedName || trimmedName === "비어있음") return false;
+
+    const identityKey = getIdentityKey({ uid, email, name: trimmedName });
+    const exists = waitingState.waiting.some((w) => getWaitingIdentity(w) === identityKey);
+    if (exists) return false;
+
+    waitingState.waiting.push({
+      id: makeUid("wait"),
+      name: trimmedName,
+      uid: String(uid || "").trim(),
+      email: String(email || "").trim(),
+      tournamentId: TOURNAMENT_ID,
+      addedAt: Date.now(),
+      carryStartedAt: carryStartedAt ? Number(carryStartedAt) : null
+    });
+    touchWaiting(true);
+    return true;
+  }
+
+  function paintLayoutAfterSeatWaitingChange() {
+    render();
+    if (typeof renderPanel === "function") renderPanel();
+  }
+
   function assignWaitingToSeat(waitingId, seatId) {
     return runSeatWaitingMutationSerialized(async () => {
       if (!canManageLayout()) return;
@@ -306,17 +341,20 @@ export function createLayoutSeatWaitingMutations(deps) {
         ? incomingName
         : layoutSyncDisplayNameFallback(incomingEmail, incomingName);
 
+      const prevName = String(seat.person || "").trim();
+      const prevUid = String(seat.personUid || "").trim();
+      const prevEmail = String(seat.personEmail || "").trim();
+      const prevSeatedAt = seat.seatedAt ? Number(seat.seatedAt) : null;
+      const prevOccupied = !!prevName && prevName !== "비어있음";
+
+      const prevKey = getIdentityKey({ uid: prevUid, email: prevEmail, name: prevName });
       const incomingKey = getIdentityKey({
         uid: incomingUid,
         email: incomingEmail,
         name: incomingDisplayName
       });
 
-      const prevName = String(seat.person || "").trim();
-      const prevUid = String(seat.personUid || "").trim();
-      const prevEmail = String(seat.personEmail || "").trim();
-      const prevSeatedAt = seat.seatedAt ? Number(seat.seatedAt) : null;
-      const prevOccupied = !!prevName && prevName !== "비어있음";
+      beginLayoutOptimisticMutation();
 
       if (incomingKey) {
         removeWaitingEntriesByIdentity(incomingKey);
@@ -327,6 +365,17 @@ export function createLayoutSeatWaitingMutations(deps) {
       const duplicatedSeat = findSeatByIdentity(incomingKey, seat.id);
       if (duplicatedSeat) {
         getLocalReconcile().clearSeatLocally(duplicatedSeat);
+      }
+
+      const shouldSwapPrevToWaiting =
+        prevOccupied && (!prevKey || !incomingKey || prevKey !== incomingKey);
+      if (shouldSwapPrevToWaiting) {
+        ensurePersonInWaitingLocally({
+          uid: prevUid,
+          email: prevEmail,
+          name: prevName,
+          carryStartedAt: prevSeatedAt || Date.now()
+        });
       }
 
       const dealerMoves = getDealerMoves();
@@ -341,91 +390,116 @@ export function createLayoutSeatWaitingMutations(deps) {
 
       touchWaiting(true);
       touchEvent(true);
-      render();
+      paintLayoutAfterSeatWaitingChange();
 
-      const needsPrevAwait = prevOccupied && prevUid && prevUid !== incomingUid;
-      const prevAwaitPromise = needsPrevAwait
-        ? Promise.all([
-            clearUserSeatNotification(prevUid, "seat_reassigned"),
-            ...(dealerMoves
-              ? [
-                  dealerMoves.moveDealerToWaiting({
-                    uid: prevUid,
-                    email: prevEmail,
-                    nickname: prevName,
-                    carryStartedAt: prevSeatedAt || Date.now()
-                  })
-                ]
-              : [])
-          ])
-        : Promise.resolve();
+      if (incomingUid && typeof showOptimisticSeatAssignedAlert === "function") {
+        showOptimisticSeatAssignedAlert({
+          uid: incomingUid,
+          eventId: EVENT_ID,
+          boxId: BOX_ID,
+          seatId: seat.id,
+          seatLabel: String(seat.label ?? seat.no ?? "").trim(),
+          eventTitle: getCurrentEventTitle(),
+          targetUrl: buildSeatTargetUrl(EVENT_ID, BOX_ID, seat.id)
+        });
+      }
 
-      const nameAwaitPromise = displayNameFromProfilePromise || Promise.resolve(null);
-
-      if (needsPrevAwait || displayNameFromProfilePromise) {
+      void (async () => {
         try {
-          const [, resolvedRaw] = await Promise.all([prevAwaitPromise, nameAwaitPromise]);
-          if (displayNameFromProfilePromise) {
-            const trimmed = String(resolvedRaw || "").trim();
-            if (trimmed) {
-              const still = findSeat(seat.id);
-              if (still && String(still.personUid || "").trim() === incomingUid) {
-                if (trimmed !== String(still.person || "").trim()) {
-                  still.person = trimmed;
-                  touchEvent(true);
-                  render();
+          const needsPrevAwait = shouldSwapPrevToWaiting && prevUid;
+          const prevAwaitPromise = needsPrevAwait
+            ? Promise.all([
+                clearUserSeatNotification(prevUid, "seat_reassigned"),
+                ...(dealerMoves
+                  ? [
+                      dealerMoves.moveDealerToWaiting({
+                        uid: prevUid,
+                        email: prevEmail,
+                        nickname: prevName,
+                        carryStartedAt: prevSeatedAt || Date.now()
+                      })
+                    ]
+                  : [])
+              ])
+            : Promise.resolve();
+
+          const nameAwaitPromise = displayNameFromProfilePromise || Promise.resolve(null);
+
+          if (needsPrevAwait || displayNameFromProfilePromise) {
+            try {
+              const [, resolvedRaw] = await Promise.all([prevAwaitPromise, nameAwaitPromise]);
+              if (displayNameFromProfilePromise) {
+                const trimmed = String(resolvedRaw || "").trim();
+                if (trimmed) {
+                  const still = findSeat(seat.id);
+                  if (still && String(still.personUid || "").trim() === incomingUid) {
+                    if (trimmed !== String(still.person || "").trim()) {
+                      still.person = trimmed;
+                      touchEvent(true);
+                      paintLayoutAfterSeatWaitingChange();
+                    }
+                  }
+                  incomingDisplayName = trimmed;
                 }
               }
-              incomingDisplayName = trimmed;
+            } catch (err) {
+              console.error("assignWaitingToSeat afterpaint await error", err);
             }
           }
+
+          const followUps = [];
+
+          if ((incomingUid || incomingDisplayName) && dealerMoves) {
+            followUps.push(
+              dealerMoves.moveDealerToAssigned({
+                uid: incomingUid,
+                email: incomingEmail,
+                name: incomingDisplayName,
+                resolvedDisplayName: incomingDisplayName,
+                seatId: seat.id,
+                seatLabel: seat.label ?? seat.no ?? "",
+                eventId: EVENT_ID,
+                boxId: BOX_ID
+              })
+            );
+          }
+
+          if (incomingUid) {
+            const seatLabel = String(seat.label ?? seat.no ?? "").trim();
+            const eventCardLabel = getCurrentEventTitle();
+            const tournamentId = getCurrentTournamentId();
+
+            followUps.push(
+              writeUserNotification({
+                uid: incomingUid,
+                type: "seat_assigned",
+                acknowledged: false,
+                createdAt: Date.now(),
+                tournamentId,
+                eventId: EVENT_ID,
+                eventTitle: eventCardLabel,
+                boxId: BOX_ID,
+                seatId: seat.id,
+                seatLabel,
+                targetUrl: buildSeatTargetUrl(EVENT_ID, BOX_ID, seat.id),
+                message: buildSeatAssignedNotifyMessage({
+                  eventId: EVENT_ID,
+                  cardId: eventCardLabel,
+                  seatLabel
+                })
+              })
+            );
+          }
+
+          if (followUps.length) await Promise.all(followUps);
+          await getHealUndo().healAndPersistState("assignWaitingToSeat");
         } catch (err) {
-          console.error("assignWaitingToSeat afterpaint await error", err);
+          console.error("assignWaitingToSeat persist error:", err);
+        } finally {
+          endLayoutOptimisticMutation();
+          paintLayoutAfterSeatWaitingChange();
         }
-      }
-
-      const followUps = [];
-
-      if ((incomingUid || incomingDisplayName) && dealerMoves) {
-        followUps.push(
-          dealerMoves.moveDealerToAssigned({
-            uid: incomingUid,
-            email: incomingEmail,
-            name: incomingDisplayName,
-            resolvedDisplayName: incomingDisplayName,
-            seatId: seat.id,
-            seatLabel: seat.label ?? seat.no ?? "",
-            eventId: EVENT_ID,
-            boxId: BOX_ID
-          })
-        );
-      }
-
-      if (incomingUid) {
-        const seatLabel = String(seat.label ?? seat.no ?? "").trim();
-        const eventTitle = getCurrentEventTitle();
-        const tournamentId = getCurrentTournamentId();
-
-        followUps.push(
-          writeUserNotification({
-            uid: incomingUid,
-            type: "seat_assigned",
-            acknowledged: false,
-            createdAt: Date.now(),
-            tournamentId,
-            eventId: EVENT_ID,
-            eventTitle,
-            boxId: BOX_ID,
-            seatId: seat.id,
-            seatLabel,
-            targetUrl: buildSeatTargetUrl(EVENT_ID, BOX_ID, seat.id),
-            message: `${eventTitle} / Seat ${seatLabel}에 배치되었습니다.`
-          })
-        );
-      }
-
-      if (followUps.length) await Promise.all(followUps);
-      enqueueHealAfterMutation(() => getHealUndo().healAndPersistState("assignWaitingToSeat"));
+      })();
     });
   }
 
@@ -486,6 +560,7 @@ export function createLayoutSeatWaitingMutations(deps) {
     getWaitingListForDisplay,
     clearWaitingSelectionIfSeated,
     removeWaitingEntriesByIdentity,
-    removeWaitingById
+    removeWaitingById,
+    isLayoutOptimisticMutationInFlight
   };
 }

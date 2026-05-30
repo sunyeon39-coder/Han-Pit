@@ -5,7 +5,7 @@ import {
   getDocs,
   writeBatch,
   runTransaction
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const LAYOUT_EVENTS_REF = collection(db, "layout_events");
 const GLOBAL_WAITING_REF = doc(db, "layout_shared", "global_waiting");

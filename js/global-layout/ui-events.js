@@ -170,8 +170,6 @@ export function bindGlobalLayoutEventHandlers() {
       if (!confirm("이 Seat에서 사람을 뺄까요?")) return;
       try {
         await clearSeat(sid);
-        renderSeats(GL.globalSeats);
-        if (GL.activeTab === "seat") renderSeatPanel();
       } catch (err) {
         console.error("clearSeat error:", err);
         alert("Seat 비우기에 실패했습니다.");
@@ -295,8 +293,6 @@ export function bindGlobalLayoutEventHandlers() {
     if (isEmptyPerson(String(seat.person || "").trim())) return;
     try {
       await clearSeat(seatId);
-      renderSeats(GL.globalSeats);
-      if (GL.activeTab === "seat") renderSeatPanel();
     } catch (err) {
       console.error("panel dblclick clearSeat error:", err);
     }
@@ -428,8 +424,6 @@ export function bindGlobalLayoutEventHandlers() {
           await clearSeat(sid);
           GL.lastSeatTapAt = 0;
           GL.lastSeatTapId = "";
-          renderSeats(GL.globalSeats);
-          if (GL.activeTab === "seat") renderSeatPanel();
         } catch (err) {
           console.error("canvas seat clearSeat error:", err);
         }
@@ -443,9 +437,6 @@ export function bindGlobalLayoutEventHandlers() {
     if (String(GL.selectedWaitingId || "").trim() && !isMultiSelectPointer(e)) {
       try {
         await assignSelectedWaitingToSeat(sid);
-        renderWaiting(getCurrentTournamentWaiting());
-        if (GL.activeTab === "seat") renderSeatPanel();
-        renderSeats(GL.globalSeats);
       } catch (err) {
         if (String(err?.message || "").includes("same_person_noop")) {
           alert("이미 이 Seat에 있는 사람입니다. 다른 Seat를 선택하세요.");
@@ -529,13 +520,28 @@ export function bindGlobalLayoutEventHandlers() {
 
   GL.app?.addEventListener("click", async (e) => {
     if (!GL.isAdminUser) return;
-    const box = e.target.closest(".seat-box[data-seat-id]");
-    if (!box) return;
-    if (Date.now() < GL.suppressSeatClickUntil) return;
 
-    const seatId = String(box.getAttribute("data-seat-id") || "").trim();
-    if (!seatId) return;
-    await handleCanvasSeatActivate(seatId, e);
+    const box = e.target.closest(".seat-box[data-seat-id]");
+    if (box) {
+      if (Date.now() < GL.suppressSeatClickUntil) return;
+
+      const seatId = String(box.getAttribute("data-seat-id") || "").trim();
+      if (!seatId) return;
+      await handleCanvasSeatActivate(seatId, e);
+      return;
+    }
+
+    if (!String(GL.selectedWaitingId || "").trim()) return;
+    if (!e.target.closest(".layout-canvas-viewport")) return;
+
+    GL.selectedWaitingId = "";
+    void syncMyWaitingPick("");
+    if (GL.activeTab === "wait") {
+      renderWaiting(getCurrentTournamentWaiting());
+    } else {
+      renderSeatPanel();
+      renderSeats(GL.globalSeats);
+    }
   });
 
   window.addEventListener("keydown", async (e) => {

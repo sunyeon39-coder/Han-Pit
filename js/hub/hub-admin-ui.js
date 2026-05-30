@@ -1,8 +1,21 @@
 import { escapeHtml, openModal, closeModal } from "../shared/dom-utils.js";
-import { resolveStoredUserRole } from "../shared/auth-helpers.js";
+import { hasDirectEventAllowFor, isAdminEmail } from "../shared/auth-helpers.js";
 import { hasEventAccess, sortUsersForAdminList } from "./hub-helpers.js";
 import { hubState } from "./hub-state.js";
 import { hubRefs } from "./hub-dom-refs.js";
+
+function userRoleMetaForEvent(user, eventId = "") {
+  if (isAdminEmail(user?.email)) {
+    return { label: "시스템 admin", ok: true };
+  }
+  if (String(user?.role || "").trim().toLowerCase() === "admin") {
+    return { label: "운영 admin", ok: true };
+  }
+  if (hasDirectEventAllowFor(user?.allowedEvents, eventId)) {
+    return { label: "운영 admin", ok: true };
+  }
+  return { label: "user", ok: false };
+}
 
 export function getSelectedTournament() {
   const { adminEventSelect } = hubRefs;
@@ -171,18 +184,17 @@ export function renderUserManageModal(uid) {
   hubState.selectedManageUid = uid;
 
   const directAllowed = user.allowedEvents?.[selectedEventId] === true;
-  const isOpsAdmin = resolveStoredUserRole(user.email, user) === "admin";
+  const roleMeta = userRoleMetaForEvent(user, selectedEventId);
   const codeMatched =
     !!user.accessCode &&
     !!selectedTournament?.requiredCode &&
     user.accessCode === selectedTournament.requiredCode;
-  const roleLabel = isOpsAdmin ? "운영 admin" : user.role || "user";
 
   manageUserName.textContent = user.nickname || "이름 없음";
   manageUserEmail.textContent = user.email || user.uid;
 
   manageUserMeta.innerHTML = `
-    <span class="meta-pill ${isOpsAdmin ? "ok" : ""}">${escapeHtml(roleLabel)}</span>
+    <span class="meta-pill ${roleMeta.ok ? "ok" : ""}">${escapeHtml(roleMeta.label)}</span>
     <span class="meta-pill">${escapeHtml(user.accessCode || "코드 없음")}</span>
     <span class="meta-pill ${directAllowed ? "ok" : "lock"}">
       ${directAllowed ? "직접 허용됨" : "직접 허용 없음"}
@@ -254,8 +266,7 @@ export function renderAdminUserList() {
   adminUserList.innerHTML = users
     .map((user) => {
       const directAllowed = user.allowedEvents?.[selectedEventId] === true;
-      const isOpsAdmin = resolveStoredUserRole(user.email, user) === "admin";
-      const roleLabel = isOpsAdmin ? "운영 admin" : user.role || "user";
+      const roleMeta = userRoleMetaForEvent(user, selectedEventId);
       const codeMatched =
         !!user.accessCode &&
         !!selectedTournament?.requiredCode &&
@@ -271,7 +282,7 @@ export function renderAdminUserList() {
           <div class="user-name">${escapeHtml(user.nickname || "이름 없음")}</div>
           <div class="user-email">${escapeHtml(user.email || user.uid)}</div>
           <div class="user-meta">
-            <span class="meta-pill ${isOpsAdmin ? "ok" : ""}">${escapeHtml(roleLabel)}</span>
+            <span class="meta-pill ${roleMeta.ok ? "ok" : ""}">${escapeHtml(roleMeta.label)}</span>
             <span class="meta-pill">${escapeHtml(user.accessCode || "코드 없음")}</span>
             <span class="meta-pill ${directAllowed ? "ok" : "lock"}">
               ${directAllowed ? "직접 허용됨" : "직접 허용 없음"}

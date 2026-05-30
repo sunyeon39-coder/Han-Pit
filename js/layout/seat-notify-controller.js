@@ -1,12 +1,20 @@
 import { escapeHtml } from "../shared/dom-utils.js";
+import { buildSeatAssignedNotifyMessage } from "../shared/seat-notification-label.js";
+import {
+  buildOptimisticSeatAlertKey,
+  markOptimisticSeatAlertShown,
+  shouldSkipSeatNotificationSnapshotAfterOptimistic,
+  shouldUseOptimisticSeatAlertOnMobile,
+  wasOptimisticSeatAlertShown
+} from "../shared/optimistic-seat-assigned-notify.js";
 import { db, getMessagingSafe } from "../firebase.js";
 import {
   FCM_VAPID_KEY,
   getOrRegisterFcmServiceWorker,
   saveUserFcmToken as saveUserFcmTokenShared
 } from "../shared/fcm-web-push.js";
-import { doc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { getToken } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js";
+import { doc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getToken } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
 
 /**
  * 레이아웃 페이지: 좌석 배치 알림(오버레이·반복 비프·브라우저 알림) 및
@@ -279,6 +287,49 @@ export function createLayoutSeatNotifyController({
     activeNotificationId = "";
   }
 
+  function showOptimisticSeatAssignedAlert({
+    uid = "",
+    eventId = "",
+    boxId = "",
+    seatId = "",
+    seatLabel = "",
+    eventTitle = "",
+    targetUrl = ""
+  } = {}) {
+    if (!shouldUseOptimisticSeatAlertOnMobile()) return false;
+
+    const user = getCurrentUser();
+    const myUid = String(user?.uid || "").trim();
+    const assigneeUid = String(uid || "").trim();
+    if (!myUid || !assigneeUid || assigneeUid !== myUid) return false;
+
+    const sid = String(seatId || "").trim();
+    if (!sid) return false;
+
+    const ev = String(eventId || "").trim();
+    const bx = String(boxId || "").trim();
+    const optKey = buildOptimisticSeatAlertKey({ uid: myUid, eventId: ev, boxId: bx, seatId: sid });
+    if (wasOptimisticSeatAlertShown(optKey) || activeNotificationId === optKey) return false;
+
+    markOptimisticSeatAlertShown(optKey);
+    activeNotificationId = optKey;
+
+    const msg = buildSeatAssignedNotifyMessage({
+      eventId: ev,
+      eventTitle,
+      cardId: eventTitle,
+      seatLabel
+    });
+
+    showSeatAlert(msg, {
+      eventTitle,
+      seatLabel,
+      targetUrl
+    });
+    showBrowserNotification("배치 알림", msg);
+    return true;
+  }
+
   function applySeatNotificationSnapshot(snap) {
     const user = getCurrentUser();
     if (!user) {
@@ -310,11 +361,27 @@ export function createLayoutSeatNotifyController({
     ].join("__");
 
     if (activeNotificationId === notificationKey) return;
+
+    if (
+      shouldSkipSeatNotificationSnapshotAfterOptimistic({
+        activeNotificationId,
+        uid: user.uid,
+        eventId: data.eventId,
+        boxId: data.boxId,
+        seatId: data.seatId
+      })
+    ) {
+      activeNotificationId = notificationKey;
+      return;
+    }
+
     activeNotificationId = notificationKey;
 
-    const msg =
-      String(data.message || "").trim() ||
-      `Seat ${String(data.seatLabel || "").trim()}에 배치되었습니다.`;
+    const msg = buildSeatAssignedNotifyMessage({
+      eventId: data.eventId,
+      eventTitle: data.eventTitle,
+      seatLabel: data.seatLabel
+    });
 
     showSeatAlert(msg, {
       eventTitle: data.eventTitle || "",
@@ -389,6 +456,7 @@ export function createLayoutSeatNotifyController({
     maybePromptInitialSound,
     bindMyNotificationWatch,
     showPendingSeatNotificationOnce,
+    showOptimisticSeatAssignedAlert,
     resetSeatNotificationUi,
     stopNotificationWatch
   };

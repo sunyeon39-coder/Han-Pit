@@ -152,7 +152,8 @@ export function createLayoutCanvasViewport({ ui, app, layoutCanvasViewKey }) {
     });
   }
 
-  function bindCanvasViewport(viewport, canvas) {
+  function bindCanvasViewport(viewport, canvas, options = {}) {
+    const { onCanvasBackgroundClick } = options;
     ensureLayoutCanvasGlobalPanListeners();
     initLayoutZoomBarDom();
     wireLayoutZoomBarOnce();
@@ -199,6 +200,14 @@ export function createLayoutCanvasViewport({ ui, app, layoutCanvasViewKey }) {
       },
       { passive: true }
     );
+
+    viewport.addEventListener("click", (e) => {
+      if (e.target.closest(".seat-box")) return;
+      if (!isPanBackgroundTarget(e.target)) return;
+      if (typeof onCanvasBackgroundClick === "function") {
+        onCanvasBackgroundClick();
+      }
+    });
   }
 
   return {

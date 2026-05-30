@@ -31,3 +31,19 @@ export function formatDuration(ms) {
 export function getNowMs() {
   return Date.now();
 }
+
+/** `<input type="datetime-local">` 값 ↔ ms (로컬 시간대) */
+export function msToDatetimeLocalValue(ms) {
+  const n = Number(ms);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  const d = new Date(n);
+  const pad = (v) => String(v).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export function datetimeLocalValueToMs(value) {
+  const v = String(value || "").trim();
+  if (!v) return NaN;
+  const ms = new Date(v).getTime();
+  return Number.isFinite(ms) ? ms : NaN;
+}

@@ -1,8 +1,8 @@
 import { auth } from "../firebase.js";
-import { deleteDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { deleteDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-import { getIsAdmin } from "../shared/auth-helpers.js";
-import { ensureTournamentContextOrAlert } from "./core-utils.js";
+import { canUseTournamentOps } from "../shared/auth-helpers.js";
+import { ensureTournamentContextOrAlert, getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
 import { getEventDocRef } from "./event-cards-firestore-refs.js";
 import {
@@ -15,10 +15,19 @@ import { resolveEventDocIdFromForm, resolveSelectedEventDocId } from "./event-ca
 import { ensureLayoutEventShellAfterCardSave } from "./event-cards-layout-shell.js";
 import { forceCheckOutUsersForDeletedEvent } from "./event-cards-delete-cleanup.js";
 
+function canManageCurrentTournamentOps() {
+  const tournamentId = getTournamentId();
+  if (!tournamentId) return false;
+  return canUseTournamentOps(auth.currentUser?.email, IX.currentUserProfile, tournamentId);
+}
+
 export async function saveEventCard() {
   const tournamentId = ensureTournamentContextOrAlert();
   if (!tournamentId) return;
-  if (!getIsAdmin(auth.currentUser, IX.currentUserProfile)) return;
+  if (!canManageCurrentTournamentOps()) {
+    alert("이 대회에 대한 운영 권한이 없습니다.");
+    return;
+  }
 
   const cardId = IX.eventCardId.value.trim();
   const boxId = IX.eventCardBoxId.value.trim();
@@ -103,7 +112,10 @@ export async function saveEventCard() {
 export async function deleteEventCardCurrent() {
   const tournamentId = ensureTournamentContextOrAlert();
   if (!tournamentId) return;
-  if (!getIsAdmin(auth.currentUser, IX.currentUserProfile)) return;
+  if (!canManageCurrentTournamentOps()) {
+    alert("이 대회에 대한 운영 권한이 없습니다.");
+    return;
+  }
 
   const docId = resolveSelectedEventDocId();
   const cardId = IX.eventCardId.value.trim();

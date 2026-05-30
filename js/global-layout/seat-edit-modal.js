@@ -184,37 +184,42 @@ export async function openSeatEditModal(seatId = "") {
 
   els.label.value = lb;
   if (els.seatIdDisplay) els.seatIdDisplay.textContent = sid;
-  /* Firestore 로드 전에도 이전 모달 값이 남지 않도록 즉시 반영 */
   setEventSelection(els, ev, "");
-
-  let events = [];
-  try {
-    events = await fetchEventCardsForSeatEdit();
-  } catch (err) {
-    console.error("fetchTournamentEvents error:", err);
-    events = [];
-  }
-
-  seatEditModalEventsCache = events;
-  const resolvedEv = resolveEventIdForSave(ev, events);
-  renderEventList(els, events, resolvedEv || ev);
-  els.eventId.value = resolvedEv || ev;
-  syncTriggerLabel(els, events, resolvedEv || ev);
-  const boxFromCard = resolveBoxIdForEventId(
-    resolvedEv || ev,
-    events.find((e) => String(e.id || "") === String(resolvedEv || ev)),
-    events
-  );
-  if (els.boxId) els.boxId.value = boxFromCard || bx;
 
   els.root.classList.add("global-seat-edit-modal--open");
   els.root.setAttribute("aria-hidden", "false");
   document.body.classList.add("global-seat-edit-modal-open");
+  renderEventList(els, [], ev);
+  if (els.eventTriggerText) {
+    els.eventTriggerText.textContent = "카드 목록 불러오는 중…";
+  }
 
   requestAnimationFrame(() => {
     els.label.focus();
     els.label.select?.();
   });
+
+  void (async () => {
+    let events = [];
+    try {
+      events = await fetchEventCardsForSeatEdit();
+    } catch (err) {
+      console.error("fetchTournamentEvents error:", err);
+      events = [];
+    }
+
+    seatEditModalEventsCache = events;
+    const resolvedEv = resolveEventIdForSave(ev, events);
+    renderEventList(els, events, resolvedEv || ev);
+    els.eventId.value = resolvedEv || ev;
+    syncTriggerLabel(els, events, resolvedEv || ev);
+    const boxFromCard = resolveBoxIdForEventId(
+      resolvedEv || ev,
+      events.find((e) => String(e.id || "") === String(resolvedEv || ev)),
+      events
+    );
+    if (els.boxId) els.boxId.value = boxFromCard || bx;
+  })();
 }
 
 async function onSaveClick() {

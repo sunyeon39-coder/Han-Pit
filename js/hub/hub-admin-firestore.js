@@ -1,19 +1,24 @@
 import {
   doc,
   getDoc,
+  getDocs,
   setDoc,
   updateDoc,
   deleteDoc,
-  deleteField
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+  collection,
+  query,
+  where,
+  limit
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { pickUnusedLayoutAccentColor } from "../shared/layout-operator-colors.js";
 import { db } from "../firebase.js";
 import { isAdminEmail } from "../app_config.js";
-import { hasAnyDirectEventAllow } from "../shared/auth-helpers.js";
+import { hasAnyDirectEventAllow, normalizeUserProfile, sanitizeAllowedEvents } from "../shared/auth-helpers.js";
 import { getIsAdminUser, isValidDocId } from "./hub-helpers.js";
 import { cleanupUserFromLayoutState } from "./layout-cleanup.js";
 import { hubState } from "./hub-state.js";
 import { hubRefs } from "./hub-dom-refs.js";
+import { scheduleHubTournamentsRender } from "./hub-realtime-ui.js";
 import {
   getTournamentById,
   populateTournamentSelect,
@@ -22,6 +27,48 @@ import {
   userStillHasAccessToSelectedEvent
 } from "./hub-admin-ui.js";
 import { renderTournaments } from "./hub-tournament-list.js";
+
+function resolveDirectAllowRole(email = "", nextAllowed = {}) {
+  if (isAdminEmail(email)) return "admin";
+  if (hasAnyDirectEventAllow(nextAllowed)) return "admin";
+  return "user";
+}
+
+function buildOpsTournamentIds(prev = {}, eventId = "", nextAllowed = {}) {
+  const ids = new Set(
+    Array.isArray(prev.opsTournamentIds)
+      ? prev.opsTournamentIds.map((id) => String(id || "").trim()).filter(Boolean)
+      : []
+  );
+  if (eventId) ids.add(String(eventId).trim());
+  for (const key of Object.keys(nextAllowed || {})) {
+    if (nextAllowed[key] === true) ids.add(String(key).trim());
+  }
+  return [...ids];
+}
+
+async function collectTargetUidsForEmail(uid, email = "") {
+  const targetUids = new Set([uid]);
+  const mail = String(email || "").trim().toLowerCase();
+  if (!mail) return targetUids;
+
+  for (const u of hubState.usersCache) {
+    if (String(u.email || "").trim().toLowerCase() === mail) targetUids.add(u.uid);
+  }
+
+  for (const variant of [...new Set([mail, String(email || "").trim()].filter(Boolean))]) {
+    try {
+      const snap = await getDocs(
+        query(collection(db, "users"), where("email", "==", variant), limit(12))
+      );
+      for (const d of snap.docs) targetUids.add(d.id);
+    } catch (err) {
+      console.warn("[collectTargetUidsForEmail] query failed:", variant, err);
+    }
+  }
+
+  return targetUids;
+}
 
 export async function saveTournament() {
   const {
@@ -115,43 +162,77 @@ export async function grantEventDirectly(uid, eventId) {
   }
 
   try {
-    const userRef = doc(db, "users", uid);
-    const userSnap = await getDoc(userRef);
-    const prev = userSnap.exists() ? userSnap.data() || {} : {};
+    const cacheUser = hubState.usersCache.find((u) => u.uid === uid);
+    const email = String(cacheUser?.email || "").trim();
+    const targetUids = await collectTargetUidsForEmail(uid, email);
+
     const layoutAccentColor =
-      String(prev.layoutAccentColor || "").trim() ||
+      String(cacheUser?.layoutAccentColor || "").trim() ||
       pickUnusedLayoutAccentColor(hubState.usersCache, uid);
 
-    await updateDoc(userRef, {
-      role: "admin",
-      layoutAccentColor,
-      [`allowedEvents.${eventId}`]: true
-    });
+    for (const targetUid of targetUids) {
+      const userRef = doc(db, "users", targetUid);
+      const userSnap = await getDoc(userRef);
+      const prev = userSnap.exists() ? userSnap.data() || {} : {};
+      const mail = String(prev.email || email || "").trim();
+      const accent =
+        String(prev.layoutAccentColor || "").trim() || layoutAccentColor;
 
-    const user = hubState.usersCache.find((u) => u.uid === uid);
-    if (user) {
-      user.role = "admin";
-      user.layoutAccentColor = layoutAccentColor;
-      user.allowedEvents = {
-        ...(user.allowedEvents || {}),
+      const nextAllowed = sanitizeAllowedEvents({
+        ...(prev.allowedEvents || {}),
         [eventId]: true
-      };
+      });
+      const opsTournamentIds = buildOpsTournamentIds(prev, eventId, nextAllowed);
+      const role = "admin";
+
+      await updateDoc(userRef, {
+        email: mail || email || prev.email || "",
+        role,
+        layoutAccentColor: accent,
+        allowedEvents: nextAllowed,
+        opsTournamentIds
+      });
+
+      const user = hubState.usersCache.find((u) => u.uid === targetUid);
+      if (user) {
+        user.role = role;
+        user.layoutAccentColor = accent;
+        user.allowedEvents = nextAllowed;
+        user._rawAllowedEvents = { ...nextAllowed };
+      }
     }
 
-    if (hubState.currentUser?.uid === uid) {
-      hubState.currentUserProfile = {
-        ...(hubState.currentUserProfile || {}),
-        role: "admin",
-        allowedEvents: {
-          ...(hubState.currentUserProfile?.allowedEvents || {}),
-          [eventId]: true
-        }
-      };
+    if (hubState.currentUser?.uid && targetUids.has(hubState.currentUser.uid)) {
+      const selfAllowed = sanitizeAllowedEvents({
+        ...(hubState.currentUserProfile?.allowedEvents || {}),
+        [eventId]: true
+      });
+      hubState.currentUserProfile = normalizeUserProfile(
+        {
+          ...(hubState.currentUserProfile || {}),
+          role: "admin",
+          layoutAccentColor:
+            hubState.currentUserProfile?.layoutAccentColor || layoutAccentColor,
+          allowedEvents: selfAllowed,
+          opsTournamentIds: buildOpsTournamentIds(
+            hubState.currentUserProfile || {},
+            eventId,
+            selfAllowed
+          )
+        },
+        hubState.currentUser?.email || ""
+      );
       renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
     }
 
     renderAdminUserList();
-    alert("직접 허용되었습니다. 해당 유저는 admin과 동일하게 배치·통합배치도·대회 관리를 할 수 있습니다.");
+    const extra =
+      targetUids.size > 1
+        ? `\n(같은 이메일 계정 ${targetUids.size}건 모두 반영)`
+        : "";
+    alert(
+      `직접 허용되었습니다. 해당 유저는 admin과 동일하게 배치·통합배치도·대회 관리를 할 수 있습니다.${extra}`
+    );
   } catch (err) {
     console.error(err);
     alert("직접 허용 저장에 실패했습니다.");
@@ -169,22 +250,36 @@ export async function revokeEventDirectly(uid, eventId) {
 
   try {
     const user = hubState.usersCache.find((u) => u.uid === uid);
-    const nextAllowed = { ...(user?.allowedEvents || {}) };
+    const nextAllowed = sanitizeAllowedEvents({
+      ...(user?.allowedEvents || {})
+    });
     delete nextAllowed[eventId];
 
-    const updates = {
-      [`allowedEvents.${eventId}`]: deleteField()
-    };
     const email = String(user?.email || "").trim();
-    if (!isAdminEmail(email) && !hasAnyDirectEventAllow(nextAllowed)) {
-      updates.role = "user";
-    }
+    const updates = {
+      allowedEvents: nextAllowed,
+      opsTournamentIds: buildOpsTournamentIds(user || {}, "", nextAllowed),
+      role: resolveDirectAllowRole(email, nextAllowed)
+    };
 
     await updateDoc(doc(db, "users", uid), updates);
 
     if (user) {
-      if (user.allowedEvents) delete user.allowedEvents[eventId];
-      if (updates.role) user.role = "user";
+      user.allowedEvents = nextAllowed;
+      user._rawAllowedEvents = { ...nextAllowed };
+      user.role = updates.role;
+    }
+
+    if (hubState.currentUser?.uid === uid) {
+      hubState.currentUserProfile = normalizeUserProfile(
+        {
+          ...(hubState.currentUserProfile || {}),
+          role: updates.role,
+          allowedEvents: nextAllowed
+        },
+        email
+      );
+      scheduleHubTournamentsRender();
     }
 
     let cleaned = { waitingRemoved: 0, seatRemoved: 0 };
@@ -192,7 +287,6 @@ export async function revokeEventDirectly(uid, eventId) {
     const requiredCode = String(tournament.requiredCode || "").trim();
     const userCode = String(user?.accessCode || "").trim();
     const stillAllowed =
-      user?.role === "admin" ||
       isAdminEmail(email) ||
       hasAnyDirectEventAllow(user?.allowedEvents) ||
       (userCode && requiredCode && userCode === requiredCode);

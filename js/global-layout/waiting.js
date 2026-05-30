@@ -26,6 +26,7 @@ export function applyWaitingBlockLocal(waitingId = "", checked = false) {
 
   const now = Date.now();
   const nextChecked = checked === true;
+  GL.dataRevision = (GL.dataRevision || 0) + 1;
   GL.globalWaiting = GL.globalWaiting.map((w) => {
     if (String(w?.id || "").trim() !== wid) return w;
     const base = { ...w };
@@ -157,6 +158,11 @@ export function isPersonSeatedInGlobalSeats(seats, person = {}) {
 }
 
 export function getCurrentTournamentWaiting() {
+  const rev = GL.dataRevision || 0;
+  if (GL._waitingListCache && GL._waitingListCacheRev === rev) {
+    return GL._waitingListCache;
+  }
+
   const inactive = GL.attendanceInactiveUids instanceof Set ? GL.attendanceInactiveUids : new Set();
 
   const waitingBase = GL.globalWaiting
@@ -216,6 +222,8 @@ export function getCurrentTournamentWaiting() {
     });
   });
 
+  GL._waitingListCache = merged;
+  GL._waitingListCacheRev = rev;
   return merged;
 }
 

@@ -1,12 +1,11 @@
 import { db } from "../firebase.js";
-import { collection, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { collection, getDocs, getDocsFromServer, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
 import { normalizeEvents, buildSeatSummaryMap, buildSeatSummaryMapFromGlobalSeats } from "./event-cards-model.js";
 import { getEventsCollectionRef } from "./event-cards-firestore-refs.js";
-import { render, refreshCardStatuses } from "./event-cards-render.js";
-import { populateEventSelect, renderEventAdminList } from "./event-cards-admin-form.js";
+import { scheduleIndexCardsRender } from "./index-realtime-ui.js";
 
 export async function loadEvents() {
   const tournamentId = getTournamentId();
@@ -17,6 +16,15 @@ export async function loadEvents() {
   try {
     const snap = await getDocs(getEventsCollectionRef());
     IX.events = normalizeEvents(snap.docs);
+    if (snap.metadata?.fromCache && !snap.empty) {
+      void getDocsFromServer(getEventsCollectionRef())
+        .then((fresh) => {
+          if (fresh.empty) return;
+          IX.events = normalizeEvents(fresh.docs);
+          scheduleIndexCardsRender();
+        })
+        .catch(() => {});
+    }
   } catch (err) {
     console.error("loadEvents error:", err);
     IX.events = [];
@@ -39,14 +47,9 @@ export function bindEventsRealtime() {
     getEventsCollectionRef(),
     (snap) => {
       IX.events = normalizeEvents(snap.docs);
-      render();
-      refreshCardStatuses();
-
-      if (IX.eventCardSelect && IX.eventAdminModal?.classList.contains("show")) {
-        const selectedId = IX.eventCardId?.value?.trim() || IX.eventCardSelect.value || "";
-        populateEventSelect(selectedId);
-        renderEventAdminList();
-      }
+      scheduleIndexCardsRender({
+        adminForm: IX.eventAdminModal?.classList.contains("show")
+      });
     },
     (err) => {
       console.error("bindEventsRealtime error:", err);
@@ -66,8 +69,7 @@ export function bindLayoutSeatSummaryRealtime() {
       collection(db, "tournaments", tournamentId, "global_seats"),
       (snap) => {
         IX.seatSummaryMap = buildSeatSummaryMapFromGlobalSeats(snap.docs);
-        render();
-        refreshCardStatuses();
+        scheduleIndexCardsRender({ light: true });
       },
       (err) => {
         console.error("bindLayoutSeatSummaryRealtime(global) error:", err);
@@ -80,8 +82,7 @@ export function bindLayoutSeatSummaryRealtime() {
     collection(db, "layout_events"),
     (snap) => {
       IX.seatSummaryMap = buildSeatSummaryMap(snap.docs);
-      render();
-      refreshCardStatuses();
+      scheduleIndexCardsRender({ light: true });
     },
     (err) => {
       console.error("bindLayoutSeatSummaryRealtime(layout_events) error:", err);

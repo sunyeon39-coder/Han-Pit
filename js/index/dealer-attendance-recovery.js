@@ -1,6 +1,7 @@
 import { db } from "../firebase.js";
-import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
+import { canUseTournamentOps } from "../shared/auth-helpers.js";
 import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
 import { getLayoutEventDocByEventAndBox } from "./layout-events.js";
@@ -155,7 +156,11 @@ export async function ensureMeRecovered(user) {
   }
 
   if ((me?.status === "waiting" || me?.status === "checked_in") && !inWaiting && !seatInfo) {
-    await joinSharedWaitingOnCheckIn(user);
+    if (
+      !canUseTournamentOps(user?.email, IX.currentUserProfile, tournamentId)
+    ) {
+      await joinSharedWaitingOnCheckIn(user);
+    }
     await loadDealerAttendanceOnce();
     renderDealerOps();
   }

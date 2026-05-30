@@ -5,12 +5,13 @@ import {
   deleteDoc,
   onSnapshot,
   setDoc
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-import { getIsAdmin } from "../shared/auth-helpers.js";
+import { canUseTournamentOps } from "../shared/auth-helpers.js";
 import { escapeHtml, openModal, closeModal } from "../shared/dom-utils.js";
 import { getTournamentId } from "./core-utils.js";
 import { IX, refreshIndexDomRefs } from "./state.js";
+import { formatClock } from "./dealer-attendance-format.js";
 
 export async function writeAttendanceLog({
   uid = "",
@@ -20,11 +21,16 @@ export async function writeAttendanceLog({
   eventId = "",
   boxId = "",
   seatId = "",
-  seatLabel = ""
+  seatLabel = "",
+  previousCheckedInAt = null,
+  newCheckedInAt = null,
+  previousCheckedOutAt = null,
+  newCheckedOutAt = null,
+  detail = ""
 }) {
   try {
     const logId = `log_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    await setDoc(doc(db, "dealer_attendance_logs", logId), {
+    const payload = {
       uid,
       nickname,
       action,
@@ -34,7 +40,14 @@ export async function writeAttendanceLog({
       seatId,
       seatLabel,
       createdAt: Date.now()
-    });
+    };
+    if (previousCheckedInAt != null) payload.previousCheckedInAt = Number(previousCheckedInAt) || 0;
+    if (newCheckedInAt != null) payload.newCheckedInAt = Number(newCheckedInAt) || 0;
+    if (previousCheckedOutAt != null) payload.previousCheckedOutAt = Number(previousCheckedOutAt) || 0;
+    if (newCheckedOutAt != null) payload.newCheckedOutAt = Number(newCheckedOutAt) || 0;
+    if (String(detail || "").trim()) payload.detail = String(detail).trim();
+
+    await setDoc(doc(db, "dealer_attendance_logs", logId), payload);
   } catch (err) {
     console.error("writeAttendanceLog error:", err);
   }
@@ -46,6 +59,8 @@ function getAttendanceActionLabel(action) {
   if (action === "assigned") return "배치";
   if (action === "break") return "휴식";
   if (action === "checked_out") return "퇴근";
+  if (action === "adjust_check_in") return "출근 시각 수정";
+  if (action === "adjust_check_out") return "퇴근 시각 수정";
   return action || "기타";
 }
 
@@ -108,6 +123,17 @@ function updateAttendanceLogSummary() {
       : `최근 로그 ${total}건${selected > 0 ? ` · 선택 ${selected}건` : ""}`;
 }
 
+let attendanceLogsFlushScheduled = false;
+
+function scheduleAttendanceLogsRender() {
+  if (attendanceLogsFlushScheduled) return;
+  attendanceLogsFlushScheduled = true;
+  requestAnimationFrame(() => {
+    attendanceLogsFlushScheduled = false;
+    renderAttendanceLogs();
+  });
+}
+
 function renderAttendanceLogs() {
   if (!IX.attendanceLogList) return;
 
@@ -144,6 +170,24 @@ function renderAttendanceLogs() {
 
     if (log.seatLabel) {
       meta.push(`<span class="attendance-log-pill">Seat ${escapeHtml(log.seatLabel)}</span>`);
+    }
+
+    if (action === "adjust_check_in" || action === "adjust_check_out") {
+      const prev =
+        action === "adjust_check_out"
+          ? Number(log.previousCheckedOutAt || 0)
+          : Number(log.previousCheckedInAt || 0);
+      const next =
+        action === "adjust_check_out"
+          ? Number(log.newCheckedOutAt || 0)
+          : Number(log.newCheckedInAt || 0);
+      if (prev && next) {
+        meta.push(
+          `<span class="attendance-log-pill">${escapeHtml(formatClock(prev))} → ${escapeHtml(formatClock(next))}</span>`
+        );
+      } else if (log.detail) {
+        meta.push(`<span class="attendance-log-pill">${escapeHtml(log.detail)}</span>`);
+      }
     }
 
     return `
@@ -194,7 +238,7 @@ export function bindAttendanceLogsRealtime() {
         }
       });
 
-      renderAttendanceLogs();
+      scheduleAttendanceLogsRender();
     },
     (err) => {
       console.error("bindAttendanceLogsRealtime error:", err);
@@ -264,8 +308,9 @@ export function setupAttendanceLogEvents() {
   }
 
   IX.attendanceLogBtn?.addEventListener("click", () => {
-    const isAdmin = getIsAdmin(auth.currentUser, IX.currentUserProfile);
-    if (!isAdmin) return;
+    if (!canUseTournamentOps(auth.currentUser?.email, IX.currentUserProfile, getTournamentId())) {
+      return;
+    }
     openAttendanceLogModal();
   });
 

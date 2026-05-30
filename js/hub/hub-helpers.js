@@ -1,11 +1,21 @@
-import { getIsAdmin, hasAnyDirectEventAllow, isAdminEmail } from "../shared/auth-helpers.js";
+import {
+  canManageTournament,
+  hasAnyDirectEventAllow,
+  isAdminEmail,
+  isSystemAdminEmail,
+  resolveStoredUserRole,
+  sanitizeAllowedEvents
+} from "../shared/auth-helpers.js";
 
 export { hasAnyDirectEventAllow };
 
 /** 토너먼트 카드 / 유저 관리에서 동일 규칙으로 접근 가능 여부를 판별합니다. */
 export function hasEventAccess(userProfile, tournament, authUser) {
-  if (!userProfile) return false;
-  if (userProfile.role === "admin" || isAdminEmail(authUser?.email || "")) return true;
+  if (!userProfile || !tournament) return false;
+  if (isAdminEmail(authUser?.email || userProfile.email || "")) return true;
+  if (canManageTournament(authUser?.email || userProfile.email, userProfile, tournament.id)) {
+    return true;
+  }
 
   const allowedEvents = userProfile.allowedEvents || {};
   if (allowedEvents[tournament.id] === true) return true;
@@ -18,8 +28,9 @@ export function hasEventAccess(userProfile, tournament, authUser) {
   return false;
 }
 
+/** Hub Access Manage·유저 권한 — 시스템 admin 이메일만 */
 export function getIsAdminUser(user, profile) {
-  return getIsAdmin(user, profile);
+  return isSystemAdminEmail(user?.email || profile?.email);
 }
 
 export function isValidDocId(id = "") {
@@ -41,14 +52,20 @@ export function normalizeTournamentDoc(d) {
 
 export function normalizeUserDoc(d) {
   const data = d.data() || {};
+  const email = String(data.email || "").trim();
+  const allowedEvents = sanitizeAllowedEvents(data.allowedEvents);
+  const role = resolveStoredUserRole(email, { ...data, allowedEvents });
   return {
     uid: d.id,
     nickname: data.nickname || "",
-    email: data.email || "",
-    role: data.role || "user",
+    email,
+    role,
     accessCode: data.accessCode || "",
-    allowedEvents: data.allowedEvents || {},
-    layoutAccentColor: data.layoutAccentColor || ""
+    allowedEvents,
+    layoutAccentColor: data.layoutAccentColor || "",
+    /** Firestore 원본 — 자동 보정용 */
+    _rawRole: String(data.role || "").trim() || "user",
+    _rawAllowedEvents: data.allowedEvents || {}
   };
 }
 

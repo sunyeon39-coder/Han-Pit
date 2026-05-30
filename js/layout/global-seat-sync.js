@@ -7,7 +7,7 @@ import {
   where,
   writeBatch,
   serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 export function buildLayoutGlobalSeatDocId(eventId, boxId, seatId = "") {
   return `${String(eventId || "").trim()}__${String(boxId || "").trim()}__${String(seatId || "").trim()}`;

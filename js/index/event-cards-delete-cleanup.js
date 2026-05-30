@@ -6,9 +6,9 @@ import {
   getDocs,
   setDoc,
   writeBatch
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-import { getIsAdmin } from "../shared/auth-helpers.js";
+import { canUseTournamentOps } from "../shared/auth-helpers.js";
 import {
   ensureTournamentContextOrAlert,
   chunkArray,
@@ -80,7 +80,9 @@ function mergeAffectedUser(map, user) {
 export async function forceCheckOutUsersForDeletedEvent({ eventId = "", boxId = "" }) {
   const tournamentId = ensureTournamentContextOrAlert();
   if (!tournamentId) return { affectedUsers: [] };
-  if (!getIsAdmin(auth.currentUser, IX.currentUserProfile)) return { affectedUsers: [] };
+  if (!canUseTournamentOps(auth.currentUser?.email, IX.currentUserProfile, tournamentId)) {
+    return { affectedUsers: [] };
+  }
 
   const eid = String(eventId || "").trim();
   const bid = String(boxId || "").trim();

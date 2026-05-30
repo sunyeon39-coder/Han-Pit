@@ -1,4 +1,4 @@
-import { doc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { doc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { clearDocumentTitleBadge } from "./fcm-web-push.js";
 
 async function clearAppBadgePersisted(db, uid) {

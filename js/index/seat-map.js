@@ -5,7 +5,7 @@ import {
   getDoc,
   setDoc,
   onSnapshot
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 import { openModal, closeModal } from "../shared/dom-utils.js";
 import { getStableEventBoxPaletteClass } from "../global-layout/event-box-palette.js";
@@ -446,15 +446,27 @@ export function wireSeatMapListeners() {
   try {
   bindSeatMapRealtime();
 
-  IX.seatMapBtn?.addEventListener("click", async () => {
+  IX.seatMapBtn?.addEventListener("click", () => {
     setSeatMapEditMode(false);
-    await loadSeatMapLayout();
-    renderSeatMap();
     openModal(IX.seatMapModal);
-
-    requestAnimationFrame(() => {
-      focusSeatMapViewportTopLeft(IX.seatMapScroll);
-    });
+    if (IX.seatMapScroll) {
+      IX.seatMapScroll.innerHTML =
+        '<p class="seat-map-loading" style="padding:24px;text-align:center;opacity:.85">배치도 불러오는 중…</p>';
+    }
+    void loadSeatMapLayout()
+      .then(() => {
+        renderSeatMap();
+        requestAnimationFrame(() => {
+          focusSeatMapViewportTopLeft(IX.seatMapScroll);
+        });
+      })
+      .catch((err) => {
+        console.error("loadSeatMapLayout error:", err);
+        if (IX.seatMapScroll) {
+          IX.seatMapScroll.innerHTML =
+            '<p class="seat-map-loading" style="padding:24px;text-align:center;color:#f88">불러오기 실패</p>';
+        }
+      });
   });
 
   IX.seatMapCloseBtn?.addEventListener("click", () => {

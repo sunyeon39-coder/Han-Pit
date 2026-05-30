@@ -28,6 +28,10 @@ export const GL = {
 
   globalSeats: [],
   globalWaiting: [],
+  /** realtime 스냅샷마다 증가 — getCurrentTournamentWaiting 캐시 무효화 */
+  dataRevision: 0,
+  /** 배치·비우기 동시 클릭 방지 */
+  seatMutationInFlight: false,
   attendanceWaiting: [],
   /** 현재 대회 출석 문서 기준 퇴근·미출근 uid — global_waiting 유령 행 제거용 */
   attendanceInactiveUids: new Set(),

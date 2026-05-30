@@ -1,18 +1,67 @@
 import { auth, db } from "../firebase.js";
-import { collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import {
+  collection,
+  onSnapshot
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  dealerAttendanceQueryForTournament,
+  filterAttendanceDocsForTournament
+} from "../shared/dealer-attendance-query.js";
 
-import { getIsAdmin } from "../shared/auth-helpers.js";
+import { canUseTournamentOps } from "../shared/auth-helpers.js";
+import { layoutIsMobile } from "../layout/layout-main-route-env.js";
+import {
+  buildSeatAssignmentStableKey,
+  triggerOptimisticMobileSeatAssignedAlert,
+  RECENT_SEAT_ASSIGN_ALERT_MS
+} from "../shared/optimistic-seat-assigned-notify.js";
 import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
 import {
   getAttendanceDocId,
   getAttendanceRef,
-  attendanceDocBelongsToTournament,
   parseTournamentIdFromAttendanceDocId
 } from "./dealer-attendance-refs.js";
 import { normalizeAttendanceDoc } from "./dealer-attendance-derived.js";
-import { renderDealerOps } from "./dealer-attendance-render.js";
+import { scheduleRenderDealerOps } from "./dealer-attendance-render.js";
 import { ensureMeRecovered } from "./dealer-attendance-recovery.js";
+
+function maybeTriggerOptimisticSeatAlertFromDealerSeatMap(user, previousSeatKey = "") {
+  if (!layoutIsMobile() || !user?.uid) return previousSeatKey;
+
+  const mine = IX.dealerSeatMap.get(user.uid);
+  if (!mine) return previousSeatKey;
+
+  const nextKey = buildSeatAssignmentStableKey({
+    uid: user.uid,
+    eventId: mine.eventId,
+    boxId: mine.boxId,
+    seatId: mine.seatId
+  });
+  if (!nextKey || nextKey === previousSeatKey) return previousSeatKey;
+
+  const tournamentId = getTournamentId();
+  const seatedAt = Number(mine.seatedAt || 0);
+  const recentAssign =
+    seatedAt > 0 && Date.now() - seatedAt <= RECENT_SEAT_ASSIGN_ALERT_MS;
+  const seatChangedWhileOpen = !!previousSeatKey;
+
+  if (seatChangedWhileOpen || recentAssign) {
+    const qs = tournamentId
+      ? `tournamentId=${encodeURIComponent(tournamentId)}&eventId=${encodeURIComponent(mine.eventId)}&boxId=${encodeURIComponent(mine.boxId)}&focusSeatId=${encodeURIComponent(mine.seatId)}`
+      : `eventId=${encodeURIComponent(mine.eventId)}&boxId=${encodeURIComponent(mine.boxId)}&focusSeatId=${encodeURIComponent(mine.seatId)}`;
+    triggerOptimisticMobileSeatAssignedAlert({
+      uid: user.uid,
+      eventId: mine.eventId,
+      boxId: mine.boxId,
+      seatId: mine.seatId,
+      seatLabel: mine.seatLabel,
+      targetUrl: `./layout.html?${qs}`
+    });
+  }
+
+  return nextKey;
+}
 
 export function bindDealerAttendanceRealtime() {
   const user = auth.currentUser;
@@ -23,26 +72,26 @@ export function bindDealerAttendanceRealtime() {
     IX.stopDealerAttendanceWatch = null;
   }
 
-  if (getIsAdmin(user, IX.currentUserProfile)) {
+  const tournamentId = getTournamentId();
+  if (canUseTournamentOps(user?.email, IX.currentUserProfile, tournamentId)) {
     IX.stopDealerAttendanceWatch = onSnapshot(
-      collection(db, "dealer_attendance"),
+      dealerAttendanceQueryForTournament(tournamentId),
       (snap) => {
         const tournamentId = getTournamentId();
         IX.dealerAttendanceMap.clear();
         if (!tournamentId) {
-          renderDealerOps();
+          scheduleRenderDealerOps();
           return;
         }
 
-        snap.docs.forEach((d) => {
-          if (!attendanceDocBelongsToTournament(d.id, tournamentId)) return;
+        filterAttendanceDocsForTournament(snap.docs, tournamentId).forEach((d) => {
           const raw = d.data() || {};
           const forcedTid = parseTournamentIdFromAttendanceDocId(d.id) || tournamentId;
           const data = normalizeAttendanceDoc({ ...raw, tournamentId: forcedTid });
           IX.dealerAttendanceMap.set(d.id, data);
         });
 
-        renderDealerOps();
+        scheduleRenderDealerOps();
       },
       (err) => {
         console.error("bindDealerAttendanceRealtime(admin) error:", err);
@@ -51,7 +100,6 @@ export function bindDealerAttendanceRealtime() {
     return;
   }
 
-  const tournamentId = getTournamentId();
   if (!tournamentId) return;
 
   IX.stopDealerAttendanceWatch = onSnapshot(
@@ -64,7 +112,7 @@ export function bindDealerAttendanceRealtime() {
         IX.dealerAttendanceMap.set(snap.id, data);
       }
 
-      renderDealerOps();
+      scheduleRenderDealerOps();
     },
     (err) => {
       console.error("bindDealerAttendanceRealtime(user) error:", err);
@@ -77,6 +125,8 @@ export function bindDealerSeatRealtime() {
     IX.stopDealerSeatWatch();
     IX.stopDealerSeatWatch = null;
   }
+
+  let lastAnnouncedSeatKey = String(IX.lastOptimisticSeatAlertKey || "");
 
   const tournamentId = getTournamentId();
   if (tournamentId) {
@@ -94,12 +144,20 @@ export function bindDealerSeatRealtime() {
             eventId: String(data.currentEventId || data.mappedEventId || "").trim(),
             boxId: String(data.boxId || "").trim(),
             seatId: String(data.seatId || "").trim(),
-            seatLabel: String(data.label || data.no || "").trim()
+            seatLabel: String(data.label || data.no || "").trim(),
+            seatedAt: Number(data.seatedAt || 0) || 0
           });
         });
 
+        const user = auth.currentUser;
+        lastAnnouncedSeatKey = maybeTriggerOptimisticSeatAlertFromDealerSeatMap(
+          user,
+          lastAnnouncedSeatKey
+        );
+        IX.lastOptimisticSeatAlertKey = lastAnnouncedSeatKey;
+
         void ensureMeRecovered(auth.currentUser);
-        renderDealerOps();
+        scheduleRenderDealerOps();
       },
       (err) => {
         console.error("bindDealerSeatRealtime(global) error:", err);
@@ -134,7 +192,7 @@ export function bindDealerSeatRealtime() {
       });
 
       void ensureMeRecovered(auth.currentUser);
-      renderDealerOps();
+      scheduleRenderDealerOps();
     },
     (err) => {
       console.error("bindDealerSeatRealtime(layout_events) error:", err);

@@ -25,5 +25,7 @@ export const hubState = {
   hubProfileWatchUid: null,
   /** onAuthStateChanged 비동기 경합 시 오래된 완료분 무시 */
   hubAuthFlowGen: 0,
-  adminActionInFlight: false
+  adminActionInFlight: false,
+  usersRoleHealDone: false,
+  usersRoleHealInFlight: false
 };

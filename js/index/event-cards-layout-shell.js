@@ -1,5 +1,5 @@
 import { db } from "../firebase.js";
-import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /** 카드 저장 후 통합 배치도에서 바로 Seat 추가 가능하도록 layout_events 스텁 보장 */
 export async function ensureLayoutEventShellAfterCardSave({ tournamentId, eventId, boxId }) {

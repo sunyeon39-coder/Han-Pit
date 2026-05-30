@@ -1,5 +1,5 @@
 import { db } from "../firebase.js";
-import { collection, doc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { collection, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getTournamentId } from "./core-utils.js";
 
 export function getEventsCollectionRef() {

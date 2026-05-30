@@ -1,10 +1,14 @@
-import { auth, db } from "../firebase.js";
-import { collection, getDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { auth } from "../firebase.js";
+import { getDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  dealerAttendanceQueryForTournament,
+  filterAttendanceDocsForTournament
+} from "../shared/dealer-attendance-query.js";
 
-import { getIsAdmin } from "../shared/auth-helpers.js";
+import { canUseTournamentOps } from "../shared/auth-helpers.js";
 import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
-import { getAttendanceRef, attendanceDocBelongsToTournament, parseTournamentIdFromAttendanceDocId } from "./dealer-attendance-refs.js";
+import { getAttendanceRef, parseTournamentIdFromAttendanceDocId } from "./dealer-attendance-refs.js";
 import { scheduleRenderDealerOps } from "./dealer-attendance-render.js";
 
 export async function loadDealerAttendanceOnce() {
@@ -15,16 +19,15 @@ export async function loadDealerAttendanceOnce() {
   if (!tournamentId || !user) return;
 
   try {
-    if (getIsAdmin(user, IX.currentUserProfile)) {
-      const snap = await getDocs(collection(db, "dealer_attendance"));
+    if (canUseTournamentOps(user?.email, IX.currentUserProfile, tournamentId)) {
       const adminTournamentId = getTournamentId();
       if (!adminTournamentId) {
         scheduleRenderDealerOps();
         return;
       }
 
-      snap.docs.forEach((d) => {
-        if (!attendanceDocBelongsToTournament(d.id, adminTournamentId)) return;
+      const snap = await getDocs(dealerAttendanceQueryForTournament(adminTournamentId));
+      filterAttendanceDocsForTournament(snap.docs, adminTournamentId).forEach((d) => {
         const data = d.data() || {};
         const tid =
           parseTournamentIdFromAttendanceDocId(d.id) || String(data.tournamentId || "").trim();

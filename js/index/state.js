@@ -53,6 +53,11 @@ export const IX = {
   stopAttendanceLogsWatch: null,
   attendanceLogEventsBound: false,
 
+  workSummaryModal: null,
+  workSummaryBody: null,
+  closeWorkSummaryBtn: null,
+  workSummaryEventsBound: false,
+
   attendanceLogUi: {
     search: "",
     action: "all",
@@ -76,6 +81,8 @@ export const IX = {
   currentTournament: null,
   currentUserProfile: null,
   currentSeatAssignment: null,
+  /** index 모바일 낙관적 배치 알림 중복 방지 */
+  lastOptimisticSeatAlertKey: "",
   seatSummaryMap: new Map(),
   dealerUiCollapsed: true,
 
@@ -109,6 +116,10 @@ export function refreshIndexDomRefs() {
   IX.attendanceLogList = $("attendanceLogList");
   IX.clearAttendanceLogsBtn = $("clearAttendanceLogsBtn");
   IX.deleteSelectedAttendanceLogsBtn = $("deleteSelectedAttendanceLogsBtn");
+
+  IX.workSummaryModal = $("workSummaryModal");
+  IX.workSummaryBody = $("workSummaryBody");
+  IX.closeWorkSummaryBtn = $("closeWorkSummaryBtn");
 
   IX.seatMapOpenEditorBtn = $("seatMapOpenEditorBtn");
   IX.eventAdminModal = $("eventAdminModal");

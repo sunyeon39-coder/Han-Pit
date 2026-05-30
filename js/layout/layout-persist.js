@@ -1,5 +1,5 @@
 import { db } from "../firebase.js";
-import { doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { syncLayoutGlobalSeatsForCurrentLayout } from "./global-seat-sync.js";
 
 const SAVE_EVENT_DEBOUNCE_MS = 90;

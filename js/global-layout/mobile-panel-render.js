@@ -345,7 +345,7 @@ export function renderGlobalLayoutMobile() {
         try {
           const { assignSelectedWaitingToSeat } = await loadFirestoreOps();
           await assignSelectedWaitingToSeat(sid);
-          GL.selectedWaitingId = "";
+          fullRender();
         } catch (err) {
           if (String(err?.message || "").includes("same_person_noop")) {
             alert("이미 이 Seat에 있는 사람입니다. 다른 Seat를 선택하세요.");
@@ -359,8 +359,8 @@ export function renderGlobalLayoutMobile() {
             console.error("mobile assign error:", err);
             alert("대기 배치에 실패했습니다.");
           }
+          fullRender();
         }
-        fullRender();
         return;
       }
 
@@ -370,12 +370,12 @@ export function renderGlobalLayoutMobile() {
           GL.lastSeatTapId = "";
           try {
             const { clearSeat } = await loadFirestoreOps();
-            await clearSeat(sid);
             setMobileSeatSelection("");
+            await clearSeat(sid);
           } catch (err) {
             console.error("mobile clearSeat error:", err);
+            fullRender();
           }
-          fullRender();
           return;
         }
         GL.lastSeatTapAt = now;
@@ -412,13 +412,12 @@ export function renderGlobalLayoutMobile() {
       try {
         const { assignSelectedWaitingToSeat } = await loadFirestoreOps();
         await assignSelectedWaitingToSeat(sid);
-        GL.selectedWaitingId = "";
-        void syncMyWaitingPick("");
+        fullRender();
       } catch (err) {
         console.error("mobile assign button error:", err);
         alert("대기 배치에 실패했습니다.");
+        fullRender();
       }
-      fullRender();
     });
   });
 
@@ -449,8 +448,8 @@ export function renderGlobalLayoutMobile() {
         await clearSeat(sid);
       } catch (err) {
         console.error("mobile clearSeat error:", err);
+        fullRender();
       }
-      fullRender();
     });
   });
 

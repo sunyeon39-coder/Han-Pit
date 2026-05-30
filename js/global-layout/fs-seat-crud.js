@@ -5,7 +5,7 @@ import {
   getDoc,
   setDoc,
   serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { GL } from "./state.js";
 import {
   buildGlobalSeatDocId,
@@ -15,11 +15,14 @@ import {
   resolveSeatEventBox,
   resolveGlobalSeatFirestoreDoc,
   ensureGlobalSeatFirestoreDoc,
+  listGlobalSeatDocRefsBySeatId,
+  isEmptyPerson,
   isValidLayoutRouteIdPart,
   isValidSeatLabel,
   looksLikeDisplayTitleNotId,
   makeUid
 } from "./utils.js";
+import { getCandidateSeatRefsForPerson } from "./seat-candidates.js";
 import {
   getDefaultEventBoxForNewSeat,
   getSeatById,
@@ -27,7 +30,7 @@ import {
   renderSeats
 } from "./panel-ui.js";
 import {
-  resolveTournamentEventTitle,
+  resolveTournamentEventCardId,
   syncLayoutProjection,
   ensureLayoutEventShellForGlobalOps,
   validateLayoutEventForGlobalOps
@@ -122,6 +125,82 @@ export async function deleteGlobalSeat(seatId = "") {
   GL.selectedSeatIds.delete(targetSeatId);
   pushGlobalUndo({ kind: "delete_seat", seatId: targetSeatId, eventId, boxId, seatDoc });
   await syncLayoutProjection(eventId, boxId);
+}
+
+async function clearDuplicatePersonSeatsExcept(
+  person = {},
+  excludeSeatId = "",
+  now = Date.now()
+) {
+  const refs = getCandidateSeatRefsForPerson(
+    db,
+    GL.tournamentId,
+    GL.globalSeats,
+    person,
+    excludeSeatId
+  );
+  const touched = new Set();
+
+  for (const ref of refs) {
+    let snap;
+    try {
+      snap = await getDoc(ref);
+    } catch (err) {
+      console.warn("clearDuplicatePersonSeatsExcept getDoc:", err);
+      continue;
+    }
+    if (!snap.exists()) continue;
+    const data = snap.data() || {};
+    const otherSeatId = String(data.seatId || "").trim();
+    const kEvent = String(data.currentEventId || data.mappedEventId || "").trim();
+    const kBox = String(data.boxId || "").trim();
+    if (kEvent && kBox) touched.add(`${kEvent}__${kBox}`);
+
+    await setDoc(
+      ref,
+      {
+        person: "비어있음",
+        personUid: "",
+        personEmail: "",
+        seatedAt: null,
+        status: "empty",
+        updatedAt: now,
+        updatedAtServer: serverTimestamp()
+      },
+      { merge: true }
+    );
+
+    if (otherSeatId) {
+      const oidx = GL.globalSeats.findIndex(
+        (s) => String(s.seatId || "").trim() === otherSeatId
+      );
+      if (oidx >= 0) {
+        GL.globalSeats[oidx] = {
+          ...GL.globalSeats[oidx],
+          person: "비어있음",
+          personUid: "",
+          personEmail: "",
+          seatedAt: null,
+          status: "empty"
+        };
+      }
+    }
+  }
+
+  return touched;
+}
+
+async function deleteOrphanGlobalSeatDocsForSeatId(seatId = "", keepDocId = "") {
+  const keep = String(keepDocId || "").trim();
+  const rows = await listGlobalSeatDocRefsBySeatId(GL.tournamentId, seatId);
+  for (const row of rows) {
+    if (keep && row.id === keep) continue;
+    try {
+      await deleteDoc(row.ref);
+    } catch (err) {
+      console.error("deleteOrphanGlobalSeatDocsForSeatId error:", err);
+    }
+  }
 }
 
 function seatCardPairDiffers(prevE, prevB, nextE, nextB, eventCards = []) {
@@ -345,13 +424,28 @@ export async function applyGlobalSeatRename(
         },
         { merge: true }
       );
-      await deleteDoc(oldRef);
+      await deleteOrphanGlobalSeatDocsForSeatId(targetSeatId, newDocId);
     }
+  }
+
+  const personName = String(seat.person || "").trim();
+  const projectionKeys = new Set();
+  if (moved && !isEmptyPerson(personName)) {
+    const dupKeys = await clearDuplicatePersonSeatsExcept(
+      {
+        uid: String(seat.personUid || "").trim(),
+        email: String(seat.personEmail || "").trim(),
+        name: personName
+      },
+      targetSeatId,
+      now
+    );
+    dupKeys.forEach((k) => projectionKeys.add(k));
   }
 
   const uid = String(seat.personUid || "").trim();
   if (uid) {
-    const eventDisplayTitle = await resolveTournamentEventTitle(resolvedNextEventId);
+    const eventCardLabel = await resolveTournamentEventCardId(resolvedNextEventId);
     await setDoc(
       getAttendanceRef(db, GL.tournamentId, uid),
       {
@@ -375,12 +469,12 @@ export async function applyGlobalSeatRename(
         createdAt: now,
         tournamentId: GL.tournamentId,
         eventId: resolvedNextEventId,
-        eventTitle: eventDisplayTitle,
+        eventTitle: eventCardLabel,
         boxId: nextBoxId,
         seatId: targetSeatId,
         seatLabel: nextLabel,
         targetUrl: `./layout.html?tournamentId=${encodeURIComponent(GL.tournamentId)}&eventId=${encodeURIComponent(resolvedNextEventId)}&boxId=${encodeURIComponent(nextBoxId)}&focusSeatId=${encodeURIComponent(targetSeatId)}`,
-        message: `${eventDisplayTitle} / Seat ${nextLabel} ${
+        message: `${eventCardLabel} / Seat ${nextLabel} ${
           moved ? "배치(카드·Box)가 변경되었습니다." : "라벨이 변경되었습니다."
         }`,
         updatedAt: now,
@@ -391,25 +485,51 @@ export async function applyGlobalSeatRename(
   }
 
   const oldDocId = foundDoc.ref.id;
+  const idx = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === targetSeatId);
+  const updatedSeat = {
+    ...(idx >= 0 ? GL.globalSeats[idx] : seat),
+    seatId: targetSeatId,
+    label: nextLabel,
+    currentEventId: resolvedNextEventId,
+    mappedEventId: resolvedNextEventId,
+    boxId: nextBoxId,
+    sourceLayoutDocId: getProjectionDocId(resolvedNextEventId, nextBoxId),
+    __firestoreDocId: moved && oldDocId !== newDocId ? newDocId : foundDoc.ref.id
+  };
+  if (idx >= 0) {
+    GL.globalSeats[idx] = updatedSeat;
+  }
+  GL.globalSeats = GL.globalSeats.filter((s, i, arr) => {
+    const sid = String(s.seatId || "").trim();
+    if (sid !== targetSeatId) return true;
+    const eid = String(s.currentEventId || s.mappedEventId || "").trim();
+    const bx = String(s.boxId || "").trim();
+    const isCanonical =
+      eid === resolvedNextEventId && bx === nextBoxId;
+    if (!isCanonical) return false;
+    const firstCanon = arr.findIndex((x) => {
+      if (String(x.seatId || "").trim() !== sid) return false;
+      const xe = String(x.currentEventId || x.mappedEventId || "").trim();
+      const xb = String(x.boxId || "").trim();
+      return xe === resolvedNextEventId && xb === nextBoxId;
+    });
+    return i === firstCanon;
+  });
+
   if (moved && oldDocId !== newDocId) {
-    await syncLayoutProjection(syncPrevParsed.eventId, syncPrevParsed.boxId);
-    await syncLayoutProjection(resolvedNextEventId, nextBoxId);
+    projectionKeys.add(`${syncPrevParsed.eventId}__${syncPrevParsed.boxId}`);
+    projectionKeys.add(`${resolvedNextEventId}__${nextBoxId}`);
   } else {
-    await syncLayoutProjection(resolvedNextEventId, nextBoxId);
+    projectionKeys.add(`${resolvedNextEventId}__${nextBoxId}`);
+  }
+  for (const key of projectionKeys) {
+    const sep = key.lastIndexOf("__");
+    if (sep < 0) continue;
+    const e = key.slice(0, sep).trim();
+    const b = key.slice(sep + 2).trim();
+    if (e && b) await syncLayoutProjection(e, b);
   }
 
-  const idx = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === targetSeatId);
-  if (idx >= 0) {
-    GL.globalSeats[idx] = {
-      ...GL.globalSeats[idx],
-      label: nextLabel,
-      currentEventId: resolvedNextEventId,
-      mappedEventId: resolvedNextEventId,
-      boxId: nextBoxId,
-      sourceLayoutDocId: getProjectionDocId(resolvedNextEventId, nextBoxId),
-      __firestoreDocId: moved && oldDocId !== newDocId ? newDocId : foundDoc.ref.id
-    };
-  }
   if (GL.activeTab === "seat") renderSeatPanel();
   renderSeats(GL.globalSeats);
 

@@ -6,9 +6,15 @@ import {
   getDocFromServer,
   getDocsFromServer,
   doc,
-  onSnapshot
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { normalizeUserProfile } from "../shared/auth-helpers.js";
+  onSnapshot,
+  updateDoc
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  mergeOpsProfile,
+  normalizeUserProfile,
+  sanitizeAllowedEvents
+} from "../shared/auth-helpers.js";
+import { loadUserProfileFresh } from "../shared/load-user-profile.js";
 import {
   normalizeTournamentDoc,
   normalizeUserDoc,
@@ -17,8 +23,8 @@ import {
 } from "./hub-helpers.js";
 import { hubState, FALLBACK_TOURNAMENTS } from "./hub-state.js";
 import { hubRefs } from "./hub-dom-refs.js";
-import { renderTournaments } from "./hub-tournament-list.js";
-import { populateTournamentSelect, renderAdminUserList } from "./hub-admin-ui.js";
+import { scheduleHubTournamentsRender, scheduleHubAdminRender } from "./hub-realtime-ui.js";
+import { populateTournamentSelect } from "./hub-admin-ui.js";
 
 /** 오프라인·PWA에서 빈 캐시 스냅샷이 서버로 읽은 목록을 지우는 것을 막음 */
 function shouldSkipEmptyCacheSnapshot(snap, cachedCount = 0) {
@@ -27,16 +33,40 @@ function shouldSkipEmptyCacheSnapshot(snap, cachedCount = 0) {
 
 async function readTournamentsSnap() {
   const col = collection(db, "tournaments");
-  let serverSnap = null;
-  try {
-    serverSnap = await getDocsFromServer(col);
-    if (!serverSnap.empty) return serverSnap;
-  } catch (err) {
-    console.warn("readTournamentsSnap server:", err?.code || err);
-  }
   const cacheSnap = await getDocs(col);
   if (!cacheSnap.empty) return cacheSnap;
-  return serverSnap || cacheSnap;
+  try {
+    return await getDocsFromServer(col);
+  } catch (err) {
+    console.warn("readTournamentsSnap server:", err?.code || err);
+    return cacheSnap;
+  }
+}
+
+async function refreshTournamentsFromServer() {
+  try {
+    const serverSnap = await getDocsFromServer(collection(db, "tournaments"));
+    if (serverSnap.empty) return;
+    applyTournamentsSnap(serverSnap);
+    scheduleHubTournamentsRender();
+  } catch (err) {
+    console.warn("refreshTournamentsFromServer:", err?.code || err);
+  }
+}
+
+/** 허브 부트 직후 캐시만으로 목록을 먼저 그립니다. */
+export function prefetchHubTournamentsCache() {
+  return getDocs(collection(db, "tournaments"))
+    .then((snap) => {
+      if (shouldSkipEmptyCacheSnapshot(snap, hubState.tournamentsCache.length)) return;
+      if (!snap.empty) {
+        applyTournamentsSnap(snap);
+        scheduleHubTournamentsRender();
+      }
+    })
+    .catch((err) => {
+      console.warn("prefetchHubTournamentsCache:", err?.code || err);
+    });
 }
 
 function applyTournamentsSnap(snap) {
@@ -51,7 +81,11 @@ function applyTournamentsSnap(snap) {
 export async function loadTournaments() {
   try {
     const snap = await readTournamentsSnap();
-    return applyTournamentsSnap(snap);
+    applyTournamentsSnap(snap);
+    if (snap.metadata?.fromCache && !snap.empty) {
+      void refreshTournamentsFromServer();
+    }
+    return hubState.tournamentsCache;
   } catch (err) {
     console.error("loadTournaments error:", err);
     if (hubState.tournamentsCache.length) return hubState.tournamentsCache;
@@ -60,16 +94,131 @@ export async function loadTournaments() {
   }
 }
 
+function healStaleUserRolesFromCache(users = []) {
+  for (const u of users) {
+    if (!u?.uid) continue;
+    const raw = String(u._rawRole || "").trim();
+    const resolved = String(u.role || "user").trim();
+    if (!raw || raw === resolved) continue;
+    void updateDoc(doc(db, "users", u.uid), { role: resolved }).catch((err) => {
+      console.warn("[healStaleUserRole]", u.uid, err?.code || err);
+    });
+  }
+}
+
+/** 시스템 admin 세션 — admin 이메일이 아닌데 role 이 admin 으로 남은 문서만 정리 (직접 허용 allowedEvents 는 유지) */
+export async function healNonAdminUsersToBasic(users = [], options = {}) {
+  const stripAllowedEvents = options.stripAllowedEvents === true;
+  if (!stripAllowedEvents) {
+    return { fixed: 0, skipped: true };
+  }
+  if (!getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) {
+    return { fixed: 0, skipped: true };
+  }
+  if (hubState.usersRoleHealInFlight) return { fixed: 0, skipped: true };
+
+  const toFix = (users || []).filter((u) => {
+    if (!u?.uid) return false;
+    if (isSystemAdminEmail(u.email)) return false;
+    const rawRole = String(u._rawRole || u.role || "")
+      .trim()
+      .toLowerCase();
+    if (rawRole !== "admin") {
+      if (stripAllowedEvents) {
+        const rawAllowed = sanitizeAllowedEvents(u._rawAllowedEvents || u.allowedEvents);
+        return Object.keys(rawAllowed).length > 0;
+      }
+      return false;
+    }
+    const rawAllowed = sanitizeAllowedEvents(u._rawAllowedEvents || u.allowedEvents);
+    if (Object.keys(rawAllowed).length > 0) return false;
+    return true;
+  });
+
+  if (!toFix.length) return { fixed: 0 };
+
+  hubState.usersRoleHealInFlight = true;
+  let fixed = 0;
+  try {
+    for (const u of toFix) {
+      const updates = { role: "user" };
+      if (stripAllowedEvents) {
+        updates.allowedEvents = {};
+      }
+      await updateDoc(doc(db, "users", u.uid), updates);
+      u.role = "user";
+      u._rawRole = "user";
+      if (stripAllowedEvents) {
+        u.allowedEvents = {};
+        u._rawAllowedEvents = {};
+      }
+      fixed += 1;
+    }
+  } catch (err) {
+    console.error("[healNonAdminUsersToBasic] error:", err);
+    throw err;
+  } finally {
+    hubState.usersRoleHealInFlight = false;
+  }
+
+  return { fixed };
+}
+
+function healStaleAllowedEventsFromCache(users = []) {
+  for (const u of users) {
+    if (!u?.uid) continue;
+    const raw = u._rawAllowedEvents;
+    if (!raw || typeof raw !== "object") continue;
+    const sanitized = sanitizeAllowedEvents(raw);
+    const rawKeys = Object.keys(raw);
+    const sanKeys = Object.keys(sanitized);
+    const mismatch =
+      rawKeys.length !== sanKeys.length ||
+      rawKeys.some((k) => raw[k] === true && !sanitized[k]) ||
+      rawKeys.some((k) => raw[k] !== true && raw[k] != null);
+    if (!mismatch) continue;
+    void updateDoc(doc(db, "users", u.uid), { allowedEvents: sanitized }).catch((err) => {
+      console.warn("[healStaleAllowedEvents]", u.uid, err?.code || err);
+    });
+  }
+}
+
 export async function loadAllUsers() {
   try {
     const col = collection(db, "users");
-    let snap;
-    try {
-      snap = await getDocsFromServer(col);
-    } catch {
-      snap = await getDocs(col);
+    let snap = await getDocs(col);
+    if (snap.empty) {
+      try {
+        snap = await getDocsFromServer(col);
+      } catch {
+        /* keep empty cache snap */
+      }
+    } else if (snap.metadata?.fromCache) {
+      void getDocsFromServer(col)
+        .then((serverSnap) => {
+          if (serverSnap.empty) return;
+          hubState.usersCache = serverSnap.docs.map(normalizeUserDoc);
+          if (getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) {
+            scheduleHubAdminRender();
+          }
+        })
+        .catch(() => {});
     }
     hubState.usersCache = snap.docs.map(normalizeUserDoc);
+    healStaleUserRolesFromCache(hubState.usersCache);
+    healStaleAllowedEventsFromCache(hubState.usersCache);
+    if (!hubState.usersRoleHealDone) {
+      hubState.usersRoleHealDone = true;
+      void healNonAdminUsersToBasic(hubState.usersCache)
+        .then(({ fixed }) => {
+          if (fixed > 0) {
+            console.info(`[healNonAdminUsersToBasic] ${fixed}명을 user로 정리했습니다.`);
+          }
+        })
+        .catch((err) => {
+          console.error("healNonAdminUsersToBasic on loadAllUsers:", err);
+        });
+    }
     return hubState.usersCache;
   } catch (err) {
     console.error("loadAllUsers error:", err);
@@ -93,8 +242,7 @@ function profileFromUserSnap(snap, email = "") {
 
 export async function loadUserProfile(uid, email = "") {
   try {
-    const snap = await readUserProfileSnap(uid);
-    return profileFromUserSnap(snap, email);
+    return await loadUserProfileFresh(uid, email, { preferCacheFirst: true });
   } catch (err) {
     console.error("loadUserProfile error:", err);
     return hubState.currentUserProfile || null;
@@ -109,7 +257,6 @@ export function bindTournamentsRealtime() {
 
   hubState.stopTournamentsWatch = onSnapshot(
     collection(db, "tournaments"),
-    { includeMetadataChanges: true },
     (snap) => {
       if (shouldSkipEmptyCacheSnapshot(snap, hubState.tournamentsCache.length)) return;
 
@@ -119,20 +266,20 @@ export function bindTournamentsRealtime() {
         hubState.tournamentsCache = sortTournaments(snap.docs.map(normalizeTournamentDoc));
       }
 
-      renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
+      scheduleHubTournamentsRender();
 
       if (
         getIsAdminUser(hubState.currentUser, hubState.currentUserProfile) &&
         hubRefs.adminModal?.classList.contains("show")
       ) {
         populateTournamentSelect();
-        renderAdminUserList();
+        scheduleHubAdminRender();
       }
     },
     (err) => {
       console.error("bindTournamentsRealtime error:", err);
       hubState.tournamentsCache = sortTournaments(FALLBACK_TOURNAMENTS);
-      renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
+      scheduleHubTournamentsRender();
     }
   );
 }
@@ -145,14 +292,13 @@ export function bindUsersRealtime() {
 
   hubState.stopUsersWatch = onSnapshot(
     collection(db, "users"),
-    { includeMetadataChanges: true },
     (snap) => {
       if (shouldSkipEmptyCacheSnapshot(snap, hubState.usersCache.length)) return;
 
       hubState.usersCache = snap.docs.map(normalizeUserDoc);
-      if (getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) {
-        renderAdminUserList();
-      }
+      healStaleUserRolesFromCache(hubState.usersCache);
+      healStaleAllowedEventsFromCache(hubState.usersCache);
+      scheduleHubAdminRender();
     },
     (err) => {
       console.error("bindUsersRealtime error:", err);
@@ -204,26 +350,29 @@ export function bindMyProfileRealtime(uid) {
 
   hubState.stopMyProfileWatch = onSnapshot(
     doc(db, "users", uid),
-    { includeMetadataChanges: true },
     (snap) => {
       if (!snap.exists()) {
         if (snap.metadata?.fromCache && hubState.currentUserProfile) return;
-        renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
+        scheduleHubTournamentsRender();
         return;
       }
 
-      const patch = normalizeUserProfile(
-        snap.data() || {},
-        hubState.currentUser?.email || hubState.currentUserProfile?.email || ""
+      const patch = mergeOpsProfile(
+        hubState.currentUserProfile,
+        normalizeUserProfile(
+          snap.data() || {},
+          hubState.currentUser?.email || hubState.currentUserProfile?.email || ""
+        ),
+        snap.metadata || {}
       );
       hubState.currentUserProfile = { ...(hubState.currentUserProfile || {}), ...patch };
 
-      renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
+      scheduleHubTournamentsRender();
 
       const isAdmin = getIsAdminUser(hubState.currentUser, hubState.currentUserProfile);
       if (isAdmin && hubRefs.adminModal?.classList.contains("show")) {
         populateTournamentSelect();
-        renderAdminUserList();
+        scheduleHubAdminRender();
       }
 
       if (snap.metadata.fromCache) {
@@ -269,13 +418,12 @@ export async function resyncHubAccessFromServer(uid) {
 
     const tSnap = await readTournamentsSnap();
     applyTournamentsSnap(tSnap);
-
-    renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
+    scheduleHubTournamentsRender();
 
     const isAdmin = getIsAdminUser(hubState.currentUser, hubState.currentUserProfile);
     if (isAdmin && hubRefs.adminModal?.classList.contains("show")) {
       populateTournamentSelect();
-      renderAdminUserList();
+      scheduleHubAdminRender();
     }
   } catch (err) {
     console.warn("resyncHubAccessFromServer:", err);

@@ -5,19 +5,28 @@ import {
   getRedirectResult,
   onAuthStateChanged,
   signOut
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { createGoogleAuthProvider } from "../shared/google-auth-provider.js";
 import {
   doc,
   getDoc,
   setDoc,
   serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { resolveStoredUserRole } from "../shared/auth-helpers.js";
-import { isAdminEmail } from "../app_config.js";
 import { isAppDebugEnabled } from "../shared/app-debug.js";
-import { syncUserProfile } from "./user-sync.js";
+import {
+  syncUserProfile,
+  syncUserProfileFast,
+  scheduleBackgroundUserProfileSync
+} from "./user-sync.js";
+import {
+  buildOptimisticProfileFromAuthUser,
+  readLoginProfileCache,
+  writeLoginProfileCache
+} from "../shared/login-profile-cache.js";
 import { refreshFcmTokenIfGranted } from "../shared/fcm-web-push.js";
+import { syncUserDisplayNameAfterNicknameChange } from "../shared/sync-user-waiting-display.js";
 import {
   isGoogleOAuthLikelyBlockedBrowser,
   shouldPreferGoogleRedirectOverPopup,
@@ -32,6 +41,8 @@ import {
 const googleBtn = document.getElementById("googleLogin");
 const signupModal = document.getElementById("signupModal");
 const signupConfirm = document.getElementById("signupConfirm");
+const loginBusyOverlay = document.getElementById("loginBusyOverlay");
+const loginBusyText = document.getElementById("loginBusyText");
 
 const nicknameInput = document.getElementById("nicknameInput");
 const phoneInput = document.getElementById("phoneInput");
@@ -41,6 +52,28 @@ const openInChromeBtn = document.getElementById("openInChromeBtn");
 const copyLoginUrlBtn = document.getElementById("copyLoginUrlBtn");
 
 let selectedGender = "none";
+let loginBusy = false;
+
+const LOGIN_BUSY_LABELS = {
+  connecting: "Google 계정 연결 중…",
+  profile: "프로필 확인 중…",
+  entering: "허브로 이동 중…"
+};
+
+function setLoginBusy(active, phase = "connecting") {
+  loginBusy = !!active;
+  if (googleBtn) {
+    googleBtn.disabled = loginBusy;
+    googleBtn.setAttribute("aria-busy", loginBusy ? "true" : "false");
+  }
+  if (loginBusyOverlay) {
+    loginBusyOverlay.classList.toggle("hidden", !loginBusy);
+    loginBusyOverlay.setAttribute("aria-hidden", loginBusy ? "false" : "true");
+  }
+  if (loginBusyText) {
+    loginBusyText.textContent = LOGIN_BUSY_LABELS[phase] || LOGIN_BUSY_LABELS.connecting;
+  }
+}
 
 function openSignupModal(profile = null) {
   if (nicknameInput) {
@@ -100,43 +133,89 @@ function wireInAppBrowserGate() {
 
 wireInAppBrowserGate();
 
+function hasValidNickname(profile = null) {
+  const nickname = String(profile?.nickname || "").trim();
+  return nickname.length >= 2;
+}
+
+async function resolveProfileForLogin(user) {
+  const cached = readLoginProfileCache(user.uid);
+  let profile =
+    cached && String(cached.email || "").trim().toLowerCase() === String(user.email || "").trim().toLowerCase()
+      ? cached
+      : buildOptimisticProfileFromAuthUser(user, cached || {});
+
+  if (hasValidNickname(profile)) {
+    writeLoginProfileCache(user.uid, profile);
+    scheduleBackgroundUserProfileSync(user);
+    void syncUserProfileFast(user).then((fast) => {
+      if (fast.ok && fast.profile) writeLoginProfileCache(user.uid, fast.profile);
+    });
+    return profile;
+  }
+
+  setLoginBusy(true, "profile");
+  const fast = await syncUserProfileFast(user);
+  if (fast.ok && fast.profile) {
+    profile = fast.profile;
+    writeLoginProfileCache(user.uid, profile);
+    if (hasValidNickname(profile)) {
+      scheduleBackgroundUserProfileSync(user);
+      return profile;
+    }
+  }
+
+  const full = await syncUserProfile(user);
+  if (!full.ok) {
+    throw full.error || new Error("profile-sync-failed");
+  }
+  profile = full.profile || buildOptimisticProfileFromAuthUser(user, profile);
+  writeLoginProfileCache(user.uid, profile);
+  return profile;
+}
+
 async function finalizeLoginFlow(user) {
   if (!user) return;
 
-  const syncResult = await syncUserProfile(user);
+  setLoginBusy(true, "profile");
 
-  if (isAppDebugEnabled()) {
-    console.debug("[LOGIN FLOW]", {
-      uid: user.uid,
-      email: user.email || "",
-      syncResult,
-      isAdminEmail: isAdminEmail(user.email || "")
-    });
-  }
+  try {
+    const profile = await resolveProfileForLogin(user);
 
-  if (!syncResult.ok) {
+    if (isAppDebugEnabled()) {
+      console.debug("[LOGIN FLOW]", {
+        uid: user.uid,
+        email: user.email || "",
+        nickname: profile?.nickname,
+        role: profile?.role
+      });
+    }
+
+    void refreshFcmTokenIfGranted(user.uid);
+    scheduleBackgroundUserProfileSync(user);
+
+    if (!hasValidNickname(profile)) {
+      setLoginBusy(false);
+      openSignupModal(profile);
+      return;
+    }
+
+    setLoginBusy(true, "entering");
+    location.replace("./hub.html");
+  } catch (err) {
+    console.error("[finalizeLoginFlow]", err);
+    setLoginBusy(false);
     alert(
       "구글 로그인은 성공했지만 프로필 동기화에 실패했습니다.\n" +
         "대부분 Firestore Rules 또는 users 문서 권한 문제입니다.\n\n" +
-        `에러: ${syncResult.error?.message || syncResult.error || "unknown"}`
+        `에러: ${err?.message || err}`
     );
-    return;
   }
-
-  void refreshFcmTokenIfGranted(user.uid);
-
-  const profile = syncResult.profile || {};
-  const nickname = String(profile.nickname || "").trim();
-
-  if (!nickname || nickname.length < 2) {
-    openSignupModal(profile);
-    return;
-  }
-
-  location.href = "./hub.html";
 }
 
 async function login() {
+  if (loginBusy) return;
+
   if (isGoogleOAuthLikelyBlockedBrowser()) {
     alert(
       "이 환경에서는 Google 로그인을 사용할 수 없습니다.\n\n" +
@@ -144,6 +223,8 @@ async function login() {
     );
     return;
   }
+
+  setLoginBusy(true, "connecting");
 
   if (auth.currentUser) {
     try {
@@ -160,6 +241,7 @@ async function login() {
       return;
     } catch (redirectError) {
       console.error("login redirect (primary) error:", redirectError);
+      setLoginBusy(false);
       alert(`로그인 이동 실패: ${redirectError?.code || ""} ${redirectError?.message || redirectError}`);
       return;
     }
@@ -185,11 +267,13 @@ async function login() {
         return;
       } catch (redirectError) {
         console.error("login redirect error:", redirectError);
+        setLoginBusy(false);
         alert(`로그인 실패: ${redirectError?.code || ""} ${redirectError?.message || redirectError}`);
         return;
       }
     }
 
+    setLoginBusy(false);
     alert(`로그인 실패: ${error?.code || ""} ${error?.message || error}`);
   }
 }
@@ -209,6 +293,8 @@ async function saveProfile() {
       return;
     }
 
+    setLoginBusy(true, "entering");
+
     const user = auth.currentUser;
     const uid = user.uid;
     const email = String(user.email || "").trim().toLowerCase();
@@ -216,19 +302,29 @@ async function saveProfile() {
     const prev = existingSnap.exists() ? existingSnap.data() || {} : {};
     const role = resolveStoredUserRole(email, prev);
 
+    const profile = {
+      email: user.email || "",
+      nickname,
+      phone,
+      gender: selectedGender,
+      photoURL: String(user.photoURL || "").trim(),
+      role,
+      accessCode: String(prev.accessCode || "").trim(),
+      allowedEvents: prev.allowedEvents && typeof prev.allowedEvents === "object" ? prev.allowedEvents : {}
+    };
+
     await setDoc(
       doc(db, "users", uid),
       {
-        email: user.email || "",
-        nickname,
-        phone,
-        gender: selectedGender,
-        photoURL: String(user.photoURL || "").trim(),
-        role,
+        ...profile,
         lastLogin: serverTimestamp()
       },
       { merge: true }
     );
+
+    writeLoginProfileCache(uid, profile);
+
+    await syncUserDisplayNameAfterNicknameChange(uid, nickname);
 
     if (isAppDebugEnabled()) {
       console.debug("[PROFILE SAVED]", {
@@ -239,9 +335,11 @@ async function saveProfile() {
       });
     }
 
-    location.href = "./hub.html";
+    void refreshFcmTokenIfGranted(user.uid);
+    location.replace("./hub.html");
   } catch (error) {
     console.error("save profile error:", error);
+    setLoginBusy(false);
     alert(`회원 정보 저장 실패: ${error?.message || error}`);
   }
 }
@@ -265,13 +363,11 @@ function waitForSignedInUser(authInstance, timeoutMs) {
   });
 }
 
-/**
- * signInWithRedirect 복귀 후 처리.
- * getRedirectResult → authStateReady → currentUser 순으로 보고,
- * GitHub Pages+서드파티 저장소 제한으로 비어 있으면 onAuthStateChanged 로 잠시 대기한다.
- */
 async function consumeGoogleRedirectResult() {
   const expectedRedirect = isOAuthRedirectPending();
+  if (expectedRedirect) {
+    setLoginBusy(true, "connecting");
+  }
   try {
     let cred = null;
     try {
@@ -297,10 +393,13 @@ async function consumeGoogleRedirectResult() {
       clearOAuthRedirectPending();
       if (user) {
         await finalizeLoginFlow(user);
+      } else {
+        setLoginBusy(false);
       }
     }
   } catch (error) {
     clearOAuthRedirectPending();
+    setLoginBusy(false);
     const code = String(error?.code || "");
     if (!code || code === "auth/no-auth-event") return;
     console.error("redirect result error:", error);

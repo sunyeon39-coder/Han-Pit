@@ -1,10 +1,12 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getAuth } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { getFirestore } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {
+  initializeFirestore
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   getMessaging,
   isSupported
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD6KXHIf1aaSDjbhHo8VtzbeMcaDIMP4SA",
@@ -18,9 +20,16 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
+/**
+ * Safari·일부 네트워크에서 WebChannel이 CORS처럼 실패하는 문제 완화.
+ * 10.11+ 에서 WebChannel 설정이 안정화됨 — 10.12.2 사용.
+ */
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true
+});
+
 export { app };
 export const auth = getAuth(app);
-export const db = getFirestore(app);
 
 export async function getMessagingSafe() {
   try {

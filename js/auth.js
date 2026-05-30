@@ -4,7 +4,7 @@ import {
   signInWithRedirect,
   onAuthStateChanged,
   signOut
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { createGoogleAuthProvider } from "./shared/google-auth-provider.js";
 import {
   isGoogleOAuthLikelyBlockedBrowser,

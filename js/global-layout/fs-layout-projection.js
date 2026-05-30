@@ -8,9 +8,10 @@ import {
   where,
   setDoc,
   serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { GL } from "./state.js";
 import { getProjectionDocId, isEmptyPerson } from "./utils.js";
+import { getEventCardIdFromRecord } from "../shared/tournament-event-instance.js";
 
 const tournamentEventTitleCache = new Map();
 
@@ -32,7 +33,27 @@ export async function resolveTournamentEventTitle(eventId = "") {
   }
 }
 
-function hasGlobalSeatForEventBox(eventId = "", boxId = "", seatId = "") {
+/** 배치 알림용 — tournaments/.../events 의 cardId (없으면 문서 ID에서 파싱). */
+export async function resolveTournamentEventCardId(eventId = "") {
+  const eid = String(eventId || "").trim();
+  const fallback = getEventCardIdFromRecord({ id: eid }) || eid || "이벤트";
+  if (!eid || !GL.tournamentId) return fallback;
+  const key = `${GL.tournamentId}\tcard\t${eid}`;
+  if (tournamentEventTitleCache.has(key)) return tournamentEventTitleCache.get(key);
+  try {
+    const snap = await getDoc(doc(db, "tournaments", GL.tournamentId, "events", eid));
+    const data = snap.exists() ? snap.data() || {} : {};
+    const label = getEventCardIdFromRecord({ id: eid, cardId: data.cardId }) || fallback;
+    tournamentEventTitleCache.set(key, label);
+    return label;
+  } catch (err) {
+    console.error("resolveTournamentEventCardId error:", err);
+    tournamentEventTitleCache.set(key, fallback);
+    return fallback;
+  }
+}
+
+export function hasGlobalSeatForEventBox(eventId = "", boxId = "", seatId = "") {
   const e = String(eventId || "").trim();
   const b = String(boxId || "").trim();
   const sid = String(seatId || "").trim();
@@ -191,21 +212,24 @@ export async function syncLayoutProjection(eventId = "", boxId = "") {
   const b = String(boxId || "").trim();
   if (!e || !b || !GL.tournamentId) return;
 
-  let liveRows = [];
-  try {
-    const layoutDocId = getProjectionDocId(e, b);
-    const q = query(
-      collection(db, "tournaments", GL.tournamentId, "global_seats"),
-      where("sourceLayoutDocId", "==", layoutDocId)
-    );
-    const snap = await getDocs(q);
-    liveRows = snap.docs.map((d) => d.data() || {});
-  } catch (err) {
-    console.error("syncLayoutProjection getDocs error:", err);
-    liveRows = GL.globalSeats.filter((s) => {
-      const eid = String(s.currentEventId || s.mappedEventId || "").trim();
-      return eid === e && String(s.boxId || "").trim() === b;
-    });
+  const layoutDocId = getProjectionDocId(e, b);
+  let liveRows = (GL.globalSeats || []).filter((s) => {
+    const src = String(s.sourceLayoutDocId || "").trim();
+    if (src && src === layoutDocId) return true;
+    const eid = String(s.currentEventId || s.mappedEventId || "").trim();
+    return eid === e && String(s.boxId || "").trim() === b;
+  });
+  if (!liveRows.length) {
+    try {
+      const q = query(
+        collection(db, "tournaments", GL.tournamentId, "global_seats"),
+        where("sourceLayoutDocId", "==", layoutDocId)
+      );
+      const snap = await getDocs(q);
+      liveRows = snap.docs.map((d) => d.data() || {});
+    } catch (err) {
+      console.error("syncLayoutProjection getDocs error:", err);
+    }
   }
 
   const seats = liveRows
@@ -239,5 +263,26 @@ export async function syncLayoutProjection(eventId = "", boxId = "") {
       updatedAtServer: serverTimestamp()
     },
     { merge: true }
+  );
+}
+
+const projectionSyncTimers = new Map();
+
+/** 배치·비우기 직후 UI는 리스너에 맡기고 layout_events 동기화만 짧게 묶음 */
+export function scheduleSyncLayoutProjection(eventId = "", boxId = "") {
+  const e = String(eventId || "").trim();
+  const b = String(boxId || "").trim();
+  if (!e || !b) return;
+  const key = `${e}__${b}`;
+  const prev = projectionSyncTimers.get(key);
+  if (prev) clearTimeout(prev);
+  projectionSyncTimers.set(
+    key,
+    setTimeout(() => {
+      projectionSyncTimers.delete(key);
+      void syncLayoutProjection(e, b).catch((err) => {
+        console.error("scheduleSyncLayoutProjection error:", err);
+      });
+    }, 120)
   );
 }

@@ -17,7 +17,7 @@ import {
   getSeatById
 } from "./utils.js";
 import { renderGlobalLayoutMobile } from "./mobile-panel-render.js";
-import { getWaitingDisplayStartMs, isWaitingBlocked, sortWaitingForDisplay } from "./waiting.js";
+import { getWaitingDisplayStartMs, isWaitingBlocked, sortWaitingForDisplay, resolveSelectedWaitingForAssign, getCurrentTournamentWaiting } from "./waiting.js";
 import {
   buildOperatorLegendHtml,
   buildWaitingPickBadgesHtml,
@@ -32,6 +32,54 @@ import {
 import { wireSeatAddEventPicker } from "./seat-add-event-picker.js";
 import { readPersistedSeatAddForm } from "./seat-add-form-persist.js";
 import { buildEventBoxPaletteMap, getEventBoxPaletteClass } from "./event-box-palette.js";
+import { syncSeatBoxesInContainer } from "../shared/sync-seat-box-dom.js";
+
+function buildGlobalSeatBoxState(s, idx, paletteMap) {
+  const label = s.label || s.no || s.seatId || "-";
+  const occupied = !isEmptyPerson(String(s.person || "").trim());
+  const name = occupied ? String(s.person || "").trim() : "-";
+  const isSelf = occupied && isSeatAssignedToCurrentUser(s, auth.currentUser, GL.userProfile);
+  const personClass = [occupied ? "seat-person" : "seat-person is-empty", isSelf ? "is-self" : ""]
+    .filter(Boolean)
+    .join(" ");
+  const seatId = String(s.seatId || "").trim();
+  const selectedClass = GL.selectedSeatIds.has(seatId) ? "selected" : "";
+  const x = Number.isFinite(Number(s.x)) ? Number(s.x) : getSeatPosition(idx).x;
+  const y = Number.isFinite(Number(s.y)) ? Number(s.y) : getSeatPosition(idx).y;
+  const seatedAtMs = occupied ? toMillis(s.seatedAt || 0) : 0;
+  const elapsedMs = occupied ? (seatedAtMs > 0 ? Date.now() - seatedAtMs : 0) : 0;
+  const timerCls = occupied ? timerClass(elapsedMs) : "";
+  const paletteClass = getEventBoxPaletteClass(s, paletteMap);
+  const seatBoxClass = ["seat-box", paletteClass, occupied ? "is-occupied" : "", timerCls, selectedClass]
+    .filter(Boolean)
+    .join(" ");
+  const canvasLabel = String(s.label ?? s.no ?? "").trim() || "—";
+  return {
+    seatId,
+    idAttr: "data-seat-id",
+    className: seatBoxClass,
+    x,
+    y,
+    innerHtml: `
+        <div class="seat-title">SEAT ${escapeHtml(canvasLabel)}</div>
+        <div class="${personClass}">${escapeHtml(name)}</div>
+      `
+  };
+}
+
+function syncGlobalLayoutPcCanvas(seats) {
+  const inner = GL.app?.querySelector(".canvas-inner");
+  if (!inner) return false;
+  const paletteMap = buildEventBoxPaletteMap(seats);
+  const result = syncSeatBoxesInContainer(inner, seats, {
+    getSeatId: (box) => box.getAttribute("data-seat-id"),
+    buildBoxState: (s, idx) => buildGlobalSeatBoxState(s, idx, paletteMap)
+  });
+  if (result.rebuilt) return false;
+  updateCanvasSeatTimerClasses();
+  refreshGlobalLayoutAlignButtonState();
+  return true;
+}
 
 export function updateCanvasSeatTimerClasses() {
   if (!GL.app) return;
@@ -168,32 +216,20 @@ export function renderSeats(seats = []) {
     return;
   }
 
+  if (syncGlobalLayoutPcCanvas(seats)) {
+    const vp = GL.app.querySelector(".layout-canvas-viewport");
+    const cv = GL.app.querySelector(".pc-canvas");
+    if (vp && cv) applyGlobalLayoutCanvasTransform(cv);
+    return;
+  }
+
   const sorted = [...seats].sort((a, b) => (a.order || 0) - (b.order || 0));
   const paletteMap = buildEventBoxPaletteMap(sorted);
   const seatHtml = sorted.map((s, idx) => {
-    const label = s.label || s.no || s.seatId || "-";
-    const occupied = !isEmptyPerson(String(s.person || "").trim());
-    const name = occupied ? String(s.person || "").trim() : "-";
-    const isSelf = occupied && isSeatAssignedToCurrentUser(s, auth.currentUser, GL.userProfile);
-    const personClass = [occupied ? "seat-person" : "seat-person is-empty", isSelf ? "is-self" : ""]
-      .filter(Boolean)
-      .join(" ");
-    const seatId = String(s.seatId || "").trim();
-    const selectedClass = GL.selectedSeatIds.has(seatId) ? "selected" : "";
-    const x = Number.isFinite(Number(s.x)) ? Number(s.x) : getSeatPosition(idx).x;
-    const y = Number.isFinite(Number(s.y)) ? Number(s.y) : getSeatPosition(idx).y;
-    const seatedAtMs = occupied ? toMillis(s.seatedAt || 0) : 0;
-    const elapsedMs = occupied ? (seatedAtMs > 0 ? Date.now() - seatedAtMs : 0) : 0;
-    const timerCls = occupied ? timerClass(elapsedMs) : "";
-    const paletteClass = getEventBoxPaletteClass(s, paletteMap);
-    const seatBoxClass = ["seat-box", paletteClass, occupied ? "is-occupied" : "", timerCls, selectedClass]
-      .filter(Boolean)
-      .join(" ");
-    const canvasLabel = String(s.label ?? s.no ?? "").trim() || "—";
+    const st = buildGlobalSeatBoxState(s, idx, paletteMap);
     return `
-      <div class="${seatBoxClass}" data-seat-id="${escapeHtml(seatId)}" style="left:${x}px;top:${y}px;">
-        <div class="seat-title">SEAT ${escapeHtml(canvasLabel)}</div>
-        <div class="${personClass}">${escapeHtml(name)}</div>
+      <div class="${st.className}" data-seat-id="${escapeHtml(st.seatId)}" style="left:${st.x}px;top:${st.y}px;">
+        ${st.innerHtml}
       </div>
     `;
   }).join("");
@@ -229,7 +265,7 @@ export function renderWaiting(waiting = []) {
   updateTabUi();
 
   if (!waitTabActive) {
-    renderSeatPanel();
+    updateGlobalLayoutWaitingMeta();
     return;
   }
 
@@ -292,6 +328,21 @@ export function renderWaiting(waiting = []) {
     })
     .join("");
 
+  const listHtml = waitingRows || `<div class="empty-panel">현재 대기자가 없습니다.</div>`;
+  const existingList = GL.panelContent?.querySelector(".global-list");
+  const existingManual = GL.panelContent?.querySelector("#manualWaitingNameInput");
+  if (existingList && existingManual) {
+    existingList.innerHTML = listHtml;
+    const legend = GL.panelContent.querySelector(".gl-operator-legend");
+    const nextLegend = buildOperatorLegendHtml();
+    if (legend && nextLegend) legend.outerHTML = nextLegend;
+    else if (!legend && nextLegend) existingList.insertAdjacentHTML("beforebegin", nextLegend);
+    restorePanelScroll();
+    updateGlobalMetaToolbar();
+    refreshGlobalLayoutAlignButtonState();
+    return;
+  }
+
   GL.panelContent.innerHTML = `
     <div class="global-form single admin-only ${GL.isAdminUser ? "" : "hidden"}">
       <input id="manualWaitingNameInput" placeholder="-" autocomplete="off" />
@@ -299,12 +350,27 @@ export function renderWaiting(waiting = []) {
     </div>
     ${buildOperatorLegendHtml()}
     <div class="global-list">
-      ${waitingRows || `<div class="empty-panel">현재 대기자가 없습니다.</div>`}
+      ${listHtml}
     </div>
   `;
   restorePanelScroll();
   updateGlobalMetaToolbar();
   refreshGlobalLayoutAlignButtonState();
+}
+
+export function updateSeatPanelTimers() {
+  if (!GL.panelContent || GL.activeTab !== "seat") return;
+  const chips = GL.panelContent.querySelectorAll(".time-chip[data-seat-start]");
+  if (!chips.length) return;
+  const now = Date.now();
+  chips.forEach((chip) => {
+    const start = Number(chip.getAttribute("data-seat-start") || "0");
+    const elapsed = start > 0 ? Math.max(0, now - start) : 0;
+    chip.textContent = fmtElapsed(elapsed);
+    const cls = timerClass(elapsed);
+    chip.classList.remove("t-green", "t-yellow", "t-orange", "t-red");
+    chip.classList.add(cls);
+  });
 }
 
 export function updateWaitingTimersInPanel() {
@@ -327,6 +393,10 @@ export function renderSeatPanel() {
   if (!GL.panelContent) return;
   capturePanelScroll();
   updateTabUi();
+  const selectedWaiting = String(GL.selectedWaitingId || "").trim()
+    ? getCurrentTournamentWaiting().find((w) => String(w.id || "").trim() === GL.selectedWaitingId) ||
+      resolveSelectedWaitingForAssign()
+    : null;
   const sorted = [...GL.globalSeats].sort((a, b) => {
     if (GL.seatSortMode === "time") return compareGlobalSeatsBySeatedTimeOldest(a, b);
     return compareSeatsByCanvasLabel(a, b);
@@ -353,14 +423,16 @@ export function renderSeatPanel() {
             </div>
           </div>
           <div class="seat-inline-actions">
-            ${occupied ? `<span class="time-chip ${tClass}">${fmtElapsed(elapsed)}</span>` : `<span class="seat-manage-empty-dash">-</span>`}
             ${
-              GL.isAdminUser
+              occupied
+                ? `<span class="time-chip ${tClass}" data-seat-start="${seatedAt || 0}">${fmtElapsed(elapsed)}</span>`
+                : `<span class="seat-manage-empty-dash">-</span>`
+            }
+            ${
+              GL.isAdminUser && GL.selectedWaitingId
                 ? !occupied
                   ? `<button class="pill-inline" data-assign-seat="${escapeHtml(seatId)}">여기 배치</button>`
-                  : GL.selectedWaitingId
-                    ? `<button class="pill-inline" data-assign-seat="${escapeHtml(seatId)}">대기↔스왑</button>`
-                    : ``
+                  : `<button class="pill-inline" data-assign-seat="${escapeHtml(seatId)}">대기↔스왑</button>`
                 : ``
             }
             ${GL.isAdminUser && occupied ? `<button class="pill-inline seat-icon-btn warn" type="button" data-clear-seat="${escapeHtml(seatId)}" title="비우기" aria-label="비우기">🧹</button>` : ``}
@@ -384,6 +456,15 @@ export function renderSeatPanel() {
     : baseEb;
   const seatAddTitle = `카드 ID는 드롭다운에서 선택합니다. Box ID는 해당 카드(Firestore·기존 좌석) 기준으로 자동 채워지며 필요 시 수정할 수 있습니다. 비우면 ${defEb.eventId} / ${defEb.boxId} 사용.`;
 
+  const seatAssignBannerHtml =
+    GL.isAdminUser && selectedWaiting
+      ? `
+    <div class="mobile-selection-banner layout-seat-assign-banner">
+      <span class="badge sel">배치할 대기</span>
+      <strong>${escapeHtml(selectedWaiting.name || "")}</strong>
+    </div>`
+      : "";
+
   const listHtml = rows || `<div class="empty-panel">전역 좌석이 없습니다.</div>`;
   const existingList = GL.panelContent?.querySelector(".global-list");
   const existingPicker = GL.panelContent?.querySelector("#seatAddEventPick");
@@ -393,6 +474,16 @@ export function renderSeatPanel() {
     const timeBtn = document.getElementById("sortSeatTimeBtn");
     if (orderBtn) orderBtn.classList.toggle("active", GL.seatSortMode === "seat");
     if (timeBtn) timeBtn.classList.toggle("active", GL.seatSortMode === "time");
+    const existingBanner = GL.panelContent.querySelector(".layout-seat-assign-banner");
+    if (seatAssignBannerHtml) {
+      if (existingBanner) {
+        existingBanner.outerHTML = seatAssignBannerHtml.trim();
+      } else {
+        existingList.insertAdjacentHTML("beforebegin", seatAssignBannerHtml);
+      }
+    } else if (existingBanner) {
+      existingBanner.remove();
+    }
     restorePanelScroll();
     updateGlobalMetaToolbar();
     refreshGlobalLayoutAlignButtonState();
@@ -450,6 +541,7 @@ export function renderSeatPanel() {
         <button id="sortSeatTimeBtn" class="pill-inline ${GL.seatSortMode === "time" ? "active" : ""}" type="button" title="앉은 지 오래된 순(타이머 긴 사람이 위), 빈 좌석은 아래">시간순</button>
       </div>
     </div>
+    ${seatAssignBannerHtml}
     <div class="global-list">
       ${listHtml}
     </div>

@@ -62,7 +62,9 @@ export function setupLayoutMainDomWiring(deps) {
   tabs.forEach((t) => {
     t.addEventListener("click", () => {
       ui.activeTab = t.dataset.tab;
-      ui.selectedWaitingId = null;
+      if (ui.activeTab === "wait") {
+        ui.selectedSeatId = null;
+      }
       renderPanel();
       layoutTimers.updateTimers();
     });

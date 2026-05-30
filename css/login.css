@@ -421,3 +421,55 @@ body::after {
   color: var(--text-2);
   font-weight: 700;
 }
+
+/* 로그인 진행 중 — 계정 선택 직후 즉시 피드백 */
+.login-busy {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(7, 13, 25, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.login-busy.hidden {
+  display: none;
+}
+
+.login-busy-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 28px 32px;
+  border-radius: var(--radius-md);
+  background: var(--panel-1);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-float);
+  min-width: min(280px, 100%);
+}
+
+.login-busy-spinner {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.12);
+  border-top-color: var(--accent);
+  animation: login-busy-spin 0.75s linear infinite;
+}
+
+.login-busy-text {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-1);
+  text-align: center;
+}
+
+@keyframes login-busy-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

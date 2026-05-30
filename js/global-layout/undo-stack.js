@@ -12,6 +12,12 @@ function syncLastUndoCompat() {
   GL.lastGlobalUndo = stack.length ? stack[stack.length - 1] : null;
 }
 
+function refreshUndoToolbar() {
+  void import("./toolbar.js")
+    .then((m) => m.updateGlobalMetaToolbar())
+    .catch(() => {});
+}
+
 export function pushGlobalUndo(action) {
   if (!action || typeof action !== "object") return;
   const stack = ensureUndoStack();
@@ -20,12 +26,14 @@ export function pushGlobalUndo(action) {
     stack.splice(0, stack.length - GLOBAL_UNDO_STACK_MAX);
   }
   syncLastUndoCompat();
+  refreshUndoToolbar();
 }
 
 export function popGlobalUndo() {
   const stack = ensureUndoStack();
   const action = stack.pop() || null;
   syncLastUndoCompat();
+  refreshUndoToolbar();
   return action;
 }
 
@@ -37,6 +45,7 @@ export function restoreGlobalUndo(action) {
     stack.splice(0, stack.length - GLOBAL_UNDO_STACK_MAX);
   }
   syncLastUndoCompat();
+  refreshUndoToolbar();
 }
 
 export function peekGlobalUndo() {
@@ -47,6 +56,7 @@ export function peekGlobalUndo() {
 export function clearGlobalUndoStack() {
   GL.globalUndoStack = [];
   GL.lastGlobalUndo = null;
+  refreshUndoToolbar();
 }
 
 export function getGlobalUndoCount() {

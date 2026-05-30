@@ -8,20 +8,28 @@ import {
   setDoc,
   serverTimestamp,
   where
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getEventCardIdFromRecord } from "../shared/tournament-event-instance.js";
+import { normalizeAndPersistUserRole } from "../login/user-sync.js";
+import { loadUserProfileFresh } from "../shared/load-user-profile.js";
 
 export async function layoutLoadMyUserProfile() {
   if (!auth.currentUser) return null;
 
   try {
-    const snap = await getDoc(doc(db, "users", auth.currentUser.uid));
-    if (!snap.exists()) return null;
-    const { normalizeAndPersistUserRole } = await import("../login/user-sync.js");
-    return await normalizeAndPersistUserRole(
+    const profile = await loadUserProfileFresh(auth.currentUser.uid, auth.currentUser.email || "", {
+      preferCacheFirst: true,
+      deferEmailMerge: false
+    });
+    if (!profile) return null;
+    void normalizeAndPersistUserRole(
       auth.currentUser.uid,
-      snap.data() || {},
+      profile,
       auth.currentUser.email || ""
-    );
+    ).catch((err) => {
+      console.error("normalizeAndPersistUserRole error:", err);
+    });
+    return profile;
   } catch (err) {
     console.error("loadMyUserProfile error:", err);
     return null;
@@ -130,8 +138,9 @@ export async function layoutRefreshCachedEventCardTitle(tournamentId, eventId, c
   try {
     const snap = await getDoc(doc(db, "tournaments", tournamentId, "events", eventId));
     if (!snap.exists()) return;
-    const title = String((snap.data() || {}).title || "").trim();
-    if (title) cacheHolder.cachedEventCardTitle = title;
+    const data = snap.data() || {};
+    const cardId = getEventCardIdFromRecord({ id: eventId, cardId: data.cardId });
+    if (cardId) cacheHolder.cachedEventCardTitle = cardId;
   } catch (err) {
     console.error("refreshCachedEventCardTitle error:", err);
   }

@@ -6,9 +6,9 @@ import {
   getDocs,
   setDoc,
   runTransaction
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-import { getIsAdmin } from "../shared/auth-helpers.js";
+import { canUseTournamentOps, mergeOpsProfile, normalizeUserProfile } from "../shared/auth-helpers.js";
 import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
 
@@ -45,14 +45,22 @@ export async function joinSharedWaitingOnCheckIn(user) {
   if (!user || !tournamentId) return false;
 
   try {
+    if (canUseTournamentOps(user?.email, IX.currentUserProfile, tournamentId)) {
+      return false;
+    }
+
     const userRef = doc(db, "users", user.uid);
     const userSnap = await getDoc(userRef);
     if (!userSnap.exists()) return false;
 
-    const userProfile = userSnap.data() || {};
-    IX.currentUserProfile = userProfile;
+    const userProfile = mergeOpsProfile(
+      IX.currentUserProfile,
+      normalizeUserProfile(userSnap.data() || {}, user.email || IX.currentUserProfile?.email || ""),
+      userSnap.metadata || {}
+    );
+    if (userProfile) IX.currentUserProfile = userProfile;
 
-    if (getIsAdmin(user, userProfile)) return false;
+    if (canUseTournamentOps(user?.email, IX.currentUserProfile, tournamentId)) return false;
 
     const nickname = String(userProfile.nickname || "").trim();
     const email = String(userProfile.email || user.email || "").trim();

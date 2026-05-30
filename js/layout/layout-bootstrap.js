@@ -23,7 +23,8 @@ export function createLayoutBootstrap(deps) {
     layoutRealtime,
     render,
     startTick,
-    seatNotify
+    seatNotify,
+    scheduleLayoutRealtimeUi
   } = deps;
 
   let hasInitialized = false;
@@ -32,9 +33,8 @@ export function createLayoutBootstrap(deps) {
     if (hasInitialized) return;
     hasInitialized = true;
 
-    await refreshCachedEventCardTitle();
-
     const [remoteEvent, remoteWaiting] = await Promise.all([
+      refreshCachedEventCardTitle(),
       loadEventStateRemote(),
       loadWaitingStateRemote()
     ]);
@@ -75,18 +75,6 @@ export function createLayoutBootstrap(deps) {
       if (!("personEmail" in s)) s.personEmail = "";
     });
 
-    const bootSaves = [];
-    // layout_events 는 Rules 상 관리자만 쓰기 가능 — 비관리자는 빈 문서 생성 시도 시 permission 오류
-    if (!remoteEvent && getIsAdminUser()) bootSaves.push(saveEventState());
-    if (!remoteWaiting) bootSaves.push(saveWaitingState());
-    if (bootSaves.length) await Promise.all(bootSaves);
-
-    waitingState.waiting = waitingState.waiting
-      .map((w) => normalizeWaitingEntry(w))
-      .filter(Boolean);
-
-    await layoutHealUndo.healAndPersistState("init");
-
     layoutViewport.loadCanvasViewFromStorage();
 
     layoutGlobalSeatsMerge.bindTournamentGlobalSeatsMerge();
@@ -97,6 +85,25 @@ export function createLayoutBootstrap(deps) {
     startTick();
 
     seatNotify.maybePromptInitialSound({ isAdminUser: getIsAdminUser() });
+
+    void (async () => {
+      const bootSaves = [];
+      // layout_events 는 Rules 상 관리자만 쓰기 가능 — 비관리자는 빈 문서 생성 시도 시 permission 오류
+      if (!remoteEvent && getIsAdminUser()) bootSaves.push(saveEventState());
+      if (!remoteWaiting) bootSaves.push(saveWaitingState());
+      if (bootSaves.length) await Promise.all(bootSaves);
+
+      waitingState.waiting = waitingState.waiting
+        .map((w) => normalizeWaitingEntry(w))
+        .filter(Boolean);
+
+      await layoutHealUndo.healAndPersistState("init");
+      if (scheduleLayoutRealtimeUi) {
+        scheduleLayoutRealtimeUi({ canvas: true, panel: true });
+      } else {
+        render();
+      }
+    })();
 
     if (FOCUS_SEAT_ID) {
       sessionStorage.removeItem("focusSeatId");

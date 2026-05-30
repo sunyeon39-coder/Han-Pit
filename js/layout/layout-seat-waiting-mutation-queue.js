@@ -4,6 +4,19 @@
 export function createSeatWaitingMutationQueue() {
   let seatWaitingMutationChain = Promise.resolve();
   let layoutHealEnqueueChain = Promise.resolve();
+  let layoutOptimisticMutationInFlight = 0;
+
+  function beginLayoutOptimisticMutation() {
+    layoutOptimisticMutationInFlight += 1;
+  }
+
+  function endLayoutOptimisticMutation() {
+    layoutOptimisticMutationInFlight = Math.max(0, layoutOptimisticMutationInFlight - 1);
+  }
+
+  function isLayoutOptimisticMutationInFlight() {
+    return layoutOptimisticMutationInFlight > 0;
+  }
 
   function enqueueHealAfterMutation(work) {
     layoutHealEnqueueChain = layoutHealEnqueueChain
@@ -21,5 +34,11 @@ export function createSeatWaitingMutationQueue() {
     return out;
   }
 
-  return { runSeatWaitingMutationSerialized, enqueueHealAfterMutation };
+  return {
+    runSeatWaitingMutationSerialized,
+    enqueueHealAfterMutation,
+    beginLayoutOptimisticMutation,
+    endLayoutOptimisticMutation,
+    isLayoutOptimisticMutationInFlight
+  };
 }

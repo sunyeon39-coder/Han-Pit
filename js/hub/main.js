@@ -1,17 +1,22 @@
 import { auth, db } from "../firebase.js";
 
-import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { logout } from "../auth.js";
 
 import { normalizeUserProfile } from "../shared/auth-helpers.js";
-import { ensureUserDoc } from "../login/user-sync.js";
+import { ensureUserDoc, scheduleBackgroundUserProfileSync } from "../login/user-sync.js";
+import {
+  readLoginProfileCache,
+  isLoginProfileCacheFresh
+} from "../shared/login-profile-cache.js";
 import { getIsAdminUser } from "./hub-helpers.js";
 import { closeModal, openModal } from "../shared/dom-utils.js";
 import { isAppDebugEnabled } from "../shared/app-debug.js";
 
 import { initHubRefs, hubRefs } from "./hub-dom-refs.js";
-import { hubState } from "./hub-state.js";
-import { renderTournaments, showHubListLoading } from "./hub-tournament-list.js";
+import { showHubListLoading } from "./hub-tournament-list.js";
+import { FALLBACK_TOURNAMENTS, hubState } from "./hub-state.js";
+import { sortTournaments } from "./hub-helpers.js";
 import {
   populateTournamentSelect,
   renderAdminUserList,
@@ -36,8 +41,11 @@ import {
   loadAllUsers,
   loadTournaments,
   loadUserProfile,
-  resyncHubAccessFromServer
+  resyncHubAccessFromServer,
+  healNonAdminUsersToBasic,
+  prefetchHubTournamentsCache
 } from "./hub-loaders-realtime.js";
+import { scheduleHubTournamentsRender } from "./hub-realtime-ui.js";
 import { saveNickname } from "./hub-profile.js";
 import {
   assignEventCodeToUser,
@@ -62,6 +70,7 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
 
 initHubRefs();
 showHubListLoading();
+void prefetchHubTournamentsCache();
 
 const flushAppBadgeIfVisible = bindAppBadgeClearOnForeground(db, auth);
 void ensureForegroundFcmBadgeListener();
@@ -103,6 +112,7 @@ const {
   adminBulkSelectAll,
   adminBulkAssignCodeBtn,
   adminBulkRemoveCodeBtn,
+  adminResetBasicRolesBtn,
   adminUserList,
   closeUserManageBtn,
   closeUserManageFooterBtn,
@@ -132,22 +142,23 @@ profileBtn?.addEventListener("click", () => {
   openModal(hubRefs.profileModal);
 });
 
-adminBtn?.addEventListener("click", async () => {
+adminBtn?.addEventListener("click", () => {
   const isAdmin = getIsAdminUser(hubState.currentUser, hubState.currentUserProfile);
 
   if (!isAdmin) return;
-
-  if (!hubState.tournamentsCache.length) {
-    await loadTournaments();
-  }
-  if (!hubState.usersCache.length) {
-    await loadAllUsers();
-  }
 
   clearAdminBulkSelection();
   populateTournamentSelect();
   renderAdminUserList();
   openModal(adminModal);
+
+  void Promise.all([
+    hubState.tournamentsCache.length ? Promise.resolve() : loadTournaments(),
+    hubState.usersCache.length ? Promise.resolve() : loadAllUsers()
+  ]).then(() => {
+    populateTournamentSelect();
+    renderAdminUserList();
+  });
 });
 
 closeProfileBtn?.addEventListener("click", () => closeModal(profileModal));
@@ -223,6 +234,23 @@ adminBulkRemoveCodeBtn?.addEventListener("click", async () => {
   });
 });
 
+adminResetBasicRolesBtn?.addEventListener("click", async () => {
+  if (!getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) return;
+  const ok = window.confirm(
+    "시스템 admin(sunyeon9501@gmail.com)을 제외한 모든 유저의 role을 user로, 직접 허용(allowedEvents)을 비웁니다.\n운영 권한이 필요한 유저는 이후「직접 허용」으로 다시 부여해야 합니다.\n계속할까요?"
+  );
+  if (!ok) return;
+  await runAdminAction(async () => {
+    hubState.usersRoleHealDone = false;
+    const { fixed } = await healNonAdminUsersToBasic(hubState.usersCache, {
+      stripAllowedEvents: true
+    });
+    hubState.usersRoleHealDone = true;
+    renderAdminUserList();
+    alert(fixed > 0 ? `${fixed}명을 기본 user로 정리했습니다.` : "정리할 유저가 없습니다.");
+  });
+});
+
 hubRefs.profileModal?.addEventListener("click", (e) => {
   if (e.target === hubRefs.profileModal) closeModal(hubRefs.profileModal);
 });
@@ -286,7 +314,7 @@ userManageModal?.addEventListener("click", (e) => {
 });
 
 function paintHubTournamentList() {
-  renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
+  scheduleHubTournamentsRender();
 }
 
 function disposeHubSessionWatches() {
@@ -310,7 +338,26 @@ function disposeHubSessionWatches() {
 
 async function bootstrapHubSession(user) {
   const flow = ++hubState.hubAuthFlowGen;
+  let bootTimeoutId = 0;
   showHubListLoading();
+
+  const cachedProfile =
+    isLoginProfileCacheFresh(user.uid) ? readLoginProfileCache(user.uid) : null;
+  if (cachedProfile) {
+    hubState.currentUserProfile = normalizeUserProfile(cachedProfile, user.email || "");
+    paintHubTournamentList();
+  }
+
+  try {
+  bootTimeoutId = window.setTimeout(() => {
+    if (flow !== hubState.hubAuthFlowGen) return;
+    if (!hubRefs.eventListEl?.classList.contains("event-list--loading")) return;
+    console.warn("[hub] bootstrap timeout — showing fallback tournaments");
+    if (!hubState.tournamentsCache.length) {
+      hubState.tournamentsCache = sortTournaments(FALLBACK_TOURNAMENTS);
+    }
+    paintHubTournamentList();
+  }, 15000);
 
   let [profile] = await Promise.all([
     loadUserProfile(user.uid, user.email || ""),
@@ -346,13 +393,19 @@ async function bootstrapHubSession(user) {
   paintHubTournamentList();
   if (flow !== hubState.hubAuthFlowGen || hubState.currentUser?.uid !== user.uid) return;
 
-  try {
-    await resyncHubAccessFromServer(user.uid);
-    paintHubTournamentList();
-  } catch (err) {
-    console.warn("resyncHubAccessFromServer:", err);
-  }
-  if (flow !== hubState.hubAuthFlowGen || hubState.currentUser?.uid !== user.uid) return;
+  scheduleBackgroundUserProfileSync(user);
+
+  bindTournamentsRealtime();
+  bindMyProfileRealtime(user.uid);
+
+  void resyncHubAccessFromServer(user.uid)
+    .then(() => {
+      if (flow !== hubState.hubAuthFlowGen || hubState.currentUser?.uid !== user.uid) return;
+      paintHubTournamentList();
+    })
+    .catch((err) => {
+      console.warn("resyncHubAccessFromServer:", err);
+    });
 
   if (isAppDebugEnabled()) {
     console.debug("[HUB AUTH]", {
@@ -365,9 +418,6 @@ async function bootstrapHubSession(user) {
 
   const isAdmin = getIsAdminUser(user, hubState.currentUserProfile);
   if (flow !== hubState.hubAuthFlowGen || hubState.currentUser?.uid !== user.uid) return;
-
-  bindTournamentsRealtime();
-  bindMyProfileRealtime(user.uid);
 
   if (isAdmin) {
     adminBtn?.classList.remove("hidden");
@@ -402,6 +452,9 @@ async function bootstrapHubSession(user) {
     if (hubState.currentUser?.uid !== user.uid) return;
     void resyncHubAccessFromServer(user.uid);
   }, 450);
+  } finally {
+    if (bootTimeoutId) clearTimeout(bootTimeoutId);
+  }
 }
 
 onAuthStateChanged(auth, (user) => {
@@ -420,6 +473,9 @@ onAuthStateChanged(auth, (user) => {
   const run = bootstrapHubSession(user)
     .catch((err) => {
       console.error("hub auth init error:", err);
+      if (!hubState.tournamentsCache.length) {
+        hubState.tournamentsCache = sortTournaments(FALLBACK_TOURNAMENTS);
+      }
       paintHubTournamentList();
       alert("허브 데이터를 불러오지 못했습니다.");
     })

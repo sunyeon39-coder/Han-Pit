@@ -2,7 +2,7 @@
  * layout.html: Seat 해제/배치 시 딜러를 대기열로 옮기거나 출석 상태를 assigned로 반영
  */
 import { db } from "../firebase.js";
-import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 export function createLayoutDealerMoves(deps) {
   const {

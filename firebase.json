@@ -53,8 +53,18 @@
             "value": "max-age=0, must-revalidate"
           }
         ]
+      },
+      {
+        "source": "/app-version.json",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "max-age=0, no-cache, no-store, must-revalidate"
+          }
+        ]
       }
     ],
+    "predeploy": ["node scripts/bump-app-version.mjs"],
     "ignore": [
       "firebase.json",
       "**/.*",

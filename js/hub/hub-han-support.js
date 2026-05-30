@@ -7,7 +7,7 @@ import {
   onSnapshot,
   orderBy,
   query
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 import { closeModal, escapeHtml, openModal } from "../shared/dom-utils.js";
 import { getIsAdminUser } from "./hub-helpers.js";

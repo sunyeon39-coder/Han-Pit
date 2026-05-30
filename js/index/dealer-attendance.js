@@ -8,11 +8,17 @@ export {
   setupAttendanceLogEvents
 } from "./dealer-attendance-logs.js";
 export {
+  setupWorkSummaryEvents,
+  handleShowWorkSummaryClick
+} from "./dealer-attendance-work-summary-ui.js";
+export { computeMyTournamentWorkSummary } from "./dealer-attendance-work-summary.js";
+export {
   joinSharedWaitingOnCheckIn,
   removeFromSharedWaitingOnCheckOut
 } from "./dealer-attendance-waiting.js";
 
 export { updateMyAttendanceStatus, updateAdminAttendanceStatus } from "./dealer-attendance-status-updates.js";
+export { adjustMyCheckedInAt, adjustMyCheckedOutAt } from "./dealer-attendance-adjust-checkin.js";
 export { scheduleRenderDealerOps, renderDealerOps } from "./dealer-attendance-render.js";
 export { loadDealerAttendanceOnce } from "./dealer-attendance-load-once.js";
 export { ensureMyState } from "./dealer-attendance-ensure-waiting.js";

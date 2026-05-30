@@ -14,6 +14,7 @@ function getUndoStackHint() {
   if (k === "assign") return `최근 작업: 대기 → 배치 (남은 ${count}건) — 클릭하면 취소`;
   if (k === "delete_seat") return `최근 작업: Seat 삭제 (남은 ${count}건) — 클릭하면 복구`;
   if (k === "remove_waiting") return `최근 작업: 대기 삭제 (남은 ${count}건) — 클릭하면 복구`;
+  if (k === "clear_seat") return `최근 작업: Seat 비우기 (남은 ${count}건) — 클릭하면 취소`;
   return `최근 작업 되돌리기 (남은 ${count}건)`;
 }
 
@@ -24,6 +25,8 @@ export function updateGlobalMetaToolbar() {
   const show = GL.isAdminUser && GL.activeTab === "seat";
   wrap.classList.toggle("hidden", !show);
   wrap.setAttribute("aria-hidden", show ? "false" : "true");
-  undoBtn.disabled = getGlobalUndoCount() <= 0;
+  const count = getGlobalUndoCount();
+  undoBtn.disabled = count <= 0;
+  undoBtn.textContent = count > 0 ? `되돌리기 (${count})` : "되돌리기";
   undoBtn.title = getUndoStackHint();
 }

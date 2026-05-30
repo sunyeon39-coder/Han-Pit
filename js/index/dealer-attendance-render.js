@@ -1,12 +1,14 @@
 import { auth } from "../firebase.js";
 
-import { getIsAdmin } from "../shared/auth-helpers.js";
+import { canUseTournamentOps } from "../shared/auth-helpers.js";
+import { getTournamentId } from "./core-utils.js";
 import { escapeHtml } from "../shared/dom-utils.js";
 import { IX, refreshIndexDomRefs } from "./state.js";
 import {
   getAttendanceStatusLabel,
   formatClockOrDash,
-  formatDuration
+  formatDuration,
+  msToDatetimeLocalValue
 } from "./dealer-attendance-format.js";
 import { getDerivedAttendance, getWorkingMs } from "./dealer-attendance-derived.js";
 import {
@@ -22,7 +24,7 @@ export function renderDealerOps() {
   }
 
   const user = auth.currentUser;
-  const isAdmin = getIsAdmin(user, IX.currentUserProfile);
+  const isAdmin = canUseTournamentOps(user?.email, IX.currentUserProfile, getTournamentId());
   const me = user ? getDerivedAttendance(user) : null;
 
   const myStatus = me?.status || "off";
@@ -31,6 +33,8 @@ export function renderDealerOps() {
 
   const myCheckInText = formatClockOrDash(me?.checkedInAt);
   const myCheckOutText = formatClockOrDash(me?.checkedOutAt);
+  const canEditCheckIn = Boolean(me?.checkedInAt) && myStatus !== "off";
+  const canEditCheckOut = Boolean(me?.checkedOutAt) && myStatus === "checked_out";
 
   let adminHtml = "";
 
@@ -161,20 +165,51 @@ export function renderDealerOps() {
 
     <div class="dealer-self-compact">
       <div class="dealer-self-times">
-        <div class="dealer-time-chip">
-          <span class="dealer-time-chip-label">출근</span>
-          <span class="dealer-time-chip-value">${escapeHtml(myCheckInText)}</span>
-        </div>
+        ${
+          canEditCheckIn
+            ? `<label class="dealer-time-chip dealer-time-chip--editable" title="탭하여 출근 시각 수정">
+                <span class="dealer-time-chip-label">출근</span>
+                <input
+                  type="datetime-local"
+                  class="dealer-time-chip-input"
+                  data-edit-check-in
+                  value="${escapeHtml(msToDatetimeLocalValue(me.checkedInAt))}"
+                  step="60"
+                  aria-label="출근 시각 수정"
+                />
+                <span class="dealer-time-chip-caret" aria-hidden="true"></span>
+              </label>`
+            : `<div class="dealer-time-chip">
+                <span class="dealer-time-chip-label">출근</span>
+                <span class="dealer-time-chip-value">${escapeHtml(myCheckInText)}</span>
+              </div>`
+        }
 
-        <div class="dealer-time-chip">
-          <span class="dealer-time-chip-label">퇴근</span>
-          <span class="dealer-time-chip-value">${escapeHtml(myCheckOutText)}</span>
-        </div>
+        ${
+          canEditCheckOut
+            ? `<label class="dealer-time-chip dealer-time-chip--editable" title="탭하여 퇴근 시각 수정">
+                <span class="dealer-time-chip-label">퇴근</span>
+                <input
+                  type="datetime-local"
+                  class="dealer-time-chip-input"
+                  data-edit-check-out
+                  value="${escapeHtml(msToDatetimeLocalValue(me.checkedOutAt))}"
+                  step="60"
+                  aria-label="퇴근 시각 수정"
+                />
+                <span class="dealer-time-chip-caret" aria-hidden="true"></span>
+              </label>`
+            : `<div class="dealer-time-chip">
+                <span class="dealer-time-chip-label">퇴근</span>
+                <span class="dealer-time-chip-value">${escapeHtml(myCheckOutText)}</span>
+              </div>`
+        }
       </div>
 
       <div class="dealer-action-row">
         <button class="dealer-action-btn primary" data-self-action="waiting" ${canCheckIn ? "" : "disabled"}>출근하기</button>
         <button class="dealer-action-btn danger" data-self-action="checked_out" ${canCheckOut ? "" : "disabled"}>퇴근하기</button>
+        <button class="dealer-action-btn ghost" type="button" data-show-work-summary>근무 합계</button>
       </div>
     </div>
   </section>

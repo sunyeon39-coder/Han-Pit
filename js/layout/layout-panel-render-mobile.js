@@ -226,8 +226,9 @@ export function createLayoutMobilePanelRender(deps) {
         const now = Date.now();
 
         if (ui.selectedWaitingId) {
+          const wid = ui.selectedWaitingId;
           ui.selectedSeatId = sid;
-          await assignWaitingToSeat(ui.selectedWaitingId, sid);
+          void assignWaitingToSeat(wid, sid);
           ui.selectedSeatId = null;
           ui.lastMobileTapAt = 0;
           ui.lastMobileSeatId = "";
@@ -294,7 +295,8 @@ export function createLayoutMobilePanelRender(deps) {
 
         if (!ui.selectedWaitingId) return;
 
-        await assignWaitingToSeat(ui.selectedWaitingId, sid);
+        const wid = ui.selectedWaitingId;
+        void assignWaitingToSeat(wid, sid);
         ui.selectedSeatId = null;
         onFullRender();
       });

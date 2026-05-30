@@ -39,8 +39,30 @@ function buildDedupKey(uid, after) {
 
 const PUSH_APP_TITLE = "Han Pit";
 
+function cardIdFromEventInstanceId(value = "") {
+  const id = String(value || "").trim();
+  if (!id) return "";
+  const parts = id.split("~");
+  if (parts.length !== 3) return "";
+  const cardId = String(parts[1] || "").trim();
+  return cardId || "";
+}
+
+function resolveSeatPushCardLabel(after = {}) {
+  const eventId = String(after.eventId || "").trim();
+  let label = String(after.eventTitle || "").trim();
+  if (label.includes("~")) {
+    const fromTitle = cardIdFromEventInstanceId(label);
+    if (fromTitle) return fromTitle;
+  }
+  const fromEventId = cardIdFromEventInstanceId(eventId);
+  if (fromEventId) return fromEventId;
+  if (label && label !== eventId) return label;
+  return eventId;
+}
+
 function buildSeatAssignedPushBody(after = {}) {
-  const eventTitle = String(after.eventTitle || after.eventId || "").trim();
+  const eventTitle = resolveSeatPushCardLabel(after);
   const seatLabel = String(after.seatLabel || after.seatId || "").trim();
   if (eventTitle && seatLabel) {
     return `${eventTitle} / Seat ${seatLabel}`;

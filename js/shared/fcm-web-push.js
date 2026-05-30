@@ -5,12 +5,12 @@
  *   (일반 Safari 탭·iOS Chrome 탭은 Apple 정책상 FCM 웹 푸시 불가)
  */
 import { db, getMessagingSafe } from "../firebase.js";
-import { getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js";
+import { getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
 import {
   doc,
   serverTimestamp,
   setDoc
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 export const FCM_VAPID_KEY =
   "BAZXsr3GQtq_nPLrF7C89mr3ejM7DbS-cBBfWNZzHfcHggNier7C2fbIG0uex3DZl8ykVxbqrli54cCdLkena94";

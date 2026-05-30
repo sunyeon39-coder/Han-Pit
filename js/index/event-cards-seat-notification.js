@@ -1,8 +1,34 @@
 import { db } from "../firebase.js";
-import { doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
+import { getEventCardIdFromRecord } from "../shared/tournament-event-instance.js";
+import {
+  buildSeatAssignedNotifyMessage,
+  resolveSeatNotificationCardLabel
+} from "../shared/seat-notification-label.js";
+import {
+  buildOptimisticSeatAlertKey,
+  markOptimisticSeatAlertShown,
+  registerOptimisticSeatAssignedAlertHandler,
+  shouldSkipSeatNotificationSnapshotAfterOptimistic,
+  shouldUseOptimisticSeatAlertOnMobile,
+  wasOptimisticSeatAlertShown
+} from "../shared/optimistic-seat-assigned-notify.js";
 import { IX } from "./state.js";
-import { render, refreshCardStatuses } from "./event-cards-render.js";
+import { scheduleIndexCardsRender } from "./index-realtime-ui.js";
+
+function cardIdForSeatNotification(data = {}) {
+  const eventId = String(data.eventId || "").trim();
+  const fromEvents = IX.events.find((e) => e.id === eventId);
+  const cardIdFromList = fromEvents
+    ? getEventCardIdFromRecord(fromEvents)
+    : "";
+  return resolveSeatNotificationCardLabel({
+    eventId,
+    eventTitle: String(data.eventTitle || "").trim(),
+    cardId: cardIdFromList
+  });
+}
 
 export function bindMySeatAssignment(user) {
   if (!user) return;
@@ -16,6 +42,7 @@ export function bindMySeatAssignment(user) {
   let seatModalAudioCtx = null;
   let seatModalAudioUnlocked = false;
   let seatModalAudioTimer = null;
+  let activeSeatNotificationId = "";
 
   function stopSeatModalSoundLoop() {
     if (seatModalAudioTimer) {
@@ -141,6 +168,7 @@ export function bindMySeatAssignment(user) {
     }
 
     overlay.classList.add("show");
+    void overlay.offsetHeight;
     void startSeatModalSoundLoop();
 
     const acknowledge = async () => {
@@ -164,8 +192,7 @@ export function bindMySeatAssignment(user) {
       okBtn.onclick = async () => {
         hideSeatAssignmentModal();
         await acknowledge();
-        render();
-        refreshCardStatuses();
+        scheduleIndexCardsRender();
       };
     }
 
@@ -177,6 +204,62 @@ export function bindMySeatAssignment(user) {
     }
   }
 
+  function showOptimisticSeatAssignmentAlert({
+    uid = "",
+    eventId = "",
+    boxId = "",
+    seatId = "",
+    seatLabel = "",
+    eventTitle = "",
+    targetUrl = ""
+  } = {}) {
+    if (!shouldUseOptimisticSeatAlertOnMobile()) return false;
+
+    const myUid = String(user.uid || "").trim();
+    const assigneeUid = String(uid || "").trim();
+    if (!myUid || !assigneeUid || assigneeUid !== myUid) return false;
+
+    const sid = String(seatId || "").trim();
+    if (!sid) return false;
+
+    const ev = String(eventId || "").trim();
+    const bx = String(boxId || "").trim();
+    const optKey = buildOptimisticSeatAlertKey({ uid: myUid, eventId: ev, boxId: bx, seatId: sid });
+    if (wasOptimisticSeatAlertShown(optKey) || activeSeatNotificationId === optKey) return false;
+
+    markOptimisticSeatAlertShown(optKey);
+    activeSeatNotificationId = optKey;
+
+    const cardLabel =
+      eventTitle ||
+      cardIdForSeatNotification({ eventId: ev, eventTitle });
+
+    IX.currentSeatAssignment = {
+      eventId: ev,
+      boxId: bx,
+      seatId: sid,
+      seatLabel: String(seatLabel || "").trim(),
+      eventTitle: cardLabel,
+      targetUrl: String(targetUrl || "").trim(),
+      acknowledged: false
+    };
+    scheduleIndexCardsRender();
+
+    void showSeatAssignmentModal({
+      message: buildSeatAssignedNotifyMessage({
+        eventId: ev,
+        eventTitle: cardLabel,
+        cardId: cardLabel,
+        seatLabel
+      }),
+      targetUrl: String(targetUrl || "").trim(),
+      uid: myUid
+    });
+    return true;
+  }
+
+  registerOptimisticSeatAssignedAlertHandler(showOptimisticSeatAssignmentAlert);
+
   const ref = doc(db, "layout_notifications", user.uid);
 
   IX.stopMySeatNotificationWatch = onSnapshot(
@@ -185,8 +268,7 @@ export function bindMySeatAssignment(user) {
       if (!snap.exists()) {
         IX.currentSeatAssignment = null;
         hideSeatAssignmentModal();
-        render();
-        refreshCardStatuses();
+        scheduleIndexCardsRender();
         return;
       }
 
@@ -194,29 +276,58 @@ export function bindMySeatAssignment(user) {
       if (data.type !== "seat_assigned") {
         IX.currentSeatAssignment = null;
         hideSeatAssignmentModal();
-        render();
-        refreshCardStatuses();
+        scheduleIndexCardsRender();
         return;
       }
+
+      const eventCardLabel = cardIdForSeatNotification(data);
 
       IX.currentSeatAssignment = {
         eventId: String(data.eventId || "").trim(),
         boxId: String(data.boxId || "").trim(),
         seatId: String(data.seatId || "").trim(),
         seatLabel: String(data.seatLabel || "").trim(),
-        eventTitle: String(data.eventTitle || "").trim(),
+        eventTitle: eventCardLabel,
         targetUrl: String(data.targetUrl || "").trim(),
         acknowledged: data.acknowledged === true
       };
 
-      render();
-      refreshCardStatuses();
+      scheduleIndexCardsRender();
 
       if (data.acknowledged !== true) {
+        const notificationKey = [
+          user.uid || "",
+          data.createdAt || "",
+          data.seatId || "",
+          data.eventId || "",
+          data.boxId || ""
+        ].join("__");
+
+        if (activeSeatNotificationId === notificationKey) return;
+
+        if (
+          shouldSkipSeatNotificationSnapshotAfterOptimistic({
+            activeNotificationId: activeSeatNotificationId,
+            uid: user.uid,
+            eventId: data.eventId,
+            boxId: data.boxId,
+            seatId: data.seatId
+          })
+        ) {
+          activeSeatNotificationId = notificationKey;
+          return;
+        }
+
+        activeSeatNotificationId = notificationKey;
+
         void showSeatAssignmentModal({
           message:
-            String(data.message || "").trim() ||
-            `${String(data.eventTitle || "").trim()} / Seat ${String(data.seatLabel || "").trim()}에 배치되었습니다.`,
+            buildSeatAssignedNotifyMessage({
+              eventId: data.eventId,
+              eventTitle: data.eventTitle,
+              cardId: eventCardLabel,
+              seatLabel: data.seatLabel
+            }),
           targetUrl: String(data.targetUrl || "").trim(),
           uid: user.uid
         });

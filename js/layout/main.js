@@ -1,9 +1,10 @@
 import { auth, db } from "../firebase.js";
 import {
   onAuthStateChanged
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 import { isAdminEmail } from "../app_config.js";
+import { canManageTournament, canUseTournamentOps } from "../shared/auth-helpers.js";
 import { escapeHtml } from "../shared/dom-utils.js";
 import { createLayoutPersistServices } from "./layout-persist.js";
 import {
@@ -11,6 +12,15 @@ import {
   applyLayoutDealerAttendancePatchesBatched
 } from "./dealer-attendance-remote.js";
 import { createLayoutSeatNotifyController } from "./seat-notify-controller.js";
+import {
+  readLoginProfileCache,
+  buildOptimisticProfileFromAuthUser,
+  isLoginProfileCacheFresh
+} from "../shared/login-profile-cache.js";
+import {
+  maybeShowOptimisticSeatAlertFromSeats,
+  registerOptimisticSeatAssignedAlertHandler
+} from "../shared/optimistic-seat-assigned-notify.js";
 import { createLayoutCanvasViewport } from "./layout-canvas-viewport.js";
 import { createLayoutCanvasBuild } from "./layout-canvas-build.js";
 import { createLayoutLocalStateReconcile } from "./layout-local-state-reconcile.js";
@@ -72,6 +82,13 @@ import {
   syncPushOfferButton
 } from "../shared/fcm-web-push.js";
 import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
+import { createLayoutRealtimeUi } from "./layout-realtime-ui.js";
+import { markPageBootLoaded } from "../shared/page-boot-shell.js";
+import {
+  bindMyUserProfileRealtime,
+  disposeMyUserProfileRealtime,
+  seedMyUserProfileCache
+} from "../shared/bind-my-user-profile-realtime.js";
 
 (() => {
   "use strict";
@@ -115,6 +132,12 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
   let layoutHealUndo;
   let layoutDealerMoves;
   let layoutUi;
+  let scheduleLayoutRealtimeUi = () => {};
+  const layoutSeatNotifyBridge = {
+    showOptimisticSeatAssignedAlert(payload) {
+      return this._impl?.showOptimisticSeatAssignedAlert?.(payload) ?? false;
+    }
+  };
 
   async function undoLastAction() {
     return layoutHealUndo.undoLastAction();
@@ -123,6 +146,15 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
   function render() {
     if (!layoutUi) return;
     layoutUi.render();
+    maybeShowOptimisticSeatAlertFromSeats(eventState.seats, {
+      user: currentUser,
+      profile: currentUserProfile,
+      eventId: EVENT_ID,
+      boxId: BOX_ID,
+      eventTitle: getCurrentEventTitle(),
+      buildTargetUrl: buildSeatTargetUrl,
+      showAlert: (payload) => layoutSeatNotifyBridge.showOptimisticSeatAssignedAlert(payload)
+    });
   }
 
   function renderPanel() {
@@ -209,6 +241,29 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
     return isAdminUser === true;
   }
 
+  function syncLayoutMobileAdminChrome() {
+    const show = canManageLayout();
+    if (mobileAddSeatBtn) mobileAddSeatBtn.style.display = show ? "" : "none";
+    if (mobileAddWaitingBtn) mobileAddWaitingBtn.style.display = show ? "" : "none";
+  }
+
+  function applyLayoutOpsPermissions(meta = {}) {
+    if (!currentUser) return;
+    const hadOps = isAdminUser === true;
+    const canOps =
+      isAdminEmail(currentUser.email || "") ||
+      canUseTournamentOps(currentUser.email, currentUserProfile, TOURNAMENT_ID);
+
+    if (!canOps && meta.fromCache && hadOps) return;
+
+    isAdminUser = canOps;
+    syncLayoutMobileAdminChrome();
+    if (layoutUi) {
+      render();
+      renderPanel();
+    }
+  }
+
   const {
     saveEventState,
     saveWaitingState,
@@ -276,6 +331,9 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
     getCurrentEventTitle,
     buildSeatTargetUrl,
     render,
+    renderPanel,
+    showOptimisticSeatAssignedAlert: (payload) =>
+      layoutSeatNotifyBridge.showOptimisticSeatAssignedAlert(payload),
     getAttendanceWaiting: () => attendanceWaitingState.items
   });
 
@@ -290,7 +348,8 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
     findSeat,
     getWaitingListForDisplay,
     clearWaitingSelectionIfSeated,
-    removeWaitingEntriesByIdentity
+    removeWaitingEntriesByIdentity,
+    isLayoutOptimisticMutationInFlight
   } = seatMutations;
 
   layoutGlobalSeatsMerge = createLayoutGlobalSeatsMerge({
@@ -304,11 +363,14 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
     eventState,
     clearSeatLocally: (seat) => layoutLocalStateReconcile.clearSeatLocally(seat),
     clearWaitingSelectionIfSeated,
+    isLayoutOptimisticMutationInFlight,
     onAfterGlobalSeatsSnapshot: (merged) => {
-      if (merged) void layoutHealUndo.healAndPersistState("global_seats_merge");
-      render();
-      layoutTimers.updateTimers();
-      renderPanel();
+      scheduleLayoutRealtimeUi({
+        canvas: true,
+        panel: true,
+        timers: true,
+        ...(merged ? { heal: "global_seats_merge" } : {})
+      });
     }
   });
 
@@ -323,17 +385,15 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
     BOX_ID,
     normalizeWaitingEntry,
     applyGlobalSeatMapToEventSeats: () => layoutGlobalSeatsMerge.applyGlobalSeatMapToEventSeats(),
+    isLayoutOptimisticMutationInFlight,
     onAfterEventRemoteSnapshot: () => {
-      render();
-      void layoutHealUndo.healAndPersistState("event_snapshot");
+      scheduleLayoutRealtimeUi({ canvas: true, heal: "event_snapshot" });
     },
     onAfterWaitingRemoteSnapshot: () => {
-      render();
-      void layoutHealUndo.healAndPersistState("waiting_snapshot");
+      scheduleLayoutRealtimeUi({ panel: true, heal: "waiting_snapshot" });
     },
     onAfterAttendanceRemoteSnapshot: () => {
-      render();
-      void layoutHealUndo.healAndPersistState("attendance_snapshot");
+      scheduleLayoutRealtimeUi({ panel: true, heal: "attendance_snapshot" });
     }
   });
 
@@ -366,11 +426,15 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
     undoLastAction,
     isSeatMine: (seat) => isSeatAssignedToCurrentUser(seat, currentUser, currentUserProfile),
     onFullRender: () => render(),
-    onPanelRefresh: () => renderPanel(),
+    onPanelRefresh: () => {
+      renderPanel();
+      layoutUi?.renderCanvasOnly?.();
+    },
     onTimersUpdate: () => layoutTimers.updateTimers()
   });
 
   const layoutCanvas = createLayoutCanvasBuild({
+    app,
     layoutViewport,
     ui,
     eventState,
@@ -383,7 +447,11 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
     clearSeat,
     touchEvent,
     isSeatMine: (seat) => isSeatAssignedToCurrentUser(seat, currentUser, currentUserProfile),
-    onFullRender: () => render()
+    onFullRender: () => render(),
+    onCanvasSync: () => {
+      if (layoutUi?.renderCanvasOnly?.()) return;
+      render();
+    }
   });
 
   layoutUi = createLayoutUiRender({
@@ -425,6 +493,10 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
     getCurrentUser: () => currentUser,
     acknowledgeNotification: acknowledgeMyNotification
   });
+  layoutSeatNotifyBridge._impl = seatNotify;
+  registerOptimisticSeatAssignedAlertHandler((payload) =>
+    seatNotify.showOptimisticSeatAssignedAlert(payload)
+  );
 
   async function setDealerStatus(uid, patch = {}) {
     await setLayoutDealerStatus(TOURNAMENT_ID, uid, patch);
@@ -476,6 +548,13 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
     timerHandle = setInterval(() => layoutTimers.updateTimers(), 1000);
   }
 
+  ({ scheduleLayoutRealtimeUi } = createLayoutRealtimeUi({
+    render,
+    renderPanel,
+    layoutTimers,
+    layoutHealUndo
+  }));
+
   const layoutBootstrap = createLayoutBootstrap({
     EVENT_ID,
     BOX_ID,
@@ -497,7 +576,8 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
     layoutRealtime,
     render,
     startTick,
-    seatNotify
+    seatNotify,
+    scheduleLayoutRealtimeUi
   });
 
   function bindLayoutPushUiOnce() {
@@ -548,6 +628,7 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
     currentUserProfile = null;
     isAdminUser = false;
 
+    disposeMyUserProfileRealtime();
     seatNotify.stopNotificationWatch();
     seatNotify.resetSeatNotificationUi();
     location.href = "./login.html";
@@ -566,10 +647,19 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
   }
 
   currentUser = user;
-  currentUserProfile = await loadMyUserProfile();
-  isAdminUser =
-    currentUserProfile?.role === "admin" ||
-    isAdminEmail(user.email || "");
+  const loginCached =
+    isLoginProfileCacheFresh(user.uid) ? readLoginProfileCache(user.uid) : null;
+  currentUserProfile = loginCached || buildOptimisticProfileFromAuthUser(user, loginCached || {});
+  seedMyUserProfileCache(currentUserProfile);
+  applyLayoutOpsPermissions();
+
+  bindMyUserProfileRealtime(user.uid, {
+    email: user.email || "",
+    onProfileChange: (profile, meta) => {
+      currentUserProfile = profile;
+      applyLayoutOpsPermissions(meta);
+    }
+  });
 
   syncPushOfferButton(enablePushBtn, user.uid);
   void refreshFcmTokenIfGranted(user.uid);
@@ -578,8 +668,17 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
   seatNotify.bindMyNotificationWatch();
 
   await layoutBootstrap.init();
+  markPageBootLoaded(app);
 
-  await seatNotify.showPendingSeatNotificationOnce();
-  render();
+  void layoutLoadMyUserProfile().then((profile) => {
+    if (!profile) return;
+    currentUserProfile = profile;
+    seedMyUserProfileCache(profile);
+    applyLayoutOpsPermissions();
+  });
+
+  requestAnimationFrame(() => {
+    void seatNotify.showPendingSeatNotificationOnce();
+  });
 });
 })();

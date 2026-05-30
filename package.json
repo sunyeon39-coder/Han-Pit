@@ -4,7 +4,7 @@
   "description": "HAN Pit 정적 사이트 (Hosting) + Firebase rules/functions",
   "scripts": {
     "verify": "node scripts/verify-js.mjs",
-    "deploy:hosting": "firebase deploy --only hosting",
+    "deploy:hosting": "node scripts/bump-app-version.mjs && firebase deploy --only hosting",
     "deploy:functions": "firebase deploy --only functions",
     "deploy:rules": "firebase deploy --only firestore:rules"
   }

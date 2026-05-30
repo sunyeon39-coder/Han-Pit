@@ -1,9 +1,11 @@
 /**
  * layout.html: layout_events / global_waiting / dealer_attendance Firestore onSnapshot 구독
  */
-import { db } from "../firebase.js";
-import { collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { attendanceDocBelongsToTournament } from "../index/dealer-attendance-refs.js";
+import { onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  dealerAttendanceQueryForTournament,
+  filterAttendanceDocsForTournament
+} from "../shared/dealer-attendance-query.js";
 
 export function createLayoutRealtimeBind(deps) {
   const {
@@ -17,6 +19,7 @@ export function createLayoutRealtimeBind(deps) {
     BOX_ID,
     normalizeWaitingEntry,
     applyGlobalSeatMapToEventSeats,
+    isLayoutOptimisticMutationInFlight,
     onAfterEventRemoteSnapshot,
     onAfterWaitingRemoteSnapshot,
     onAfterAttendanceRemoteSnapshot
@@ -27,6 +30,9 @@ export function createLayoutRealtimeBind(deps) {
       EVENT_REF,
       (snap) => {
         if (!snap.exists()) return;
+        if (typeof isLayoutOptimisticMutationInFlight === "function" && isLayoutOptimisticMutationInFlight()) {
+          return;
+        }
 
         const next = snap.data() || {};
         const nextUpdatedAt = Number(next.updatedAt || 0);
@@ -51,6 +57,9 @@ export function createLayoutRealtimeBind(deps) {
       WAITING_REF,
       (snap) => {
         if (!snap.exists()) return;
+        if (typeof isLayoutOptimisticMutationInFlight === "function" && isLayoutOptimisticMutationInFlight()) {
+          return;
+        }
 
         const nextW = snap.data() || {};
         const nextUpdatedAt = Number(nextW.updatedAt || 0);
@@ -71,15 +80,14 @@ export function createLayoutRealtimeBind(deps) {
     const tid = String(TOURNAMENT_ID || "").trim();
     if (tid && attendanceWaitingState) {
       onSnapshot(
-        collection(db, "dealer_attendance"),
+        dealerAttendanceQueryForTournament(tid),
         (snap) => {
-          attendanceWaitingState.items = snap.docs
+          attendanceWaitingState.items = filterAttendanceDocsForTournament(snap.docs, tid)
             .map((d) => {
               const data = d.data() || {};
               return { id: d.id, ...data };
             })
             .filter((d) => {
-              if (!attendanceDocBelongsToTournament(d.id, tid)) return false;
               const status = String(d.status || "").trim();
               return status === "waiting" || status === "checked_in";
             });

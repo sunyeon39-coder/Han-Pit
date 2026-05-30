@@ -2,7 +2,7 @@ import { db } from "../firebase.js";
 import {
   collection,
   getDocs
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 export async function getLayoutEventDocByEventAndBox(eventId, boxId) {
   const snap = await getDocs(collection(db, "layout_events"));

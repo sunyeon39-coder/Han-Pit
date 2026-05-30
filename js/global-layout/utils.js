@@ -9,10 +9,10 @@ import {
   serverTimestamp,
   setDoc,
   where
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { GL } from "./state.js";
 
-export { getIsAdmin } from "../shared/auth-helpers.js";
+export { getIsAdmin, canManageTournament } from "../shared/auth-helpers.js";
 export { escapeHtml } from "../shared/dom-utils.js";
 
 export function seatCanvasDigitsOnly(label, no) {
@@ -116,6 +116,31 @@ export function getGlobalSeatDocRefs(seat = {}, tournamentId = "", fallbackPairs
   }
 
   return refs;
+}
+
+/** 동일 seatId 로 남은 중복 global_seats 문서 (이벤트 이동 시 고아 문서 정리) */
+export async function listGlobalSeatDocRefsBySeatId(tournamentId = "", seatId = "") {
+  const tid = String(tournamentId || "").trim();
+  const sid = String(seatId || "").trim();
+  if (!tid || !sid) return [];
+
+  try {
+    const qs = await getDocs(
+      query(
+        collection(db, "tournaments", tid, "global_seats"),
+        where("seatId", "==", sid),
+        limit(50)
+      )
+    );
+    return qs.docs.map((d) => ({
+      ref: d.ref,
+      id: d.id,
+      data: d.data() || {}
+    }));
+  } catch (err) {
+    console.warn("listGlobalSeatDocRefsBySeatId error:", err?.code || err);
+    return [];
+  }
 }
 
 /** Firestore global_seats 문서 조회 — doc id 후보 + seatId 쿼리 */

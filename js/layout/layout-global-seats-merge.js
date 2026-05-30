@@ -1,7 +1,7 @@
 /**
  * layout.html: tournaments/.../global_seats 스냅샷을 로컬 맵에 반영하고 layout_events Seat과 병합
  */
-import { onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 export function createLayoutGlobalSeatsMerge(deps) {
   const {
@@ -15,8 +15,12 @@ export function createLayoutGlobalSeatsMerge(deps) {
     eventState,
     clearSeatLocally,
     clearWaitingSelectionIfSeated,
+    isLayoutOptimisticMutationInFlight,
     onAfterGlobalSeatsSnapshot
   } = deps;
+
+  /** Firestore 전파 전 stale global_seats 가 방금 배치한 로컬 좌석을 비우지 않도록 */
+  const RECENT_LOCAL_SEAT_MS = 12000;
 
   let globalSeatBySeatId = new Map();
   /** 현재 layout 이벤트/박스가 아닌 전역 좌석에 앉아 있는 정체성만 (대기 목록 필터용). */
@@ -117,6 +121,10 @@ export function createLayoutGlobalSeatsMerge(deps) {
           changed = true;
         }
       } else if (!isEmptyPerson(seat.person)) {
+        const localSeatedAt = Number(seat.seatedAt || 0);
+        if (localSeatedAt > 0 && Date.now() - localSeatedAt < RECENT_LOCAL_SEAT_MS) {
+          continue;
+        }
         clearSeatLocally(seat);
         changed = true;
       }
@@ -147,6 +155,12 @@ export function createLayoutGlobalSeatsMerge(deps) {
     stopGlobalSeatsSourceWatch = onSnapshot(
       GLOBAL_SEATS_REF,
       (snap) => {
+        if (
+          typeof isLayoutOptimisticMutationInFlight === "function" &&
+          isLayoutOptimisticMutationInFlight()
+        ) {
+          return;
+        }
         rebuildGlobalSeatMapFromSnapshot(snap);
         const merged = applyGlobalSeatMapToEventSeats();
         onAfterGlobalSeatsSnapshot(merged);

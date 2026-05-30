@@ -20,6 +20,7 @@ export function createLayoutPcPanelRender(deps) {
     deleteSeat,
     deleteWaiting,
     clearSeat,
+    assignWaitingToSeat,
     setWaitingBlockChecked,
     undoLastAction,
     onFullRender,
@@ -27,6 +28,95 @@ export function createLayoutPcPanelRender(deps) {
     onTimersUpdate,
     isSeatMine
   } = deps;
+
+  if (!panelContent.dataset.layoutSeatDelegated) {
+    panelContent.dataset.layoutSeatDelegated = "1";
+    panelContent.addEventListener("click", async (e) => {
+      const assignBtn = e.target.closest("[data-assign-seat]");
+      if (assignBtn) {
+        e.stopPropagation();
+        if (!ui.selectedWaitingId) return;
+        const sid = assignBtn.getAttribute("data-assign-seat");
+        if (!sid) return;
+        await assignWaitingToSeat(ui.selectedWaitingId, sid);
+        ui.selectedSeatId = null;
+        onFullRender();
+        return;
+      }
+      const delBtn = e.target.closest("[data-del]");
+      if (delBtn) {
+        e.stopPropagation();
+        deleteSeat(delBtn.getAttribute("data-del"));
+        return;
+      }
+      const clearBtn = e.target.closest("[data-clear-seat]");
+      if (clearBtn) {
+        e.stopPropagation();
+        await clearSeat(clearBtn.getAttribute("data-clear-seat"));
+        return;
+      }
+      const row = e.target.closest("[data-sid]");
+      if (!row) return;
+      if (
+        e.target.closest("[data-del]") ||
+        e.target.closest("[data-clear-seat]") ||
+        e.target.closest("[data-assign-seat]") ||
+        e.target.closest(".time-chip") ||
+        e.target.closest(".pill-inline")
+      ) {
+        return;
+      }
+      const sid = row.getAttribute("data-sid");
+      if (ui.selectedWaitingId && canManageLayout()) {
+        await assignWaitingToSeat(ui.selectedWaitingId, sid);
+        ui.selectedSeatId = null;
+        onFullRender();
+        return;
+      }
+      ui.selectedSeatId = ui.selectedSeatId === sid ? null : sid;
+      if (onPanelRefresh) onPanelRefresh();
+      else onFullRender();
+    });
+  }
+
+  if (!panelContent.dataset.layoutWaitDelegated) {
+    panelContent.dataset.layoutWaitDelegated = "1";
+    panelContent.addEventListener("click", (e) => {
+      const addBtn = e.target.closest("#addWaitBtn");
+      if (addBtn) {
+        const input = document.getElementById("waitNameInput");
+        const name = String(input?.value || "").trim();
+        if (!name) return;
+        addWaiting(name);
+        return;
+      }
+      const delBtn = e.target.closest("[data-del-w]");
+      if (delBtn) {
+        e.stopPropagation();
+        deleteWaiting(delBtn.getAttribute("data-del-w"));
+        return;
+      }
+      const row = e.target.closest("[data-wid]");
+      if (!row) return;
+      if (e.target.closest("[data-del-w]") || e.target.closest("[data-block-w]")) return;
+      const wid = row.getAttribute("data-wid");
+      ui.selectedWaitingId = ui.selectedWaitingId === wid ? null : wid;
+      ui.selectedSeatId = null;
+      onPanelRefresh();
+      onTimersUpdate();
+    });
+    panelContent.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      if (e.target?.id !== "waitNameInput") return;
+      document.getElementById("addWaitBtn")?.click();
+    });
+    panelContent.addEventListener("change", async (e) => {
+      const cb = e.target.closest("[data-block-w]");
+      if (!cb) return;
+      e.stopPropagation();
+      await setWaitingBlockChecked(cb.getAttribute("data-block-w"), cb.checked);
+    });
+  }
 
   function renderWaitPanel() {
     const selected = ui.selectedWaitingId;
@@ -37,7 +127,7 @@ export function createLayoutPcPanelRender(deps) {
       html.push(`<input id="waitNameInput" placeholder="-" />`);
       html.push(`<button id="addWaitBtn" class="btn primary" style="width:100%; margin-bottom:12px;">+ 대기 추가</button>`);
     } else {
-      html.push(`<div class="badge" style="margin-bottom:12px;">대기 관리는 admin만 가능합니다</div>`);
+      html.push(`<div class="badge" style="margin-bottom:12px;">대기 관리는 운영 권한이 필요합니다</div>`);
     }
 
     if (displayWaiting.length === 0) {
@@ -79,52 +169,26 @@ export function createLayoutPcPanelRender(deps) {
       });
     }
 
-    panelContent.innerHTML = html.join("");
-
-    if (canManageLayout()) {
-      const addBtn = document.getElementById("addWaitBtn");
-      const input = document.getElementById("waitNameInput");
-
-      addBtn?.addEventListener("click", () => {
-        const name = String(input?.value || "").trim();
-        if (!name) return;
-        addWaiting(name);
-      });
-
-      input?.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") addBtn?.click();
-      });
+    const listHtml = html.slice(2).join("");
+    const existingWaitList = panelContent.querySelector(".layout-wait-list");
+    const existingAddBtn = document.getElementById("addWaitBtn");
+    if (existingWaitList && existingAddBtn) {
+      existingWaitList.innerHTML = listHtml;
+      onTimersUpdate();
+      return;
     }
 
-    panelContent.querySelectorAll("[data-wid]").forEach((row) => {
-      row.addEventListener("click", (e) => {
-        if (e.target.closest("[data-del-w]") || e.target.closest("[data-block-w]")) return;
-        const wid = row.getAttribute("data-wid");
-        ui.selectedWaitingId = ui.selectedWaitingId === wid ? null : wid;
-        ui.selectedSeatId = null;
-        onPanelRefresh();
-        onTimersUpdate();
-      });
-    });
-
-    panelContent.querySelectorAll("[data-del-w]").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        deleteWaiting(btn.getAttribute("data-del-w"));
-      });
-    });
-
-    panelContent.querySelectorAll("[data-block-w]").forEach((cb) => {
-      cb.addEventListener("change", async (e) => {
-        e.stopPropagation();
-        const wid = cb.getAttribute("data-block-w");
-        await setWaitingBlockChecked(wid, cb.checked);
-      });
-    });
+    const waitShellStart = html.slice(0, 2).join("");
+    panelContent.innerHTML =
+      waitShellStart +
+      `<div class="layout-wait-list">${listHtml}</div>`;
   }
 
   function renderSeatPanel() {
     const waitingAll = getWaitingListForDisplay();
+    const selectedWaiting = ui.selectedWaitingId
+      ? waitingAll.find((w) => w.id === ui.selectedWaitingId) || null
+      : null;
 
     const left = [];
     const seatCount = eventState.seats.length;
@@ -159,10 +223,18 @@ export function createLayoutPcPanelRender(deps) {
       </div>
     `);
 
-    left.push(`<div class="global-list layout-seat-tab-list">`);
-
-    if (eventState.seats.length === 0) {
+    if (canManageLayout() && selectedWaiting) {
       left.push(`
+        <div class="mobile-selection-banner layout-seat-assign-banner">
+          <span class="badge sel">배치할 대기</span>
+          <strong>${escapeHtml(selectedWaiting.name)}</strong>
+        </div>
+      `);
+    }
+
+    const listRows = [];
+    if (eventState.seats.length === 0) {
+      listRows.push(`
         <div class="empty-panel">현재 이벤트(${escapeHtml(EVENT_ID)})에 Seat이 없습니다.</div>
       `);
     } else {
@@ -172,7 +244,7 @@ export function createLayoutPcPanelRender(deps) {
         const start = hasPerson ? (s.seatedAt || Date.now()) : null;
         const isSelf = hasPerson && !!isSeatMine?.(s);
 
-        left.push(`
+        listRows.push(`
             <div class="seat-manage-row ${isSel ? "selected" : ""}" data-sid="${s.id}" style="cursor:pointer;">
               <div class="seat-manage-main seat-manage-main--oneline">
                 <div class="seat-manage-namewrap seat-manage-namewrap--with-num">
@@ -201,6 +273,11 @@ export function createLayoutPcPanelRender(deps) {
                           : ``
                       }
                       <button class="pill-inline danger" type="button" data-del="${s.id}">삭제</button>
+                      ${
+                        selectedWaiting
+                          ? `<button class="pill-inline primary" type="button" data-assign-seat="${s.id}">배치</button>`
+                          : ``
+                      }
                       `
                       : ``
                   }
@@ -211,9 +288,42 @@ export function createLayoutPcPanelRender(deps) {
       });
     }
 
-    left.push(`</div>`);
+    const listHtml = listRows.join("");
+    const shellHtml = left.join("");
+    const existingSeatList = panelContent.querySelector(".layout-seat-tab-list");
+    const existingMeta = panelContent.querySelector(".global-meta");
+    if (existingSeatList && existingMeta) {
+      const metaLeft = existingMeta.querySelector(".global-meta-left");
+      if (metaLeft) {
+        metaLeft.innerHTML = `
+          <span class="hint-pill">SEAT: ${seatCount}</span>
+          <span class="hint-pill">WAIT: ${waitCount}</span>
+        `;
+      }
+      const undoBtn = existingMeta.querySelector("#globalUndoToolbarBtn");
+      if (undoBtn) undoBtn.disabled = !ui.lastUndoAction;
+      existingSeatList.innerHTML = listHtml;
+      const banner = panelContent.querySelector(".layout-seat-assign-banner");
+      if (canManageLayout() && selectedWaiting) {
+        const bannerHtml = `
+        <div class="mobile-selection-banner layout-seat-assign-banner">
+          <span class="badge sel">배치할 대기</span>
+          <strong>${escapeHtml(selectedWaiting.name)}</strong>
+        </div>`;
+        if (banner) banner.outerHTML = bannerHtml;
+        else existingSeatList.insertAdjacentHTML("beforebegin", bannerHtml);
+      } else if (banner) {
+        banner.remove();
+      }
+      const orderBtn = document.getElementById("sortSeatOrderBtn");
+      const timeBtn = document.getElementById("sortSeatTimeBtn");
+      orderBtn?.classList.toggle("active", ui.seatSortMode === "seat");
+      timeBtn?.classList.toggle("active", ui.seatSortMode === "time");
+      onTimersUpdate();
+      return;
+    }
 
-    panelContent.innerHTML = left.join("");
+    panelContent.innerHTML = `${shellHtml}<div class="global-list layout-seat-tab-list">${listHtml}</div>`;
 
     const globalUndoToolbarBtn = document.getElementById("globalUndoToolbarBtn");
     if (globalUndoToolbarBtn) {
@@ -247,38 +357,6 @@ export function createLayoutPcPanelRender(deps) {
       };
     }
 
-    panelContent.querySelectorAll("[data-sid]").forEach((el) => {
-      el.addEventListener("click", (e) => {
-        if (
-          e.target &&
-          (e.target.closest("[data-del]") ||
-            e.target.closest("[data-clear-seat]") ||
-            e.target.closest(".time-chip") ||
-            e.target.closest(".pill-inline"))
-        ) {
-          return;
-        }
-
-        const sid = el.getAttribute("data-sid");
-        ui.selectedSeatId = ui.selectedSeatId === sid ? null : sid;
-        ui.selectedWaitingId = null;
-        onFullRender();
-      });
-    });
-
-    panelContent.querySelectorAll("[data-del]").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        deleteSeat(btn.getAttribute("data-del"));
-      });
-    });
-
-    panelContent.querySelectorAll("[data-clear-seat]").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        await clearSeat(btn.getAttribute("data-clear-seat"));
-      });
-    });
   }
 
   return { renderWaitPanel, renderSeatPanel };
