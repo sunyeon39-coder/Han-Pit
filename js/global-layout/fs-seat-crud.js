@@ -42,6 +42,7 @@ import {
 import { syncSeatAddEventPickerFromHidden } from "./seat-add-event-picker.js";
 import { writePersistedSeatAddForm } from "./seat-add-form-persist.js";
 import { pushGlobalUndo } from "./undo-stack.js";
+import { flushOptimisticGlobalLayoutUi } from "./optimistic-seat-mutation.js";
 
 /** 멀티 선택된 좌석을 같은 y(가로 일렬) 또는 같은 x(세로 일렬)로 맞춥니다. */
 export async function alignSelectedGlobalSeats(axis = "") {
@@ -572,6 +573,16 @@ export async function addGlobalSeat() {
   });
 }
 
+/** 모바일 Seat 추가 모달 등 — DOM 없이 카드·Box 지정 */
+export async function addGlobalSeatFromValues({ label = "", eventId = "", boxId = "" } = {}) {
+  await addGlobalSeatCore({
+    label,
+    eventId,
+    boxId,
+    clearFormInputs: false
+  });
+}
+
 async function addGlobalSeatCore({ label = "", eventId = "", boxId = "", clearFormInputs = false } = {}) {
   const lid = String(label || "").trim();
   const eid = String(eventId || "").trim();
@@ -617,36 +628,6 @@ async function addGlobalSeatCore({ label = "", eventId = "", boxId = "", clearFo
   const order = GL.globalSeats.length + 1;
   const docId = buildGlobalSeatDocId(eid, bid, seatId);
 
-  await setDoc(
-    doc(db, "tournaments", GL.tournamentId, "global_seats", docId),
-    {
-      seatId,
-      label: lid,
-      no: order,
-      order,
-      x: 0,
-      y: 0,
-      person: "비어있음",
-      personUid: "",
-      personEmail: "",
-      seatedAt: null,
-      status: "empty",
-      tournamentId: GL.tournamentId,
-      mappedEventId: eid,
-      currentEventId: eid,
-      boxId: bid,
-      sourceLayoutDocId: `${eid}__${bid}`,
-      updatedAt: now,
-      updatedAtServer: serverTimestamp()
-    },
-    { merge: true }
-  );
-
-  await syncLayoutProjection(eid, bid);
-  sessionStorage.setItem("eventId", eid);
-  sessionStorage.setItem("boxId", bid);
-  pushGlobalUndo({ kind: "add_seat", seatId, eventId: eid, boxId: bid });
-
   const optimistic = {
     seatId,
     label: lid,
@@ -669,8 +650,44 @@ async function addGlobalSeatCore({ label = "", eventId = "", boxId = "", clearFo
   const existingIdx = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === seatId);
   if (existingIdx >= 0) GL.globalSeats[existingIdx] = { ...GL.globalSeats[existingIdx], ...optimistic };
   else GL.globalSeats.push(optimistic);
-  renderSeats(GL.globalSeats);
-  if (GL.activeTab === "seat") renderSeatPanel();
+  flushOptimisticGlobalLayoutUi();
+
+  try {
+    await setDoc(
+      doc(db, "tournaments", GL.tournamentId, "global_seats", docId),
+      {
+        seatId,
+        label: lid,
+        no: order,
+        order,
+        x: 0,
+        y: 0,
+        person: "비어있음",
+        personUid: "",
+        personEmail: "",
+        seatedAt: null,
+        status: "empty",
+        tournamentId: GL.tournamentId,
+        mappedEventId: eid,
+        currentEventId: eid,
+        boxId: bid,
+        sourceLayoutDocId: `${eid}__${bid}`,
+        updatedAt: now,
+        updatedAtServer: serverTimestamp()
+      },
+      { merge: true }
+    );
+
+    await syncLayoutProjection(eid, bid);
+    sessionStorage.setItem("eventId", eid);
+    sessionStorage.setItem("boxId", bid);
+    pushGlobalUndo({ kind: "add_seat", seatId, eventId: eid, boxId: bid });
+  } catch (err) {
+    const rollbackIdx = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === seatId);
+    if (rollbackIdx >= 0) GL.globalSeats.splice(rollbackIdx, 1);
+    flushOptimisticGlobalLayoutUi();
+    throw err;
+  }
 
   if (clearFormInputs) {
     const seatLabelInput = document.getElementById("seatLabelInput");

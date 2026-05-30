@@ -8,7 +8,7 @@
     document.documentElement.style.backgroundColor="#060c17";
     document.documentElement.style.colorScheme="dark";
   }catch(e){}
-  var BUILD="20260530121629";
+  var BUILD="20260530122816";
   var KEY="hanPitAppVersion";
   var meta=document.querySelector('meta[name="han-pit-build"]');
   var pageBuild=meta?String(meta.getAttribute("content")||"").trim():"";
@@ -134,7 +134,7 @@
 })();
 </script>
   <!-- /han-pit-asset-fix -->
-  <meta name="han-pit-build" content="20260530121629" />
+  <meta name="han-pit-build" content="20260530122816" />
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Han Pit - Global Layout</title>
@@ -144,8 +144,8 @@
   <meta name="theme-color" content="#111832" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <link rel="stylesheet" href="./css/layout.css?v=20260530121629" />
-  <link rel="stylesheet" href="./css/global-layout.css?v=20260530121629" />
+  <link rel="stylesheet" href="./css/layout.css?v=20260530122816" />
+  <link rel="stylesheet" href="./css/global-layout.css?v=20260530122816" />
 </head>
 <body class="page-global-layout">
   <header class="topbar">
@@ -267,6 +267,71 @@
     </div>
   </div>
 
-  <script type="module" src="./js/global-layout.js?v=20260530121629"></script>
+  <div id="globalMobileSeatAddModal" class="global-seat-edit-modal" aria-hidden="true">
+    <div class="global-seat-edit-modal__backdrop" data-close-mobile-seat-add aria-hidden="true"></div>
+    <div
+      class="global-seat-edit-modal__card"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="globalMobileSeatAddTitle"
+    >
+      <h2 id="globalMobileSeatAddTitle" class="global-seat-edit-modal__title">Seat 추가</h2>
+      <p class="global-seat-edit-modal__hint">
+        <strong>카드 ID</strong>는 index「카드 관리」에 보이는 값입니다. <strong>Box ID</strong>는 layout 주소창의
+        <code>boxId</code>와 같아야 합니다.
+      </p>
+      <div class="global-seat-edit-modal__fields">
+        <label class="global-seat-edit-modal__label" for="globalMobileSeatAddLabel">Seat 라벨</label>
+        <input
+          id="globalMobileSeatAddLabel"
+          class="global-seat-edit-modal__input"
+          type="text"
+          autocomplete="off"
+          maxlength="16"
+          placeholder="예: 1, A1"
+        />
+        <label class="global-seat-edit-modal__label" id="globalMobileSeatAddEventLabel" for="globalMobileSeatAddEventTrigger">카드 ID</label>
+        <div class="global-seat-edit-modal__eventpick" id="globalMobileSeatAddEventPick">
+          <input type="hidden" id="globalMobileSeatAddEventId" value="" autocomplete="off" />
+          <button
+            type="button"
+            class="global-seat-edit-modal__select-trigger"
+            id="globalMobileSeatAddEventTrigger"
+            aria-haspopup="listbox"
+            aria-expanded="false"
+            aria-labelledby="globalMobileSeatAddEventLabel"
+            aria-label="카드 ID 선택"
+          >
+            <span
+              class="global-seat-edit-modal__select-trigger-text global-seat-edit-modal__select-trigger-text--mono"
+              id="globalMobileSeatAddEventTriggerText"
+              aria-hidden="true"
+            >카드 선택 ▾</span>
+          </button>
+          <ul class="global-seat-edit-modal__select-list" id="globalMobileSeatAddEventList" role="listbox" hidden></ul>
+        </div>
+        <label class="global-seat-edit-modal__label" for="globalMobileSeatAddBoxId">Box ID</label>
+        <input
+          id="globalMobileSeatAddBoxId"
+          class="global-seat-edit-modal__input global-seat-edit-modal__input--mono"
+          type="text"
+          autocomplete="off"
+          placeholder="-"
+        />
+      </div>
+      <div class="global-seat-edit-modal__actions">
+        <button type="button" class="global-seat-edit-modal__btn" data-close-mobile-seat-add>취소</button>
+        <button
+          type="button"
+          class="global-seat-edit-modal__btn global-seat-edit-modal__btn--primary"
+          id="globalMobileSeatAddSubmit"
+        >
+          추가
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./js/global-layout.js?v=20260530122816"></script>
 </body>
 </html>

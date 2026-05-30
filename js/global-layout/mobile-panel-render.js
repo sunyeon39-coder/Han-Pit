@@ -27,11 +27,21 @@ import {
   setWaitingRowSelection
 } from "./waiting-picks.js";
 import { getEventBoxPaletteClass, buildEventBoxPaletteMap } from "./event-box-palette.js";
+import { getEventCardIdFromRecord } from "../shared/tournament-event-instance.js";
+import { resolveSeatEventBox } from "./utils.js";
+import { openGlobalMobileSeatAddModal } from "./mobile-seat-add-modal.js";
 import {
   updateGlobalLayoutMetaCounts,
   updateGlobalLayoutWaitingMeta,
   syncGlobalLayoutMetaPills
 } from "./meta-ui.js";
+
+function formatMobileSeatEventBoxMeta(seat = {}) {
+  const { eventId, boxId } = resolveSeatEventBox(seat);
+  if (!eventId && !boxId) return "";
+  const card = getEventCardIdFromRecord({ id: eventId }) || eventId;
+  return `카드 ${card} · Box ${boxId}`;
+}
 
 let firestoreOpsPromise = null;
 function loadFirestoreOps() {
@@ -178,12 +188,14 @@ export function renderGlobalLayoutMobile() {
       const assignLabel = selectedWaiting
         ? escapeHtml(`${selectedWaiting.name || ""} 이 Seat에 배치`)
         : "";
+      const ebMeta = formatMobileSeatEventBoxMeta(s);
       seatCard.innerHTML += `
         <div class="mobile-seat-row compact ${paletteClass} ${isSel ? "selected" : ""}" data-mobile-seat="${escapeHtml(seatId)}">
           <div class="mobile-seat-mainline">
             <div class="mobile-seat-name-cluster">
               <span class="mobile-seat-num">${escapeHtml(seatCanvasDigitsOnly(s.label, s.no))}</span>
               <div class="mobile-seat-person ${occupied ? "" : "is-empty"} ${isSelf ? "is-self" : ""}">${escapeHtml(name)}</div>
+              ${ebMeta ? `<div class="mobile-seat-eb-meta">${escapeHtml(ebMeta)}</div>` : ""}
             </div>
             <div class="mobile-seat-inline-actions">
               ${
@@ -299,16 +311,8 @@ export function renderGlobalLayoutMobile() {
 
   const fullRender = () => renderGlobalLayoutMobile();
 
-  document.getElementById("globalMobileAddSeatInline")?.addEventListener("click", async () => {
-    const label = prompt("Seat 라벨", "");
-    if (label === null) return;
-    try {
-      const { addGlobalSeatQuick } = await loadFirestoreOps();
-      await addGlobalSeatQuick(label);
-    } catch (err) {
-      console.error("addGlobalSeatQuick error:", err);
-      alert("Seat 추가에 실패했습니다.");
-    }
+  document.getElementById("globalMobileAddSeatInline")?.addEventListener("click", () => {
+    void openGlobalMobileSeatAddModal();
   });
 
   document.getElementById("globalMobileAddWaitingInline")?.addEventListener("click", async () => {

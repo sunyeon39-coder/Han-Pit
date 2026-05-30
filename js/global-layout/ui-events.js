@@ -19,7 +19,6 @@ import {
   clearSeat,
   deleteGlobalSeat,
   addGlobalSeat,
-  addGlobalSeatQuick,
   addManualWaiting,
   addManualWaitingByName,
   removeManualWaiting,
@@ -27,6 +26,10 @@ import {
   undoLastGlobalAction
 } from "./firestore-ops.js";
 import { initGlobalSeatEditModal, openSeatEditModal } from "./seat-edit-modal.js";
+import {
+  initGlobalMobileSeatAddModal,
+  openGlobalMobileSeatAddModal
+} from "./mobile-seat-add-modal.js";
 import { setWaitingRowSelection } from "./waiting-picks.js";
 import { refreshGlobalLayoutAlignButtonState } from "./canvas-viewport.js";
 import { fmtElapsed, isEmptyPerson, timerClass } from "./utils.js";
@@ -48,16 +51,8 @@ function findSeatBoxEl(innerRoot, seatId) {
   );
 }
 
-async function runGlobalMobileAddSeat() {
-  GL.mobileSheet?.classList.remove("open");
-  const label = prompt("Seat 라벨", "");
-  if (label === null) return;
-  try {
-    await addGlobalSeatQuick(label);
-  } catch (err) {
-    console.error("addGlobalSeatQuick error:", err);
-    alert("Seat 추가에 실패했습니다.");
-  }
+function runGlobalMobileAddSeat() {
+  void openGlobalMobileSeatAddModal();
 }
 
 async function runGlobalMobileAddWaiting() {
@@ -97,6 +92,7 @@ function applyCanvasSeatSelectionClick(seatId, multi) {
 
 export function bindGlobalLayoutEventHandlers() {
   initGlobalSeatEditModal();
+  initGlobalMobileSeatAddModal();
 
   GL.backBtn?.addEventListener("click", () => {
     location.href = `./index.html?tournamentId=${encodeURIComponent(GL.tournamentId)}`;

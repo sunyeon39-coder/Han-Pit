@@ -23,5 +23,6 @@ export {
   deleteGlobalSeat,
   applyGlobalSeatRename,
   addGlobalSeat,
-  addGlobalSeatQuick
+  addGlobalSeatQuick,
+  addGlobalSeatFromValues
 } from "./fs-seat-crud.js";

@@ -641,6 +641,15 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     flex: 1 1 0;
   }
 
+  body.page-global-layout .global-layout-mobile .mobile-seat-eb-meta {
+    margin-top: 2px;
+    font-size: 11px;
+    line-height: 1.25;
+    color: rgba(255, 255, 255, 0.52);
+    font-variant-numeric: tabular-nums;
+    word-break: break-all;
+  }
+
   body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-person {
     white-space: nowrap;
     overflow: hidden;
