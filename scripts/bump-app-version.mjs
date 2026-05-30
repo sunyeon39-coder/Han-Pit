@@ -1,7 +1,12 @@
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildInlineAppUpdateSnippet } from "./inline-app-update-snippet.mjs";
+import {
+  buildInlineAppUpdateSnippet,
+  CRITICAL_SHELL_STYLE_TAG
+} from "./inline-app-update-snippet.mjs";
+
+const CRITICAL_SHELL_MARKER = "<!-- han-pit-critical-shell -->";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const v = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
@@ -32,6 +37,22 @@ for (const name of htmlFiles) {
     html = html.replace(
       /<head([^>]*)>/i,
       `<head$1>\n  ${INLINE_MARKER_START}\n${inlineSnippet}\n  ${INLINE_MARKER_END}`
+    );
+  }
+  if (html.includes(CRITICAL_SHELL_MARKER)) {
+    html = html.replace(
+      new RegExp(`${CRITICAL_SHELL_MARKER}[\\s\\S]*?<!-- /han-pit-critical-shell -->`, "m"),
+      `${CRITICAL_SHELL_MARKER}\n  ${CRITICAL_SHELL_STYLE_TAG}\n  <!-- /han-pit-critical-shell -->`
+    );
+  } else if (html.includes(INLINE_MARKER_END)) {
+    html = html.replace(
+      INLINE_MARKER_END,
+      `${INLINE_MARKER_END}\n  ${CRITICAL_SHELL_MARKER}\n  ${CRITICAL_SHELL_STYLE_TAG}\n  <!-- /han-pit-critical-shell -->`
+    );
+  } else if (/<head[^>]*>/i.test(html)) {
+    html = html.replace(
+      /<head([^>]*)>/i,
+      `<head$1>\n  ${CRITICAL_SHELL_MARKER}\n  ${CRITICAL_SHELL_STYLE_TAG}\n  <!-- /han-pit-critical-shell -->`
     );
   }
   if (html.includes('name="han-pit-build"')) {

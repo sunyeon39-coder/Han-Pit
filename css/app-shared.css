@@ -83,12 +83,18 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  background-color: #060c17;
+  color-scheme: dark;
 }
 
 html,
 body {
   font-family: var(--font-app);
   letter-spacing: -0.02em;
+}
+
+body {
+  background-color: #060c17;
 }
 
 *,
@@ -148,6 +154,14 @@ a.app-mark {
   gap: 14px;
   min-height: min(42vh, 320px);
   padding: 24px;
+  background: #060c17;
+}
+
+.page-boot-loading--fullscreen,
+#indexRoot > .page-boot-loading,
+#app > .page-boot-loading,
+.event-list > .page-boot-loading {
+  min-height: min(100dvh, 100vh);
 }
 
 .page-boot-spinner {

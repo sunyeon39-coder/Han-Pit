@@ -12,6 +12,7 @@ import {
 import { getIsAdminUser } from "./hub-helpers.js";
 import { closeModal, openModal } from "../shared/dom-utils.js";
 import { isAppDebugEnabled } from "../shared/app-debug.js";
+import { ensureDocumentShellBackground } from "../shared/page-boot-shell.js";
 
 import { initHubRefs, hubRefs } from "./hub-dom-refs.js";
 import { showHubListLoading } from "./hub-tournament-list.js";
@@ -70,6 +71,7 @@ import {
 import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
 
 initHubRefs();
+ensureDocumentShellBackground();
 hubState.tournamentsBootstrapping = true;
 hubState.tournamentsListReady = false;
 if (seedHubTournamentsFromSessionCache()) {

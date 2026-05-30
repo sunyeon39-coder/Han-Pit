@@ -5,6 +5,7 @@
  */
 import { escapeHtml } from "../shared/dom-utils.js";
 import { getIsAdminUser, hasEventAccess, routeToTournament } from "./hub-helpers.js";
+import { prefetchPageOnce } from "../shared/page-prefetch.js";
 import { hubRefs } from "./hub-dom-refs.js";
 import { hubState } from "./hub-state.js";
 
@@ -122,6 +123,20 @@ export function renderTournaments(tournaments, userProfile, user) {
     `;
 
     if (enabled) {
+      const prefetchIndex = () => {
+        try {
+          const u = new URL("./index.html", location.href);
+          u.searchParams.set("tournamentId", tournament.id);
+          prefetchPageOnce(u.href);
+        } catch {
+          prefetchPageOnce(
+            `./index.html?tournamentId=${encodeURIComponent(tournament.id)}`
+          );
+        }
+      };
+      card.addEventListener("pointerenter", prefetchIndex, { passive: true });
+      card.addEventListener("focusin", prefetchIndex, { passive: true });
+
       card.addEventListener("click", (e) => {
         e.preventDefault();
         routeToTournament(tournament.id);

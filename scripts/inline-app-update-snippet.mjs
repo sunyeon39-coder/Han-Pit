@@ -1,7 +1,14 @@
 /** bump-app-version.mjs 가 HTML <head> 에 삽입하는 인라인 스니펫 (모듈 로드 전 실행) */
+
+export const CRITICAL_SHELL_STYLE_TAG = `<style id="han-pit-critical-shell">html{color-scheme:dark;background:#060c17}body{margin:0;min-height:100%;background:#060c17;color:#eef2ff}.page-boot-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;min-height:100dvh;min-height:100vh;padding:24px;background:#060c17}.page-boot-spinner{width:32px;height:32px;border-radius:50%;border:3px solid rgba(255,255,255,.12);border-top-color:rgba(77,163,255,.9);animation:han-pit-boot-spin .75s linear infinite}@keyframes han-pit-boot-spin{to{transform:rotate(360deg)}}.page-boot-text{margin:0;font-size:14px;color:rgba(255,255,255,.62)}.layout-canvas-viewport,.canvas.pc-canvas{background:#0a1022}</style>`;
+
 export function buildInlineAppUpdateSnippet(v) {
   return `<script id="han-pit-inline-update">
 (function(){
+  try{
+    document.documentElement.style.backgroundColor="#060c17";
+    document.documentElement.style.colorScheme="dark";
+  }catch(e){}
   var BUILD="${v}";
   var KEY="hanPitAppVersion";
   var meta=document.querySelector('meta[name="han-pit-build"]');

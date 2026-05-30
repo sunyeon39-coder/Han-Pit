@@ -1,8 +1,17 @@
+html {
+  background-color: #060c17;
+  color-scheme: dark;
+}
+
 html,
 body {
   margin: 0;
   min-height: 100%;
   font-family: var(--font-app);
+}
+
+body {
+  background-color: #060c17;
 }
 
 body {

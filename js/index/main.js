@@ -70,7 +70,11 @@ import {
   syncPushOfferButton
 } from "../shared/fcm-web-push.js";
 import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
-import { markPageBootLoaded } from "../shared/page-boot-shell.js";
+import {
+  ensureDocumentShellBackground,
+  markPageBootLoaded
+} from "../shared/page-boot-shell.js";
+import { prefetchPageOnce } from "../shared/page-prefetch.js";
 import {
   bindMyUserProfileRealtime,
   disposeMyUserProfileRealtime,
@@ -84,6 +88,21 @@ import {
 
 const flushAppBadgeIfVisible = bindAppBadgeClearOnForeground(db, auth);
 void ensureForegroundFcmBadgeListener();
+ensureDocumentShellBackground();
+
+function buildGlobalLayoutHref() {
+  const tournamentId = getTournamentId();
+  if (!tournamentId) return "";
+  const q = new URLSearchParams();
+  q.set("tournamentId", tournamentId);
+  const eid = String(IX.eventCardId?.value || "").trim();
+  const bid = String(IX.eventCardBoxId?.value || "").trim();
+  if (eid && bid) {
+    q.set("eventId", eid);
+    q.set("boxId", bid);
+  }
+  return `./global-layout.html?${q.toString()}`;
+}
 
 let indexHadOps = false;
 
@@ -254,6 +273,13 @@ function wireIndexPageControls() {
     location.href = resolveRelativePage("hub.html");
   });
 
+  const prefetchGlobalLayout = () => {
+    const href = buildGlobalLayoutHref();
+    if (href) prefetchPageOnce(href);
+  };
+  IX.globalLayoutBtn?.addEventListener("pointerenter", prefetchGlobalLayout, { passive: true });
+  IX.globalLayoutBtn?.addEventListener("focus", prefetchGlobalLayout, { passive: true });
+
   IX.globalLayoutBtn?.addEventListener("click", () => {
     const tournamentId = getTournamentId();
     if (!tournamentId) {
@@ -263,15 +289,12 @@ function wireIndexPageControls() {
     sessionStorage.setItem("tournamentId", tournamentId);
     const eid = String(IX.eventCardId?.value || "").trim();
     const bid = String(IX.eventCardBoxId?.value || "").trim();
-    const q = new URLSearchParams();
-    q.set("tournamentId", tournamentId);
     if (eid && bid) {
       sessionStorage.setItem("eventId", eid);
       sessionStorage.setItem("boxId", bid);
-      q.set("eventId", eid);
-      q.set("boxId", bid);
     }
-    location.href = `./global-layout.html?${q.toString()}`;
+    const href = buildGlobalLayoutHref();
+    if (href) location.href = href;
   });
 
   IX.eventAdminBtn?.addEventListener("click", () => {

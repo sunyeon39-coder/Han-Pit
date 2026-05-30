@@ -39,7 +39,10 @@ import {
 } from "../shared/fcm-web-push.js";
 import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
 import { normalizeAndPersistUserRole } from "../login/user-sync.js";
-import { markPageBootLoaded } from "../shared/page-boot-shell.js";
+import {
+  ensureDocumentShellBackground,
+  markPageBootLoaded
+} from "../shared/page-boot-shell.js";
 import {
   bindMyUserProfileRealtime,
   disposeMyUserProfileRealtime,
@@ -99,8 +102,12 @@ function bindGlobalLayoutPushUiOnce() {
 }
 
 export function startGlobalLayoutApp() {
+  ensureDocumentShellBackground();
   initGlFromUrl();
   initGlDomRefs();
+  if (GL.app && GL.app.dataset.pageBootLoaded !== "1") {
+    renderSeats([]);
+  }
   initGlobalLayoutZoomBarDom();
   wireGlobalLayoutZoomBarOnce();
   bindGlobalLayoutPushUiOnce();
