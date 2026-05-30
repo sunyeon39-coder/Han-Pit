@@ -1,20 +1,28 @@
 import { escapeHtml, openModal, closeModal } from "../shared/dom-utils.js";
-import { hasDirectEventAllowFor, isAdminEmail } from "../shared/auth-helpers.js";
+import {
+  hasDirectEventAllowFor,
+  isAdminEmail,
+  isSystemAdminEmail,
+  sanitizeAllowedEvents
+} from "../shared/auth-helpers.js";
 import { hasEventAccess, sortUsersForAdminList } from "./hub-helpers.js";
 import { hubState } from "./hub-state.js";
 import { hubRefs } from "./hub-dom-refs.js";
 
 function userRoleMetaForEvent(user, eventId = "") {
-  if (isAdminEmail(user?.email)) {
+  if (isSystemAdminEmail(user?.email)) {
     return { label: "시스템 admin", ok: true };
   }
-  if (String(user?.role || "").trim().toLowerCase() === "admin") {
-    return { label: "운영 admin", ok: true };
-  }
-  if (hasDirectEventAllowFor(user?.allowedEvents, eventId)) {
+  const rawAllowed = sanitizeAllowedEvents(user?._rawAllowedEvents ?? user?.allowedEvents);
+  if (hasDirectEventAllowFor(rawAllowed, eventId)) {
     return { label: "운영 admin", ok: true };
   }
   return { label: "user", ok: false };
+}
+
+function isDirectAllowedForEvent(user, eventId = "") {
+  const rawAllowed = sanitizeAllowedEvents(user?._rawAllowedEvents ?? user?.allowedEvents);
+  return hasDirectEventAllowFor(rawAllowed, eventId);
 }
 
 export function getSelectedTournament() {
@@ -183,7 +191,7 @@ export function renderUserManageModal(uid) {
 
   hubState.selectedManageUid = uid;
 
-  const directAllowed = user.allowedEvents?.[selectedEventId] === true;
+  const directAllowed = isDirectAllowedForEvent(user, selectedEventId);
   const roleMeta = userRoleMetaForEvent(user, selectedEventId);
   const codeMatched =
     !!user.accessCode &&
@@ -265,7 +273,7 @@ export function renderAdminUserList() {
 
   adminUserList.innerHTML = users
     .map((user) => {
-      const directAllowed = user.allowedEvents?.[selectedEventId] === true;
+      const directAllowed = isDirectAllowedForEvent(user, selectedEventId);
       const roleMeta = userRoleMetaForEvent(user, selectedEventId);
       const codeMatched =
         !!user.accessCode &&

@@ -40,9 +40,9 @@ export function hasAnyDirectEventAllow(allowedEvents = {}) {
   return Object.values(sanitizeAllowedEvents(allowedEvents)).some((v) => v === true);
 }
 
-/** Firestore users 문서(allowedEvents + opsTournamentIds) 기준 직접 허용 여부 */
+/** Firestore users.allowedEvents 기준 직접 허용 (opsTournamentIds 단독은 인정하지 않음) */
 export function hasPersistedDirectOpsAllow(profile = {}) {
-  return hasAnyDirectEventAllow(opsAllowedEventsFromProfile(profile));
+  return hasAnyDirectEventAllow(sanitizeAllowedEvents(profile?.allowedEvents));
 }
 
 /** 직접 허용 유저 Firestore 동기화용 — role·allowedEvents·opsTournamentIds */
@@ -73,13 +73,19 @@ export function hasDirectEventAllowFor(allowedEvents = {}, eventId = "") {
   );
 }
 
+/** 직접 허용 변경 후 Firestore role — 시스템 admin / 허용 있음 → admin, 없음 → user */
+export function resolveDirectOpsRole(email = "", allowedEvents = {}) {
+  if (isSystemAdminEmail(email)) return "admin";
+  if (hasAnyDirectEventAllow(allowedEvents)) return "admin";
+  return "user";
+}
+
 /** Firestore users 문서 role — 시스템 admin 또는 직접 허용(admin) */
 export function resolveStoredUserRole(email = "", profile = {}) {
   const mail = String(email || profile?.email || "")
     .trim()
     .toLowerCase();
   if (isAdminEmail(mail)) return "admin";
-  if (String(profile?.role || "").trim().toLowerCase() === "admin") return "admin";
   if (hasAnyDirectEventAllow(opsAllowedEventsFromProfile(profile))) return "admin";
   return "user";
 }
@@ -87,16 +93,12 @@ export function resolveStoredUserRole(email = "", profile = {}) {
 export function isOpsAdminProfile(profile = {}, email = "") {
   if (!profile || typeof profile !== "object") return false;
   if (isSystemAdminEmail(email || profile?.email)) return true;
-  if (String(profile?.role || "").trim().toLowerCase() === "admin") return true;
   return hasAnyDirectEventAllow(opsAllowedEventsFromProfile(profile));
 }
 
 /** 대회별 배치·통합배치도 운영 권한 */
 export function canManageTournament(email = "", profile = {}, tournamentId = "") {
-  if (!profile || typeof profile !== "object") profile = {};
-  if (isSystemAdminEmail(email || profile?.email)) return true;
-  if (String(profile.role || "").trim().toLowerCase() === "admin") return true;
-  return hasDirectEventAllowFor(opsAllowedEventsFromProfile(profile), tournamentId);
+  return canUseTournamentOps(email, profile, tournamentId);
 }
 
 export function normalizeUserProfile(profile = {}, email = "") {
@@ -157,7 +159,6 @@ export function canManageTournamentOps(email = "", profile = {}, tournamentId = 
 export function canUseTournamentOps(email = "", profile = {}, tournamentId = "") {
   if (!profile || typeof profile !== "object") profile = {};
   if (isSystemAdminEmail(email || profile?.email)) return true;
-  if (String(profile.role || "").trim().toLowerCase() === "admin") return true;
   return hasDirectEventAllowFor(opsAllowedEventsFromProfile(profile), tournamentId);
 }
 

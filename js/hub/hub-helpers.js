@@ -74,12 +74,7 @@ export function normalizeUserDoc(d) {
 }
 
 export function userRecordHasDirectOpsAllow(user = {}) {
-  return hasAnyDirectEventAllow(
-    opsAllowedEventsFromProfile({
-      allowedEvents: user._rawAllowedEvents ?? user.allowedEvents,
-      opsTournamentIds: user._rawOpsTournamentIds
-    })
-  );
+  return hasAnyDirectEventAllow(sanitizeAllowedEvents(user._rawAllowedEvents ?? {}));
 }
 
 export function sortTournaments(list) {

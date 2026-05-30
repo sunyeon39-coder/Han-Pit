@@ -13,6 +13,7 @@ import {
   buildDirectOpsPersistPatch,
   mergeOpsProfile,
   normalizeUserProfile,
+  resolveDirectOpsRole,
   sanitizeAllowedEvents
 } from "../shared/auth-helpers.js";
 import { loadUserProfileFresh } from "../shared/load-user-profile.js";
@@ -164,6 +165,53 @@ async function reconcileDirectAllowOpsOnServer(users = []) {
   return { fixed };
 }
 
+/** allowedEvents 없는데 opsTournamentIds·role admin 만 남은 문서 정리 */
+async function pruneStaleOpsTournamentIdsOnServer(users = []) {
+  if (!getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) {
+    return { fixed: 0 };
+  }
+
+  let fixed = 0;
+  for (const u of users || []) {
+    if (!u?.uid || isSystemAdminEmail(u.email)) continue;
+
+    const rawAllowed = sanitizeAllowedEvents(u._rawAllowedEvents ?? {});
+    const expectedOps = Object.keys(rawAllowed);
+    const rawOps = Array.isArray(u._rawOpsTournamentIds)
+      ? u._rawOpsTournamentIds.map((id) => String(id || "").trim()).filter(Boolean)
+      : [];
+    const roleWant = resolveDirectOpsRole(u.email, rawAllowed);
+    const rawRole = String(u._rawRole || u.role || "")
+      .trim()
+      .toLowerCase();
+
+    const opsStale =
+      rawOps.length !== expectedOps.length ||
+      expectedOps.some((id) => !rawOps.includes(id)) ||
+      rawOps.some((id) => !rawAllowed[id]);
+    const roleStale = rawRole !== roleWant;
+
+    if (!opsStale && !roleStale) continue;
+
+    try {
+      await updateDoc(doc(db, "users", u.uid), {
+        allowedEvents: rawAllowed,
+        opsTournamentIds: expectedOps,
+        role: roleWant
+      });
+      u.allowedEvents = rawAllowed;
+      u._rawAllowedEvents = { ...rawAllowed };
+      u._rawOpsTournamentIds = expectedOps;
+      u.role = roleWant;
+      u._rawRole = roleWant;
+      fixed += 1;
+    } catch (err) {
+      console.warn("[pruneStaleOpsTournamentIdsOnServer]", u.uid, err?.code || err);
+    }
+  }
+  return { fixed };
+}
+
 function healStaleUserRolesFromCache(users = []) {
   for (const u of users) {
     if (!u?.uid) continue;
@@ -293,14 +341,25 @@ export async function loadAllUsers() {
     healStaleAllowedEventsFromCache(hubState.usersCache);
     if (!hubState.usersRoleHealDone) {
       hubState.usersRoleHealDone = true;
-      void reconcileDirectAllowOpsOnServer(hubState.usersCache)
-        .then(({ fixed }) => {
-          if (fixed > 0) {
-            console.info(`[reconcileDirectAllowOpsOnServer] 직접 허용 ${fixed}명 role/allowedEvents 복구`);
+      void Promise.all([
+        reconcileDirectAllowOpsOnServer(hubState.usersCache),
+        pruneStaleOpsTournamentIdsOnServer(hubState.usersCache)
+      ])
+        .then(([recon, pruned]) => {
+          if (recon.fixed > 0) {
+            console.info(
+              `[reconcileDirectAllowOpsOnServer] 직접 허용 ${recon.fixed}명 role/allowedEvents 복구`
+            );
+          }
+          if (pruned.fixed > 0) {
+            console.info(
+              `[pruneStaleOpsTournamentIdsOnServer] stale ops/role ${pruned.fixed}명 정리`
+            );
+            scheduleHubAdminRender();
           }
         })
         .catch((err) => {
-          console.error("reconcileDirectAllowOpsOnServer on loadAllUsers:", err);
+          console.error("direct-allow reconcile/prune on loadAllUsers:", err);
         });
     }
     return hubState.usersCache;

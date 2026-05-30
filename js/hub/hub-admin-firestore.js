@@ -13,7 +13,12 @@ import {
 import { pickUnusedLayoutAccentColor } from "../shared/layout-operator-colors.js";
 import { db } from "../firebase.js";
 import { isAdminEmail } from "../app_config.js";
-import { hasAnyDirectEventAllow, normalizeUserProfile, sanitizeAllowedEvents } from "../shared/auth-helpers.js";
+import {
+  hasAnyDirectEventAllow,
+  normalizeUserProfile,
+  resolveDirectOpsRole,
+  sanitizeAllowedEvents
+} from "../shared/auth-helpers.js";
 import { getIsAdminUser, isValidDocId } from "./hub-helpers.js";
 import { cleanupUserFromLayoutState } from "./layout-cleanup.js";
 import { hubState } from "./hub-state.js";
@@ -28,23 +33,9 @@ import {
 } from "./hub-admin-ui.js";
 import { renderTournaments } from "./hub-tournament-list.js";
 
-function resolveDirectAllowRole(email = "", nextAllowed = {}) {
-  if (isAdminEmail(email)) return "admin";
-  if (hasAnyDirectEventAllow(nextAllowed)) return "admin";
-  return "user";
-}
-
-function buildOpsTournamentIds(prev = {}, eventId = "", nextAllowed = {}) {
-  const ids = new Set(
-    Array.isArray(prev.opsTournamentIds)
-      ? prev.opsTournamentIds.map((id) => String(id || "").trim()).filter(Boolean)
-      : []
-  );
-  if (eventId) ids.add(String(eventId).trim());
-  for (const key of Object.keys(nextAllowed || {})) {
-    if (nextAllowed[key] === true) ids.add(String(key).trim());
-  }
-  return [...ids];
+/** allowedEvents=true 인 대회만 opsTournamentIds 에 반영 (해제 후 stale id 가 admin 으로 부활하는 것 방지) */
+function buildOpsTournamentIds(nextAllowed = {}) {
+  return Object.keys(sanitizeAllowedEvents(nextAllowed));
 }
 
 async function collectTargetUidsForEmail(uid, email = "") {
@@ -182,7 +173,7 @@ export async function grantEventDirectly(uid, eventId) {
         ...(prev.allowedEvents || {}),
         [eventId]: true
       });
-      const opsTournamentIds = buildOpsTournamentIds(prev, eventId, nextAllowed);
+      const opsTournamentIds = buildOpsTournamentIds(nextAllowed);
       const role = "admin";
 
       await updateDoc(userRef, {
@@ -214,11 +205,7 @@ export async function grantEventDirectly(uid, eventId) {
           layoutAccentColor:
             hubState.currentUserProfile?.layoutAccentColor || layoutAccentColor,
           allowedEvents: selfAllowed,
-          opsTournamentIds: buildOpsTournamentIds(
-            hubState.currentUserProfile || {},
-            eventId,
-            selfAllowed
-          )
+          opsTournamentIds: buildOpsTournamentIds(selfAllowed)
         },
         hubState.currentUser?.email || ""
       );
@@ -249,51 +236,61 @@ export async function revokeEventDirectly(uid, eventId) {
   }
 
   try {
-    const user = hubState.usersCache.find((u) => u.uid === uid);
-    const nextAllowed = sanitizeAllowedEvents({
-      ...(user?.allowedEvents || {})
-    });
-    delete nextAllowed[eventId];
-
-    const email = String(user?.email || "").trim();
-    const updates = {
-      allowedEvents: nextAllowed,
-      opsTournamentIds: buildOpsTournamentIds(user || {}, "", nextAllowed),
-      role: resolveDirectAllowRole(email, nextAllowed)
-    };
-
-    await updateDoc(doc(db, "users", uid), updates);
-
-    if (user) {
-      user.allowedEvents = nextAllowed;
-      user._rawAllowedEvents = { ...nextAllowed };
-      user.role = updates.role;
-    }
-
-    if (hubState.currentUser?.uid === uid) {
-      hubState.currentUserProfile = normalizeUserProfile(
-        {
-          ...(hubState.currentUserProfile || {}),
-          role: updates.role,
-          allowedEvents: nextAllowed,
-          opsTournamentIds: updates.opsTournamentIds
-        },
-        email
-      );
-      scheduleHubTournamentsRender();
-    }
+    const seedUser = hubState.usersCache.find((u) => u.uid === uid);
+    const email = String(seedUser?.email || "").trim();
+    const targetUids = await collectTargetUidsForEmail(uid, email);
 
     let cleaned = { waitingRemoved: 0, seatRemoved: 0 };
 
-    const requiredCode = String(tournament.requiredCode || "").trim();
-    const userCode = String(user?.accessCode || "").trim();
-    const stillAllowed =
-      isAdminEmail(email) ||
-      hasAnyDirectEventAllow(user?.allowedEvents) ||
-      (userCode && requiredCode && userCode === requiredCode);
+    for (const targetUid of targetUids) {
+      const user = hubState.usersCache.find((u) => u.uid === targetUid);
+      const prevAllowed = sanitizeAllowedEvents(
+        user?._rawAllowedEvents ?? user?.allowedEvents ?? {}
+      );
+      const nextAllowed = { ...prevAllowed };
+      delete nextAllowed[eventId];
 
-    if (user && !stillAllowed) {
-      cleaned = await cleanupUserFromLayoutState(user, eventId);
+      const updates = {
+        allowedEvents: nextAllowed,
+        opsTournamentIds: buildOpsTournamentIds(nextAllowed),
+        role: resolveDirectOpsRole(email, nextAllowed)
+      };
+
+      await updateDoc(doc(db, "users", targetUid), updates);
+
+      if (user) {
+        user.allowedEvents = nextAllowed;
+        user._rawAllowedEvents = { ...nextAllowed };
+        user._rawOpsTournamentIds = updates.opsTournamentIds;
+        user.role = updates.role;
+        user._rawRole = updates.role;
+      }
+
+      if (hubState.currentUser?.uid === targetUid) {
+        hubState.currentUserProfile = normalizeUserProfile(
+          {
+            ...(hubState.currentUserProfile || {}),
+            role: updates.role,
+            allowedEvents: nextAllowed,
+            opsTournamentIds: updates.opsTournamentIds
+          },
+          email
+        );
+        scheduleHubTournamentsRender();
+      }
+
+      const requiredCode = String(tournament.requiredCode || "").trim();
+      const userCode = String(user?.accessCode || "").trim();
+      const stillAllowed =
+        isAdminEmail(email) ||
+        hasAnyDirectEventAllow(nextAllowed) ||
+        (userCode && requiredCode && userCode === requiredCode);
+
+      if (user && !stillAllowed) {
+        const one = await cleanupUserFromLayoutState(user, eventId);
+        cleaned.waitingRemoved += one.waitingRemoved;
+        cleaned.seatRemoved += one.seatRemoved;
+      }
     }
 
     renderAdminUserList();
