@@ -874,11 +874,40 @@ body {
 }
 
 .seat-map-scroll{
+  position: relative;
   width: 100%;
   height: min(72dvh, 760px);
   overflow: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+}
+
+.seat-map-loading-overlay{
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 12, 23, 0.72);
+  pointer-events: none;
+}
+
+.seat-map-loading-overlay .seat-map-loading{
+  margin: 0;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.seat-map-empty-hint{
+  position: absolute;
+  left: 24px;
+  top: 24px;
+  margin: 0;
+  max-width: min(420px, 90%);
+  font-size: 14px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.62);
 }
 
 .seat-map-scroll::-webkit-scrollbar{

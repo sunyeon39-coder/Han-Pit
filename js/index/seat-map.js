@@ -7,9 +7,9 @@ import {
   onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-import { openModal, closeModal } from "../shared/dom-utils.js";
+import { openModal, closeModal, escapeHtml } from "../shared/dom-utils.js";
 import { getStableEventBoxPaletteClass } from "../global-layout/event-box-palette.js";
-import { IX } from "./state.js";
+import { IX, refreshIndexDomRefs } from "./state.js";
 
 /* ===============================
    SEAT MAP (ADD ONLY)
@@ -65,6 +65,34 @@ function focusSeatMapViewportTopLeft(scrollEl) {
   if (!scrollEl) return;
   scrollEl.scrollLeft = 0;
   scrollEl.scrollTop = 0;
+}
+
+/** 로딩 문구로 scroll 을 통째로 바꾸면 canvas 가 사라져 렌더가 막힙니다. */
+function ensureSeatMapDom() {
+  refreshIndexDomRefs();
+  if (!IX.seatMapScroll) return false;
+  const canvas = IX.seatMapCanvas;
+  if (!canvas || !IX.seatMapScroll.contains(canvas)) {
+    IX.seatMapScroll.innerHTML = '<div id="seatMapCanvas" class="seat-map-canvas"></div>';
+    IX.seatMapCanvas = document.getElementById("seatMapCanvas");
+  }
+  return !!IX.seatMapCanvas;
+}
+
+function setSeatMapLoading(active, message = "배치도 불러오는 중…") {
+  if (!ensureSeatMapDom()) return;
+  const scroll = IX.seatMapScroll;
+  let overlay = scroll.querySelector(".seat-map-loading-overlay");
+  if (!active) {
+    overlay?.remove();
+    return;
+  }
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.className = "seat-map-loading-overlay";
+    scroll.appendChild(overlay);
+  }
+  overlay.innerHTML = `<p class="seat-map-loading">${escapeHtml(message)}</p>`;
 }
 
 function isSeatMapMultiSelectPointer(e) {
@@ -449,23 +477,24 @@ export function wireSeatMapListeners() {
   IX.seatMapBtn?.addEventListener("click", () => {
     setSeatMapEditMode(false);
     openModal(IX.seatMapModal);
-    if (IX.seatMapScroll) {
-      IX.seatMapScroll.innerHTML =
-        '<p class="seat-map-loading" style="padding:24px;text-align:center;opacity:.85">배치도 불러오는 중…</p>';
-    }
+    setSeatMapLoading(true);
     void loadSeatMapLayout()
       .then(() => {
+        setSeatMapLoading(false);
         renderSeatMap();
+        if (!IX.seatMapLayout.length && IX.seatMapCanvas) {
+          const hint = document.createElement("p");
+          hint.className = "seat-map-empty-hint";
+          hint.textContent = "저장된 Seat이 없습니다. 맵 편집에서 Seat을 추가해 주세요.";
+          IX.seatMapCanvas.appendChild(hint);
+        }
         requestAnimationFrame(() => {
           focusSeatMapViewportTopLeft(IX.seatMapScroll);
         });
       })
       .catch((err) => {
         console.error("loadSeatMapLayout error:", err);
-        if (IX.seatMapScroll) {
-          IX.seatMapScroll.innerHTML =
-            '<p class="seat-map-loading" style="padding:24px;text-align:center;color:#f88">불러오기 실패</p>';
-        }
+        setSeatMapLoading(false, "배치도를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
       });
   });
 
