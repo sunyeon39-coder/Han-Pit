@@ -1,7 +1,6 @@
 import { auth, db } from "../firebase.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { GL, initGlFromUrl, initGlDomRefs } from "./state.js";
-import { canManageTournamentOps } from "../shared/auth-helpers.js";
 import { resolveLayoutAccentColor } from "../shared/layout-operator-colors.js";
 import { clearMyWaitingPick } from "./waiting-picks.js";
 import { layoutIsMobile, ALERT_VOLUME, SOUND_ENABLED_KEY } from "../layout/layout-main-route-env.js";
@@ -49,11 +48,18 @@ import {
   seedMyUserProfileCache
 } from "../shared/bind-my-user-profile-realtime.js";
 import { readBootUserProfile } from "../shared/login-profile-cache.js";
-import { loadUserProfileForTournamentOps } from "../shared/load-user-profile.js";
+import {
+  loadUserProfileForTournamentOps,
+  raceFirestoreTimeout
+} from "../shared/load-user-profile.js";
 import { writeLoginProfileCache } from "../shared/login-profile-cache.js";
 import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
 
 let globalLayoutMobileSeatNotify = null;
+
+function sleep(ms = 0) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function ensureGlobalLayoutMobileSeatNotify(user) {
   if (!layoutIsMobile() || !user?.uid) return null;
@@ -126,22 +132,48 @@ export function startGlobalLayoutApp() {
     checkGlobalLayoutOptimisticSeatAlert();
   }
 
-  function applyGlobalLayoutOpsPermissions(user, meta = {}) {
+  function syncGlobalLayoutOpsFromProfile(user = GL.currentUser) {
+    if (!user) return false;
     GL.userProfile = GL.userProfile || {};
     const canOps = canShowTournamentOpsUi(
-      user?.email,
+      user.email,
       GL.userProfile,
       GL.tournamentId,
       null,
-      user?.uid
+      user.uid
     );
-
     GL.isAdminUser = canOps;
     GL.layoutAccentColor = resolveLayoutAccentColor(
       GL.userProfile,
-      user?.uid || "",
-      user?.email || ""
+      user.uid || "",
+      user.email || ""
     );
+    return canOps;
+  }
+
+  async function ensureGlobalLayoutOpsChrome(user = GL.currentUser) {
+    if (!user?.uid) return false;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      if (syncGlobalLayoutOpsFromProfile(user)) return true;
+
+      const profile = await raceFirestoreTimeout(
+        loadUserProfileForTournamentOps(user.uid, user.email || "", GL.tournamentId),
+        10000
+      );
+      if (profile) {
+        GL.userProfile = profile;
+        seedMyUserProfileCache(profile);
+        writeLoginProfileCache(user.uid, profile);
+      }
+      if (syncGlobalLayoutOpsFromProfile(user)) return true;
+
+      await sleep(600 + attempt * 400);
+    }
+    return syncGlobalLayoutOpsFromProfile(user);
+  }
+
+  function applyGlobalLayoutOpsPermissions(user, meta = {}) {
+    const canOps = syncGlobalLayoutOpsFromProfile(user);
 
     if (!canOps) {
       if (!meta.fromCache) {
@@ -152,6 +184,53 @@ export function startGlobalLayoutApp() {
     }
 
     refreshGlobalLayoutAdminUi();
+  }
+
+  function startGlobalLayoutSession(user) {
+    if (!GL.tournamentId) {
+      alert("대회 정보가 없습니다. 인덱스에서 대회를 선택한 뒤 다시 열어 주세요.");
+      location.replace("./index.html");
+      return;
+    }
+
+    bindMyUserProfileRealtime(user.uid, {
+      email: user.email || "",
+      onProfileChange: (profile, meta) => {
+        GL.userProfile = profile;
+        applyGlobalLayoutOpsPermissions(user, meta);
+      }
+    });
+    syncGlobalLayoutMobileChrome();
+    if (GL.urlEventId && GL.urlBoxId) {
+      sessionStorage.setItem("eventId", GL.urlEventId);
+      sessionStorage.setItem("boxId", GL.urlBoxId);
+    }
+    syncPushOfferButton(GL.enablePushBtn, user.uid);
+    void refreshFcmTokenIfGranted(user.uid);
+    flushAppBadgeIfVisible();
+    ensureGlobalLayoutMobileSeatNotify(user);
+
+    setPanelOpen(false);
+    bindRealtime();
+    markPageBootLoaded(GL.app);
+    refreshGlobalLayoutAdminUi();
+
+    if (GL.timerHandle) clearInterval(GL.timerHandle);
+    GL.timerHandle = setInterval(() => {
+      if (isTypingInPanel()) return;
+      if (layoutIsMobile()) {
+        void import("./mobile-panel-render.js")
+          .then((m) => m.refreshGlobalLayoutMobileTimers())
+          .catch((err) => console.error("refreshGlobalLayoutMobileTimers error:", err));
+        return;
+      }
+      updateCanvasSeatTimerClasses();
+      if (GL.activeTab === "seat") {
+        updateSeatPanelTimers();
+      } else {
+        updateWaitingTimersInPanel();
+      }
+    }, 1000);
   }
 
   window.addEventListener("beforeunload", () => {
@@ -167,117 +246,63 @@ export function startGlobalLayoutApp() {
       return;
     }
 
+    const bootUiTimeout = window.setTimeout(() => {
+      if (GL.app?.dataset.pageBootLoaded !== "1") markPageBootLoaded(GL.app);
+    }, 5000);
+
     try {
       GL.currentUser = user;
       GL.userProfile = readBootUserProfile(user);
       seedMyUserProfileCache(GL.userProfile);
 
-      const serverProfile = await loadUserProfileForTournamentOps(
-        user.uid,
-        user.email || "",
-        GL.tournamentId
-      );
-      if (serverProfile) {
-        GL.userProfile = serverProfile;
-        seedMyUserProfileCache(GL.userProfile);
-        writeLoginProfileCache(user.uid, GL.userProfile);
+      let sessionStarted = false;
+      if (syncGlobalLayoutOpsFromProfile(user)) {
+        startGlobalLayoutSession(user);
+        sessionStarted = true;
       }
 
-      GL.isAdminUser = canShowTournamentOpsUi(
-        user.email,
-        GL.userProfile,
-        GL.tournamentId,
-        null,
-        user.uid
-      );
-      GL.layoutAccentColor = resolveLayoutAccentColor(
-        GL.userProfile,
-        user.uid,
-        user.email || ""
-      );
-
-      if (!GL.isAdminUser) {
-        alert("운영 권한이 없습니다. 허브에서「직접 허용」을 받았는지, 같은 대회로 들어왔는지 확인해 주세요.");
+      const hasOps = await ensureGlobalLayoutOpsChrome(user);
+      if (!hasOps) {
+        alert(
+          "운영 권한이 없습니다. 허브에서「직접 허용」을 받았는지, 같은 대회로 들어왔는지 확인해 주세요."
+        );
         location.replace("./index.html");
         return;
       }
 
-      bindMyUserProfileRealtime(user.uid, {
-        email: user.email || "",
-        onProfileChange: (profile, meta) => {
-          GL.userProfile = profile;
-          applyGlobalLayoutOpsPermissions(user, meta);
-        }
-      });
-      syncGlobalLayoutMobileChrome();
-      if (GL.urlEventId && GL.urlBoxId) {
-        sessionStorage.setItem("eventId", GL.urlEventId);
-        sessionStorage.setItem("boxId", GL.urlBoxId);
-      }
-      syncPushOfferButton(GL.enablePushBtn, user.uid);
-      void refreshFcmTokenIfGranted(user.uid);
-      flushAppBadgeIfVisible();
-      ensureGlobalLayoutMobileSeatNotify(user);
-
-      setPanelOpen(false);
-      bindRealtime();
-      markPageBootLoaded(GL.app);
-      refreshGlobalLayoutAdminUi();
-
-      void loadUserProfileForTournamentOps(
-        user.uid,
-        user.email || "",
-        GL.tournamentId
-      ).then((fresh) => {
-        if (!fresh) return;
-        GL.userProfile = fresh;
-        GL.isAdminUser = canShowTournamentOpsUi(
-        user.email,
-        GL.userProfile,
-        GL.tournamentId,
-        null,
-        user.uid
-      );
-        writeLoginProfileCache(user.uid, GL.userProfile);
+      if (!sessionStarted) {
+        startGlobalLayoutSession(user);
+      } else {
         refreshGlobalLayoutAdminUi();
-      });
+      }
+
+      void loadUserProfileForTournamentOps(user.uid, user.email || "", GL.tournamentId)
+        .then((fresh) => {
+          if (!fresh) return;
+          GL.userProfile = fresh;
+          writeLoginProfileCache(user.uid, fresh);
+          syncGlobalLayoutOpsFromProfile(user);
+          refreshGlobalLayoutAdminUi();
+        })
+        .catch((err) => console.warn("global-layout ops profile refresh:", err));
 
       void normalizeAndPersistUserRole(user.uid, GL.userProfile, user.email || "")
         .then((profile) => {
           if (!profile) return;
           GL.userProfile = profile;
-          GL.isAdminUser = canShowTournamentOpsUi(
-        user.email,
-        GL.userProfile,
-        GL.tournamentId,
-        null,
-        user.uid
-      );
-          writeLoginProfileCache(user.uid, GL.userProfile);
+          writeLoginProfileCache(user.uid, profile);
+          syncGlobalLayoutOpsFromProfile(user);
           refreshGlobalLayoutAdminUi();
         })
         .catch((err) => {
           console.error("normalizeAndPersistUserRole error:", err);
         });
-      if (GL.timerHandle) clearInterval(GL.timerHandle);
-      GL.timerHandle = setInterval(() => {
-        if (isTypingInPanel()) return;
-        if (layoutIsMobile()) {
-          void import("./mobile-panel-render.js")
-            .then((m) => m.refreshGlobalLayoutMobileTimers())
-            .catch((err) => console.error("refreshGlobalLayoutMobileTimers error:", err));
-          return;
-        }
-        updateCanvasSeatTimerClasses();
-        if (GL.activeTab === "seat") {
-          updateSeatPanelTimers();
-        } else {
-          updateWaitingTimersInPanel();
-        }
-      }, 1000);
     } catch (err) {
       console.error("global layout init error:", err);
       alert("통합 배치도를 불러오지 못했습니다.");
+      markPageBootLoaded(GL.app);
+    } finally {
+      clearTimeout(bootUiTimeout);
     }
   });
 }

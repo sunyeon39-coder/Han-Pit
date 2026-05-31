@@ -3,8 +3,6 @@ import {
   onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-import { isAdminEmail } from "../app_config.js";
-import { canManageTournament, canUseTournamentOps } from "../shared/auth-helpers.js";
 import { escapeHtml } from "../shared/dom-utils.js";
 import { createLayoutPersistServices } from "./layout-persist.js";
 import {
@@ -82,6 +80,8 @@ import {
 import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
 import { createLayoutRealtimeUi } from "./layout-realtime-ui.js";
 import { markPageBootLoaded } from "../shared/page-boot-shell.js";
+import { raceFirestoreTimeout } from "../shared/load-user-profile.js";
+import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
 import {
   bindMyUserProfileRealtime,
   disposeMyUserProfileRealtime,
@@ -247,9 +247,13 @@ import {
 
   function applyLayoutOpsPermissions(meta = {}) {
     if (!currentUser) return;
-    const canOps =
-      isAdminEmail(currentUser.email || "") ||
-      canUseTournamentOps(currentUser.email, currentUserProfile, TOURNAMENT_ID);
+    const canOps = canShowTournamentOpsUi(
+      currentUser.email || "",
+      currentUserProfile,
+      TOURNAMENT_ID,
+      null,
+      currentUser.uid
+    );
 
     isAdminUser = canOps;
     syncLayoutMobileAdminChrome();
@@ -647,6 +651,12 @@ import {
   seedMyUserProfileCache(currentUserProfile);
   applyLayoutOpsPermissions();
 
+  markPageBootLoaded(app);
+  if (layoutUi) {
+    render();
+    renderPanel();
+  }
+
   bindMyUserProfileRealtime(user.uid, {
     email: user.email || "",
     onProfileChange: (profile, meta) => {
@@ -661,16 +671,32 @@ import {
 
   seatNotify.bindMyNotificationWatch();
 
-  const profile = await layoutLoadMyUserProfile(TOURNAMENT_ID);
-  if (profile) {
-    currentUserProfile = profile;
-    seedMyUserProfileCache(profile);
-    applyLayoutOpsPermissions();
-  }
+  const bootUiTimeout = window.setTimeout(() => {
+    if (app?.dataset.pageBootLoaded !== "1") markPageBootLoaded(app);
+  }, 5000);
 
-  await layoutBootstrap.init();
-  markPageBootLoaded(app);
-  applyLayoutOpsPermissions();
+  try {
+    const profile = await raceFirestoreTimeout(layoutLoadMyUserProfile(TOURNAMENT_ID), 10000);
+    if (profile) {
+      currentUserProfile = profile;
+      seedMyUserProfileCache(profile);
+      applyLayoutOpsPermissions();
+    }
+
+    await raceFirestoreTimeout(layoutBootstrap.init(), 15000);
+    applyLayoutOpsPermissions();
+    if (layoutUi) {
+      render();
+      renderPanel();
+    }
+  } catch (err) {
+    console.error("layout auth init error:", err);
+    alert("배치 화면을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    if (layoutUi) render();
+  } finally {
+    clearTimeout(bootUiTimeout);
+    markPageBootLoaded(app);
+  }
 
   requestAnimationFrame(() => {
     void seatNotify.showPendingSeatNotificationOnce();
