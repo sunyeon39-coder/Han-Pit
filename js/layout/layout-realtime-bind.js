@@ -1,11 +1,19 @@
 /**
  * layout.html: layout_events / global_waiting / dealer_attendance Firestore onSnapshot 구독
  */
-import { onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  getDocs,
+  getDocsFromServer,
+  onSnapshot
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   dealerAttendanceQueryForTournament,
   filterAttendanceDocsForTournament
 } from "../shared/dealer-attendance-query.js";
+import {
+  buildAttendanceInactiveUidSet,
+  filterAttendanceRowsForWaitingMerge
+} from "../shared/attendance-waiting-filter.js";
 
 export function createLayoutRealtimeBind(deps) {
   const {
@@ -25,7 +33,42 @@ export function createLayoutRealtimeBind(deps) {
     onAfterAttendanceRemoteSnapshot
   } = deps;
 
+  async function primeAttendanceSnapshot(tid) {
+    if (!tid || !attendanceWaitingState) return;
+    try {
+      const q = dealerAttendanceQueryForTournament(tid);
+      let snap = await getDocs(q);
+      if (snap.empty) {
+        try {
+          snap = await getDocsFromServer(q);
+        } catch {
+          /* keep cache */
+        }
+      }
+      const docs = filterAttendanceDocsForTournament(snap.docs, tid);
+      attendanceWaitingState.inactiveUids = buildAttendanceInactiveUidSet(docs, tid);
+      attendanceWaitingState.items = filterAttendanceRowsForWaitingMerge(
+        docs.map((d) => {
+          const data = d.data() || {};
+          return { id: d.id, ...data };
+        })
+      );
+      if (typeof onAfterAttendanceRemoteSnapshot === "function") {
+        onAfterAttendanceRemoteSnapshot();
+      }
+    } catch (err) {
+      console.warn("primeAttendanceSnapshot:", err?.code || err);
+    }
+  }
+
   function bindRealtime() {
+    const tid = String(TOURNAMENT_ID || "").trim();
+    if (tid && attendanceWaitingState) {
+      attendanceWaitingState.inactiveUids = new Set();
+      attendanceWaitingState.items = [];
+      void primeAttendanceSnapshot(tid);
+    }
+
     onSnapshot(
       EVENT_REF,
       (snap) => {
@@ -82,15 +125,14 @@ export function createLayoutRealtimeBind(deps) {
       onSnapshot(
         dealerAttendanceQueryForTournament(tid),
         (snap) => {
-          attendanceWaitingState.items = filterAttendanceDocsForTournament(snap.docs, tid)
-            .map((d) => {
+          const docs = filterAttendanceDocsForTournament(snap.docs, tid);
+          attendanceWaitingState.inactiveUids = buildAttendanceInactiveUidSet(docs, tid);
+          attendanceWaitingState.items = filterAttendanceRowsForWaitingMerge(
+            docs.map((d) => {
               const data = d.data() || {};
               return { id: d.id, ...data };
             })
-            .filter((d) => {
-              const status = String(d.status || "").trim();
-              return status === "waiting" || status === "checked_in";
-            });
+          );
           if (typeof onAfterAttendanceRemoteSnapshot === "function") {
             onAfterAttendanceRemoteSnapshot();
           }

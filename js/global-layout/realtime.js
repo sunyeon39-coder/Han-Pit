@@ -2,10 +2,16 @@ import { db } from "../firebase.js";
 import {
   collection,
   doc,
+  getDocs,
+  getDocsFromServer,
   onSnapshot,
   runTransaction,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  buildAttendanceInactiveUidSet,
+  filterAttendanceRowsForWaitingMerge
+} from "../shared/attendance-waiting-filter.js";
 import {
   dealerAttendanceQueryForTournament,
   filterAttendanceDocsForTournament
@@ -59,23 +65,13 @@ function scheduleRecoverRemovedSeatPeople(removedSeats, currentSeats) {
 }
 
 function applyDealerAttendanceSnap(snap) {
-  const inactive = new Set();
   const docs = filterAttendanceDocsForTournament(snap.docs, GL.tournamentId);
-  docs.forEach((d) => {
-    const data = d.data() || {};
-    const uid = String(data.uid || "").trim();
-    const status = String(data.status || "").trim();
-    if (uid && (status === "checked_out" || status === "off")) inactive.add(uid);
-  });
-  GL.attendanceInactiveUids = inactive;
+  GL.attendanceInactiveUids = buildAttendanceInactiveUidSet(docs, GL.tournamentId);
+  GL.attendanceFilterReady = true;
 
-  GL.attendanceWaiting = docs
-    .map((d) => ({ id: d.id, ...(d.data() || {}) }))
-    .filter((row) => {
-      const status = String(row.status || "").trim();
-      return status === "waiting" || status === "checked_in";
-    })
-    .map(({ id: _id, ...rest }) => rest);
+  GL.attendanceWaiting = filterAttendanceRowsForWaitingMerge(
+    docs.map((d) => ({ id: d.id, ...(d.data() || {}) }))
+  ).map(({ id: _id, ...rest }) => rest);
 
   bumpGlobalLayoutDataRevision();
   if (GL.activeTab === "wait") {
@@ -212,6 +208,11 @@ export function bindRealtime() {
 
   sessionStorage.setItem("tournamentId", GL.tournamentId);
   disposeGlobalLayoutRealtime();
+  GL.attendanceFilterReady = false;
+  GL.attendanceInactiveUids = new Set();
+  GL.attendanceWaiting = [];
+  void primeDealerAttendanceFilter();
+
   let prevSeats = [];
   GL.stopSeatWatch = onSnapshot(
     collection(db, "tournaments", GL.tournamentId, "global_seats"),
@@ -290,7 +291,7 @@ export function bindRealtime() {
     (err) => {
       console.warn("dealer attendance watch error (대기 병합만 제한):", err?.code || err);
       GL.attendanceWaiting = [];
-      GL.attendanceInactiveUids = new Set();
+      GL.attendanceFilterReady = true;
       bumpGlobalLayoutDataRevision();
       scheduleGlobalLayoutRealtimeUi({ metaOnly: true });
     }

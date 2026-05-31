@@ -105,7 +105,7 @@ import {
   const isMobile = layoutIsMobile;
 
   const route = createLayoutMainRouteEnv();
-  const attendanceWaitingState = { items: [] };
+  const attendanceWaitingState = { items: [], inactiveUids: new Set() };
   const {
     TOURNAMENT_ID,
     EVENT_ID,
@@ -329,7 +329,8 @@ import {
     renderPanel,
     showOptimisticSeatAssignedAlert: (payload) =>
       layoutSeatNotifyBridge.showOptimisticSeatAssignedAlert(payload),
-    getAttendanceWaiting: () => attendanceWaitingState.items
+    getAttendanceWaiting: () => attendanceWaitingState.items,
+    getAttendanceInactiveUids: () => attendanceWaitingState.inactiveUids
   });
 
   const {

@@ -1,4 +1,5 @@
 import { GL } from "./state.js";
+import { isInactiveWaitingEntry } from "../shared/attendance-waiting-filter.js";
 import { fmtElapsed, isEmptyPerson, makeUid, timerClass, toMillis } from "./utils.js";
 
 function toPositiveMs(v) {
@@ -164,14 +165,11 @@ export function getCurrentTournamentWaiting() {
   }
 
   const inactive = GL.attendanceInactiveUids instanceof Set ? GL.attendanceInactiveUids : new Set();
+  const filterReady = GL.attendanceFilterReady === true;
 
-  const waitingBase = GL.globalWaiting
+  const waitingBase = (filterReady ? GL.globalWaiting : [])
     .filter((w) => String(w?.tournamentId || "").trim() === GL.tournamentId)
-    .filter((w) => {
-      const uid = String(w?.uid || "").trim();
-      if (uid && inactive.has(uid)) return false;
-      return true;
-    })
+    .filter((w) => !isInactiveWaitingEntry(w, inactive))
     .filter((w) =>
       !isPersonSeatedInGlobalSeats(GL.globalSeats, {
         uid: w?.uid,

@@ -29,6 +29,7 @@ export function createLayoutSeatWaitingMutations(deps) {
     getDealerMoves,
     getLocalReconcile,
     getAttendanceWaiting,
+    getAttendanceInactiveUids,
     touchEvent,
     touchWaiting,
     writeUserNotification,
@@ -61,6 +62,7 @@ export function createLayoutSeatWaitingMutations(deps) {
     getWaitingIdentity,
     getGlobalSeatsMerge,
     getAttendanceWaiting,
+    getAttendanceInactiveUids,
     makeUid
   });
 

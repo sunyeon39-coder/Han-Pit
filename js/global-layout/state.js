@@ -35,6 +35,8 @@ export const GL = {
   attendanceWaiting: [],
   /** 현재 대회 출석 문서 기준 퇴근·미출근 uid — global_waiting 유령 행 제거용 */
   attendanceInactiveUids: new Set(),
+  /** dealer_attendance 1회 이상 반영 전에는 global_waiting 유령 행 숨김 */
+  attendanceFilterReady: false,
 
   selectedWaitingId: "",
   /** 다중 선택: Ctrl(Windows/Linux) 또는 ⌘(macOS) + 클릭으로 토글 */
