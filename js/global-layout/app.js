@@ -299,7 +299,12 @@ export function startGlobalLayoutApp() {
         });
     } catch (err) {
       console.error("global layout init error:", err);
-      alert("통합 배치도를 불러오지 못했습니다.");
+      const detail = String(err?.message || err || "").trim();
+      alert(
+        detail
+          ? `통합 배치도를 불러오지 못했습니다.\n(${detail})`
+          : "통합 배치도를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."
+      );
       markPageBootLoaded(GL.app);
     } finally {
       clearTimeout(bootUiTimeout);

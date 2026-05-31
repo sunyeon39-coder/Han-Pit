@@ -197,6 +197,34 @@ async function recoverRemovedSeatPeopleToWaiting(removedSeats = [], currentSeats
   });
 }
 
+/** PWA·모바일: attendance 스냅샷 전에 global_waiting 유령 행이 보이지 않도록 1회 프라임 */
+async function primeDealerAttendanceFilter() {
+  const tid = String(GL.tournamentId || "").trim();
+  if (!tid) {
+    GL.attendanceFilterReady = true;
+    return;
+  }
+  try {
+    const q = dealerAttendanceQueryForTournament(tid);
+    let snap = await getDocs(q);
+    if (snap.empty) {
+      try {
+        snap = await getDocsFromServer(q);
+      } catch {
+        /* 캐시 스냅샷 유지 */
+      }
+    }
+    applyDealerAttendanceSnap(snap);
+  } catch (err) {
+    console.warn("primeDealerAttendanceFilter:", err?.code || err);
+    GL.attendanceInactiveUids = new Set();
+    GL.attendanceWaiting = [];
+    GL.attendanceFilterReady = true;
+    bumpGlobalLayoutDataRevision();
+    scheduleGlobalLayoutRealtimeUi({ metaOnly: true });
+  }
+}
+
 export { disposeGlobalLayoutRealtime };
 
 export function bindRealtime() {
