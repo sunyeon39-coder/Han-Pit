@@ -120,7 +120,6 @@ export function createLayoutRealtimeBind(deps) {
       }
     );
 
-    const tid = String(TOURNAMENT_ID || "").trim();
     if (tid && attendanceWaitingState) {
       onSnapshot(
         dealerAttendanceQueryForTournament(tid),
