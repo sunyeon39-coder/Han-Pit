@@ -118,14 +118,28 @@ export async function deleteGlobalSeat(seatId = "") {
   const eventId = String(seat.currentEventId || seat.mappedEventId || "").trim();
   const boxId = String(seat.boxId || "").trim();
   if (!eventId || !boxId) return;
-  const ref = doc(db, "tournaments", GL.tournamentId, "global_seats", buildGlobalSeatDocId(eventId, boxId, targetSeatId));
-  const snap = await getDoc(ref);
-  if (!snap.exists()) return;
-  const seatDoc = snap.data() || {};
-  await deleteDoc(ref);
+
+  const idx = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === targetSeatId);
+  const removedSeat = idx >= 0 ? { ...GL.globalSeats[idx] } : { ...seat };
+  if (idx >= 0) GL.globalSeats.splice(idx, 1);
   GL.selectedSeatIds.delete(targetSeatId);
-  pushGlobalUndo({ kind: "delete_seat", seatId: targetSeatId, eventId, boxId, seatDoc });
-  await syncLayoutProjection(eventId, boxId);
+  flushOptimisticGlobalLayoutUi();
+
+  const ref = doc(db, "tournaments", GL.tournamentId, "global_seats", buildGlobalSeatDocId(eventId, boxId, targetSeatId));
+  try {
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return;
+    const seatDoc = snap.data() || {};
+    await deleteDoc(ref);
+    pushGlobalUndo({ kind: "delete_seat", seatId: targetSeatId, eventId, boxId, seatDoc });
+    await syncLayoutProjection(eventId, boxId);
+  } catch (err) {
+    console.error("deleteGlobalSeat error:", err);
+    if (idx >= 0) GL.globalSeats.splice(idx, 0, removedSeat);
+    else GL.globalSeats.push(removedSeat);
+    flushOptimisticGlobalLayoutUi();
+    alert("좌석 삭제에 실패했습니다.");
+  }
 }
 
 async function clearDuplicatePersonSeatsExcept(

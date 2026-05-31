@@ -193,12 +193,12 @@ export function createLayoutSeatWaitingMutations(deps) {
 
       if (ui.selectedSeatId === seatId) ui.selectedSeatId = null;
 
-      if (prevUid) {
-        await clearUserSeatNotification(prevUid, "seat_deleted");
-      }
-
       touchEvent(true);
       render();
+
+      if (prevUid) {
+        void clearUserSeatNotification(prevUid, "seat_deleted");
+      }
 
       if (prevUid && prevName) {
         const dm = getDealerMoves();
@@ -279,8 +279,8 @@ export function createLayoutSeatWaitingMutations(deps) {
         waiting.blockAccumulatedMs = Number(waiting.blockAccumulatedMs || 0) + elapsed;
       }
 
-      touchWaiting(true);
       render();
+      touchWaiting(true);
     });
   }
 

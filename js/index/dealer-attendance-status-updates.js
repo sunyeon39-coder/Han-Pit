@@ -8,11 +8,15 @@ import { getAttendanceDocId, getAttendanceRef } from "./dealer-attendance-refs.j
 import { writeAttendanceLog } from "./dealer-attendance-logs.js";
 import { getDerivedAttendance } from "./dealer-attendance-derived.js";
 import { getNowMs } from "./dealer-attendance-format.js";
+import {
+  applyOptimisticAttendanceEntry,
+  restoreAttendanceSnapshot,
+  snapshotAttendanceEntry
+} from "./dealer-attendance-optimistic.js";
 
-export async function updateMyAttendanceStatus(nextStatus) {
+function buildMyAttendancePayload(user, nextStatus) {
   const tournamentId = getTournamentId();
-  const user = auth.currentUser;
-  if (!user || !tournamentId) return;
+  if (!user || !tournamentId) return null;
 
   if (!IX.currentUserProfile) {
     IX.currentUserProfile = buildOptimisticProfileFromAuthUser(user, {});
@@ -21,7 +25,7 @@ export async function updateMyAttendanceStatus(nextStatus) {
   const current = getDerivedAttendance(user);
   const now = getNowMs();
 
-  const payload = {
+  return {
     uid: user.uid,
     nickname: String(IX.currentUserProfile.nickname || user.displayName || "").trim(),
     email: String(IX.currentUserProfile.email || user.email || "").trim(),
@@ -29,51 +33,38 @@ export async function updateMyAttendanceStatus(nextStatus) {
     status: nextStatus,
     checkedInAt:
       nextStatus === "checked_in" || nextStatus === "waiting" || nextStatus === "break"
-        ? (current?.checkedInAt || now)
-        : (current?.checkedInAt || null),
+        ? current?.checkedInAt || now
+        : current?.checkedInAt || null,
     checkedOutAt: nextStatus === "checked_out" ? now : null,
     breakStartedAt: nextStatus === "break" ? now : null,
     totalBreakMs:
       nextStatus === "waiting" && current?.status === "break" && current?.breakStartedAt
         ? Number(current.totalBreakMs || 0) + Math.max(0, now - Number(current.breakStartedAt || 0))
-        : Number(current?.totalBreakMs || 0),
+        : Number(current.totalBreakMs || 0),
     currentEventId: current?.currentEventId || "",
     currentBoxId: current?.currentBoxId || "",
     currentSeatId: current?.currentSeatId || "",
     currentSeatLabel: current?.currentSeatLabel || "",
     updatedAt: now
   };
-
-  await setDoc(getAttendanceRef(tournamentId, user.uid), payload, { merge: true });
-
-  await writeAttendanceLog({
-    uid: user.uid,
-    nickname: String(IX.currentUserProfile.nickname || user.displayName || "").trim(),
-    action: nextStatus,
-    tournamentId,
-    eventId: current?.currentEventId || "",
-    boxId: current?.currentBoxId || "",
-    seatId: current?.currentSeatId || "",
-    seatLabel: current?.currentSeatLabel || ""
-  });
 }
 
-export async function updateAdminAttendanceStatus(uid, nextStatus) {
+function buildAdminAttendancePayload(uid, nextStatus) {
   const tournamentId = ensureTournamentContextOrAlert();
-  if (!uid || !tournamentId) return;
+  if (!uid || !tournamentId) return null;
 
   const current = IX.dealerAttendanceMap.get(getAttendanceDocId(tournamentId, uid));
-  if (!current) return;
+  if (!current) return null;
 
   const now = getNowMs();
 
-  const payload = {
+  return {
     ...current,
     status: nextStatus,
     checkedInAt:
       nextStatus === "checked_in" || nextStatus === "waiting" || nextStatus === "break"
-        ? (current.checkedInAt || now)
-        : (current.checkedInAt || null),
+        ? current.checkedInAt || now
+        : current.checkedInAt || null,
     checkedOutAt: nextStatus === "checked_out" ? now : null,
     breakStartedAt: nextStatus === "break" ? now : null,
     totalBreakMs:
@@ -82,17 +73,69 @@ export async function updateAdminAttendanceStatus(uid, nextStatus) {
         : Number(current.totalBreakMs || 0),
     updatedAt: now
   };
+}
 
-  await setDoc(getAttendanceRef(tournamentId, uid), payload, { merge: true });
+export async function updateMyAttendanceStatus(nextStatus, options = {}) {
+  const user = auth.currentUser;
+  const tournamentId = getTournamentId();
+  if (!user || !tournamentId) return;
 
-  await writeAttendanceLog({
-    uid,
-    nickname: String(current.nickname || "").trim(),
-    action: nextStatus,
-    tournamentId,
-    eventId: current?.currentEventId || "",
-    boxId: current?.currentBoxId || "",
-    seatId: current?.currentSeatId || "",
-    seatLabel: current?.currentSeatLabel || ""
-  });
+  const payload = buildMyAttendancePayload(user, nextStatus);
+  if (!payload) return;
+
+  const optimistic = options.optimistic !== false;
+  const prevSnap = optimistic ? snapshotAttendanceEntry(tournamentId, user.uid) : null;
+
+  if (optimistic) {
+    applyOptimisticAttendanceEntry(tournamentId, user.uid, payload);
+  }
+
+  try {
+    await setDoc(getAttendanceRef(tournamentId, user.uid), payload, { merge: true });
+    void writeAttendanceLog({
+      uid: user.uid,
+      nickname: payload.nickname,
+      action: nextStatus,
+      tournamentId,
+      eventId: payload.currentEventId || "",
+      boxId: payload.currentBoxId || "",
+      seatId: payload.currentSeatId || "",
+      seatLabel: payload.currentSeatLabel || ""
+    }).catch((err) => console.warn("writeAttendanceLog:", err));
+  } catch (err) {
+    if (optimistic) restoreAttendanceSnapshot(tournamentId, user.uid, prevSnap);
+    throw err;
+  }
+}
+
+export async function updateAdminAttendanceStatus(uid, nextStatus, options = {}) {
+  const tournamentId = ensureTournamentContextOrAlert();
+  if (!uid || !tournamentId) return;
+
+  const payload = buildAdminAttendancePayload(uid, nextStatus);
+  if (!payload) return;
+
+  const optimistic = options.optimistic !== false;
+  const prevSnap = optimistic ? snapshotAttendanceEntry(tournamentId, uid) : null;
+
+  if (optimistic) {
+    applyOptimisticAttendanceEntry(tournamentId, uid, payload);
+  }
+
+  try {
+    await setDoc(getAttendanceRef(tournamentId, uid), payload, { merge: true });
+    void writeAttendanceLog({
+      uid,
+      nickname: String(payload.nickname || "").trim(),
+      action: nextStatus,
+      tournamentId,
+      eventId: payload.currentEventId || "",
+      boxId: payload.currentBoxId || "",
+      seatId: payload.currentSeatId || "",
+      seatLabel: payload.currentSeatLabel || ""
+    }).catch((err) => console.warn("writeAttendanceLog:", err));
+  } catch (err) {
+    if (optimistic) restoreAttendanceSnapshot(tournamentId, uid, prevSnap);
+    throw err;
+  }
 }

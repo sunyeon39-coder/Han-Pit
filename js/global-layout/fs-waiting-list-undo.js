@@ -8,7 +8,12 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { GL } from "./state.js";
 import { buildGlobalSeatDocId, getAttendanceRef, makeUid } from "./utils.js";
-import { getCurrentTournamentWaiting } from "./waiting.js";
+import {
+  applyWaitingBlockLocal,
+  getCurrentTournamentWaiting,
+  replaceGlobalWaitingLocal
+} from "./waiting.js";
+import { flushOptimisticGlobalLayoutUi } from "./optimistic-seat-mutation.js";
 import { renderSeatPanel, renderWaiting } from "./panel-ui.js";
 import { clearMyWaitingPick } from "./waiting-picks.js";
 import { updateGlobalMetaToolbar } from "./toolbar.js";
@@ -272,33 +277,50 @@ export async function addManualWaiting() {
     return;
   }
 
-  const current = getCurrentTournamentWaiting();
   const now = Date.now();
-  const next = [
-    ...current,
-    {
-      id: makeUid("wait"),
-      uid: "",
-      email: "",
-      name,
-      tournamentId: GL.tournamentId,
-      joinedAt: now
-    }
-  ];
-  await updateGlobalWaiting(next);
+  const row = {
+    id: makeUid("wait"),
+    uid: "",
+    email: "",
+    name,
+    tournamentId: GL.tournamentId,
+    joinedAt: now
+  };
+  const snapshotBefore = JSON.parse(JSON.stringify(GL.globalWaiting || []));
+  replaceGlobalWaitingLocal([...(GL.globalWaiting || []), row]);
+  flushOptimisticGlobalLayoutUi();
   if (input) input.value = "";
+
+  try {
+    await updateGlobalWaiting([...(GL.globalWaiting || [])]);
+  } catch (err) {
+    console.error("addManualWaiting error:", err);
+    replaceGlobalWaitingLocal(snapshotBefore);
+    flushOptimisticGlobalLayoutUi();
+    alert("대기 추가에 실패했습니다.");
+  }
 }
 
 export async function removeManualWaiting(waitingId = "") {
   const wid = String(waitingId || "").trim();
   if (!wid) return;
-  const snapshotBefore = JSON.parse(JSON.stringify(getCurrentTournamentWaiting()));
-  const next = snapshotBefore.filter((w) => String(w?.id || "") !== wid);
-  await updateGlobalWaiting(next);
-  pushGlobalUndo({ kind: "remove_waiting", snapshotBefore });
+  const snapshotBefore = JSON.parse(JSON.stringify(GL.globalWaiting || []));
+  const next = snapshotBefore.filter((w) => String(w?.id || "").trim() !== wid);
+  replaceGlobalWaitingLocal(next);
+  flushOptimisticGlobalLayoutUi();
+  pushGlobalUndo({ kind: "remove_waiting", snapshotBefore: JSON.parse(JSON.stringify(getCurrentTournamentWaiting())) });
   if (GL.selectedWaitingId === wid) {
     GL.selectedWaitingId = "";
     void clearMyWaitingPick();
+  }
+
+  try {
+    await updateGlobalWaiting([...(GL.globalWaiting || [])]);
+  } catch (err) {
+    console.error("removeManualWaiting error:", err);
+    replaceGlobalWaitingLocal(snapshotBefore);
+    flushOptimisticGlobalLayoutUi();
+    alert("대기자 삭제에 실패했습니다.");
   }
 }
 
@@ -311,7 +333,12 @@ export async function setWaitingBlocked(waitingId = "", checked = false) {
   const waitingRef = doc(db, "layout_shared", "global_waiting");
   const now = Date.now();
   const nextChecked = checked === true;
+  const snapshotBefore = JSON.parse(JSON.stringify(GL.globalWaiting || []));
 
+  applyWaitingBlockLocal(wid, nextChecked);
+  flushOptimisticGlobalLayoutUi();
+
+  try {
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(waitingRef);
     const data = snap.exists() ? (snap.data() || {}) : {};
@@ -377,4 +404,10 @@ export async function setWaitingBlocked(waitingId = "", checked = false) {
       { merge: true }
     );
   });
+  } catch (err) {
+    console.error("setWaitingBlocked error:", err);
+    replaceGlobalWaitingLocal(snapshotBefore);
+    flushOptimisticGlobalLayoutUi();
+    alert("BLOCK 변경에 실패했습니다.");
+  }
 }

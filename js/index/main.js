@@ -57,6 +57,10 @@ import {
   adjustMyCheckedInAt,
   adjustMyCheckedOutAt
 } from "./dealer-attendance.js";
+import {
+  restoreAttendanceSnapshot,
+  snapshotAttendanceEntry
+} from "./dealer-attendance-optimistic.js";
 
 import { routeToHub, initTournamentPeriodWatch } from "./tournament-period.js";
 
@@ -483,8 +487,7 @@ function wireIndexPageControls() {
             if (!target) return;
 
             await forceAdminCheckedOut(target);
-            await loadDealerAttendanceOnce();
-            renderDealerOps();
+            void loadDealerAttendanceOnce();
             return;
           }
         }
@@ -505,12 +508,9 @@ function wireIndexPageControls() {
       if (!action) return;
 
       if (action === "waiting") {
-        const joinResult = await joinSharedWaitingOnCheckIn(user);
-        const ok = joinResult === true || joinResult?.ok === true;
-        if (!ok) return;
-
+        const prevSnap = snapshotAttendanceEntry(tid, user.uid);
         try {
-          await updateMyAttendanceStatus("waiting");
+          await updateMyAttendanceStatus("waiting", { optimistic: true });
         } catch (err) {
           console.error("updateMyAttendanceStatus(waiting):", err);
           alert(
@@ -520,18 +520,28 @@ function wireIndexPageControls() {
           );
           return;
         }
-        await loadDealerAttendanceOnce();
-        renderDealerOps();
+
+        void (async () => {
+          const joinResult = await joinSharedWaitingOnCheckIn(user);
+          const ok = joinResult === true || joinResult?.ok === true;
+          if (!ok) {
+            restoreAttendanceSnapshot(tid, user.uid, prevSnap);
+            void loadDealerAttendanceOnce();
+            return;
+          }
+          void loadDealerAttendanceOnce();
+        })();
         return;
       }
 
       if (action === "checked_out") {
-        const removed = await removeFromSharedWaitingOnCheckOut(user);
-        if (removed === false) return;
-
-        await forceSelfCheckedOut(user);
-        await loadDealerAttendanceOnce();
-        renderDealerOps();
+        try {
+          await forceSelfCheckedOut(user);
+        } catch (err) {
+          console.error("forceSelfCheckedOut:", err);
+          alert("퇴근 처리에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+          return;
+        }
         return;
       }
     } catch (err) {

@@ -1,6 +1,7 @@
 import { GL } from "./state.js";
 import { isInactiveWaitingEntry } from "../shared/attendance-waiting-filter.js";
 import { fmtElapsed, isEmptyPerson, makeUid, timerClass, toMillis } from "./utils.js";
+import { bumpGlobalLayoutDataRevision } from "./realtime-ui.js";
 
 function toPositiveMs(v) {
   const ms = toMillis(v);
@@ -21,6 +22,12 @@ export function isWaitingBlocked(raw = {}) {
 }
 
 /** BLOCK 체크 직후 상단 카운트용 — Firestore 스냅샷 전 로컬 대기 목록 반영 */
+/** Firestore 전 global_waiting 배열을 로컬에 반영 (낙관적 추가·삭제) */
+export function replaceGlobalWaitingLocal(nextWaiting = []) {
+  GL.globalWaiting = Array.isArray(nextWaiting) ? [...nextWaiting] : [];
+  bumpGlobalLayoutDataRevision();
+}
+
 export function applyWaitingBlockLocal(waitingId = "", checked = false) {
   const wid = String(waitingId || "").trim();
   if (!wid || !Array.isArray(GL.globalWaiting)) return;
