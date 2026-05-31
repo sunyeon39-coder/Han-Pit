@@ -241,13 +241,12 @@ export function bindGlobalLayoutEventHandlers() {
       return;
     }
 
-    if (e.target.closest("[data-block-wid]") || e.target.closest(".wait-block-check-wrap")) return;
+    if (e.target.closest("input[data-block-wid]")) return;
 
     const row = e.target.closest("[data-wid]");
     if (!row) return;
     const wid = String(row.getAttribute("data-wid") || "");
     if (!wid) return;
-    if (GL.selectedWaitingId === wid) return;
     setWaitingRowSelection(wid);
     renderWaiting(getCurrentTournamentWaiting());
   });

@@ -262,18 +262,15 @@ export function createLayoutMobilePanelRender(deps) {
 
     wrap.querySelectorAll("[data-mobile-wait]").forEach((row) => {
       row.addEventListener("click", (e) => {
-        if (
-          e.target.closest("[data-mobile-wait-select]") ||
-          e.target.closest("[data-del-w]") ||
-          e.target.closest("[data-mobile-block-w]")
-        ) {
+        if (e.target.closest("[data-mobile-wait-select]") || e.target.closest("[data-del-w]")) {
           return;
         }
+        if (e.target.closest("input.wait-block-check")) return;
 
         const wid = row.getAttribute("data-mobile-wait");
         if (!wid) return;
 
-        ui.selectedWaitingId = ui.selectedWaitingId === wid ? null : wid;
+        ui.selectedWaitingId = wid;
         ui.selectedSeatId = null;
         onFullRender();
       });

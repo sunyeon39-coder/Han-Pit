@@ -398,10 +398,10 @@ export function renderGlobalLayoutMobile() {
 
   wrap.querySelectorAll("[data-mobile-wait]").forEach((row) => {
     row.addEventListener("click", (e) => {
-      if (e.target.closest("[data-del-w]") || e.target.closest("[data-mobile-block-w]")) return;
+      if (e.target.closest("[data-del-w]")) return;
+      if (e.target.closest("input.wait-block-check")) return;
       const wid = String(row.getAttribute("data-mobile-wait") || "").trim();
       if (!wid) return;
-      if (GL.selectedWaitingId === wid) return;
       setWaitingRowSelection(wid);
       fullRender();
     });
