@@ -1,7 +1,9 @@
+import { buildSeatAssignedNotificationWrite } from "../shared/seat-notification-push.js";
+import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
 import { db } from "../firebase.js";
 import {
   doc,
-  runTransaction,
+  setDoc,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { GL } from "./state.js";
@@ -31,6 +33,69 @@ import {
   flushOptimisticGlobalLayoutUi
 } from "./optimistic-seat-mutation.js";
 import { triggerOptimisticMobileSeatAssignedAlert } from "../shared/optimistic-seat-assigned-notify.js";
+
+function uniqueDocRefs(refs = []) {
+  const seen = new Set();
+  const out = [];
+  for (const ref of refs) {
+    const p = String(ref?.path || "");
+    if (!p || seen.has(p)) continue;
+    seen.add(p);
+    out.push(ref);
+  }
+  return out;
+}
+
+function personMatchesSeatData(data = {}, person = {}) {
+  const pUid = String(person.uid || "").trim();
+  const pEmailLc = String(person.email || "")
+    .trim()
+    .toLowerCase();
+  const pName = String(person.name || "").trim();
+  const dUid = String(data.personUid || "").trim();
+  const dEmail = String(data.personEmail || "")
+    .trim()
+    .toLowerCase();
+  const dName = String(data.person || "").trim();
+  return (
+    (pUid && dUid && pUid === dUid) ||
+    (pEmailLc && dEmail && pEmailLc === dEmail) ||
+    (!pUid && !pEmailLc && pName && dName === pName)
+  );
+}
+
+function clearDupSeatsInTransaction(tx, dupRefs, dupSnaps, person, targetSeatId, now, touchedProjectionKeys) {
+  const pUid = String(person.uid || "").trim();
+  const pEmail = String(person.email || "").trim();
+  const pName = String(person.name || "").trim();
+  if (!pUid && !pEmail && !pName) return;
+
+  for (let i = 0; i < dupRefs.length; i++) {
+    const docSnap = dupSnaps[i];
+    if (!docSnap?.exists()) continue;
+    const data = docSnap.data() || {};
+    const docSeatId = String(data.seatId || "").trim();
+    if (docSeatId === targetSeatId) continue;
+    if (!personMatchesSeatData(data, { uid: pUid, email: pEmail, name: pName })) continue;
+
+    tx.set(
+      dupRefs[i],
+      {
+        person: "비어있음",
+        personUid: "",
+        personEmail: "",
+        seatedAt: null,
+        status: "empty",
+        updatedAt: now,
+        updatedAtServer: serverTimestamp()
+      },
+      { merge: true }
+    );
+    const kEvent = String(data.currentEventId || data.mappedEventId || "").trim();
+    const kBox = String(data.boxId || "").trim();
+    if (kEvent && kBox) touchedProjectionKeys.add(`${kEvent}__${kBox}`);
+  }
+}
 
 function notifyOptimisticSeatAssignedForWaiting(waiting, seat, targetSeatId) {
   const uid = String(waiting?.uid || "").trim();
@@ -76,6 +141,7 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   let undoWaitingBefore = null;
   let canonicalSeatEventId = "";
   let canonicalSeatBoxId = "";
+  let assignEventCardLabel = "";
 
   GL.seatMutationInFlight = true;
   try {
@@ -124,7 +190,7 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
       canonicalSeatBoxId = canonicalSeatBoxId || fallback.boxId;
     }
 
-    await runTransaction(db, async (tx) => {
+    await runFirestoreTransactionWithRetry(db, async (tx) => {
       const waitingId = String(waiting.id || "").trim();
       const waitingUid = String(waiting.uid || "").trim();
       const waitingEmail = String(waiting.email || "").trim();
@@ -139,88 +205,84 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
         String(seatData.currentEventId || seatData.mappedEventId || canonicalSeatEventId || "").trim();
       canonicalSeatBoxId = String(seatData.boxId || canonicalSeatBoxId || "").trim();
 
-      let eventCardLabel =
-        getEventCardIdFromRecord({ id: canonicalSeatEventId }) || canonicalSeatEventId || "이벤트";
-      if (canonicalSeatEventId && GL.tournamentId) {
-        const eventSnap = await tx.get(
-          doc(db, "tournaments", GL.tournamentId, "events", canonicalSeatEventId)
-        );
-        if (eventSnap.exists()) {
-          eventCardLabel =
-            getEventCardIdFromRecord({
-              id: canonicalSeatEventId,
-              cardId: (eventSnap.data() || {}).cardId
-            }) || eventCardLabel;
-        }
-      }
-
       const wasOccupied = !isEmptyPerson(String(seatData.person || "").trim());
+      const prevUid = String(seatData.personUid || "").trim();
+      const prevEmail = String(seatData.personEmail || "").trim();
+      const prevName = String(seatData.person || "").trim();
 
       if (wasOccupied) {
         const seatPersonUid = String(seatData.personUid || "").trim();
         const seatPersonEmail = String(seatData.personEmail || "").trim();
         const seatEmailLc = seatPersonEmail.toLowerCase();
-
         const samePersonOnTargetSeat =
           (waitingUid && seatPersonUid && waitingUid === seatPersonUid) ||
           (waitingEmailLc && seatEmailLc && waitingEmailLc === seatEmailLc);
-
-        if (samePersonOnTargetSeat) {
-          throw new Error("same_person_noop");
-        }
+        if (samePersonOnTargetSeat) throw new Error("same_person_noop");
       }
 
-      const clearDupSeatsForPerson = async (person) => {
-        const pUid = String(person.uid || "").trim();
-        const pEmail = String(person.email || "").trim();
-        const pEmailLc = pEmail.toLowerCase();
-        const pName = String(person.name || "").trim();
-        if (!pUid && !pEmail && !pName) return;
+      const waitingDupRefs = getCandidateSeatRefsForPerson(
+        db,
+        GL.tournamentId,
+        GL.globalSeats,
+        { uid: waitingUid, email: waiting.email, name: waitingName },
+        targetSeatId
+      );
+      const prevDupRefs = wasOccupied
+        ? getCandidateSeatRefsForPerson(
+            db,
+            GL.tournamentId,
+            GL.globalSeats,
+            { uid: prevUid, email: prevEmail, name: prevName },
+            targetSeatId
+          )
+        : [];
 
-        const refs = getCandidateSeatRefsForPerson(
-          db,
-          GL.tournamentId,
-          GL.globalSeats,
-          { uid: pUid, email: pEmail, name: pName },
-          targetSeatId
+      const eventRef =
+        canonicalSeatEventId && GL.tournamentId
+          ? doc(db, "tournaments", GL.tournamentId, "events", canonicalSeatEventId)
+          : null;
+
+      const dupRefs = uniqueDocRefs([...waitingDupRefs, ...prevDupRefs]);
+      const readRefs = [waitingRef, ...(eventRef ? [eventRef] : []), ...dupRefs];
+      const readSnaps = await Promise.all(readRefs.map((r) => tx.get(r)));
+
+      const waitingSnap = readSnaps[0];
+      const eventSnap = eventRef ? readSnaps[1] : null;
+      const dupSnapOffset = eventRef ? 2 : 1;
+      const dupSnaps = readSnaps.slice(dupSnapOffset);
+
+      let eventCardLabel =
+        getEventCardIdFromRecord({ id: canonicalSeatEventId }) || canonicalSeatEventId || "이벤트";
+      if (eventSnap?.exists()) {
+        eventCardLabel =
+          getEventCardIdFromRecord({
+            id: canonicalSeatEventId,
+            cardId: (eventSnap.data() || {}).cardId
+          }) || eventCardLabel;
+      }
+      assignEventCardLabel = eventCardLabel;
+
+      clearDupSeatsInTransaction(
+        tx,
+        dupRefs,
+        dupSnaps,
+        { uid: waitingUid, email: waiting.email, name: waitingName },
+        targetSeatId,
+        now,
+        touchedProjectionKeys
+      );
+      if (wasOccupied) {
+        clearDupSeatsInTransaction(
+          tx,
+          dupRefs,
+          dupSnaps,
+          { uid: prevUid, email: prevEmail, name: prevName },
+          targetSeatId,
+          now,
+          touchedProjectionKeys
         );
+      }
 
-        for (const ref of refs) {
-          const docSnap = await tx.get(ref);
-          if (!docSnap.exists()) continue;
-          const data = docSnap.data() || {};
-          const docSeatId = String(data.seatId || "").trim();
-          if (docSeatId === targetSeatId) continue;
-          const dUid = String(data.personUid || "").trim();
-          const dEmail = String(data.personEmail || "").trim().toLowerCase();
-          const dName = String(data.person || "").trim();
-          const sameUser =
-            (pUid && dUid && pUid === dUid) ||
-            (pEmailLc && dEmail && pEmailLc === dEmail) ||
-            (!pUid && !pEmail && pName && dName === pName);
-          if (!sameUser) continue;
-          tx.set(
-            ref,
-            {
-              person: "비어있음",
-              personUid: "",
-              personEmail: "",
-              seatedAt: null,
-              status: "empty",
-              updatedAt: now,
-              updatedAtServer: serverTimestamp()
-            },
-            { merge: true }
-          );
-          const kEvent = String(data.currentEventId || data.mappedEventId || "").trim();
-          const kBox = String(data.boxId || "").trim();
-          if (kEvent && kBox) touchedProjectionKeys.add(`${kEvent}__${kBox}`);
-        }
-      };
-
-      await clearDupSeatsForPerson({ uid: waitingUid, email: waiting.email, name: waitingName });
-
-      const waitingSnap = await tx.get(waitingRef);
       const waitingData = waitingSnap.exists() ? waitingSnap.data() || {} : { waiting: [] };
       const waitingArr = Array.isArray(waitingData.waiting) ? waitingData.waiting : [];
       undoWaitingBefore = JSON.parse(JSON.stringify(waitingArr));
@@ -242,91 +304,25 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
       });
 
       let bumpedPrevHasOtherSeat = false;
-
-      if (wasOccupied) {
-        const prevUid = String(seatData.personUid || "").trim();
-        const prevEmail = String(seatData.personEmail || "").trim();
-        const prevName = String(seatData.person || "").trim();
-
-        await clearDupSeatsForPerson({
-          uid: prevUid,
-          email: prevEmail,
-          name: prevName
-        });
-
-        if (!isEmptyPerson(prevName)) {
-          const otherRefs = getCandidateSeatRefsForPerson(
-            db,
-            GL.tournamentId,
-            GL.globalSeats,
-            { uid: prevUid, email: prevEmail, name: prevName },
-            targetSeatId
-          );
-
-          for (const ref of otherRefs) {
-            const ds = await tx.get(ref);
-            if (!ds.exists()) continue;
-            const d = ds.data() || {};
-            const dName = String(d.person || "").trim();
-            if (isEmptyPerson(dName)) continue;
-            const dUid = String(d.personUid || "").trim();
-            const dEmail = String(d.personEmail || "").trim();
-            const same =
-              (prevUid && dUid && prevUid === dUid) ||
-              (prevEmail && dEmail && prevEmail === dEmail) ||
-              (!prevUid && !prevEmail && prevName && dName === prevName);
-            if (same) {
-              bumpedPrevHasOtherSeat = true;
-              break;
-            }
-          }
-
-          if (!bumpedPrevHasOtherSeat) {
-            nextWaiting = rebuildWaitingAfterSeatToWait(
-              nextWaiting,
-              GL.tournamentId,
-              { uid: prevUid, email: prevEmail, name: prevName },
-              now,
-              { source: "seat_swap" }
-            );
-          }
+      if (wasOccupied && !isEmptyPerson(prevName)) {
+        for (let i = 0; i < dupRefs.length; i++) {
+          const ds = dupSnaps[i];
+          if (!ds?.exists()) continue;
+          const d = ds.data() || {};
+          const dName = String(d.person || "").trim();
+          if (isEmptyPerson(dName)) continue;
+          if (!personMatchesSeatData(d, { uid: prevUid, email: prevEmail, name: prevName })) continue;
+          bumpedPrevHasOtherSeat = true;
+          break;
         }
-
-        if (prevUid) {
-          tx.set(
-            getAttendanceRef(db, GL.tournamentId, prevUid),
-            {
-              uid: prevUid,
-              email: prevEmail,
-              name: prevName,
-              tournamentId: GL.tournamentId,
-              status: bumpedPrevHasOtherSeat ? "assigned" : "waiting",
-              statusChangedAt: now,
-              updatedAt: now,
-              updatedAtServer: serverTimestamp()
-            },
-            { merge: true }
+        if (!bumpedPrevHasOtherSeat) {
+          nextWaiting = rebuildWaitingAfterSeatToWait(
+            nextWaiting,
+            GL.tournamentId,
+            { uid: prevUid, email: prevEmail, name: prevName },
+            now,
+            { source: "seat_swap" }
           );
-
-          if (!bumpedPrevHasOtherSeat) {
-            tx.set(
-              doc(db, "layout_notifications", prevUid),
-              {
-                type: "seat_cleared",
-                acknowledged: true,
-                seatId: "",
-                seatLabel: "",
-                eventId: "",
-                eventTitle: "",
-                boxId: "",
-                targetUrl: "",
-                message: "",
-                updatedAt: now,
-                updatedAtServer: serverTimestamp()
-              },
-              { merge: true }
-            );
-          }
         }
       }
 
@@ -379,32 +375,73 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
           },
           { merge: true }
         );
+      }
 
+      if (wasOccupied && prevUid) {
         tx.set(
-          doc(db, "layout_notifications", waiting.uid),
+          getAttendanceRef(db, GL.tournamentId, prevUid),
           {
-            type: "seat_assigned",
-            acknowledged: false,
-            createdAt: now,
+            uid: prevUid,
+            email: prevEmail,
+            name: prevName,
+            tournamentId: GL.tournamentId,
+            status: bumpedPrevHasOtherSeat ? "assigned" : "waiting",
+            statusChangedAt: now,
+            updatedAt: now,
+            updatedAtServer: serverTimestamp()
+          },
+          { merge: true }
+        );
+
+        if (!bumpedPrevHasOtherSeat) {
+          tx.set(
+            doc(db, "layout_notifications", prevUid),
+            {
+              type: "seat_cleared",
+              acknowledged: true,
+              seatId: "",
+              seatLabel: "",
+              eventId: "",
+              eventTitle: "",
+              boxId: "",
+              targetUrl: "",
+              message: "",
+              updatedAt: now,
+              updatedAtServer: serverTimestamp()
+            },
+            { merge: true }
+          );
+        }
+      }
+    });
+
+    const assigneeUid = String(waiting.uid || "").trim();
+    if (assigneeUid) {
+      await setDoc(
+        doc(db, "layout_notifications", assigneeUid),
+        {
+          ...buildSeatAssignedNotificationWrite(assigneeUid, {
             tournamentId: GL.tournamentId,
             eventId: canonicalSeatEventId,
-            eventTitle: eventCardLabel,
+            eventTitle: assignEventCardLabel,
             boxId: canonicalSeatBoxId,
             seatId: seat.seatId || "",
             seatLabel: seat.label || seat.no || "",
             targetUrl: `./layout.html?tournamentId=${encodeURIComponent(GL.tournamentId)}&eventId=${encodeURIComponent(canonicalSeatEventId)}&boxId=${encodeURIComponent(canonicalSeatBoxId)}&focusSeatId=${encodeURIComponent(seat.seatId || "")}`,
             message: buildSeatAssignedNotifyMessage({
               eventId: canonicalSeatEventId,
-              cardId: eventCardLabel,
+              cardId: assignEventCardLabel,
               seatLabel: seat.label || seat.no || ""
             }),
+            createdAt: now,
             updatedAt: now,
             updatedAtServer: serverTimestamp()
-          },
-          { merge: true }
-        );
-      }
-    });
+          })
+        },
+        { merge: true }
+      );
+    }
+
     flushOptimisticGlobalLayoutUi();
   } catch (err) {
     rollbackOptimistic();

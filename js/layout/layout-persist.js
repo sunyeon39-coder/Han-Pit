@@ -1,4 +1,5 @@
 import { db } from "../firebase.js";
+import { buildSeatAssignedNotificationWrite } from "../shared/seat-notification-push.js";
 import { doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { syncLayoutGlobalSeatsForCurrentLayout } from "./global-seat-sync.js";
 
@@ -89,16 +90,22 @@ export function createLayoutPersistServices({
     if (!hasWritableLayoutContext()) return;
     if (!payload?.uid) return;
 
-    try {
-      await setDoc(
-        doc(db, "layout_notifications", payload.uid),
-        {
+    const uid = String(payload.uid || "").trim();
+    const isSeatAssigned = String(payload.type || "").trim() === "seat_assigned";
+    const body = isSeatAssigned
+      ? {
+          ...buildSeatAssignedNotificationWrite(uid, payload),
+          updatedAt: Date.now(),
+          updatedAtServer: serverTimestamp()
+        }
+      : {
           ...payload,
           updatedAt: Date.now(),
           updatedAtServer: serverTimestamp()
-        },
-        { merge: true }
-      );
+        };
+
+    try {
+      await setDoc(doc(db, "layout_notifications", uid), body, { merge: true });
     } catch (err) {
       console.error("writeUserNotification error:", err);
     }

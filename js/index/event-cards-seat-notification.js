@@ -6,6 +6,7 @@ import {
   buildSeatAssignedNotifyMessage,
   resolveSeatNotificationCardLabel
 } from "../shared/seat-notification-label.js";
+import { seatNotificationKey } from "../shared/seat-notification-push.js";
 import {
   buildOptimisticSeatAlertKey,
   markOptimisticSeatAlertShown,
@@ -295,13 +296,11 @@ export function bindMySeatAssignment(user) {
       scheduleIndexCardsRender();
 
       if (data.acknowledged !== true) {
-        const notificationKey = [
-          user.uid || "",
-          data.createdAt || "",
-          data.seatId || "",
-          data.eventId || "",
-          data.boxId || ""
-        ].join("__");
+        const notificationKey = seatNotificationKey(user.uid, data);
+
+        if (activeSeatNotificationId && activeSeatNotificationId !== notificationKey) {
+          hideSeatAssignmentModal();
+        }
 
         if (activeSeatNotificationId === notificationKey) return;
 

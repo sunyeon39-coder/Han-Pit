@@ -1,3 +1,4 @@
+import { buildSeatAssignedNotificationWrite } from "../shared/seat-notification-push.js";
 import { db } from "../firebase.js";
 import {
   deleteDoc,
@@ -492,21 +493,21 @@ export async function applyGlobalSeatRename(
     await setDoc(
       doc(db, "layout_notifications", uid),
       {
-        type: "seat_assigned",
-        acknowledged: false,
-        createdAt: now,
-        tournamentId: GL.tournamentId,
-        eventId: resolvedNextEventId,
-        eventTitle: eventCardLabel,
-        boxId: nextBoxId,
-        seatId: targetSeatId,
-        seatLabel: nextLabel,
-        targetUrl: `./layout.html?tournamentId=${encodeURIComponent(GL.tournamentId)}&eventId=${encodeURIComponent(resolvedNextEventId)}&boxId=${encodeURIComponent(nextBoxId)}&focusSeatId=${encodeURIComponent(targetSeatId)}`,
-        message: `${eventCardLabel} / Seat ${nextLabel} ${
-          moved ? "배치(카드·Box)가 변경되었습니다." : "라벨이 변경되었습니다."
-        }`,
-        updatedAt: now,
-        updatedAtServer: serverTimestamp()
+        ...buildSeatAssignedNotificationWrite(uid, {
+          tournamentId: GL.tournamentId,
+          eventId: resolvedNextEventId,
+          eventTitle: eventCardLabel,
+          boxId: nextBoxId,
+          seatId: targetSeatId,
+          seatLabel: nextLabel,
+          targetUrl: `./layout.html?tournamentId=${encodeURIComponent(GL.tournamentId)}&eventId=${encodeURIComponent(resolvedNextEventId)}&boxId=${encodeURIComponent(nextBoxId)}&focusSeatId=${encodeURIComponent(targetSeatId)}`,
+          message: `${eventCardLabel} / Seat ${nextLabel} ${
+            moved ? "배치(카드·Box)가 변경되었습니다." : "라벨이 변경되었습니다."
+          }`,
+          createdAt: now,
+          updatedAt: now,
+          updatedAtServer: serverTimestamp()
+        })
       },
       { merge: true }
     );

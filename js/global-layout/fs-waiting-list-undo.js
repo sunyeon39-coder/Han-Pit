@@ -7,7 +7,10 @@ import {
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { GL } from "./state.js";
-import { buildGlobalSeatDocId, getAttendanceRef, makeUid } from "./utils.js";
+import { buildGlobalSeatDocId, getAttendanceRef, isEmptyPerson, makeUid } from "./utils.js";
+import { getCandidateSeatRefsForPerson } from "./seat-candidates.js";
+import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
+import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
 import {
   applyWaitingBlockLocal,
   getCurrentTournamentWaiting,
@@ -18,7 +21,14 @@ import { renderSeatPanel, renderWaiting } from "./panel-ui.js";
 import { clearMyWaitingPick } from "./waiting-picks.js";
 import { updateGlobalMetaToolbar } from "./toolbar.js";
 import { syncLayoutProjection } from "./fs-layout-projection.js";
-import { popGlobalUndo, restoreGlobalUndo, pushGlobalUndo } from "./undo-stack.js";
+import {
+  popGlobalUndo,
+  popGlobalRedo,
+  pushGlobalRedo,
+  pushGlobalUndo,
+  restoreGlobalRedo,
+  restoreGlobalUndo
+} from "./undo-stack.js";
 
 export async function updateGlobalWaiting(nextWaiting = []) {
   await setDoc(
@@ -208,6 +218,318 @@ async function undoClearSeatPayload(payload) {
   await syncLayoutProjection(payload.eventId, payload.boxId);
 }
 
+async function redoAssignPayload(payload) {
+  const waitingRow = payload.waiting && typeof payload.waiting === "object" ? payload.waiting : null;
+  if (!waitingRow) throw new Error("redo_assign_missing_waiting");
+
+  const targetSeatId = String(payload.targetSeatId || "").trim();
+  const eventId = String(payload.eventId || "").trim();
+  const boxId = String(payload.boxId || "").trim();
+  if (!targetSeatId || !eventId || !boxId) throw new Error("redo_assign_bad_ref");
+
+  const seatBefore = payload.seatBefore && typeof payload.seatBefore === "object" ? payload.seatBefore : null;
+  const waitingRef = doc(db, "layout_shared", "global_waiting");
+  const seatRef = doc(
+    db,
+    "tournaments",
+    GL.tournamentId,
+    "global_seats",
+    buildGlobalSeatDocId(eventId, boxId, targetSeatId)
+  );
+  const now = Date.now();
+  const waitingId = String(waitingRow.id || "").trim();
+  const waitingUid = String(waitingRow.uid || "").trim();
+  const waitingEmail = String(waitingRow.email || "").trim();
+  const waitingName = String(waitingRow.name || "").trim();
+  const waitingTournamentId = String(waitingRow.tournamentId || GL.tournamentId).trim();
+
+  await runFirestoreTransactionWithRetry(db, async (tx) => {
+    const [wSnap, seatSnap] = await Promise.all([tx.get(waitingRef), tx.get(seatRef)]);
+    if (!seatSnap?.exists()) throw new Error("seat_not_found");
+
+    const wData = wSnap.exists() ? wSnap.data() || {} : {};
+    const arr = Array.isArray(wData.waiting) ? [...wData.waiting] : [];
+
+    let nextWaiting = arr.filter((w) => {
+      if (!w || typeof w !== "object") return false;
+      const wId = String(w.id || "").trim();
+      const wUid = String(w.uid || "").trim();
+      const wEmail = String(w.email || "").trim();
+      const wName = String(w.name || "").trim();
+      const wTid = String(w.tournamentId || "").trim();
+      const sameTournament = !wTid || wTid === waitingTournamentId;
+      if (!sameTournament) return true;
+      if (waitingId && wId === waitingId) return false;
+      if (waitingUid && wUid && wUid === waitingUid) return false;
+      if (waitingEmail && wEmail && wEmail === waitingEmail) return false;
+      if (!waitingUid && !waitingEmail && waitingName && wName === waitingName) return false;
+      return true;
+    });
+
+    const prevUid = String(seatBefore?.personUid || "").trim();
+    const prevEmail = String(seatBefore?.personEmail || "").trim();
+    const prevName = String(seatBefore?.person || "").trim();
+    if (seatBefore && !isEmptyPerson(prevName)) {
+      nextWaiting = rebuildWaitingAfterSeatToWait(
+        nextWaiting,
+        GL.tournamentId,
+        { uid: prevUid, email: prevEmail, name: prevName },
+        now,
+        { source: "seat_swap" }
+      );
+    }
+
+    tx.set(
+      seatRef,
+      {
+        person: String(waitingRow.name || "").trim(),
+        personUid: String(waitingRow.uid || "").trim(),
+        personEmail: String(waitingRow.email || "").trim(),
+        seatedAt: now,
+        status: "occupied",
+        updatedAt: now,
+        updatedAtServer: serverTimestamp()
+      },
+      { merge: true }
+    );
+
+    tx.set(
+      waitingRef,
+      {
+        ...wData,
+        version: 2,
+        waiting: nextWaiting,
+        updatedAt: now,
+        updatedAtServer: serverTimestamp()
+      },
+      { merge: true }
+    );
+
+    if (waitingUid) {
+      tx.set(
+        getAttendanceRef(db, GL.tournamentId, waitingUid),
+        {
+          uid: waitingUid,
+          email: String(waitingRow.email || "").trim(),
+          name: String(waitingRow.name || "").trim(),
+          tournamentId: GL.tournamentId,
+          status: "assigned",
+          statusChangedAt: now,
+          updatedAt: now,
+          updatedAtServer: serverTimestamp()
+        },
+        { merge: true }
+      );
+    }
+
+    if (prevUid && !isEmptyPerson(prevName)) {
+      tx.set(
+        getAttendanceRef(db, GL.tournamentId, prevUid),
+        {
+          uid: prevUid,
+          email: prevEmail,
+          name: prevName,
+          tournamentId: GL.tournamentId,
+          status: "waiting",
+          statusChangedAt: now,
+          updatedAt: now,
+          updatedAtServer: serverTimestamp()
+        },
+        { merge: true }
+      );
+    }
+  });
+
+  await syncLayoutProjection(eventId, boxId);
+}
+
+async function redoClearSeatPayload(payload) {
+  const targetSeatId = String(payload.targetSeatId || "").trim();
+  const eventId = String(payload.eventId || "").trim();
+  const boxId = String(payload.boxId || "").trim();
+  const seatBefore = payload.seatBefore && typeof payload.seatBefore === "object" ? payload.seatBefore : null;
+  if (!targetSeatId || !eventId || !boxId || !seatBefore) throw new Error("redo_clear_missing_seat");
+
+  const waitingRef = doc(db, "layout_shared", "global_waiting");
+  const seatRef = doc(
+    db,
+    "tournaments",
+    GL.tournamentId,
+    "global_seats",
+    buildGlobalSeatDocId(eventId, boxId, targetSeatId)
+  );
+  const now = Date.now();
+  const prevUid = String(seatBefore.personUid || "").trim();
+  const prevEmail = String(seatBefore.personEmail || "").trim();
+  const prevName = String(seatBefore.person || "").trim();
+
+  const otherRefs = getCandidateSeatRefsForPerson(
+    db,
+    GL.tournamentId,
+    GL.globalSeats,
+    { uid: prevUid, email: prevEmail, name: prevName },
+    targetSeatId
+  );
+
+  await runFirestoreTransactionWithRetry(db, async (tx) => {
+    const [waitingSnap, seatSnap, ...otherSnaps] = await Promise.all([
+      tx.get(waitingRef),
+      tx.get(seatRef),
+      ...otherRefs.map((r) => tx.get(r))
+    ]);
+    if (!seatSnap?.exists()) throw new Error("seat_not_found");
+
+    const waitingData = waitingSnap.exists() ? waitingSnap.data() || {} : { waiting: [] };
+    const waitingArr = Array.isArray(waitingData.waiting) ? waitingData.waiting : [];
+    let hasOtherSeat = false;
+
+    if (!isEmptyPerson(prevName)) {
+      hasOtherSeat = otherSnaps.some((docSnap) => {
+        if (!docSnap.exists()) return false;
+        const data = docSnap.data() || {};
+        const dSeatId = String(data.seatId || "").trim();
+        if (dSeatId === targetSeatId) return false;
+        const dUid = String(data.personUid || "").trim();
+        const dEmail = String(data.personEmail || "").trim();
+        const dName = String(data.person || "").trim();
+        const sameUser =
+          (prevUid && dUid && prevUid === dUid) ||
+          (prevEmail && dEmail && prevEmail === dEmail) ||
+          (!prevUid && !prevEmail && prevName && dName === prevName);
+        if (!sameUser) return false;
+        return !isEmptyPerson(dName);
+      });
+    }
+
+    tx.set(
+      seatRef,
+      {
+        person: "비어있음",
+        personUid: "",
+        personEmail: "",
+        seatedAt: null,
+        status: "empty",
+        updatedAt: now,
+        updatedAtServer: serverTimestamp()
+      },
+      { merge: true }
+    );
+
+    if (!isEmptyPerson(prevName) && !hasOtherSeat) {
+      const nextWaiting = rebuildWaitingAfterSeatToWait(waitingArr, GL.tournamentId, {
+        uid: prevUid,
+        email: prevEmail,
+        name: prevName
+      }, now);
+      tx.set(
+        waitingRef,
+        {
+          ...waitingData,
+          version: 2,
+          waiting: nextWaiting,
+          updatedAt: now,
+          updatedAtServer: serverTimestamp()
+        },
+        { merge: true }
+      );
+    }
+
+    if (prevUid) {
+      tx.set(
+        getAttendanceRef(db, GL.tournamentId, prevUid),
+        {
+          uid: prevUid,
+          email: prevEmail,
+          name: prevName,
+          tournamentId: GL.tournamentId,
+          status: hasOtherSeat ? "assigned" : "waiting",
+          statusChangedAt: now,
+          updatedAt: now,
+          updatedAtServer: serverTimestamp()
+        },
+        { merge: true }
+      );
+    }
+  });
+
+  await syncLayoutProjection(eventId, boxId);
+}
+
+async function redoAddSeatPayload(payload) {
+  const seatId = String(payload.seatId || "").trim();
+  const eventId = String(payload.eventId || "").trim();
+  const boxId = String(payload.boxId || "").trim();
+  if (!seatId || !eventId || !boxId) throw new Error("redo_add_seat_bad_ref");
+
+  const seat = GL.globalSeats.find((s) => String(s?.seatId || "").trim() === seatId);
+  const label = String(seat?.label || seat?.no || seatId).trim();
+  const order = Number(seat?.order ?? seat?.no ?? 0) || 0;
+  const now = Date.now();
+
+  await setDoc(
+    doc(db, "tournaments", GL.tournamentId, "global_seats", buildGlobalSeatDocId(eventId, boxId, seatId)),
+    {
+      seatId,
+      label,
+      no: order,
+      order,
+      x: Number(seat?.x ?? 0) || 0,
+      y: Number(seat?.y ?? 0) || 0,
+      person: "비어있음",
+      personUid: "",
+      personEmail: "",
+      seatedAt: null,
+      status: "empty",
+      tournamentId: GL.tournamentId,
+      mappedEventId: eventId,
+      currentEventId: eventId,
+      boxId,
+      sourceLayoutDocId: `${eventId}__${boxId}`,
+      updatedAt: now,
+      updatedAtServer: serverTimestamp()
+    },
+    { merge: true }
+  );
+  await syncLayoutProjection(eventId, boxId);
+}
+
+async function redoRemoveWaitingPayload(payload) {
+  const removed =
+    payload.removedWaiting && typeof payload.removedWaiting === "object"
+      ? payload.removedWaiting
+      : null;
+  const wid = String(removed?.id || payload.waitingId || "").trim();
+  if (!wid) throw new Error("redo_remove_waiting_bad_ref");
+
+  const waitingRef = doc(db, "layout_shared", "global_waiting");
+  const now = Date.now();
+
+  await runFirestoreTransactionWithRetry(db, async (tx) => {
+    const snap = await tx.get(waitingRef);
+    const data = snap.exists() ? snap.data() || {} : {};
+    const arr = Array.isArray(data.waiting) ? [...data.waiting] : [];
+    const next = arr.filter((w) => String(w?.id || "").trim() !== wid);
+    if (next.length === arr.length) throw new Error("redo_remove_waiting_missing_row");
+    tx.set(
+      waitingRef,
+      {
+        ...data,
+        version: 2,
+        waiting: next,
+        updatedAt: now,
+        updatedAtServer: serverTimestamp()
+      },
+      { merge: true }
+    );
+  });
+}
+
+function finishUndoRedoUiRefresh() {
+  if (GL.activeTab === "seat") renderSeatPanel();
+  else renderWaiting(getCurrentTournamentWaiting());
+  updateGlobalMetaToolbar();
+}
+
 export async function undoLastGlobalAction() {
   if (!GL.isAdminUser) return;
   const snap = popGlobalUndo();
@@ -245,6 +567,7 @@ export async function undoLastGlobalAction() {
     } else {
       throw new Error("undo_unknown_kind");
     }
+    pushGlobalRedo(snap);
   } catch (err) {
     console.error("undoLastGlobalAction error:", err);
     restoreGlobalUndo(snap);
@@ -253,9 +576,45 @@ export async function undoLastGlobalAction() {
     return;
   }
 
-  if (GL.activeTab === "seat") renderSeatPanel();
-  else renderWaiting(getCurrentTournamentWaiting());
-  updateGlobalMetaToolbar();
+  finishUndoRedoUiRefresh();
+}
+
+export async function redoLastGlobalAction() {
+  if (!GL.isAdminUser) return;
+  const snap = popGlobalRedo();
+  if (!snap) return;
+  try {
+    if (snap.kind === "add_seat") {
+      await redoAddSeatPayload(snap);
+    } else if (snap.kind === "assign") {
+      await redoAssignPayload(snap);
+    } else if (snap.kind === "clear_seat") {
+      await redoClearSeatPayload(snap);
+    } else if (snap.kind === "delete_seat") {
+      const d = snap.seatDoc && typeof snap.seatDoc === "object" ? snap.seatDoc : {};
+      const sid = String(snap.seatId || d.seatId || "").trim();
+      const eid = String(snap.eventId || d.currentEventId || d.mappedEventId || "").trim();
+      const bid = String(snap.boxId || d.boxId || "").trim();
+      if (!sid || !eid || !bid) throw new Error("redo_delete_bad_ref");
+      await deleteDoc(
+        doc(db, "tournaments", GL.tournamentId, "global_seats", buildGlobalSeatDocId(eid, bid, sid))
+      );
+      await syncLayoutProjection(eid, bid);
+    } else if (snap.kind === "remove_waiting") {
+      await redoRemoveWaitingPayload(snap);
+    } else {
+      throw new Error("redo_unknown_kind");
+    }
+    pushGlobalUndo(snap, { clearRedo: false });
+  } catch (err) {
+    console.error("redoLastGlobalAction error:", err);
+    restoreGlobalRedo(snap);
+    alert("앞으로 돌리기에 실패했습니다.");
+    updateGlobalMetaToolbar();
+    return;
+  }
+
+  finishUndoRedoUiRefresh();
 }
 
 export async function addManualWaitingByName(rawName = "") {
@@ -308,7 +667,11 @@ export async function removeManualWaiting(waitingId = "") {
   const next = snapshotBefore.filter((w) => String(w?.id || "").trim() !== wid);
   replaceGlobalWaitingLocal(next);
   flushOptimisticGlobalLayoutUi();
-  pushGlobalUndo({ kind: "remove_waiting", snapshotBefore: JSON.parse(JSON.stringify(getCurrentTournamentWaiting())) });
+  pushGlobalUndo({
+    kind: "remove_waiting",
+    snapshotBefore,
+    removedWaiting: { ...row }
+  });
   if (GL.selectedWaitingId === wid) {
     GL.selectedWaitingId = "";
     void clearMyWaitingPick();

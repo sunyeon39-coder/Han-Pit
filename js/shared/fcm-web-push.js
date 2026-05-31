@@ -17,7 +17,13 @@ export const FCM_VAPID_KEY =
 
 let foregroundBadgeListenerBound = false;
 
-const SEAT_NOTIFY_TAG = "hanpit-seat";
+function resolveSeatNotifyTag(data = {}) {
+  const explicit = String(data.notifyTag || "").trim();
+  if (explicit) return explicit;
+  const uid = String(data.uid || "").trim();
+  if (uid) return `hanpit-seat-${uid}`;
+  return "hanpit-seat";
+}
 
 /** Badging API 없는 Android Chrome 탭용 — 탭 제목에 읽지 않은 건수 표시 */
 function captureDocumentTitleBadgeBaseOnce() {
@@ -70,7 +76,7 @@ async function handleForegroundFcmPayload(payload) {
   if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
 
   const icon = notifyIconUrl();
-  const notifyTag = String(data.dedupKey || "").trim() || SEAT_NOTIFY_TAG;
+  const notifyTag = resolveSeatNotifyTag(data);
   const noteOpts = {
     body: body || "좌석이 배치되었습니다.",
     tag: notifyTag,

@@ -10,6 +10,7 @@ export {
 export {
   updateGlobalWaiting,
   undoLastGlobalAction,
+  redoLastGlobalAction,
   addManualWaiting,
   addManualWaitingByName,
   removeManualWaiting,

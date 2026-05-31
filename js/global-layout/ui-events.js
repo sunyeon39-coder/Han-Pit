@@ -24,7 +24,8 @@ import {
   addManualWaitingByName,
   removeManualWaiting,
   setWaitingBlocked,
-  undoLastGlobalAction
+  undoLastGlobalAction,
+  redoLastGlobalAction
 } from "./firestore-ops.js";
 import { initGlobalSeatEditModal, openSeatEditModal } from "./seat-edit-modal.js";
 import {
@@ -34,7 +35,7 @@ import {
 import { setWaitingRowSelection } from "./waiting-picks.js";
 import { refreshGlobalLayoutAlignButtonState } from "./canvas-viewport.js";
 import { fmtElapsed, isEmptyPerson, timerClass } from "./utils.js";
-import { getGlobalUndoCount } from "./undo-stack.js";
+import { getGlobalRedoCount, getGlobalUndoCount } from "./undo-stack.js";
 
 const GLOBAL_SEAT_DOUBLE_ACTIVATE_MS = 350;
 
@@ -105,6 +106,12 @@ export function bindGlobalLayoutEventHandlers() {
       const btn = e.target.closest("#globalUndoToolbarBtn");
       if (getGlobalUndoCount() <= 0 || btn?.disabled) return;
       await undoLastGlobalAction();
+      return;
+    }
+    if (e.target.closest("#globalRedoToolbarBtn")) {
+      const btn = e.target.closest("#globalRedoToolbarBtn");
+      if (getGlobalRedoCount() <= 0 || btn?.disabled) return;
+      await redoLastGlobalAction();
     }
   });
 
@@ -192,7 +199,12 @@ export function bindGlobalLayoutEventHandlers() {
           alert("Seat 정보를 찾을 수 없습니다. 잠시 후 다시 시도해 주세요.");
         } else {
           console.error("assignSelectedWaitingToSeat error:", err);
-          alert("대기 배치에 실패했습니다.");
+          const code = String(err?.code || "").trim();
+          const hint =
+            code === "failed-precondition" || code === "unavailable"
+              ? "\n\n네트워크·Safari 연결 문제이거나 저장 순서 오류일 수 있습니다. 잠시 후 다시 시도해 주세요."
+              : "";
+          alert(`대기 배치에 실패했습니다.${hint}`);
         }
       }
       return;

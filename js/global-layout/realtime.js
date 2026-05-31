@@ -5,13 +5,13 @@ import {
   getDocs,
   getDocsFromServer,
   onSnapshot,
-  runTransaction,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   buildAttendanceInactiveUidSet,
   filterAttendanceRowsForWaitingMerge
 } from "../shared/attendance-waiting-filter.js";
+import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
 import {
   dealerAttendanceQueryForTournament,
   filterAttendanceDocsForTournament
@@ -158,7 +158,7 @@ async function recoverRemovedSeatPeopleToWaiting(removedSeats = [], currentSeats
 
   const waitingRef = doc(db, "layout_shared", "global_waiting");
   const now = Date.now();
-  await runTransaction(db, async (tx) => {
+  await runFirestoreTransactionWithRetry(db, async (tx) => {
     const waitingSnap = await tx.get(waitingRef);
     const waitingData = waitingSnap.exists() ? waitingSnap.data() || {} : {};
     const waitingArr = Array.isArray(waitingData.waiting) ? waitingData.waiting : [];

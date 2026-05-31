@@ -21,13 +21,20 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 /**
- * Safari·iOS PWA에서 Fetch Streams/WebChannel이
- * "Fetch API … due to access control checks" 로 끊기는 문제 완화.
- * (Listen·Write RPC 모두 영향 — 배치도/통합배치도 데이터 미표시)
+ * Safari·iOS PWA: WebChannel(Fetch Streams)이
+ * "XMLHttpRequest … due to access control checks" 로 끊기는 문제 완화.
+ * Listen·Write 채널 모두 long-polling + 비-stream 모드로 고정합니다.
+ *
+ * - experimentalAutoDetectLongPolling 과 force 를 동시에 켜면 충돌할 수 있어 detect 는 끔
+ * - 모바일에서 PC 127.0.0.1 로 접속하면 별도 네트워크/CORS 이슈가 날 수 있음 → Pages URL 사용
  */
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
-  useFetchStreams: false
+  experimentalAutoDetectLongPolling: false,
+  useFetchStreams: false,
+  experimentalLongPollingOptions: {
+    timeoutSeconds: 25
+  }
 });
 
 export { app };

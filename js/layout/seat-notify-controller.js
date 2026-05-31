@@ -7,6 +7,7 @@ import {
   shouldUseOptimisticSeatAlertOnMobile,
   wasOptimisticSeatAlertShown
 } from "../shared/optimistic-seat-assigned-notify.js";
+import { buildSeatNotifyTag, seatNotificationKey } from "../shared/seat-notification-push.js";
 import { db, getMessagingSafe } from "../firebase.js";
 import {
   FCM_VAPID_KEY,
@@ -260,14 +261,17 @@ export function createLayoutSeatNotifyController({
     void startAlertSoundLoop();
   }
 
-  function showBrowserNotification(title, body = "") {
+  function showBrowserNotification(title, body = "", uid = "") {
     try {
       if (!("Notification" in window)) return;
       if (Notification.permission !== "granted") return;
 
+      const user = getCurrentUser();
+      const tag = buildSeatNotifyTag(uid || user?.uid || "");
+
       new Notification(title, {
         body,
-        tag: "hanpit-seat",
+        tag,
         renotify: true,
         lang: "ko",
         vibrate: [180, 80, 180]
@@ -326,7 +330,7 @@ export function createLayoutSeatNotifyController({
       seatLabel,
       targetUrl
     });
-    showBrowserNotification("배치 알림", msg);
+    showBrowserNotification("배치 알림", msg, myUid);
     return true;
   }
 
@@ -391,7 +395,7 @@ export function createLayoutSeatNotifyController({
 
     /* Android 등: 탭이 보이는 동안(document.hidden=false)에는 이전에 OS 알림을 생략해
        소리·오버레이만 있었음. FCM과 동일 tag 로 한 번만 머물도록 시스템 트레이에도 표시. */
-    showBrowserNotification("배치 알림", msg);
+    showBrowserNotification("배치 알림", msg, user.uid);
   }
 
   async function showPendingSeatNotificationOnce() {

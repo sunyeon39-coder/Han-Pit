@@ -60,6 +60,8 @@ export const GL = {
   panelOpen: false,
   /** 최근 작업 undo stack (최신이 끝) */
   globalUndoStack: [],
+  /** 되돌린 작업 redo stack (최신이 끝, 최대 undo 와 동일) */
+  globalRedoStack: [],
   /** 하위 호환용 최신 undo 1건 캐시 */
   lastGlobalUndo: null,
   waitListScrollTop: 0,

@@ -2,6 +2,10 @@
  * layout_notifications/{uid} 에 seat_assigned 가 기록되면 users/{uid}.fcmToken 으로 FCM 전송.
  * (레이아웃 / 통합 배치도 / 동일 Firestore 경로를 쓰는 모든 배치 흐름 공통 처리)
  *
+ * - OS 알림 tag: hanpit-seat-{uid} (사용자당 1개, 잠금 화면은 최신 배치로 갱신)
+ * - createdAt 30분 초과 문서는 FCM 생략 (재시도·늦은 트리거만 차단)
+ * - dedupKey 는 Cloud Function 내부 중복 전송 방지용
+ *
  * 배포: Blaze 플랜에서
  *   cd functions && npm install && cd .. && firebase deploy --only functions
  *
@@ -36,6 +40,13 @@ function buildDedupKey(uid, after) {
   const seatId = String(after.seatId || "").trim();
   return `${uid}|${createdMs}|${eventId}|${boxId}|${seatId}`;
 }
+
+function buildSeatNotifyTag(uid) {
+  const u = String(uid || "").trim();
+  return u ? `hanpit-seat-${u}` : "hanpit-seat";
+}
+
+const STALE_SEAT_NOTIFY_MAX_AGE_MS = 30 * 60 * 1000;
 
 const PUSH_APP_TITLE = "Han Pit";
 
@@ -109,8 +120,22 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten("layout_notifications/{uid}
   if (!uid) return;
 
   const dedupKey = buildDedupKey(uid, after);
-
+  const notifyTag = buildSeatNotifyTag(uid);
+  const createdMs = toMillis(after.createdAt);
   const notifyRef = change.after.ref;
+
+  if (createdMs > 0 && Date.now() - createdMs > STALE_SEAT_NOTIFY_MAX_AGE_MS) {
+    try {
+      await notifyRef.set(
+        {fcmSeatNotifyDedupKey: dedupKey, fcmSeatNotifySending: FieldValue.delete()},
+        {merge: true}
+      );
+    } catch (e) {
+      console.error("[notifyLayoutSeatAssigned] stale notify mark failed", uid, e);
+    }
+    console.info("[notifyLayoutSeatAssigned] skip stale FCM", uid, createdMs);
+    return;
+  }
   let shouldSend = false;
   try {
     shouldSend = await db.runTransaction(async (tx) => {
@@ -164,7 +189,9 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten("layout_notifications/{uid}
         body,
         targetUrl,
         appBadgeCount: String(badgeN),
-        dedupKey
+        dedupKey,
+        notifyTag,
+        uid
       },
       android: {priority: "high"},
       webpush: {

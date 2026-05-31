@@ -8,7 +8,7 @@
     document.documentElement.style.backgroundColor="#060c17";
     document.documentElement.style.colorScheme="dark";
   }catch(e){}
-  var BUILD="20260531091120";
+  var BUILD="20260531110202";
   var KEY="hanPitAppVersion";
   var meta=document.querySelector('meta[name="han-pit-build"]');
   var pageBuild=meta?String(meta.getAttribute("content")||"").trim():"";
@@ -134,7 +134,7 @@
 })();
 </script>
   <!-- /han-pit-asset-fix -->
-  <meta name="han-pit-build" content="20260531091120" />
+  <meta name="han-pit-build" content="20260531110202" />
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Han Pit - Global Layout</title>
@@ -144,8 +144,8 @@
   <meta name="theme-color" content="#111832" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <link rel="stylesheet" href="./css/layout.css?v=20260531091120" />
-  <link rel="stylesheet" href="./css/global-layout.css?v=20260531091120" />
+  <link rel="stylesheet" href="./css/layout.css?v=20260531110202" />
+  <link rel="stylesheet" href="./css/global-layout.css?v=20260531110202" />
 </head>
 <body class="page-global-layout">
   <header class="topbar">
@@ -191,7 +191,8 @@
           <span id="blockedCount" class="hint-pill hint-pill--block">BLOCK: 0</span>
         </div>
         <div id="globalMetaSeatActions" class="global-meta-actions hidden" aria-hidden="true">
-          <button type="button" id="globalUndoToolbarBtn" class="pill-inline seat-meta-btn seat-meta-btn--undo" disabled>되돌리기</button>
+          <button type="button" id="globalUndoToolbarBtn" class="pill-inline seat-meta-btn seat-meta-btn--undo seat-meta-btn--history" disabled aria-label="되돌리기" title="되돌릴 작업이 없습니다">←</button>
+          <button type="button" id="globalRedoToolbarBtn" class="pill-inline seat-meta-btn seat-meta-btn--redo seat-meta-btn--history" disabled aria-label="앞으로돌리기" title="앞으로 돌릴 작업이 없습니다">→</button>
         </div>
       </div>
       <div id="panelContent"></div>
@@ -332,6 +333,6 @@
     </div>
   </div>
 
-  <script type="module" src="./js/global-layout.js?v=20260531091120"></script>
+  <script type="module" src="./js/global-layout.js?v=20260531110202"></script>
 </body>
 </html>

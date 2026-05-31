@@ -1,5 +1,5 @@
 import { GL } from "./state.js";
-import { getGlobalUndoCount, peekGlobalUndo } from "./undo-stack.js";
+import { getGlobalRedoCount, getGlobalUndoCount, peekGlobalRedo, peekGlobalUndo } from "./undo-stack.js";
 
 export function updateTabUi() {
   GL.tabs.forEach((t) => t.classList.toggle("active", t.dataset.tab === GL.activeTab));
@@ -18,15 +18,43 @@ function getUndoStackHint() {
   return `최근 작업 되돌리기 (남은 ${count}건)`;
 }
 
+function getRedoStackHint() {
+  const top = peekGlobalRedo();
+  const count = getGlobalRedoCount();
+  if (!top || count <= 0) return "앞으로 돌릴 작업이 없습니다";
+  const k = top.kind;
+  if (k === "add_seat") return `되돌린 작업: Seat 추가 (남은 ${count}건) — 클릭하면 다시 적용`;
+  if (k === "assign") return `되돌린 작업: 대기 → 배치 (남은 ${count}건) — 클릭하면 다시 적용`;
+  if (k === "delete_seat") return `되돌린 작업: Seat 삭제 (남은 ${count}건) — 클릭하면 다시 적용`;
+  if (k === "remove_waiting") return `되돌린 작업: 대기 삭제 (남은 ${count}건) — 클릭하면 다시 적용`;
+  if (k === "clear_seat") return `되돌린 작업: Seat 비우기 (남은 ${count}건) — 클릭하면 다시 적용`;
+  return `되돌린 작업 앞으로 (남은 ${count}건)`;
+}
+
 export function updateGlobalMetaToolbar() {
   const wrap = document.getElementById("globalMetaSeatActions");
   const undoBtn = document.getElementById("globalUndoToolbarBtn");
+  const redoBtn = document.getElementById("globalRedoToolbarBtn");
   if (!wrap || !undoBtn) return;
   const show = GL.isAdminUser && GL.activeTab === "seat";
   wrap.classList.toggle("hidden", !show);
   wrap.setAttribute("aria-hidden", show ? "false" : "true");
-  const count = getGlobalUndoCount();
-  undoBtn.disabled = count <= 0;
-  undoBtn.textContent = count > 0 ? `되돌리기 (${count})` : "되돌리기";
+  const undoCount = getGlobalUndoCount();
+  const redoCount = getGlobalRedoCount();
+  undoBtn.disabled = undoCount <= 0;
+  undoBtn.textContent = "←";
+  undoBtn.setAttribute(
+    "aria-label",
+    undoCount > 0 ? `되돌리기, 남은 ${undoCount}건` : "되돌리기"
+  );
   undoBtn.title = getUndoStackHint();
+  if (redoBtn) {
+    redoBtn.disabled = redoCount <= 0;
+    redoBtn.textContent = "→";
+    redoBtn.setAttribute(
+      "aria-label",
+      redoCount > 0 ? `앞으로돌리기, 남은 ${redoCount}건` : "앞으로돌리기"
+    );
+    redoBtn.title = getRedoStackHint();
+  }
 }

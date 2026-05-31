@@ -112,7 +112,17 @@ body.page-global-layout .pc-panel .global-meta-actions {
   font-weight: 800;
 }
 
-/* 되돌리기: 보조 텍스트 버튼 (추가 버튼과 대비) */
+/* 되돌리기·앞으로돌리기: 화살표 아이콘 버튼 */
+.pc-panel .global-meta-actions .seat-meta-btn--history {
+  min-width: 34px;
+  padding: 0 10px;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
 .pc-panel .global-meta-actions .seat-meta-btn--undo {
   font-size: 11px;
   font-weight: 700;
@@ -130,6 +140,26 @@ body.page-global-layout .pc-panel .global-meta-actions {
 }
 
 .pc-panel .global-meta-actions .seat-meta-btn--undo:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.pc-panel .global-meta-actions .seat-meta-btn--redo {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  padding: 0 12px;
+  color: rgba(255, 255, 255, 0.82);
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.pc-panel .global-meta-actions .seat-meta-btn--redo:not(:disabled):hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.pc-panel .global-meta-actions .seat-meta-btn--redo:not(:disabled):active {
   transform: translateY(1px);
 }
 
@@ -345,7 +375,8 @@ body.page-global-layout .pc-panel .seat-add-one-row,
   transform: none;
 }
 
-#globalUndoToolbarBtn:disabled {
+#globalUndoToolbarBtn:disabled,
+#globalRedoToolbarBtn:disabled {
   opacity: 0.38;
   cursor: not-allowed;
   color: rgba(255, 255, 255, 0.38);
