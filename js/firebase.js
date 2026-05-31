@@ -21,11 +21,14 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 /**
- * Safari·일부 네트워크에서 WebChannel이 CORS처럼 실패하는 문제 완화.
- * 10.11+ 에서 WebChannel 설정이 안정화됨 — 10.12.2 사용.
+ * Safari·iOS PWA에서 Fetch Streams/WebChannel이
+ * "Fetch API … due to access control checks" 로 끊기는 문제 완화.
+ * (Listen·Write RPC 모두 영향 — 배치도/통합배치도 데이터 미표시)
  */
 export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true
+  experimentalForceLongPolling: true,
+  experimentalAutoDetectLongPolling: true,
+  useFetchStreams: false
 });
 
 export { app };
