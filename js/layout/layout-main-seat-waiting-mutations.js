@@ -523,28 +523,33 @@ export function createLayoutSeatWaitingMutations(deps) {
       getLocalReconcile().clearSeatLocally(seat);
 
       touchEvent(true);
-      render();
+      paintLayoutAfterSeatWaitingChange();
 
       const dealerMoves = getDealerMoves();
 
-      if (hadPerson) {
-        const rel = [];
-        if (dealerMoves) {
-          rel.push(
-            dealerMoves.moveDealerToWaiting({
-              uid: prevUid,
-              email: prevEmail,
-              nickname: prevName,
-              carryStartedAt: prevSeatedAt || Date.now()
-            })
-          );
+      void (async () => {
+        try {
+          if (hadPerson) {
+            const rel = [];
+            if (dealerMoves) {
+              rel.push(
+                dealerMoves.moveDealerToWaiting({
+                  uid: prevUid,
+                  email: prevEmail,
+                  nickname: prevName,
+                  carryStartedAt: prevSeatedAt || Date.now()
+                })
+              );
+            }
+            if (prevUid) rel.push(clearUserSeatNotification(prevUid, "seat_cleared"));
+            if (rel.length) await Promise.all(rel);
+          }
+        } catch (err) {
+          console.error("clearSeat follow-up error:", err);
+        } finally {
+          enqueueHealAfterMutation(() => getHealUndo().healAndPersistState("clearSeat"));
         }
-        if (prevUid) rel.push(clearUserSeatNotification(prevUid, "seat_cleared"));
-        if (rel.length) await Promise.all(rel);
-      }
-
-      render();
-      enqueueHealAfterMutation(() => getHealUndo().healAndPersistState("clearSeat"));
+      })();
     });
   }
 

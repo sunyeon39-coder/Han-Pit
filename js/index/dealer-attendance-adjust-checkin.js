@@ -7,6 +7,11 @@ import { getAttendanceRef } from "./dealer-attendance-refs.js";
 import { writeAttendanceLog } from "./dealer-attendance-logs.js";
 import { getDerivedAttendance } from "./dealer-attendance-derived.js";
 import { formatClock, getNowMs } from "./dealer-attendance-format.js";
+import {
+  applyOptimisticAttendanceEntry,
+  restoreAttendanceSnapshot,
+  snapshotAttendanceEntry
+} from "./dealer-attendance-optimistic.js";
 
 /**
  * 본인 출근 시각(checkedInAt) 수정 + 운영 로그 기록
@@ -68,10 +73,11 @@ export async function adjustMyCheckedInAt(newCheckedInAtMs) {
       previousCheckedInAt: previous,
       newCheckedInAt: next,
       detail: `${formatClock(previous)} → ${formatClock(next)}`
-    });
+    }).catch((err) => console.warn("writeAttendanceLog:", err));
 
     return true;
   } catch (err) {
+    restoreAttendanceSnapshot(tournamentId, user.uid, prevSnap);
     console.error("adjustMyCheckedInAt error:", err);
     alert("출근 시각 변경에 실패했습니다.");
     return false;
@@ -115,6 +121,19 @@ export async function adjustMyCheckedOutAt(newCheckedOutAtMs) {
 
   const nickname = String(IX.currentUserProfile.nickname || user.displayName || "").trim();
   const now = getNowMs();
+  const prevSnap = snapshotAttendanceEntry(tournamentId, user.uid);
+  const nextEntry = {
+    ...(prevSnap || {
+      uid: user.uid,
+      nickname,
+      email: String(IX.currentUserProfile.email || user.email || "").trim(),
+      tournamentId,
+      status: current?.status || "off"
+    }),
+    checkedOutAt: next,
+    updatedAt: now
+  };
+  applyOptimisticAttendanceEntry(tournamentId, user.uid, nextEntry);
 
   try {
     await setDoc(
@@ -126,7 +145,7 @@ export async function adjustMyCheckedOutAt(newCheckedOutAtMs) {
       { merge: true }
     );
 
-    await writeAttendanceLog({
+    void writeAttendanceLog({
       uid: user.uid,
       nickname,
       action: "adjust_check_out",
@@ -138,10 +157,11 @@ export async function adjustMyCheckedOutAt(newCheckedOutAtMs) {
       previousCheckedOutAt: previous,
       newCheckedOutAt: next,
       detail: `${formatClock(previous)} → ${formatClock(next)}`
-    });
+    }).catch((err) => console.warn("writeAttendanceLog:", err));
 
     return true;
   } catch (err) {
+    restoreAttendanceSnapshot(tournamentId, user.uid, prevSnap);
     console.error("adjustMyCheckedOutAt error:", err);
     alert("퇴근 시각 변경에 실패했습니다.");
     return false;

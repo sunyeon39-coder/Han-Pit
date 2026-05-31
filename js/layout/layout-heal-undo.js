@@ -41,13 +41,18 @@ export function createLayoutHealUndo(deps) {
       waitingState.updatedAt = Date.now();
       saves.push(saveWaitingState());
     }
-    if (saves.length) await Promise.all(saves);
-
-    if (changedEvent || changedWaiting) {
-      await syncCurrentEventUserTruth();
-      if (isLayoutHealDebugEnabled()) {
-        console.debug("[healAndPersistState]", reason, { changedEvent, changedWaiting });
-      }
+    if (saves.length) {
+      void Promise.all(saves).then(async () => {
+        if (!changedEvent && !changedWaiting) return;
+        try {
+          await syncCurrentEventUserTruth();
+          if (isLayoutHealDebugEnabled()) {
+            console.debug("[healAndPersistState]", reason, { changedEvent, changedWaiting });
+          }
+        } catch (err) {
+          console.error("syncCurrentEventUserTruth error:", err);
+        }
+      });
     }
   }
 

@@ -13,6 +13,7 @@ import {
   getCurrentTournamentWaiting
 } from "./waiting.js";
 import { updateGlobalLayoutWaitingMeta } from "./meta-ui.js";
+import { flushOptimisticGlobalLayoutUi } from "./optimistic-seat-mutation.js";
 import {
   saveSeatPosition,
   assignSelectedWaitingToSeat,
@@ -129,6 +130,7 @@ export function bindGlobalLayoutEventHandlers() {
     if (addWaitBtn) {
       try {
         await addManualWaiting();
+        flushOptimisticGlobalLayoutUi();
       } catch (err) {
         console.error("addManualWaiting error:", err);
         alert("대기 추가에 실패했습니다.");
@@ -203,7 +205,7 @@ export function bindGlobalLayoutEventHandlers() {
       if (!confirm("이 좌석을 삭제하시겠습니까?")) return;
       try {
         await deleteGlobalSeat(sid);
-        if (GL.activeTab === "seat") renderSeatPanel();
+        flushOptimisticGlobalLayoutUi();
       } catch (err) {
         console.error("deleteGlobalSeat error:", err);
         alert("좌석 삭제에 실패했습니다.");
@@ -233,7 +235,7 @@ export function bindGlobalLayoutEventHandlers() {
       if (!confirm("대기자를 삭제하시겠습니까?")) return;
       try {
         await removeManualWaiting(widToDelete);
-        renderWaiting(getCurrentTournamentWaiting());
+        flushOptimisticGlobalLayoutUi();
       } catch (err) {
         console.error("removeManualWaiting error:", err);
         alert("대기자 삭제에 실패했습니다.");
@@ -248,7 +250,6 @@ export function bindGlobalLayoutEventHandlers() {
     const wid = String(row.getAttribute("data-wid") || "");
     if (!wid) return;
     setWaitingRowSelection(wid);
-    renderWaiting(getCurrentTournamentWaiting());
   });
 
   GL.panelContent?.addEventListener("change", async (e) => {
@@ -261,14 +262,14 @@ export function bindGlobalLayoutEventHandlers() {
     const nextChecked = !!blockCb.checked;
     applyOptimisticWaitingBlockRow(row, nextChecked);
     applyWaitingBlockLocal(wid, nextChecked);
-    updateGlobalLayoutWaitingMeta();
+    flushOptimisticGlobalLayoutUi();
     blockCb.disabled = true;
     try {
       await setWaitingBlocked(wid, nextChecked);
     } catch (err) {
       console.error("setWaitingBlocked error:", err);
       alert("BLOCK 체크 변경에 실패했습니다.");
-      renderWaiting(getCurrentTournamentWaiting());
+      flushOptimisticGlobalLayoutUi();
     } finally {
       blockCb.disabled = false;
     }
@@ -528,12 +529,7 @@ export function bindGlobalLayoutEventHandlers() {
 
     GL.selectedWaitingId = "";
     void syncMyWaitingPick("");
-    if (GL.activeTab === "wait") {
-      renderWaiting(getCurrentTournamentWaiting());
-    } else {
-      renderSeatPanel();
-      renderSeats(GL.globalSeats);
-    }
+    flushOptimisticGlobalLayoutUi();
   });
 
   window.addEventListener("keydown", async (e) => {
@@ -542,7 +538,7 @@ export function bindGlobalLayoutEventHandlers() {
     if (GL.activeTab === "wait" && GL.selectedWaitingId) {
       try {
         await removeManualWaiting(GL.selectedWaitingId);
-        renderWaiting(getCurrentTournamentWaiting());
+        flushOptimisticGlobalLayoutUi();
       } catch (err) {
         console.error("keyboard removeManualWaiting error:", err);
       }

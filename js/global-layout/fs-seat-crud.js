@@ -98,16 +98,29 @@ export async function saveSeatPosition(seatId = "", x = 0, y = 0) {
   const boxId = String(seat.boxId || "").trim();
   if (!eventId || !boxId) return;
   const docId = buildGlobalSeatDocId(eventId, boxId, seatId);
-  await setDoc(
-    doc(db, "tournaments", GL.tournamentId, "global_seats", docId),
-    {
-      x: Math.max(0, Math.round(Number(x) || 0)),
-      y: Math.max(0, Math.round(Number(y) || 0)),
-      updatedAt: Date.now(),
-      updatedAtServer: serverTimestamp()
-    },
-    { merge: true }
-  );
+  const rx = Math.max(0, Math.round(Number(x) || 0));
+  const ry = Math.max(0, Math.round(Number(y) || 0));
+  const prevX = seat.x;
+  const prevY = seat.y;
+  seat.x = rx;
+  seat.y = ry;
+
+  try {
+    await setDoc(
+      doc(db, "tournaments", GL.tournamentId, "global_seats", docId),
+      {
+        x: rx,
+        y: ry,
+        updatedAt: Date.now(),
+        updatedAtServer: serverTimestamp()
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    seat.x = prevX;
+    seat.y = prevY;
+    throw err;
+  }
 }
 
 export async function deleteGlobalSeat(seatId = "") {
@@ -622,16 +635,6 @@ async function addGlobalSeatCore({ label = "", eventId = "", boxId = "", clearFo
     return;
   }
 
-  await ensureLayoutEventShellForGlobalOps(eid, bid);
-  const layoutGate = await validateLayoutEventForGlobalOps(eid, bid, {
-    ensureShell: true,
-    trustGlobalSeats: true
-  });
-  if (!layoutGate.ok) {
-    alert(layoutGate.message);
-    return;
-  }
-
   if (!isValidSeatLabel(lid)) {
     alert("Seat 라벨은 영문/숫자 기준으로 입력해주세요. (예: 1, A1, VIP_1)");
     return;
@@ -667,6 +670,19 @@ async function addGlobalSeatCore({ label = "", eventId = "", boxId = "", clearFo
   flushOptimisticGlobalLayoutUi();
 
   try {
+    await ensureLayoutEventShellForGlobalOps(eid, bid);
+    const layoutGate = await validateLayoutEventForGlobalOps(eid, bid, {
+      ensureShell: true,
+      trustGlobalSeats: true
+    });
+    if (!layoutGate.ok) {
+      const rollbackIdx = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === seatId);
+      if (rollbackIdx >= 0) GL.globalSeats.splice(rollbackIdx, 1);
+      flushOptimisticGlobalLayoutUi();
+      alert(layoutGate.message);
+      return;
+    }
+
     await setDoc(
       doc(db, "tournaments", GL.tournamentId, "global_seats", docId),
       {

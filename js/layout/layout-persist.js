@@ -2,8 +2,8 @@ import { db } from "../firebase.js";
 import { doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { syncLayoutGlobalSeatsForCurrentLayout } from "./global-seat-sync.js";
 
-const SAVE_EVENT_DEBOUNCE_MS = 90;
-const SAVE_WAITING_DEBOUNCE_MS = 55;
+const SAVE_EVENT_DEBOUNCE_MS = 50;
+const SAVE_WAITING_DEBOUNCE_MS = 40;
 
 export function createLayoutPersistServices({
   tournamentId,

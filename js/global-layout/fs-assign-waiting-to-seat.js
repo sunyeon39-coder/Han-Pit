@@ -56,55 +56,17 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   const waiting = resolveSelectedWaitingForAssign();
   if (!waiting) {
     GL.selectedWaitingId = "";
-    renderWaiting(getCurrentTournamentWaiting());
+    flushOptimisticGlobalLayoutUi();
     throw new Error("waiting_not_found");
   }
   if (waiting.blockChecked === true) {
     throw new Error("waiting_blocked");
   }
 
-  const { eventId: ev0, boxId: bx0 } = resolveSeatEventBox(seat);
-  if (hasGlobalSeatForEventBox(ev0, bx0, targetSeatId)) {
-    void ensureLayoutEventShellForGlobalOps(ev0, bx0);
-  } else {
-    const layoutGate = await validateLayoutEventForGlobalOps(ev0, bx0, {
-      requireSeatId: targetSeatId,
-      ensureShell: true,
-      trustGlobalSeats: true
-    });
-    if (!layoutGate.ok) {
-      alert(layoutGate.message);
-      return;
-    }
-  }
-
-  const fallbackPairs = (GL.globalSeats || [])
-    .filter((s) => String(s?.seatId || "").trim() === targetSeatId)
-    .map((s) => resolveSeatEventBox(s));
-
-  let seatRef = getGlobalSeatDocRef(seat, GL.tournamentId);
-  let canonicalSeatEventId = String(seat.currentEventId || seat.mappedEventId || "").trim();
-  let canonicalSeatBoxId = String(seat.boxId || "").trim();
-
-  if (!seatRef) {
-    const seatDoc = await ensureGlobalSeatFirestoreDoc(seat, GL.tournamentId, fallbackPairs);
-    if (!seatDoc?.ref) throw new Error("seat_not_found");
-    seatRef = seatDoc.ref;
-    canonicalSeatEventId = String(
-      seatDoc.data.currentEventId || seatDoc.data.mappedEventId || canonicalSeatEventId || ""
-    ).trim();
-    canonicalSeatBoxId = String(seatDoc.data.boxId || canonicalSeatBoxId || "").trim();
-    const idx = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === targetSeatId);
-    if (idx >= 0 && seatDoc.docId) {
-      GL.globalSeats[idx] = { ...GL.globalSeats[idx], __firestoreDocId: seatDoc.docId };
-    }
-  }
-
-  if (!canonicalSeatEventId || !canonicalSeatBoxId) {
-    const fallback = resolveSeatEventBox(seat);
-    canonicalSeatEventId = canonicalSeatEventId || fallback.eventId;
-    canonicalSeatBoxId = canonicalSeatBoxId || fallback.boxId;
-  }
+  const rollbackOptimistic = applyOptimisticAssign({ targetSeatId, waiting, seat });
+  flushOptimisticGlobalLayoutUi();
+  notifyOptimisticSeatAssignedForWaiting(waiting, seat, targetSeatId);
+  void clearMyWaitingPick();
 
   const now = Date.now();
   const waitingRef = doc(db, "layout_shared", "global_waiting");
@@ -112,14 +74,56 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
 
   let undoSeatBefore = null;
   let undoWaitingBefore = null;
-
-  const rollbackOptimistic = applyOptimisticAssign({ targetSeatId, waiting, seat });
-  flushOptimisticGlobalLayoutUi();
-  notifyOptimisticSeatAssignedForWaiting(waiting, seat, targetSeatId);
-  void clearMyWaitingPick();
+  let canonicalSeatEventId = "";
+  let canonicalSeatBoxId = "";
 
   GL.seatMutationInFlight = true;
   try {
+    const { eventId: ev0, boxId: bx0 } = resolveSeatEventBox(seat);
+    if (hasGlobalSeatForEventBox(ev0, bx0, targetSeatId)) {
+      void ensureLayoutEventShellForGlobalOps(ev0, bx0);
+    } else {
+      const layoutGate = await validateLayoutEventForGlobalOps(ev0, bx0, {
+        requireSeatId: targetSeatId,
+        ensureShell: true,
+        trustGlobalSeats: true
+      });
+      if (!layoutGate.ok) {
+        rollbackOptimistic();
+        flushOptimisticGlobalLayoutUi();
+        alert(layoutGate.message);
+        return;
+      }
+    }
+
+    const fallbackPairs = (GL.globalSeats || [])
+      .filter((s) => String(s?.seatId || "").trim() === targetSeatId)
+      .map((s) => resolveSeatEventBox(s));
+
+    let seatRef = getGlobalSeatDocRef(seat, GL.tournamentId);
+    canonicalSeatEventId = String(seat.currentEventId || seat.mappedEventId || "").trim();
+    canonicalSeatBoxId = String(seat.boxId || "").trim();
+
+    if (!seatRef) {
+      const seatDoc = await ensureGlobalSeatFirestoreDoc(seat, GL.tournamentId, fallbackPairs);
+      if (!seatDoc?.ref) throw new Error("seat_not_found");
+      seatRef = seatDoc.ref;
+      canonicalSeatEventId = String(
+        seatDoc.data.currentEventId || seatDoc.data.mappedEventId || canonicalSeatEventId || ""
+      ).trim();
+      canonicalSeatBoxId = String(seatDoc.data.boxId || canonicalSeatBoxId || "").trim();
+      const idx = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === targetSeatId);
+      if (idx >= 0 && seatDoc.docId) {
+        GL.globalSeats[idx] = { ...GL.globalSeats[idx], __firestoreDocId: seatDoc.docId };
+      }
+    }
+
+    if (!canonicalSeatEventId || !canonicalSeatBoxId) {
+      const fallback = resolveSeatEventBox(seat);
+      canonicalSeatEventId = canonicalSeatEventId || fallback.eventId;
+      canonicalSeatBoxId = canonicalSeatBoxId || fallback.boxId;
+    }
+
     await runTransaction(db, async (tx) => {
       const waitingId = String(waiting.id || "").trim();
       const waitingUid = String(waiting.uid || "").trim();

@@ -7,6 +7,7 @@ import {
 import { resolveLayoutAccentColor } from "../shared/layout-operator-colors.js";
 import { GL } from "./state.js";
 import { escapeHtml } from "./utils.js";
+import { flushOptimisticGlobalLayoutUi } from "./optimistic-seat-mutation.js";
 
 const WAITING_REF = () => doc(db, "layout_shared", "global_waiting");
 
@@ -71,6 +72,7 @@ export function setWaitingRowSelection(waitingId = "") {
   GL.selectedWaitingId = wid;
   if (wid && GL.selectedSeatIds?.clear) GL.selectedSeatIds.clear();
   applyOptimisticMyWaitingPick(wid);
+  flushOptimisticGlobalLayoutUi();
   void syncMyWaitingPick(wid);
 }
 
