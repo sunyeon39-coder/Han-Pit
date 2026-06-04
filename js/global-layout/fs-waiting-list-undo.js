@@ -663,14 +663,13 @@ export async function removeManualWaiting(waitingId = "") {
   const wid = String(waitingId || "").trim();
   if (!wid) return;
   const snapshotBefore = JSON.parse(JSON.stringify(GL.globalWaiting || []));
+  const row = snapshotBefore.find((w) => String(w?.id || "").trim() === wid);
+  if (!row) return;
+
   const next = snapshotBefore.filter((w) => String(w?.id || "").trim() !== wid);
   replaceGlobalWaitingLocal(next);
   flushOptimisticGlobalLayoutUi();
-  pushGlobalUndo({
-    kind: "remove_waiting",
-    snapshotBefore,
-    removedWaiting: { ...row }
-  });
+
   if (GL.selectedWaitingId === wid) {
     GL.selectedWaitingId = "";
     void clearMyWaitingPick();
@@ -678,6 +677,11 @@ export async function removeManualWaiting(waitingId = "") {
 
   try {
     await updateGlobalWaiting([...(GL.globalWaiting || [])]);
+    pushGlobalUndo({
+      kind: "remove_waiting",
+      snapshotBefore,
+      removedWaiting: { ...row }
+    });
   } catch (err) {
     console.error("removeManualWaiting error:", err);
     replaceGlobalWaitingLocal(snapshotBefore);

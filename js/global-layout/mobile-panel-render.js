@@ -471,13 +471,8 @@ export function renderGlobalLayoutMobile() {
       e.stopPropagation();
       const wid = String(btn.getAttribute("data-del-w") || "").trim();
       if (!wid || !confirm("대기자를 삭제하시겠습니까?")) return;
-      try {
-        const { removeManualWaiting } = await loadFirestoreOps();
-        await removeManualWaiting(wid);
-      } catch (err) {
-        console.error("mobile removeManualWaiting error:", err);
-        alert("대기자 삭제에 실패했습니다.");
-      }
+      const { removeManualWaiting } = await loadFirestoreOps();
+      await removeManualWaiting(wid);
       fullRender();
     });
   });

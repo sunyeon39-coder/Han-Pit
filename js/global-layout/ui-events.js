@@ -247,13 +247,7 @@ export function bindGlobalLayoutEventHandlers() {
       const widToDelete = String(deleteWaitBtn.getAttribute("data-delete-wid") || "");
       if (!widToDelete) return;
       if (!confirm("대기자를 삭제하시겠습니까?")) return;
-      try {
-        await removeManualWaiting(widToDelete);
-        flushOptimisticGlobalLayoutUi();
-      } catch (err) {
-        console.error("removeManualWaiting error:", err);
-        alert("대기자 삭제에 실패했습니다.");
-      }
+      await removeManualWaiting(widToDelete);
       return;
     }
 
