@@ -26,10 +26,8 @@ export function scheduleGlobalLayoutRealtimeUi(flags = {}) {
     pending.metaOnly = false;
 
     if (f.seats) renderSeats(GL.globalSeats);
-    if (f.seatPanel && GL.activeTab === "seat") renderSeatPanel();
-    if (f.waiting && GL.activeTab === "wait") {
-      renderWaiting(getCurrentTournamentWaiting());
-    }
+    if (f.seatPanel) renderSeatPanel();
+    if (f.waiting) renderWaiting(getCurrentTournamentWaiting());
     if (f.metaOnly) updateGlobalLayoutWaitingMeta();
   });
 }

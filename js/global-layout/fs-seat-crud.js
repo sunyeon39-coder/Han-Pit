@@ -27,7 +27,7 @@ import { getCandidateSeatRefsForPerson } from "./seat-candidates.js";
 import {
   getDefaultEventBoxForNewSeat,
   getSeatById,
-  renderSeatPanel,
+  refreshGlobalLayoutPcOpsPanel,
   renderSeats
 } from "./panel-ui.js";
 import {
@@ -82,7 +82,7 @@ export async function alignSelectedGlobalSeats(axis = "") {
     }
   }
   renderSeats(GL.globalSeats);
-  if (GL.activeTab === "seat") renderSeatPanel();
+  refreshGlobalLayoutPcOpsPanel();
 
   try {
     await Promise.all(updates.map((u) => saveSeatPosition(u.sid, u.x, u.y)));
@@ -393,7 +393,7 @@ export async function applyGlobalSeatRename(
 
     const idxLabel = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === targetSeatId);
     if (idxLabel >= 0) GL.globalSeats[idxLabel] = { ...GL.globalSeats[idxLabel], label: nextLabel };
-    if (GL.activeTab === "seat") renderSeatPanel();
+    refreshGlobalLayoutPcOpsPanel();
     renderSeats(GL.globalSeats);
     await syncLayoutProjection(resolvedNextEventId, nextBoxId);
     return { ok: true, shouldOfferLayout: null };
@@ -559,7 +559,7 @@ export async function applyGlobalSeatRename(
     if (e && b) await syncLayoutProjection(e, b);
   }
 
-  if (GL.activeTab === "seat") renderSeatPanel();
+  refreshGlobalLayoutPcOpsPanel();
   renderSeats(GL.globalSeats);
 
   const shouldOfferLayout =

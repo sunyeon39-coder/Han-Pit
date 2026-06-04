@@ -17,7 +17,7 @@ import {
   replaceGlobalWaitingLocal
 } from "./waiting.js";
 import { flushOptimisticGlobalLayoutUi } from "./optimistic-seat-mutation.js";
-import { renderSeatPanel, renderWaiting } from "./panel-ui.js";
+import { refreshGlobalLayoutPcOpsPanel } from "./panel-ui.js";
 import { clearMyWaitingPick } from "./waiting-picks.js";
 import { updateGlobalMetaToolbar } from "./toolbar.js";
 import { syncLayoutProjection } from "./fs-layout-projection.js";
@@ -525,8 +525,7 @@ async function redoRemoveWaitingPayload(payload) {
 }
 
 function finishUndoRedoUiRefresh() {
-  if (GL.activeTab === "seat") renderSeatPanel();
-  else renderWaiting(getCurrentTournamentWaiting());
+  refreshGlobalLayoutPcOpsPanel();
   updateGlobalMetaToolbar();
 }
 

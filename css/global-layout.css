@@ -13,7 +13,7 @@ html, body {
 }
 
 #app.with-panel {
-  padding-right: 394px;
+  padding-right: min(calc(48vw + 14px), 654px);
 }
 
 #app > .layout-canvas-viewport {
@@ -34,8 +34,119 @@ html, body {
   touch-action: none;
 }
 
-body.page-global-layout .pc-panel .tabs {
-  padding: 8px 10px 4px;
+body.page-global-layout .pc-panel .tabs,
+body.page-global-layout .pc-panel .global-pc-ops-tabs {
+  display: none !important;
+}
+
+body.page-global-layout .pc-panel {
+  width: min(48vw, 640px);
+}
+
+body.page-global-layout .pc-panel .panel-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+body.page-global-layout .pc-panel #panelContent {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+body.page-global-layout .global-pc-ops-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr);
+  column-gap: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+body.page-global-layout .global-pc-ops-divider {
+  align-self: stretch;
+  width: 1px;
+  min-width: 1px;
+  margin: 2px 0;
+  border-radius: 1px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.04) 0%,
+    rgba(255, 255, 255, 0.18) 12%,
+    rgba(239, 208, 141, 0.35) 50%,
+    rgba(255, 255, 255, 0.18) 88%,
+    rgba(255, 255, 255, 0.04) 100%
+  );
+  box-shadow:
+    -1px 0 0 rgba(0, 0, 0, 0.35),
+    1px 0 0 rgba(255, 255, 255, 0.06);
+  pointer-events: none;
+}
+
+body.page-global-layout .global-pc-ops-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+body.page-global-layout .global-pc-ops-col--wait {
+  padding-right: 2px;
+}
+
+body.page-global-layout .global-pc-ops-col--seat {
+  padding-left: 2px;
+}
+
+body.page-global-layout .global-pc-ops-col__head {
+  flex-shrink: 0;
+  margin: 0 0 6px;
+  padding: 0 2px;
+}
+
+body.page-global-layout .global-pc-ops-col__head h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: rgba(239, 208, 141, 0.95);
+}
+
+body.page-global-layout .global-pc-ops-col__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+body.page-global-layout .global-pc-ops-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+body.page-global-layout .global-pc-ops-col--wait .global-form.single {
+  flex-shrink: 0;
+  margin-bottom: 6px;
+}
+
+body.page-global-layout .global-pc-ops-col .gl-panel-seat-toolbar {
+  flex-shrink: 0;
+  margin-bottom: 6px;
+}
+
+body.page-global-layout .global-pc-ops-col .layout-seat-assign-banner {
+  flex-shrink: 0;
+  margin-bottom: 6px;
+  font-size: 11px;
 }
 
 body.page-global-layout .pc-panel .panel-body {
@@ -596,7 +707,7 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     padding-right: 14px;
   }
 
-  /* 모바일: layout.html 과 동일하게 카드 목록(#app) + 하단 시트, PC 캔버스·우측 패널 숨김 */
+  /* 모바일: layout.html 과 동일하게 카드 목록(#app) + 하단 시트 */
   body.page-global-layout #pcPanel {
     display: none !important;
   }
@@ -751,7 +862,6 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     min-height: 0;
   }
 
-  /* 모바일 Seat·대기 카드 목록: #app 안에서 스크롤 (layout.html .mobile 과 동일) */
   body.page-global-layout #app > .mobile,
   body.page-global-layout #app > .global-layout-mobile {
     flex: 1 1 auto;

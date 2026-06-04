@@ -127,7 +127,7 @@ export function startGlobalLayoutApp() {
     syncGlobalLayoutMobileChrome();
     renderSeats(GL.globalSeats);
     renderWaiting(getCurrentTournamentWaiting());
-    if (GL.activeTab === "seat") renderSeatPanel();
+    renderSeatPanel();
     updateGlobalMetaToolbar();
     checkGlobalLayoutOptimisticSeatAlert();
   }
@@ -225,11 +225,8 @@ export function startGlobalLayoutApp() {
         return;
       }
       updateCanvasSeatTimerClasses();
-      if (GL.activeTab === "seat") {
-        updateSeatPanelTimers();
-      } else {
-        updateWaitingTimersInPanel();
-      }
+      updateSeatPanelTimers();
+      updateWaitingTimersInPanel();
     }, 1000);
   }
 

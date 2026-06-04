@@ -1,4 +1,5 @@
 import { GL } from "./state.js";
+import { layoutIsMobile } from "../layout/layout-main-route-env.js";
 import { getGlobalRedoCount, getGlobalUndoCount, peekGlobalRedo, peekGlobalUndo } from "./undo-stack.js";
 
 export function updateTabUi() {
@@ -31,17 +32,11 @@ function getRedoStackHint() {
   return `되돌린 작업 앞으로 (남은 ${count}건)`;
 }
 
-export function updateGlobalMetaToolbar() {
-  const wrap = document.getElementById("globalMetaSeatActions");
-  const undoBtn = document.getElementById("globalUndoToolbarBtn");
-  const redoBtn = document.getElementById("globalRedoToolbarBtn");
-  if (!wrap || !undoBtn) return;
-  const show = GL.isAdminUser && GL.activeTab === "seat";
-  wrap.classList.toggle("hidden", !show);
-  wrap.setAttribute("aria-hidden", show ? "false" : "true");
+function applyGlobalHistoryToolbarButtons(undoBtn, redoBtn, show) {
+  if (!undoBtn) return;
   const undoCount = getGlobalUndoCount();
   const redoCount = getGlobalRedoCount();
-  undoBtn.disabled = undoCount <= 0;
+  undoBtn.disabled = !show || undoCount <= 0;
   undoBtn.textContent = "←";
   undoBtn.setAttribute(
     "aria-label",
@@ -49,7 +44,7 @@ export function updateGlobalMetaToolbar() {
   );
   undoBtn.title = getUndoStackHint();
   if (redoBtn) {
-    redoBtn.disabled = redoCount <= 0;
+    redoBtn.disabled = !show || redoCount <= 0;
     redoBtn.textContent = "→";
     redoBtn.setAttribute(
       "aria-label",
@@ -57,4 +52,15 @@ export function updateGlobalMetaToolbar() {
     );
     redoBtn.title = getRedoStackHint();
   }
+}
+
+export function updateGlobalMetaToolbar() {
+  const wrap = document.getElementById("globalMetaSeatActions");
+  const undoBtn = document.getElementById("globalUndoToolbarBtn");
+  const redoBtn = document.getElementById("globalRedoToolbarBtn");
+  if (!wrap || !undoBtn) return;
+  const show = GL.isAdminUser && (layoutIsMobile() ? GL.activeTab === "seat" : true);
+  wrap.classList.toggle("hidden", !show);
+  wrap.setAttribute("aria-hidden", show ? "false" : "true");
+  applyGlobalHistoryToolbarButtons(undoBtn, redoBtn, show);
 }

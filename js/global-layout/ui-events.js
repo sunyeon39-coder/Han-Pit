@@ -5,6 +5,7 @@ import {
   renderSeats,
   renderSeatPanel,
   renderWaiting,
+  refreshGlobalLayoutPcOpsPanel,
   setPanelOpen
 } from "./panel-ui.js";
 import {
@@ -69,7 +70,7 @@ async function runGlobalMobileAddWaiting() {
   }
 }
 
-/** 관리자 로그인 후 하단 시트 버튼 표시 등 */
+/** 관리자 로그인 후 하단 시트 버튼 표시 */
 export function syncGlobalLayoutMobileChrome() {
   const show = !!GL.isAdminUser;
   if (GL.mobileAddSeatBtn) GL.mobileAddSeatBtn.style.display = show ? "" : "none";
@@ -101,7 +102,8 @@ export function bindGlobalLayoutEventHandlers() {
   });
 
   document.getElementById("metaStats")?.addEventListener("click", async (e) => {
-    if (!GL.isAdminUser || GL.activeTab !== "seat") return;
+    if (!GL.isAdminUser) return;
+    if (layoutIsMobile() && GL.activeTab !== "seat") return;
     if (e.target.closest("#globalUndoToolbarBtn")) {
       const btn = e.target.closest("#globalUndoToolbarBtn");
       if (getGlobalUndoCount() <= 0 || btn?.disabled) return;
@@ -303,17 +305,6 @@ export function bindGlobalLayoutEventHandlers() {
     }
   });
 
-  GL.tabs.forEach((tab) => {
-    tab.addEventListener("click", () => {
-      GL.activeTab = tab.dataset.tab === "seat" ? "seat" : "wait";
-      if (GL.activeTab === "seat") {
-        renderSeatPanel();
-      } else {
-        renderWaiting(getCurrentTournamentWaiting());
-      }
-    });
-  });
-
   GL.menuBtn?.addEventListener("click", () => {
     if (layoutIsMobile()) {
       setPanelOpen(false);
@@ -356,10 +347,7 @@ export function bindGlobalLayoutEventHandlers() {
       GL.mobileSheet?.classList.remove("open");
     }
     renderSeats(GL.globalSeats);
-    if (!layoutIsMobile()) {
-      if (GL.activeTab === "seat") renderSeatPanel();
-      else renderWaiting(getCurrentTournamentWaiting());
-    }
+    if (!layoutIsMobile()) refreshGlobalLayoutPcOpsPanel();
   });
 
   window.addEventListener("keydown", (e) => {
@@ -461,7 +449,11 @@ export function bindGlobalLayoutEventHandlers() {
 
     applyCanvasSeatSelectionClick(sid, isMultiSelectPointer(e));
     renderSeats(GL.globalSeats);
-    if (GL.activeTab === "seat") renderSeatPanel();
+    if (layoutIsMobile()) {
+      if (GL.activeTab === "seat") renderSeatPanel();
+    } else {
+      refreshGlobalLayoutPcOpsPanel();
+    }
     refreshGlobalLayoutAlignButtonState();
   }
 
@@ -547,7 +539,7 @@ export function bindGlobalLayoutEventHandlers() {
   window.addEventListener("keydown", async (e) => {
     if (!GL.isAdminUser) return;
     if (e.key !== "Delete" && e.key !== "Backspace") return;
-    if (GL.activeTab === "wait" && GL.selectedWaitingId) {
+    if (GL.selectedWaitingId && (layoutIsMobile() ? GL.activeTab === "wait" : true)) {
       try {
         await removeManualWaiting(GL.selectedWaitingId);
         flushOptimisticGlobalLayoutUi();
@@ -566,7 +558,11 @@ export function bindGlobalLayoutEventHandlers() {
         await deleteGlobalSeat(sid);
       }
       renderSeats(GL.globalSeats);
-      if (GL.activeTab === "seat") renderSeatPanel();
+      if (layoutIsMobile()) {
+        if (GL.activeTab === "seat") renderSeatPanel();
+      } else {
+        refreshGlobalLayoutPcOpsPanel();
+      }
     } catch (err) {
       console.error("keyboard deleteGlobalSeat error:", err);
     }

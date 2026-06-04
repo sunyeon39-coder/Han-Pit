@@ -21,7 +21,6 @@ export const GL = {
   mobileSheet: null,
   mobileAddSeatBtn: null,
   mobileAddWaitingBtn: null,
-
   stopSeatWatch: null,
   stopWaitingWatch: null,
   stopAttendanceWatch: null,

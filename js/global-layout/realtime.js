@@ -275,8 +275,7 @@ export function bindRealtime() {
         });
       }
 
-      const flags = { seats: true, seatPanel: GL.activeTab === "seat" };
-      if (GL.activeTab === "wait") flags.waiting = true;
+      const flags = { seats: true, seatPanel: true, waiting: true };
       scheduleGlobalLayoutRealtimeUi(flags);
 
       if (
@@ -306,9 +305,7 @@ export function bindRealtime() {
       applyOperatorPicksFromDoc(data);
       bumpGlobalLayoutDataRevision();
       updateGlobalLayoutWaitingMeta();
-      scheduleGlobalLayoutRealtimeUi(
-        GL.activeTab === "wait" ? { waiting: true } : { metaOnly: true }
-      );
+      scheduleGlobalLayoutRealtimeUi({ waiting: true });
     },
     (err) => console.error("global waiting watch error:", err)
   );

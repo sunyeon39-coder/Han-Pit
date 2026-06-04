@@ -17,6 +17,12 @@ import {
   getSeatById
 } from "./utils.js";
 import { renderGlobalLayoutMobile } from "./mobile-panel-render.js";
+import {
+  getPcSeatColEl,
+  getPcSeatScrollEl,
+  getPcWaitColEl,
+  getPcWaitScrollEl
+} from "./pc-panel-split.js";
 import { getWaitingDisplayStartMs, isWaitingBlocked, sortWaitingForDisplay, resolveSelectedWaitingForAssign, getCurrentTournamentWaiting } from "./waiting.js";
 import {
   buildOperatorLegendHtml,
@@ -108,23 +114,32 @@ export function setPanelOpen(nextOpen) {
 }
 
 export function capturePanelScroll() {
-  const list = GL.panelContent?.querySelector(".global-list");
-  if (!list) return;
-  if (GL.activeTab === "seat") {
-    GL.seatListScrollTop = list.scrollTop;
-  } else {
-    GL.waitListScrollTop = list.scrollTop;
-  }
+  if (layoutIsMobile()) return;
+  const waitScroll = getPcWaitScrollEl();
+  const seatScroll = getPcSeatScrollEl();
+  if (waitScroll) GL.waitListScrollTop = waitScroll.scrollTop;
+  if (seatScroll) GL.seatListScrollTop = seatScroll.scrollTop;
 }
 
 export function restorePanelScroll() {
-  const list = GL.panelContent?.querySelector(".global-list");
-  if (!list) return;
-  if (GL.activeTab === "seat") {
-    list.scrollTop = GL.seatListScrollTop;
-  } else {
-    list.scrollTop = GL.waitListScrollTop;
-  }
+  if (layoutIsMobile()) return;
+  const waitTop = Number(GL.waitListScrollTop) || 0;
+  const seatTop = Number(GL.seatListScrollTop) || 0;
+  const apply = () => {
+    const waitScroll = getPcWaitScrollEl();
+    const seatScroll = getPcSeatScrollEl();
+    if (waitScroll) waitScroll.scrollTop = waitTop;
+    if (seatScroll) seatScroll.scrollTop = seatTop;
+  };
+  apply();
+  requestAnimationFrame(apply);
+}
+
+/** PC 우측 패널: 대기·Seat 동시 갱신 */
+export function refreshGlobalLayoutPcOpsPanel() {
+  if (layoutIsMobile()) return;
+  renderWaiting(getCurrentTournamentWaiting());
+  renderSeatPanel();
 }
 
 export function isTypingInPanel() {
@@ -256,18 +271,12 @@ export function renderSeats(seats = []) {
 export function renderWaiting(waiting = []) {
   updateGlobalLayoutWaitingMeta();
   if (layoutIsMobile()) {
-    renderSeats(GL.globalSeats);
+    renderGlobalLayoutMobileView();
     return;
   }
-  if (!GL.panelContent) return;
+  const waitCol = getPcWaitColEl();
+  if (!waitCol) return;
   capturePanelScroll();
-  const waitTabActive = GL.activeTab === "wait";
-  updateTabUi();
-
-  if (!waitTabActive) {
-    updateGlobalLayoutWaitingMeta();
-    return;
-  }
 
   const sortedWaiting = sortWaitingForDisplay(waiting);
 
@@ -329,11 +338,11 @@ export function renderWaiting(waiting = []) {
     .join("");
 
   const listHtml = waitingRows || `<div class="empty-panel">현재 대기자가 없습니다.</div>`;
-  const existingList = GL.panelContent?.querySelector(".global-list");
-  const existingManual = GL.panelContent?.querySelector("#manualWaitingNameInput");
+  const existingList = waitCol.querySelector(".global-list");
+  const existingManual = waitCol.querySelector("#manualWaitingNameInput");
   if (existingList && existingManual) {
     existingList.innerHTML = listHtml;
-    const legend = GL.panelContent.querySelector(".gl-operator-legend");
+    const legend = waitCol.querySelector(".gl-operator-legend");
     const nextLegend = buildOperatorLegendHtml();
     if (legend && nextLegend) legend.outerHTML = nextLegend;
     else if (!legend && nextLegend) existingList.insertAdjacentHTML("beforebegin", nextLegend);
@@ -343,14 +352,16 @@ export function renderWaiting(waiting = []) {
     return;
   }
 
-  GL.panelContent.innerHTML = `
+  waitCol.innerHTML = `
     <div class="global-form single admin-only ${GL.isAdminUser ? "" : "hidden"}">
       <input id="manualWaitingNameInput" placeholder="-" autocomplete="off" />
-      <button id="addManualWaitingBtn" class="pill-inline full" type="button">+ 대기 추가</button>
+      <button id="addManualWaitingBtn" class="pill-inline full" type="button">+ 대기</button>
     </div>
     ${buildOperatorLegendHtml()}
-    <div class="global-list">
-      ${listHtml}
+    <div class="global-pc-ops-scroll" data-pc-scroll="wait">
+      <div class="global-list">
+        ${listHtml}
+      </div>
     </div>
   `;
   restorePanelScroll();
@@ -359,8 +370,9 @@ export function renderWaiting(waiting = []) {
 }
 
 export function updateSeatPanelTimers() {
-  if (!GL.panelContent || GL.activeTab !== "seat") return;
-  const chips = GL.panelContent.querySelectorAll(".time-chip[data-seat-start]");
+  const seatCol = getPcSeatColEl();
+  if (!seatCol) return;
+  const chips = seatCol.querySelectorAll(".time-chip[data-seat-start]");
   if (!chips.length) return;
   const now = Date.now();
   chips.forEach((chip) => {
@@ -374,8 +386,9 @@ export function updateSeatPanelTimers() {
 }
 
 export function updateWaitingTimersInPanel() {
-  if (!GL.panelContent || GL.activeTab !== "wait") return;
-  const chips = GL.panelContent.querySelectorAll(".time-chip[data-wait-start]");
+  const waitCol = getPcWaitColEl();
+  if (!waitCol) return;
+  const chips = waitCol.querySelectorAll(".time-chip[data-wait-start]");
   if (!chips.length) return;
   const now = Date.now();
   chips.forEach((chip) => {
@@ -390,9 +403,9 @@ export function updateWaitingTimersInPanel() {
 
 export function renderSeatPanel() {
   if (layoutIsMobile()) return;
-  if (!GL.panelContent) return;
+  const seatCol = getPcSeatColEl();
+  if (!seatCol) return;
   capturePanelScroll();
-  updateTabUi();
   const selectedWaiting = String(GL.selectedWaitingId || "").trim()
     ? getCurrentTournamentWaiting().find((w) => String(w.id || "").trim() === GL.selectedWaitingId) ||
       resolveSelectedWaitingForAssign()
@@ -466,15 +479,15 @@ export function renderSeatPanel() {
       : "";
 
   const listHtml = rows || `<div class="empty-panel">전역 좌석이 없습니다.</div>`;
-  const existingList = GL.panelContent?.querySelector(".global-list");
-  const existingPicker = GL.panelContent?.querySelector("#seatAddEventPick");
+  const existingList = seatCol.querySelector(".global-list");
+  const existingPicker = seatCol.querySelector("#seatAddEventPick");
   if (existingList && existingPicker) {
     existingList.innerHTML = listHtml;
-    const orderBtn = document.getElementById("sortSeatOrderBtn");
-    const timeBtn = document.getElementById("sortSeatTimeBtn");
+    const orderBtn = seatCol.querySelector("#sortSeatOrderBtn");
+    const timeBtn = seatCol.querySelector("#sortSeatTimeBtn");
     if (orderBtn) orderBtn.classList.toggle("active", GL.seatSortMode === "seat");
     if (timeBtn) timeBtn.classList.toggle("active", GL.seatSortMode === "time");
-    const existingBanner = GL.panelContent.querySelector(".layout-seat-assign-banner");
+    const existingBanner = seatCol.querySelector(".layout-seat-assign-banner");
     if (seatAssignBannerHtml) {
       if (existingBanner) {
         existingBanner.outerHTML = seatAssignBannerHtml.trim();
@@ -490,7 +503,7 @@ export function renderSeatPanel() {
     return;
   }
 
-  GL.panelContent.innerHTML = `
+  seatCol.innerHTML = `
     <div class="gl-panel-seat-toolbar">
       <div
         class="seat-add-one-row global-form-seat-add admin-only ${GL.isAdminUser ? "" : "hidden"}"
@@ -542,8 +555,10 @@ export function renderSeatPanel() {
       </div>
     </div>
     ${seatAssignBannerHtml}
-    <div class="global-list">
-      ${listHtml}
+    <div class="global-pc-ops-scroll" data-pc-scroll="seat">
+      <div class="global-list">
+        ${listHtml}
+      </div>
     </div>
   `;
   restorePanelScroll();

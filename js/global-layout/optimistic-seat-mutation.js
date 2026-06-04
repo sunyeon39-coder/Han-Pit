@@ -3,7 +3,7 @@ import { auth } from "../firebase.js";
 import { bumpGlobalLayoutDataRevision } from "./realtime-ui.js";
 import { updateGlobalLayoutWaitingMeta, updateGlobalLayoutMetaCounts } from "./meta-ui.js";
 import { layoutIsMobile } from "../layout/layout-main-route-env.js";
-import { renderSeats, renderSeatPanel, renderWaiting } from "./panel-ui.js";
+import { renderSeats, refreshGlobalLayoutPcOpsPanel } from "./panel-ui.js";
 import { renderGlobalLayoutMobile } from "./mobile-panel-render.js";
 import { getCurrentTournamentWaiting } from "./waiting.js";
 import { isEmptyPerson } from "./utils.js";
@@ -34,8 +34,7 @@ export function flushOptimisticGlobalLayoutUi() {
     return;
   }
   renderSeats(GL.globalSeats);
-  if (GL.activeTab === "seat") renderSeatPanel();
-  renderWaiting(getCurrentTournamentWaiting());
+  refreshGlobalLayoutPcOpsPanel();
   updateGlobalLayoutWaitingMeta();
 }
 
