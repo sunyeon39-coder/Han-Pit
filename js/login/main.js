@@ -11,6 +11,7 @@ import {
   doc,
   getDoc,
   setDoc,
+  updateDoc,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { resolveStoredUserRole } from "../shared/auth-helpers.js";
@@ -140,7 +141,22 @@ function hasValidNickname(profile = null) {
   return nickname.length >= 2;
 }
 
+async function waitForAuthBeforeFirestore(user) {
+  if (typeof auth.authStateReady === "function") {
+    await auth.authStateReady();
+  }
+  if (user?.getIdToken) {
+    try {
+      await user.getIdToken();
+    } catch (err) {
+      console.warn("[login] getIdToken:", err);
+    }
+  }
+}
+
 async function resolveProfileForLogin(user) {
+  await waitForAuthBeforeFirestore(user);
+
   const email = user.email || "";
   let profile = buildOptimisticProfileFromAuthUser(user, readLoginProfileCache(user.uid) || {});
 
@@ -305,9 +321,12 @@ async function saveProfile() {
     setLoginBusy(true, "entering");
 
     const user = auth.currentUser;
+    await waitForAuthBeforeFirestore(user);
+
     const uid = user.uid;
     const email = String(user.email || "").trim().toLowerCase();
-    const existingSnap = await getDoc(doc(db, "users", uid));
+    const userRef = doc(db, "users", uid);
+    const existingSnap = await getDoc(userRef);
     const prev = existingSnap.exists() ? existingSnap.data() || {} : {};
     const role = resolveStoredUserRole(email, prev);
 
@@ -322,14 +341,18 @@ async function saveProfile() {
       allowedEvents: prev.allowedEvents && typeof prev.allowedEvents === "object" ? prev.allowedEvents : {}
     };
 
-    await setDoc(
-      doc(db, "users", uid),
-      {
-        ...profile,
-        lastLogin: serverTimestamp()
-      },
-      { merge: true }
-    );
+    const writePayload = {
+      ...profile,
+      lastLogin: serverTimestamp()
+    };
+
+    if (existingSnap.exists()) {
+      const { role: _role, accessCode: _accessCode, allowedEvents: _allowedEvents, ...selfFields } =
+        writePayload;
+      await updateDoc(userRef, selfFields);
+    } else {
+      await setDoc(userRef, writePayload, { merge: true });
+    }
 
     writeLoginProfileCache(uid, profile);
 

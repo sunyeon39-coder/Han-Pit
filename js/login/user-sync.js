@@ -1,7 +1,8 @@
-import { db } from "../firebase.js";
+import { auth, db } from "../firebase.js";
 import {
   doc,
   getDoc,
+  getDocFromServer,
   setDoc,
   updateDoc,
   serverTimestamp,
@@ -17,6 +18,46 @@ import {
   buildDirectOpsPersistPatch,
   sanitizeAllowedEvents
 } from "../shared/auth-helpers.js";
+
+async function waitForFirestoreAuth(user) {
+  if (typeof auth.authStateReady === "function") {
+    await auth.authStateReady();
+  }
+  if (user?.getIdToken) {
+    try {
+      await user.getIdToken();
+    } catch (err) {
+      console.warn("[ensureUserDoc] getIdToken:", err);
+    }
+  }
+}
+
+async function readUserDocSnapFromServer(uid) {
+  const userRef = doc(db, "users", uid);
+  try {
+    return await getDocFromServer(userRef);
+  } catch {
+    return await getDoc(userRef);
+  }
+}
+
+function buildLoginTouchPatch(user, prev = {}, email = "") {
+  const nextRole = resolveStoredUserRole(email, prev);
+  const prevRole = String(prev.role || "").trim();
+  const patch = {
+    email: user.email || "",
+    photoURL: String(user.photoURL || "").trim(),
+    lastLogin: serverTimestamp()
+  };
+  if (nextRole === prevRole) {
+    patch.role = nextRole;
+  }
+  const nickname = String(prev.nickname || user.displayName || "").trim();
+  if (nickname && !String(prev.nickname || "").trim()) {
+    patch.nickname = nickname;
+  }
+  return { patch, nextRole };
+}
 
 export async function findLegacyUserDocByEmail(user) {
   if (!user?.email) return null;
@@ -38,37 +79,38 @@ export async function findLegacyUserDocByEmail(user) {
 export async function ensureUserDoc(user) {
   if (!user) return null;
 
+  await waitForFirestoreAuth(user);
+
   const uid = user.uid;
   const userRef = doc(db, "users", uid);
-  const currentSnap = await getDoc(userRef);
+  const currentSnap = await readUserDocSnapFromServer(uid);
 
   const email = String(user.email || "").trim().toLowerCase();
 
   if (currentSnap.exists()) {
     const prev = currentSnap.data() || {};
-    const nextRole = resolveStoredUserRole(email, prev);
-    const prevRole = String(prev.role || "").trim();
-    const patch = {
-      email: user.email || "",
-      photoURL: String(user.photoURL || "").trim(),
-      lastLogin: serverTimestamp()
-    };
-    // 본인 문서는 Firestore rules상 role 변경 불가(운영진만 가능). 메모리 프로필만 보정.
-    if (nextRole === prevRole) {
-      patch.role = nextRole;
+    const { patch, nextRole } = buildLoginTouchPatch(user, prev, email);
+    try {
+      await updateDoc(userRef, patch);
+    } catch (err) {
+      if (err?.code !== "permission-denied") throw err;
+      console.warn("[ensureUserDoc] updateDoc permission denied, using read profile:", err);
     }
-    await updateDoc(userRef, patch);
 
     return {
       created: false,
       migrated: false,
       role: nextRole,
-      profile: {
-        ...prev,
-        email: user.email || "",
-        photoURL: String(user.photoURL || "").trim(),
-        role: nextRole
-      }
+      profile: normalizeUserProfile(
+        {
+          ...prev,
+          ...patch,
+          email: user.email || "",
+          photoURL: String(user.photoURL || "").trim(),
+          role: nextRole
+        },
+        email
+      )
     };
   }
 
@@ -205,18 +247,20 @@ export async function syncUserProfileFast(user) {
     return { ok: false, reason: "no-user" };
   }
 
+  await waitForFirestoreAuth(user);
+
   const uid = user.uid;
   const userRef = doc(db, "users", uid);
   const email = String(user.email || "").trim().toLowerCase();
 
   try {
-    const snap = await getDoc(userRef);
+    const snap = await readUserDocSnapFromServer(uid);
     if (!snap.exists()) {
       return { ok: false, reason: "no-doc", needsFullSync: true };
     }
 
     const prev = snap.data() || {};
-    const nextRole = resolveStoredUserRole(email, prev);
+    const { patch, nextRole } = buildLoginTouchPatch(user, prev, email);
     const profile = normalizeUserProfile(
       {
         ...prev,
@@ -227,14 +271,6 @@ export async function syncUserProfileFast(user) {
       email
     );
 
-    const patch = {
-      email: user.email || "",
-      photoURL: String(user.photoURL || "").trim(),
-      lastLogin: serverTimestamp()
-    };
-    if (nextRole === String(prev.role || "").trim()) {
-      patch.role = nextRole;
-    }
     void updateDoc(userRef, patch).catch((err) => {
       console.warn("[syncUserProfileFast] lastLogin update:", err);
     });

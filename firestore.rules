@@ -53,10 +53,12 @@ service cloud.firestore {
         request.resource.data.role == resource.data.role;
     }
 
+    // 누락 필드와 {} / "" 를 동일하게 취급 (FCM 토큰만 있는 users/{uid} stub → 로그인 setDoc 시 오탐 방지)
     function accessFieldsUnchanged() {
       return (
-        request.resource.data.accessCode == resource.data.accessCode &&
-        request.resource.data.allowedEvents == resource.data.allowedEvents
+        request.resource.data.get('accessCode', '') == resource.data.get('accessCode', '') &&
+        request.resource.data.get('allowedEvents', {}) == resource.data.get('allowedEvents', {}) &&
+        request.resource.data.get('opsTournamentIds', []) == resource.data.get('opsTournamentIds', [])
       );
     }
 
