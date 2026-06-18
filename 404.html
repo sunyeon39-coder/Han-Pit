@@ -8,7 +8,7 @@
     document.documentElement.style.backgroundColor="#060c17";
     document.documentElement.style.colorScheme="dark";
   }catch(e){}
-  var BUILD="20260618163844";
+  var BUILD="20260618164503";
   var KEY="hanPitAppVersion";
   var meta=document.querySelector('meta[name="han-pit-build"]');
   var pageBuild=meta?String(meta.getAttribute("content")||"").trim():"";
@@ -64,14 +64,9 @@
     if(isLegacyShell())return true;
     if(!pageBuild)return true;
     if(!remote)return false;
+    if(pageBuild===remote)return false;
     if(bust===remote&&pageBuild===remote)return false;
-    var stored="";
-    try{stored=String(localStorage.getItem(KEY)||"").trim();}catch(e){}
-    if(pageBuild!==remote)return true;
-    if(stored!==remote)return true;
-    if(!stored)return true;
-    if(bust&&bust!==remote)return true;
-    return false;
+    return true;
   }
 
   if(!pageBuild&&!bust){
@@ -134,7 +129,7 @@
 })();
 </script>
   <!-- /han-pit-asset-fix -->
-  <meta name="han-pit-build" content="20260618163844" />
+  <meta name="han-pit-build" content="20260618164503" />
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Han Pit — 이동 중</title>

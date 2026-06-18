@@ -5,6 +5,7 @@ import { enrichProfileWithEmailAllows } from "./load-user-profile.js";
 
 let stopMyProfileWatch = null;
 let lastProfile = null;
+let enrichInflight = null;
 
 export function bindMyUserProfileRealtime(uid, { email = "", onProfileChange } = {}) {
   disposeMyUserProfileRealtime();
@@ -18,15 +19,25 @@ export function bindMyUserProfileRealtime(uid, { email = "", onProfileChange } =
       if (!snap.exists()) return;
       const raw = normalizeUserProfile(snap.data() || {}, email);
       const merged = mergeOpsProfile(lastProfile, raw, snap.metadata || {});
-      void enrichProfileWithEmailAllows(uid, email, merged, {
-        preferCacheFirst: false,
-        forceServer: true
-      }).then(
-        (profile) => {
+      lastProfile = merged;
+      onProfileChange(merged, snap.metadata || {});
+
+      if (snap.metadata?.fromCache || enrichInflight) return;
+
+      enrichInflight = enrichProfileWithEmailAllows(uid, email, merged, {
+        preferCacheFirst: true
+      })
+        .then((profile) => {
+          if (!profile) return;
           lastProfile = profile;
           onProfileChange(profile, snap.metadata || {});
-        }
-      );
+        })
+        .catch((err) => {
+          console.warn("bindMyUserProfileRealtime enrich:", err?.code || err);
+        })
+        .finally(() => {
+          enrichInflight = null;
+        });
     },
     (err) => {
       console.error("bindMyUserProfileRealtime error:", err);
@@ -40,6 +51,7 @@ export function disposeMyUserProfileRealtime() {
     stopMyProfileWatch = null;
   }
   lastProfile = null;
+  enrichInflight = null;
 }
 
 export function seedMyUserProfileCache(profile) {

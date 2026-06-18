@@ -120,7 +120,6 @@ async function checkAppVersionAndReloadIfNeeded() {
     if (!remote) return;
 
     const pageBuild = getPageBuildVersion();
-    const stored = readStoredAppVersion();
     const bustParam = new URL(window.location.href).searchParams.get("_hanpit_v");
 
     if (bustParam === remote && pageBuild && pageBuild === remote && !isLegacyIndexShell()) {
@@ -129,12 +128,11 @@ async function checkAppVersionAndReloadIfNeeded() {
     }
 
     const pageStale = !pageBuild || pageBuild !== remote;
-    const storedStale = Boolean(stored) && stored !== remote;
     const bustStale = Boolean(bustParam) && bustParam !== remote;
 
-    if (pageStale || storedStale || bustStale) {
+    if (pageStale || bustStale) {
       reloadForAppVersion(remote);
-    } else if (!stored) {
+    } else {
       persistAppVersion(remote);
     }
   } finally {

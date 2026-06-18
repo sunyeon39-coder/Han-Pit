@@ -233,16 +233,18 @@ export async function enrichProfileWithEmailAllows(uid, email, profile, options 
 export async function loadUserProfileForTournamentOps(uid, email = "", tournamentId = "", options = {}) {
   const tid = String(tournamentId || "").trim();
   const tournamentMeta = options.tournamentMeta || null;
-  const serverOpts = { preferCacheFirst: false, skipLoginCache: true, forceServer: true };
+  const preferCacheFirst = options.preferCacheFirst === true;
+  const readOpts = preferCacheFirst
+    ? { preferCacheFirst: true, skipLoginCache: false }
+    : { preferCacheFirst: false, skipLoginCache: true, forceServer: true };
+  const enrichOpts = preferCacheFirst
+    ? { preferCacheFirst: true, forceServer: false }
+    : { preferCacheFirst: false, forceServer: true };
 
-  let profile = await raceFirestoreTimeout(loadUserProfileFresh(uid, email, serverOpts));
+  let profile = await raceFirestoreTimeout(loadUserProfileFresh(uid, email, readOpts));
   profile =
-    (await raceFirestoreTimeout(
-      enrichProfileWithEmailAllows(uid, email, profile, {
-        preferCacheFirst: false,
-        forceServer: true
-      })
-    )) || profile;
+    (await raceFirestoreTimeout(enrichProfileWithEmailAllows(uid, email, profile, enrichOpts))) ||
+    profile;
 
   if (!profile && uid) {
     profile = await loadUserProfileFresh(uid, email, {
@@ -253,14 +255,12 @@ export async function loadUserProfileForTournamentOps(uid, email = "", tournamen
 
   if (!tid || !profile) return profile;
   if (canUseTournamentOps(email, profile, tid, tournamentMeta)) return profile;
+  if (preferCacheFirst) return profile;
 
-  const fresh = await raceFirestoreTimeout(loadUserProfileFresh(uid, email, serverOpts), 6000);
+  const fresh = await raceFirestoreTimeout(loadUserProfileFresh(uid, email, readOpts), 6000);
   profile =
     (await raceFirestoreTimeout(
-      enrichProfileWithEmailAllows(uid, email, fresh || profile, {
-        preferCacheFirst: false,
-        forceServer: true
-      }),
+      enrichProfileWithEmailAllows(uid, email, fresh || profile, enrichOpts),
       6000
     )) || profile;
   return profile;

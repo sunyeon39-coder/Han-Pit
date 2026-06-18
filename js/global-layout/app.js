@@ -56,16 +56,15 @@ import {
 } from "../shared/bind-my-user-profile-realtime.js";
 import {
   loadUserProfileForTournamentOps,
+  loadUserProfileFresh,
   raceFirestoreTimeout
 } from "../shared/load-user-profile.js";
 import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
 
 let globalLayoutMobileSeatNotify = null;
 let globalLayoutSessionUid = "";
-
-function sleep(ms = 0) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+let globalLayoutSessionStarted = false;
+let globalLayoutOpsRefreshInflight = null;
 
 function ensureGlobalLayoutMobileSeatNotify(user) {
   if (!layoutIsMobile() || !user?.uid) return null;
@@ -163,26 +162,68 @@ export function startGlobalLayoutApp() {
     if (!user?.uid) return false;
     if (syncGlobalLayoutOpsFromProfile(user)) return true;
 
-    const maxAttempts = isLoginProfileCacheFresh(user.uid) ? 2 : 4;
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const cached = await raceFirestoreTimeout(
+      loadUserProfileFresh(user.uid, user.email || "", {
+        preferCacheFirst: true,
+        skipLoginCache: false
+      }),
+      5000
+    );
+    if (cached) {
+      GL.userProfile = cached;
+      seedMyUserProfileCache(cached);
+      writeLoginProfileCache(user.uid, cached);
       if (syncGlobalLayoutOpsFromProfile(user)) return true;
+    }
 
-      const profile = await raceFirestoreTimeout(
-        loadUserProfileForTournamentOps(user.uid, user.email || "", GL.tournamentId),
-        8000
-      );
-      if (profile) {
-        GL.userProfile = profile;
-        seedMyUserProfileCache(profile);
-        writeLoginProfileCache(user.uid, profile);
-      }
-      if (syncGlobalLayoutOpsFromProfile(user)) return true;
+    if (isLoginProfileCacheFresh(user.uid) && syncGlobalLayoutOpsFromProfile(user)) {
+      return true;
+    }
 
-      if (attempt + 1 < maxAttempts) {
-        await sleep(isLoginProfileCacheFresh(user.uid) ? 350 : 600 + attempt * 400);
-      }
+    const profile = await raceFirestoreTimeout(
+      loadUserProfileForTournamentOps(user.uid, user.email || "", GL.tournamentId, {
+        preferCacheFirst: true
+      }),
+      8000
+    );
+    if (profile) {
+      GL.userProfile = profile;
+      seedMyUserProfileCache(profile);
+      writeLoginProfileCache(user.uid, profile);
     }
     return syncGlobalLayoutOpsFromProfile(user);
+  }
+
+  function refreshGlobalLayoutOpsProfileBackground(user = GL.currentUser) {
+    if (!user?.uid || globalLayoutOpsRefreshInflight) return globalLayoutOpsRefreshInflight;
+    globalLayoutOpsRefreshInflight = loadUserProfileForTournamentOps(
+      user.uid,
+      user.email || "",
+      GL.tournamentId,
+      { preferCacheFirst: true }
+    )
+      .then((fresh) => {
+        if (!fresh || globalLayoutSessionUid !== user.uid) return null;
+        GL.userProfile = fresh;
+        writeLoginProfileCache(user.uid, fresh);
+        syncGlobalLayoutOpsFromProfile(user);
+        refreshGlobalLayoutAdminUi();
+        return normalizeAndPersistUserRole(user.uid, GL.userProfile, user.email || "");
+      })
+      .then((profile) => {
+        if (!profile || globalLayoutSessionUid !== user.uid) return;
+        GL.userProfile = profile;
+        writeLoginProfileCache(user.uid, profile);
+        syncGlobalLayoutOpsFromProfile(user);
+        refreshGlobalLayoutAdminUi();
+      })
+      .catch((err) => {
+        console.warn("global-layout ops profile refresh:", err?.code || err);
+      })
+      .finally(() => {
+        globalLayoutOpsRefreshInflight = null;
+      });
+    return globalLayoutOpsRefreshInflight;
   }
 
   function applyGlobalLayoutOpsPermissions(user, meta = {}) {
@@ -200,6 +241,12 @@ export function startGlobalLayoutApp() {
   }
 
   function startGlobalLayoutSession(user) {
+    if (globalLayoutSessionStarted) {
+      refreshGlobalLayoutAdminUi();
+      return;
+    }
+    globalLayoutSessionStarted = true;
+
     if (!GL.tournamentId) {
       alert("대회 정보가 없습니다. 인덱스에서 대회를 선택한 뒤 다시 열어 주세요.");
       location.replace("./index.html");
@@ -244,6 +291,7 @@ export function startGlobalLayoutApp() {
   }
 
   window.addEventListener("beforeunload", () => {
+    globalLayoutSessionStarted = false;
     disposeGlobalLayoutRealtime();
     void clearMyWaitingPick();
   });
@@ -273,13 +321,10 @@ export function startGlobalLayoutApp() {
       GL.currentUser = user;
       GL.userProfile = readBootUserProfile(user);
       seedMyUserProfileCache(GL.userProfile);
+      markPageBootLoaded(GL.app);
 
-      if (syncGlobalLayoutOpsFromProfile(user)) {
-        markPageBootLoaded(GL.app);
-        startGlobalLayoutSession(user);
-      }
-
-      const hasOps = await ensureGlobalLayoutOpsChrome(user);
+      const hasOps =
+        syncGlobalLayoutOpsFromProfile(user) || (await ensureGlobalLayoutOpsChrome(user));
       if (!hasOps) {
         alert(
           "운영 권한이 없습니다. 허브에서「직접 허용」을 받았는지, 같은 대회로 들어왔는지 확인해 주세요."
@@ -288,33 +333,8 @@ export function startGlobalLayoutApp() {
         return;
       }
 
-      if (GL.app?.dataset.pageBootLoaded !== "1") {
-        startGlobalLayoutSession(user);
-      } else {
-        refreshGlobalLayoutAdminUi();
-      }
-
-      void loadUserProfileForTournamentOps(user.uid, user.email || "", GL.tournamentId)
-        .then((fresh) => {
-          if (!fresh) return;
-          GL.userProfile = fresh;
-          writeLoginProfileCache(user.uid, fresh);
-          syncGlobalLayoutOpsFromProfile(user);
-          refreshGlobalLayoutAdminUi();
-        })
-        .catch((err) => console.warn("global-layout ops profile refresh:", err));
-
-      void normalizeAndPersistUserRole(user.uid, GL.userProfile, user.email || "")
-        .then((profile) => {
-          if (!profile) return;
-          GL.userProfile = profile;
-          writeLoginProfileCache(user.uid, profile);
-          syncGlobalLayoutOpsFromProfile(user);
-          refreshGlobalLayoutAdminUi();
-        })
-        .catch((err) => {
-          console.error("normalizeAndPersistUserRole error:", err);
-        });
+      startGlobalLayoutSession(user);
+      void refreshGlobalLayoutOpsProfileBackground(user);
     } catch (err) {
       console.error("global layout init error:", err);
       const detail = String(err?.message || err || "").trim();

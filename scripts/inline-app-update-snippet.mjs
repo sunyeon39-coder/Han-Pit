@@ -97,14 +97,9 @@ export function buildInlineAppUpdateSnippet(v) {
     if(isLegacyShell())return true;
     if(!pageBuild)return true;
     if(!remote)return false;
+    if(pageBuild===remote)return false;
     if(bust===remote&&pageBuild===remote)return false;
-    var stored="";
-    try{stored=String(localStorage.getItem(KEY)||"").trim();}catch(e){}
-    if(pageBuild!==remote)return true;
-    if(stored!==remote)return true;
-    if(!stored)return true;
-    if(bust&&bust!==remote)return true;
-    return false;
+    return true;
   }
 
   if(!pageBuild&&!bust){

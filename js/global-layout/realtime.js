@@ -3,7 +3,6 @@ import {
   collection,
   doc,
   getDocs,
-  getDocsFromServer,
   onSnapshot,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -206,14 +205,7 @@ async function primeDealerAttendanceFilter() {
   }
   try {
     const q = dealerAttendanceQueryForTournament(tid);
-    let snap = await getDocs(q);
-    if (snap.empty) {
-      try {
-        snap = await getDocsFromServer(q);
-      } catch {
-        /* 캐시 스냅샷 유지 */
-      }
-    }
+    const snap = await getDocs(q);
     applyDealerAttendanceSnap(snap);
   } catch (err) {
     console.warn("primeDealerAttendanceFilter:", err?.code || err);
@@ -236,7 +228,7 @@ export function bindRealtime() {
 
   sessionStorage.setItem("tournamentId", GL.tournamentId);
   disposeGlobalLayoutRealtime();
-  GL.attendanceFilterReady = false;
+  GL.attendanceFilterReady = true;
   GL.attendanceInactiveUids = new Set();
   GL.attendanceWaiting = [];
   void primeDealerAttendanceFilter();
