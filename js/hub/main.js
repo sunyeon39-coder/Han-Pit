@@ -14,6 +14,7 @@ import { getIsAdminUser } from "./hub-helpers.js";
 import { closeModal, openModal } from "../shared/dom-utils.js";
 import { isAppDebugEnabled } from "../shared/app-debug.js";
 import { ensureDocumentShellBackground } from "../shared/page-boot-shell.js";
+import { isSameAuthSession } from "../shared/auth-session-guard.js";
 
 import { initHubRefs, hubRefs } from "./hub-dom-refs.js";
 import { showHubListLoading } from "./hub-tournament-list.js";
@@ -75,14 +76,17 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
 
 initHubRefs();
 ensureDocumentShellBackground();
-hubState.tournamentsBootstrapping = true;
 hubState.tournamentsListReady = false;
-if (seedHubTournamentsFromSessionCache()) {
+const hubSeededFromSession = seedHubTournamentsFromSessionCache();
+hubState.tournamentsBootstrapping = !hubSeededFromSession;
+if (hubSeededFromSession) {
   scheduleHubTournamentsRender();
 } else {
   showHubListLoading();
 }
 void prefetchHubTournamentsCache();
+
+let hubSessionUid = "";
 
 const flushAppBadgeIfVisible = bindAppBadgeClearOnForeground(db, auth);
 void ensureForegroundFcmBadgeListener();
@@ -359,8 +363,8 @@ function disposeHubSessionWatches() {
 async function bootstrapHubSession(user) {
   const flow = ++hubState.hubAuthFlowGen;
   let bootTimeoutId = 0;
-  hubState.tournamentsBootstrapping = true;
-  if (!hubState.tournamentsCache.length) {
+  if (!hubState.tournamentsCache.length && !hubState.tournamentsListReady) {
+    hubState.tournamentsBootstrapping = true;
     showHubListLoading();
   }
 
@@ -489,12 +493,6 @@ async function bootstrapHubSession(user) {
   } else {
     disposeHubPeriodicAccessResync();
   }
-
-  window.setTimeout(() => {
-    if (flow !== hubState.hubAuthFlowGen) return;
-    if (hubState.currentUser?.uid !== user.uid) return;
-    void resyncHubAccessFromServer(user.uid);
-  }, 450);
   } finally {
     if (bootTimeoutId) clearTimeout(bootTimeoutId);
     hubState.tournamentsBootstrapping = false;
@@ -507,6 +505,7 @@ async function bootstrapHubSession(user) {
 
 onAuthStateChanged(auth, (user) => {
   if (!user) {
+    hubSessionUid = "";
     hubState.hubAuthFlowGen = 0;
     hubState.currentUser = null;
     hubState.currentUserProfile = null;
@@ -515,9 +514,16 @@ onAuthStateChanged(auth, (user) => {
     return;
   }
 
+  if (isSameAuthSession(hubSessionUid, user)) {
+    hubState.currentUser = user;
+    void refreshFcmTokenIfGranted(user.uid);
+    return;
+  }
+
+  hubSessionUid = user.uid;
   hubState.currentUser = user;
   disposeHubSessionWatches();
-  if (!hubState.tournamentsCache.length) {
+  if (!hubState.tournamentsCache.length && !hubState.tournamentsListReady) {
     showHubListLoading();
   }
 

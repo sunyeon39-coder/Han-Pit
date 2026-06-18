@@ -42,20 +42,25 @@ import {
   ensureDocumentShellBackground,
   markPageBootLoaded
 } from "../shared/page-boot-shell.js";
+import { isSameAuthSession } from "../shared/auth-session-guard.js";
+import {
+  readBootUserProfile,
+  isLoginProfileCacheFresh,
+  writeLoginProfileCache
+} from "../shared/login-profile-cache.js";
 import {
   bindMyUserProfileRealtime,
   disposeMyUserProfileRealtime,
   seedMyUserProfileCache
 } from "../shared/bind-my-user-profile-realtime.js";
-import { readBootUserProfile } from "../shared/login-profile-cache.js";
 import {
   loadUserProfileForTournamentOps,
   raceFirestoreTimeout
 } from "../shared/load-user-profile.js";
-import { writeLoginProfileCache } from "../shared/login-profile-cache.js";
 import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
 
 let globalLayoutMobileSeatNotify = null;
+let globalLayoutSessionUid = "";
 
 function sleep(ms = 0) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -153,12 +158,15 @@ export function startGlobalLayoutApp() {
 
   async function ensureGlobalLayoutOpsChrome(user = GL.currentUser) {
     if (!user?.uid) return false;
-    for (let attempt = 0; attempt < 8; attempt += 1) {
+    if (syncGlobalLayoutOpsFromProfile(user)) return true;
+
+    const maxAttempts = isLoginProfileCacheFresh(user.uid) ? 2 : 4;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       if (syncGlobalLayoutOpsFromProfile(user)) return true;
 
       const profile = await raceFirestoreTimeout(
         loadUserProfileForTournamentOps(user.uid, user.email || "", GL.tournamentId),
-        10000
+        8000
       );
       if (profile) {
         GL.userProfile = profile;
@@ -167,7 +175,9 @@ export function startGlobalLayoutApp() {
       }
       if (syncGlobalLayoutOpsFromProfile(user)) return true;
 
-      await sleep(600 + attempt * 400);
+      if (attempt + 1 < maxAttempts) {
+        await sleep(isLoginProfileCacheFresh(user.uid) ? 350 : 600 + attempt * 400);
+      }
     }
     return syncGlobalLayoutOpsFromProfile(user);
   }
@@ -237,25 +247,33 @@ export function startGlobalLayoutApp() {
 
   onAuthStateChanged(auth, async (user) => {
     if (!user) {
+      globalLayoutSessionUid = "";
       disposeMyUserProfileRealtime();
       void clearMyWaitingPick();
       location.replace("./login.html");
       return;
     }
 
+    if (isSameAuthSession(globalLayoutSessionUid, user)) {
+      GL.currentUser = user;
+      void refreshFcmTokenIfGranted(user.uid);
+      return;
+    }
+
+    globalLayoutSessionUid = user.uid;
+
     const bootUiTimeout = window.setTimeout(() => {
       if (GL.app?.dataset.pageBootLoaded !== "1") markPageBootLoaded(GL.app);
-    }, 5000);
+    }, 2500);
 
     try {
       GL.currentUser = user;
       GL.userProfile = readBootUserProfile(user);
       seedMyUserProfileCache(GL.userProfile);
 
-      let sessionStarted = false;
       if (syncGlobalLayoutOpsFromProfile(user)) {
+        markPageBootLoaded(GL.app);
         startGlobalLayoutSession(user);
-        sessionStarted = true;
       }
 
       const hasOps = await ensureGlobalLayoutOpsChrome(user);
@@ -267,7 +285,7 @@ export function startGlobalLayoutApp() {
         return;
       }
 
-      if (!sessionStarted) {
+      if (GL.app?.dataset.pageBootLoaded !== "1") {
         startGlobalLayoutSession(user);
       } else {
         refreshGlobalLayoutAdminUi();

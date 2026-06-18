@@ -10,12 +10,17 @@ import { createGoogleAuthProvider } from "../shared/google-auth-provider.js";
 import {
   doc,
   getDoc,
+  getDocFromServer,
   setDoc,
   updateDoc,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { resolveStoredUserRole } from "../shared/auth-helpers.js";
 import { isAppDebugEnabled } from "../shared/app-debug.js";
+import {
+  isValidNicknameLength,
+  readCommittedNicknameInput
+} from "../shared/nickname-validation.js";
 import {
   syncUserProfile,
   syncUserProfileFast,
@@ -137,8 +142,16 @@ function wireInAppBrowserGate() {
 wireInAppBrowserGate();
 
 function hasValidNickname(profile = null) {
-  const nickname = String(profile?.nickname || "").trim();
-  return nickname.length >= 2;
+  return isValidNicknameLength(profile?.nickname || "");
+}
+
+async function readUserDocSnapFromServer(uid) {
+  const userRef = doc(db, "users", uid);
+  try {
+    return await getDocFromServer(userRef);
+  } catch {
+    return await getDoc(userRef);
+  }
 }
 
 async function waitForAuthBeforeFirestore(user) {
@@ -305,10 +318,10 @@ async function login() {
 
 async function saveProfile() {
   try {
-    const nickname = String(nicknameInput?.value || "").trim();
+    const nickname = readCommittedNicknameInput(nicknameInput);
     const phone = String(phoneInput?.value || "").trim();
 
-    if (nickname.length < 2 || nickname.length > 7) {
+    if (!isValidNicknameLength(nickname)) {
       alert("닉네임은 2~7자로 입력해주세요.");
       return;
     }
@@ -326,7 +339,7 @@ async function saveProfile() {
     const uid = user.uid;
     const email = String(user.email || "").trim().toLowerCase();
     const userRef = doc(db, "users", uid);
-    const existingSnap = await getDoc(userRef);
+    const existingSnap = await readUserDocSnapFromServer(uid);
     const prev = existingSnap.exists() ? existingSnap.data() || {} : {};
     const role = resolveStoredUserRole(email, prev);
 
@@ -351,12 +364,23 @@ async function saveProfile() {
         writePayload;
       await updateDoc(userRef, selfFields);
     } else {
-      await setDoc(userRef, writePayload, { merge: true });
+      await setDoc(
+        userRef,
+        {
+          ...writePayload,
+          createdAt: serverTimestamp()
+        },
+        { merge: true }
+      );
     }
 
     writeLoginProfileCache(uid, profile);
 
-    await syncUserDisplayNameAfterNicknameChange(uid, nickname);
+    try {
+      await syncUserDisplayNameAfterNicknameChange(uid, nickname);
+    } catch (syncErr) {
+      console.warn("[saveProfile] display name sync:", syncErr);
+    }
 
     if (isAppDebugEnabled()) {
       console.debug("[PROFILE SAVED]", {

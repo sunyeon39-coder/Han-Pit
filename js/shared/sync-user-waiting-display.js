@@ -64,7 +64,6 @@ async function syncGlobalWaitingNameForUser(userUid, name) {
     });
   } catch (err) {
     console.error("syncGlobalWaitingNameForUser error:", err);
-    throw err;
   }
   return updated;
 }
@@ -100,7 +99,6 @@ async function syncDealerAttendanceNicknameForUser(userUid, name) {
     await commitIfNeeded(true);
   } catch (err) {
     console.error("syncDealerAttendanceNicknameForUser error:", err);
-    throw err;
   }
   return updated;
 }

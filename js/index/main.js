@@ -15,6 +15,7 @@ import { resolveStoredUserRole } from "../shared/auth-helpers.js";
 import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
 import { normalizeAndPersistUserRole } from "../login/user-sync.js";
 import { isAppDebugEnabled } from "../shared/app-debug.js";
+import { isSameAuthSession } from "../shared/auth-session-guard.js";
 import { openModal, closeModal, escapeHtml } from "../shared/dom-utils.js";
 import { getTournamentId, resolveRelativePage, sleep } from "./core-utils.js";
 import { isTournamentActive } from "./time-utils.js";
@@ -117,6 +118,8 @@ function buildGlobalLayoutHref() {
 let indexHadOps = false;
 /** onAuthStateChanged·모바일 토큰 갱신 시 이전 init 이 리스너를 중복 등록하지 않도록 */
 let indexAuthFlowGen = 0;
+let indexSessionUid = "";
+let indexOpsResyncTimer = 0;
 
 function indexTournamentMeta() {
   const t = IX.currentTournament;
@@ -165,7 +168,11 @@ function indexOpsAccessOk(user = auth.currentUser) {
 /** 모바일·PWA — Firestore 지연 시 운영 UI 가 늦게 켜지는 것 재시도 */
 async function ensureIndexOpsChrome(user = auth.currentUser) {
   if (!user?.uid) return;
-  for (let attempt = 0; attempt < 8; attempt += 1) {
+  applyIndexOpsPermissions(user);
+  if (indexOpsAccessOk(user)) return;
+
+  const maxAttempts = isLoginProfileCacheFresh(user.uid) ? 2 : 4;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     applyIndexOpsPermissions(user);
     if (indexOpsAccessOk(user)) return;
 
@@ -178,7 +185,9 @@ async function ensureIndexOpsChrome(user = auth.currentUser) {
     applyIndexOpsPermissions(user);
     if (indexOpsAccessOk(user)) return;
 
-    await sleep(600 + attempt * 400);
+    if (attempt + 1 < maxAttempts) {
+      await sleep(isLoginProfileCacheFresh(user.uid) ? 350 : 600 + attempt * 400);
+    }
   }
 }
 
@@ -281,7 +290,16 @@ async function init() {
     .catch((err) => console.error("loadDealerAttendanceOnce error:", err))
     .finally(() => scheduleRenderDealerOps());
 
-  await raceFirestoreTimeout(loadEvents(), 12000);
+  const eventsTask = raceFirestoreTimeout(loadEvents(), 12000);
+  if (paintedFromSession) {
+    void eventsTask.then(() => {
+      render();
+      renderDealerOps();
+      refreshCardStatuses();
+    });
+  } else {
+    await eventsTask;
+  }
 
   void ensureMeRecovered(auth.currentUser)
     .catch((err) => {
@@ -584,6 +602,7 @@ function bindIndexPushUiOnce() {
 
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
+    indexSessionUid = "";
     indexAuthFlowGen += 1;
     indexHadOps = false;
     disposeIndexRealtimeWatches();
@@ -591,6 +610,12 @@ onAuthStateChanged(auth, async (user) => {
     return;
   }
 
+  if (isSameAuthSession(indexSessionUid, user)) {
+    void refreshFcmTokenIfGranted(user.uid);
+    return;
+  }
+
+  indexSessionUid = user.uid;
   const flow = ++indexAuthFlowGen;
   disposeIndexRealtimeWatches();
   bindMySeatAssignment(user);
@@ -682,7 +707,7 @@ onAuthStateChanged(auth, async (user) => {
 
     const bootUiTimeout = window.setTimeout(() => {
       if (IX.root?.dataset.pageBootLoaded !== "1") markPageBootLoaded(IX.root);
-    }, 5000);
+    }, 2500);
 
     try {
       await Promise.all([init(), periodPromise]);
@@ -707,12 +732,19 @@ onAuthStateChanged(auth, async (user) => {
 });
 
 window.addEventListener("hanpit-index-tournament-ready", () => {
-  void ensureIndexOpsChrome(auth.currentUser);
+  if (!indexOpsAccessOk(auth.currentUser)) {
+    void ensureIndexOpsChrome(auth.currentUser);
+  }
 });
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return;
-  void ensureIndexOpsChrome(auth.currentUser);
+  if (indexOpsAccessOk(auth.currentUser)) return;
+  window.clearTimeout(indexOpsResyncTimer);
+  indexOpsResyncTimer = window.setTimeout(() => {
+    indexOpsResyncTimer = 0;
+    void ensureIndexOpsChrome(auth.currentUser);
+  }, 1200);
 });
 
 setInterval(() => {

@@ -609,10 +609,10 @@ export function bindHubForegroundAccessResync(uid) {
     if (document.visibilityState !== "visible") return;
 
     const elapsed = Date.now() - boundAt;
-    if (!immediate && elapsed < 700) return;
+    if (!immediate && elapsed < 4000) return;
 
     clearTimeout(timer);
-    const delay = immediate ? 40 : 280;
+    const delay = immediate ? 80 : 600;
     timer = setTimeout(() => {
       timer = null;
       void resyncHubAccessFromServer(uid);
@@ -629,18 +629,15 @@ export function bindHubForegroundAccessResync(uid) {
   };
 
   const onOnline = () => schedule(true);
-  const onFocus = () => schedule(false);
 
   document.addEventListener("visibilitychange", onVisibility);
   window.addEventListener("pageshow", onPageShow);
   window.addEventListener("online", onOnline);
-  window.addEventListener("focus", onFocus);
 
   hubForegroundResyncDispose = () => {
     document.removeEventListener("visibilitychange", onVisibility);
     window.removeEventListener("pageshow", onPageShow);
     window.removeEventListener("online", onOnline);
-    window.removeEventListener("focus", onFocus);
     clearTimeout(timer);
   };
 }

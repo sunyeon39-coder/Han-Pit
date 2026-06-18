@@ -56,6 +56,7 @@ function wireHubEmptyState() {
 export function showHubListLoading() {
   const { eventListEl } = hubRefs;
   if (!eventListEl) return;
+  if (hubState.tournamentsListReady || hubState.tournamentsCache.length > 0) return;
 
   eventListEl.classList.remove("event-list--empty");
   eventListEl.classList.add("event-list--loading");
@@ -73,7 +74,7 @@ export function renderTournaments(tournaments, userProfile, user) {
 
   const list = Array.isArray(tournaments) ? tournaments : [];
 
-  if (!list.length && hubState.tournamentsBootstrapping && !hubState.tournamentsListReady) {
+  if (!list.length && hubState.tournamentsBootstrapping && !hubState.tournamentsListReady && !hubState.tournamentsCache.length) {
     showHubListLoading();
     return;
   }

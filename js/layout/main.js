@@ -80,6 +80,7 @@ import {
 import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
 import { createLayoutRealtimeUi } from "./layout-realtime-ui.js";
 import { markPageBootLoaded } from "../shared/page-boot-shell.js";
+import { isSameAuthSession } from "../shared/auth-session-guard.js";
 import { raceFirestoreTimeout } from "../shared/load-user-profile.js";
 import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
 import {
@@ -622,8 +623,11 @@ import {
     seatNotify
   });
 
+  let layoutSessionUid = "";
+
   onAuthStateChanged(auth, async (user) => {
   if (!user) {
+    layoutSessionUid = "";
     currentUser = null;
     currentUserProfile = null;
     isAdminUser = false;
@@ -634,6 +638,14 @@ import {
     location.href = "./login.html";
     return;
   }
+
+  if (isSameAuthSession(layoutSessionUid, user)) {
+    currentUser = user;
+    void refreshFcmTokenIfGranted(user.uid);
+    return;
+  }
+
+  layoutSessionUid = user.uid;
 
   if (!hasValidLayoutRouteContext()) {
     alert("레이아웃 진입 정보가 올바르지 않아 이벤트 목록으로 이동합니다.");
@@ -673,7 +685,7 @@ import {
 
   const bootUiTimeout = window.setTimeout(() => {
     if (app?.dataset.pageBootLoaded !== "1") markPageBootLoaded(app);
-  }, 5000);
+  }, 2500);
 
   try {
     const profile = await raceFirestoreTimeout(layoutLoadMyUserProfile(TOURNAMENT_ID), 10000);

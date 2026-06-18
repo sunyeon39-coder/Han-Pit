@@ -1,11 +1,12 @@
 /**
  * 배포 후 기존·신규 사용자 모두 최신 HTML/JS 로 맞춤.
  * - HTML 인라인 스크립트(모듈 전) + 이 모듈 이중 확인
- * - SW activate / controllerchange 시 강제 갱신
+ * - SW activate / controllerchange 시 강제 갱신 (이미 최신이면 스킵)
  */
 const VERSION_URL = "./app-version.json";
 const VERSION_STORAGE_KEY = "hanPitAppVersion";
-const VERSION_CHECK_INTERVAL_MS = 12_000;
+const VERSION_CHECK_INTERVAL_MS = 5 * 60_000;
+const VERSION_CHECK_DEBOUNCE_MS = 3_000;
 const BUILD_META_SELECTOR = 'meta[name="han-pit-build"]';
 
 function getPageBuildVersion() {
@@ -36,6 +37,7 @@ async function fetchRemoteAppVersion() {
 
 let versionCheckInflight = false;
 let swReloaded = false;
+let versionCheckDebounceTimer = null;
 
 function persistAppVersion(v) {
   try {
@@ -53,11 +55,25 @@ function readStoredAppVersion() {
   }
 }
 
+function isPageVersionCurrent(remote = "") {
+  const pageBuild = getPageBuildVersion();
+  const bustParam = new URL(window.location.href).searchParams.get("_hanpit_v");
+  if (!remote) return false;
+  if (pageBuild && pageBuild === remote) return true;
+  if (bustParam === remote && pageBuild && pageBuild === remote) return true;
+  return false;
+}
+
 function reloadForAppVersion(v) {
   if (!v) {
     window.location.reload();
     return;
   }
+  if (isPageVersionCurrent(v)) {
+    persistAppVersion(v);
+    return;
+  }
+
   const url = new URL(window.location.href);
   if (url.searchParams.get("_hanpit_v") === v) {
     const pageBuild = getPageBuildVersion();
@@ -71,7 +87,7 @@ function reloadForAppVersion(v) {
   } catch {
     attempts = 0;
   }
-  const maxAttempts = isLegacyIndexShell() || !getPageBuildVersion() ? 12 : 4;
+  const maxAttempts = isLegacyIndexShell() || !getPageBuildVersion() ? 8 : 3;
   if (attempts >= maxAttempts) return;
   try {
     sessionStorage.setItem(attemptKey, String(attempts + 1));
@@ -112,14 +128,14 @@ async function checkAppVersionAndReloadIfNeeded() {
       return;
     }
 
-    const pageStale = !pageBuild || (Boolean(pageBuild) && pageBuild !== remote);
+    const pageStale = !pageBuild || pageBuild !== remote;
     const storedStale = Boolean(stored) && stored !== remote;
-    const neverSynced = !stored;
-    const missingPageMeta = !pageBuild;
     const bustStale = Boolean(bustParam) && bustParam !== remote;
 
-    if (pageStale || storedStale || neverSynced || missingPageMeta || bustStale) {
+    if (pageStale || storedStale || bustStale) {
       reloadForAppVersion(remote);
+    } else if (!stored) {
+      persistAppVersion(remote);
     }
   } finally {
     versionCheckInflight = false;
@@ -128,14 +144,22 @@ async function checkAppVersionAndReloadIfNeeded() {
 
 function scheduleVersionAndSwCheck() {
   if (document.visibilityState !== "visible") return;
-  requestServiceWorkerUpdateCheck();
-  void checkAppVersionAndReloadIfNeeded();
+  clearTimeout(versionCheckDebounceTimer);
+  versionCheckDebounceTimer = window.setTimeout(() => {
+    versionCheckDebounceTimer = null;
+    requestServiceWorkerUpdateCheck();
+    void checkAppVersionAndReloadIfNeeded();
+  }, VERSION_CHECK_DEBOUNCE_MS);
 }
 
 function onSwForceReloadMessage(ev) {
   const data = ev?.data;
   if (!data || data.type !== "HAN_PIT_FORCE_RELOAD") return;
   const v = String(data.v || "").trim();
+  if (v && isPageVersionCurrent(v)) {
+    persistAppVersion(v);
+    return;
+  }
   reloadForAppVersion(v || undefined);
 }
 
@@ -143,17 +167,23 @@ if (typeof navigator !== "undefined" && navigator.serviceWorker?.addEventListene
   navigator.serviceWorker.addEventListener("message", onSwForceReloadMessage);
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     if (swReloaded) return;
+    const pageBuild = getPageBuildVersion();
+    const stored = readStoredAppVersion();
+    if (pageBuild && stored && pageBuild === stored) return;
     swReloaded = true;
-    void fetchRemoteAppVersion().then((v) => reloadForAppVersion(v || undefined));
+    void fetchRemoteAppVersion().then((v) => {
+      if (v && isPageVersionCurrent(v)) {
+        persistAppVersion(v);
+        return;
+      }
+      reloadForAppVersion(v || undefined);
+    });
   });
 }
 
 if (typeof window !== "undefined") {
-  document.addEventListener("visibilitychange", scheduleVersionAndSwCheck);
   window.addEventListener("pageshow", scheduleVersionAndSwCheck);
-  window.addEventListener("focus", scheduleVersionAndSwCheck);
-  document.addEventListener("DOMContentLoaded", scheduleVersionAndSwCheck);
-  scheduleVersionAndSwCheck();
+  document.addEventListener("visibilitychange", scheduleVersionAndSwCheck);
 
   window.setInterval(() => {
     if (document.visibilityState === "visible") {

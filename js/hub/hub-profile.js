@@ -1,6 +1,10 @@
-import { doc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { db } from "../firebase.js";
 import { closeModal } from "../shared/dom-utils.js";
+import {
+  isValidNicknameLength,
+  readCommittedNicknameInput
+} from "../shared/nickname-validation.js";
 import { syncUserDisplayNameAfterNicknameChange } from "../shared/sync-user-waiting-display.js";
 import { hubState } from "./hub-state.js";
 import { hubRefs } from "./hub-dom-refs.js";
@@ -11,21 +15,21 @@ export async function saveNickname() {
   const { profileNickname, profileModal } = hubRefs;
   if (!hubState.currentUser) return;
 
-  const nickname = profileNickname.value.trim();
+  const nickname = readCommittedNicknameInput(profileNickname);
 
-  if (nickname.length < 2 || nickname.length > 7) {
+  if (!isValidNicknameLength(nickname)) {
     alert("닉네임은 2~7자로 입력해주세요.");
     return;
   }
 
   try {
-    await setDoc(
-      doc(db, "users", hubState.currentUser.uid),
-      { nickname },
-      { merge: true }
-    );
+    await updateDoc(doc(db, "users", hubState.currentUser.uid), { nickname });
 
-    await syncUserDisplayNameAfterNicknameChange(hubState.currentUser.uid, nickname);
+    try {
+      await syncUserDisplayNameAfterNicknameChange(hubState.currentUser.uid, nickname);
+    } catch (syncErr) {
+      console.warn("[saveNickname] display name sync:", syncErr);
+    }
 
     if (hubState.currentUserProfile) {
       hubState.currentUserProfile.nickname = nickname;
