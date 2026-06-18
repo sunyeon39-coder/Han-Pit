@@ -9,7 +9,6 @@ import { getTournamentId, resolveRelativePage } from "./core-utils.js";
 import { isTournamentActive } from "./time-utils.js";
 import { IX } from "./state.js";
 import { escapeHtml } from "../shared/dom-utils.js";
-import { runFirestoreReadWithRetry } from "../shared/firestore-read-retry.js";
 
 /* ===============================
    TOURNAMENT PERIOD GUARD
@@ -42,7 +41,7 @@ async function initTournamentPeriodWatch() {
   const tournamentRef = doc(db, "tournaments", tournamentId);
 
   try {
-    const snap = await runFirestoreReadWithRetry(() => getDoc(tournamentRef));
+    const snap = await getDoc(tournamentRef);
 
     if (!snap.exists()) {
       sessionStorage.removeItem("tournamentId");

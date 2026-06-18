@@ -7,7 +7,6 @@ import {
   normalizeEventCardDate
 } from "../shared/tournament-event-instance.js";
 import { GL } from "./state.js";
-import { runFirestoreReadWithRetry } from "../shared/firestore-read-retry.js";
 
 /** 드롭다운 표시명(제목) → 실제 카드 doc id */
 export function resolveEventIdForSave(rawId = "", cachedEvents = []) {
@@ -27,9 +26,7 @@ export function resolveEventIdForSave(rawId = "", cachedEvents = []) {
 export async function fetchTournamentEvents() {
   const tid = String(GL.tournamentId || "").trim();
   if (!tid) return [];
-  const snap = await runFirestoreReadWithRetry(() =>
-    getDocs(collection(db, "tournaments", tid, "events"))
-  );
+  const snap = await getDocs(collection(db, "tournaments", tid, "events"));
   const list = snap.docs.map((d) => {
     const data = d.data() || {};
     return {

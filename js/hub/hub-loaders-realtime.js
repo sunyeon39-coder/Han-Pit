@@ -40,7 +40,10 @@ import {
   readHubTournamentsSessionCache,
   writeHubTournamentsSessionCache
 } from "./hub-tournaments-session-cache.js";
-import { runFirestoreReadWithRetry } from "../shared/firestore-read-retry.js";
+import {
+  isFirestoreQuotaCoolingDown,
+  noteFirestoreQuotaExceeded
+} from "../shared/firestore-quota-guard.js";
 
 /** 오프라인·PWA에서 빈 캐시 스냅샷이 서버로 읽은 목록을 지우는 것을 막음 */
 function shouldSkipEmptyCacheSnapshot(snap, cachedCount = 0) {
@@ -49,29 +52,30 @@ function shouldSkipEmptyCacheSnapshot(snap, cachedCount = 0) {
 
 async function readTournamentsSnap() {
   const col = collection(db, "tournaments");
-  return runFirestoreReadWithRetry(async () => {
-    const cacheSnap = await getDocs(col);
-    if (!cacheSnap.empty) return cacheSnap;
-    try {
-      return await getDocsFromServer(col);
-    } catch (err) {
-      console.warn("readTournamentsSnap server:", err?.code || err);
-      return cacheSnap;
-    }
-  });
+  if (isFirestoreQuotaCoolingDown()) {
+    return getDocs(col);
+  }
+  const cacheSnap = await getDocs(col);
+  if (!cacheSnap.empty || hubState.stopTournamentsWatch) return cacheSnap;
+  try {
+    return await getDocsFromServer(col);
+  } catch (err) {
+    noteFirestoreQuotaExceeded(err);
+    console.warn("readTournamentsSnap server:", err?.code || err);
+    return cacheSnap;
+  }
 }
 
 async function refreshTournamentsFromServer() {
+  if (hubState.stopTournamentsWatch || isFirestoreQuotaCoolingDown()) return;
   try {
-    const serverSnap = await runFirestoreReadWithRetry(
-      () => getDocsFromServer(collection(db, "tournaments")),
-      { maxAttempts: 3 }
-    );
+    const serverSnap = await getDocsFromServer(collection(db, "tournaments"));
     if (serverSnap.empty) return;
     applyTournamentsSnap(serverSnap);
     hubState.tournamentsListReady = true;
     scheduleHubTournamentsRender();
   } catch (err) {
+    noteFirestoreQuotaExceeded(err);
     console.warn("refreshTournamentsFromServer:", err?.code || err);
   }
 }
@@ -329,25 +333,18 @@ function healStaleAllowedEventsFromCache(users = []) {
 }
 
 export async function loadAllUsers() {
+  if (isFirestoreQuotaCoolingDown()) {
+    return hubState.usersCache;
+  }
   try {
     const col = collection(db, "users");
     let snap = await getDocs(col);
-    if (snap.empty) {
+    if (snap.empty && !hubState.stopUsersWatch) {
       try {
         snap = await getDocsFromServer(col);
-      } catch {
-        /* keep empty cache snap */
+      } catch (err) {
+        noteFirestoreQuotaExceeded(err);
       }
-    } else if (snap.metadata?.fromCache) {
-      void getDocsFromServer(col)
-        .then((serverSnap) => {
-          if (serverSnap.empty) return;
-          hubState.usersCache = serverSnap.docs.map(normalizeUserDoc);
-          if (getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) {
-            scheduleHubAdminRender();
-          }
-        })
-        .catch(() => {});
     }
     hubState.usersCache = snap.docs.map(normalizeUserDoc);
     healStaleUserRolesFromCache(hubState.usersCache);
@@ -491,7 +488,7 @@ export function disposeHubPeriodicAccessResync() {
   }
 }
 
-/** PWA 등에서 리스너가 멈춰도 주기적으로 서버와 맞춤 (일반 유저만) */
+/** PWA 등에서 리스너가 멈춰도 주기적으로 서버와 맞춤 — quota 절약을 위해 간격을 길게 */
 export function bindHubPeriodicAccessResync(uid) {
   disposeHubPeriodicAccessResync();
   if (!uid) return;
@@ -500,7 +497,7 @@ export function bindHubPeriodicAccessResync(uid) {
     if (document.visibilityState !== "visible") return;
     if (hubState.currentUser?.uid !== uid) return;
     void resyncHubAccessFromServer(uid);
-  }, 32000);
+  }, 5 * 60_000);
 }
 
 /** 운영진이 코드·직접 허용을 바꿀 때 허브 카드(접근 제한)가 새로고침 없이 갱신되도록 */
@@ -548,11 +545,7 @@ export function bindMyProfileRealtime(uid) {
       );
 
       if (snap.metadata.fromCache) {
-        clearHubProfileCacheResyncDebounce();
-        hubProfileCacheResyncTimer = setTimeout(() => {
-          hubProfileCacheResyncTimer = null;
-          void resyncHubAccessFromServer(uid);
-        }, 160);
+        /* onSnapshot + resyncHubAccessFromServer(90s) 로 충분 — 캐시마다 forceServer resync 제거 */
       }
     },
     (err) => {
@@ -567,21 +560,32 @@ export function bindMyProfileRealtime(uid) {
  * 홈 화면(PWA)·사파리 standalone 등에서 백그라운드 후 캐시/리스너가 늦을 때
  * 서버 기준으로 프로필·대회 목록을 다시 읽어 접근 카드를 맞춥니다.
  */
-export async function resyncHubAccessFromServer(uid) {
+export async function resyncHubAccessFromServer(uid, options = {}) {
   const user = hubState.currentUser;
   if (!uid || !user?.uid || uid !== user.uid) return;
+  if (isFirestoreQuotaCoolingDown()) return;
+
+  const force = options.force === true;
+  const now = Date.now();
+  if (!force && now - lastHubAccessResyncAt < HUB_ACCESS_RESYNC_MIN_MS) return;
+  lastHubAccessResyncAt = now;
 
   try {
-    const profile = await loadUserProfileRevalidated(uid, user.email || "");
+    const profile = await loadUserProfileFresh(uid, user.email || "", {
+      preferCacheFirst: true,
+      skipLoginCache: false
+    });
     if (profile) {
       hubState.currentUserProfile = profile;
       writeLoginProfileCache(uid, profile);
       applyHubOpsChrome(user);
     }
 
-    const tSnap = await readTournamentsSnap();
-    applyTournamentsSnap(tSnap);
-    scheduleHubTournamentsRender();
+    if (!hubState.stopTournamentsWatch) {
+      const tSnap = await readTournamentsSnap();
+      applyTournamentsSnap(tSnap);
+      scheduleHubTournamentsRender();
+    }
 
     const isAdmin = getIsAdminUser(hubState.currentUser, hubState.currentUserProfile);
     if (isAdmin && hubRefs.adminModal?.classList.contains("show")) {
@@ -589,11 +593,14 @@ export async function resyncHubAccessFromServer(uid) {
       scheduleHubAdminRender();
     }
   } catch (err) {
-    console.warn("resyncHubAccessFromServer:", err);
+    noteFirestoreQuotaExceeded(err);
+    console.warn("resyncHubAccessFromServer:", err?.code || err);
   }
 }
 
 let hubForegroundResyncDispose = null;
+let lastHubAccessResyncAt = 0;
+const HUB_ACCESS_RESYNC_MIN_MS = 90_000;
 
 export function disposeHubForegroundAccessResync() {
   if (typeof hubForegroundResyncDispose === "function") {
@@ -618,7 +625,7 @@ export function bindHubForegroundAccessResync(uid) {
     if (!immediate && elapsed < 4000) return;
 
     clearTimeout(timer);
-    const delay = immediate ? 80 : 600;
+    const delay = immediate ? 500 : 2000;
     timer = setTimeout(() => {
       timer = null;
       void resyncHubAccessFromServer(uid);

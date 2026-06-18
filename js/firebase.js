@@ -4,6 +4,7 @@ import {
   enableNetwork,
   initializeFirestore
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { isFirestoreQuotaCoolingDown } from "./shared/firestore-quota-guard.js";
 import {
   getMessaging,
   isSupported
@@ -68,6 +69,7 @@ if (isSafariLikeBrowser() || isStandalonePwa()) {
 export const db = initializeFirestore(app, firestoreSettings);
 
 export async function ensureFirestoreOnline() {
+  if (isFirestoreQuotaCoolingDown()) return;
   try {
     await enableNetwork(db);
   } catch {

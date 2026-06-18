@@ -120,49 +120,42 @@ export function bindDealerAttendanceRealtime() {
   );
 }
 
+export function applyIndexGlobalSeatsSnapshot(snap) {
+  IX.dealerSeatMap.clear();
+
+  snap.docs.forEach((d) => {
+    const data = d.data() || {};
+    const uid = String(data.personUid || "").trim();
+    const person = String(data.person || "").trim();
+    if (!uid || !person || person === "비어있음") return;
+    IX.dealerSeatMap.set(uid, {
+      eventId: String(data.currentEventId || data.mappedEventId || "").trim(),
+      boxId: String(data.boxId || "").trim(),
+      seatId: String(data.seatId || "").trim(),
+      seatLabel: String(data.label || data.no || "").trim(),
+      seatedAt: Number(data.seatedAt || 0) || 0
+    });
+  });
+
+  const user = auth.currentUser;
+  IX.lastOptimisticSeatAlertKey = maybeTriggerOptimisticSeatAlertFromDealerSeatMap(
+    user,
+    String(IX.lastOptimisticSeatAlertKey || "")
+  );
+
+  void ensureMeRecovered(auth.currentUser);
+  scheduleRenderDealerOps();
+}
+
 export function bindDealerSeatRealtime() {
   if (IX.stopDealerSeatWatch) {
     IX.stopDealerSeatWatch();
     IX.stopDealerSeatWatch = null;
   }
 
-  let lastAnnouncedSeatKey = String(IX.lastOptimisticSeatAlertKey || "");
-
   const tournamentId = getTournamentId();
   if (tournamentId) {
-    IX.stopDealerSeatWatch = onSnapshot(
-      collection(db, "tournaments", tournamentId, "global_seats"),
-      (snap) => {
-        IX.dealerSeatMap.clear();
-
-        snap.docs.forEach((d) => {
-          const data = d.data() || {};
-          const uid = String(data.personUid || "").trim();
-          const person = String(data.person || "").trim();
-          if (!uid || !person || person === "비어있음") return;
-          IX.dealerSeatMap.set(uid, {
-            eventId: String(data.currentEventId || data.mappedEventId || "").trim(),
-            boxId: String(data.boxId || "").trim(),
-            seatId: String(data.seatId || "").trim(),
-            seatLabel: String(data.label || data.no || "").trim(),
-            seatedAt: Number(data.seatedAt || 0) || 0
-          });
-        });
-
-        const user = auth.currentUser;
-        lastAnnouncedSeatKey = maybeTriggerOptimisticSeatAlertFromDealerSeatMap(
-          user,
-          lastAnnouncedSeatKey
-        );
-        IX.lastOptimisticSeatAlertKey = lastAnnouncedSeatKey;
-
-        void ensureMeRecovered(auth.currentUser);
-        scheduleRenderDealerOps();
-      },
-      (err) => {
-        console.error("bindDealerSeatRealtime(global) error:", err);
-      }
-    );
+    /* global_seats 는 bindLayoutSeatSummaryRealtime 에서 1회만 구독 */
     return;
   }
 

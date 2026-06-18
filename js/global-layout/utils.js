@@ -11,6 +11,7 @@ import {
   where
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { GL } from "./state.js";
+import { isFirestoreQuotaCoolingDown, noteFirestoreQuotaExceeded } from "../shared/firestore-quota-guard.js";
 
 export { getIsAdmin, canManageTournament } from "../shared/auth-helpers.js";
 export { escapeHtml } from "../shared/dom-utils.js";
@@ -175,9 +176,12 @@ export async function resolveGlobalSeatFirestoreDoc(
         return { ref, snap, data: snap.data() || {}, docId: snap.id };
       }
     } catch (err) {
+      noteFirestoreQuotaExceeded(err);
       console.warn("resolveGlobalSeatFirestoreDoc getDoc:", err?.code || err);
     }
   }
+
+  if (isFirestoreQuotaCoolingDown()) return null;
 
   try {
     const qs = await getDocs(

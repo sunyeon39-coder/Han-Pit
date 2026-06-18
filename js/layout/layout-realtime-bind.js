@@ -3,7 +3,6 @@
  */
 import {
   getDocs,
-  getDocsFromServer,
   onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
@@ -37,14 +36,7 @@ export function createLayoutRealtimeBind(deps) {
     if (!tid || !attendanceWaitingState) return;
     try {
       const q = dealerAttendanceQueryForTournament(tid);
-      let snap = await getDocs(q);
-      if (snap.empty) {
-        try {
-          snap = await getDocsFromServer(q);
-        } catch {
-          /* keep cache */
-        }
-      }
+      const snap = await getDocs(q);
       const docs = filterAttendanceDocsForTournament(snap.docs, tid);
       attendanceWaitingState.inactiveUids = buildAttendanceInactiveUidSet(docs, tid);
       attendanceWaitingState.items = filterAttendanceRowsForWaitingMerge(

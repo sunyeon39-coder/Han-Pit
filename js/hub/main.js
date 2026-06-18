@@ -448,15 +448,6 @@ async function bootstrapHubSession(user) {
   bindTournamentsRealtime();
   bindMyProfileRealtime(user.uid);
 
-  void resyncHubAccessFromServer(user.uid)
-    .then(() => {
-      if (flow !== hubState.hubAuthFlowGen || hubState.currentUser?.uid !== user.uid) return;
-      paintHubTournamentList();
-    })
-    .catch((err) => {
-      console.warn("resyncHubAccessFromServer:", err);
-    });
-
   if (isAppDebugEnabled()) {
     console.debug("[HUB AUTH]", {
       uid: user.uid,

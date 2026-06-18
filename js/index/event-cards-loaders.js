@@ -1,8 +1,7 @@
-import { db } from "../firebase.js";
+import { auth, db } from "../firebase.js";
 import {
   collection,
   getDocs,
-  getDocsFromServer,
   onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -15,6 +14,7 @@ import {
   readIndexEventsSessionCache,
   writeIndexEventsSessionCache
 } from "./index-events-session-cache.js";
+import { applyIndexGlobalSeatsSnapshot } from "./dealer-attendance-realtime.js";
 
 /** 허브→인덱스 직후 Firestore 응답 전 카드 목록 즉시 표시 */
 export function seedIndexEventsFromSessionCache() {
@@ -51,15 +51,6 @@ export async function loadEvents() {
     const snap = await getDocs(getEventsCollectionRef());
     IX.events = normalizeEvents(snap.docs);
     if (IX.events.length) writeIndexEventsSessionCache(tournamentId, IX.events);
-    if (snap.metadata?.fromCache && !snap.empty) {
-      void getDocsFromServer(getEventsCollectionRef())
-        .then((fresh) => {
-          if (fresh.empty) return;
-          IX.events = normalizeEvents(fresh.docs);
-          scheduleIndexCardsRender();
-        })
-        .catch(() => {});
-    }
   } catch (err) {
     console.error("loadEvents error:", err);
     IX.events = [];
@@ -104,6 +95,7 @@ export function bindLayoutSeatSummaryRealtime() {
       collection(db, "tournaments", tournamentId, "global_seats"),
       (snap) => {
         IX.seatSummaryMap = buildSeatSummaryMapFromGlobalSeats(snap.docs);
+        applyIndexGlobalSeatsSnapshot(snap);
         scheduleIndexCardsRender({ light: true });
       },
       (err) => {

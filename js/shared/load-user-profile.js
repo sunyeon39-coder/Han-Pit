@@ -19,6 +19,10 @@ import {
 import { readLoginProfileCache, isLoginProfileCacheFresh } from "./login-profile-cache.js";
 import { canUseTournamentOps } from "./auth-helpers.js";
 import { runFirestoreReadWithRetry } from "./firestore-read-retry.js";
+import {
+  isFirestoreQuotaCoolingDown,
+  noteFirestoreQuotaExceeded
+} from "./firestore-quota-guard.js";
 
 const profileRefreshInflight = new Map();
 const DEFAULT_FIRESTORE_TIMEOUT_MS = 10000;
@@ -38,58 +42,78 @@ async function readUserDocSnap(uid, options = {}) {
   const forceServer = options.forceServer === true;
   const preferCacheFirst = !forceServer && options.preferCacheFirst !== false;
   const userRef = doc(db, "users", uid);
-  return runFirestoreReadWithRetry(async () => {
+
+  const readOnce = async () => {
     if (forceServer) {
       try {
         return await getDocFromServer(userRef);
-      } catch {
+      } catch (err) {
+        noteFirestoreQuotaExceeded(err);
         return await getDoc(userRef);
       }
     }
     if (preferCacheFirst) {
       const cached = await getDoc(userRef);
       if (cached.exists()) return cached;
+      if (isFirestoreQuotaCoolingDown()) return cached;
       try {
         return await getDocFromServer(userRef);
-      } catch {
+      } catch (err) {
+        noteFirestoreQuotaExceeded(err);
         return cached;
       }
     }
     try {
       return await getDocFromServer(userRef);
-    } catch {
+    } catch (err) {
+      noteFirestoreQuotaExceeded(err);
       return await getDoc(userRef);
     }
-  });
+  };
+
+  if (forceServer) {
+    return runFirestoreReadWithRetry(readOnce, { maxAttempts: 2 });
+  }
+  return readOnce();
 }
 
 async function readUsersByEmailVariant(variant, options = {}) {
   const forceServer = options.forceServer === true;
   const preferCacheFirst = !forceServer && options.preferCacheFirst !== false;
   const q = query(collection(db, "users"), where("email", "==", variant), limit(12));
-  return runFirestoreReadWithRetry(async () => {
+
+  const readOnce = async () => {
     if (forceServer) {
       try {
         return await getDocsFromServer(q);
-      } catch {
+      } catch (err) {
+        noteFirestoreQuotaExceeded(err);
         return await getDocs(q);
       }
     }
     if (preferCacheFirst) {
       const cached = await getDocs(q);
       if (!cached.empty) return cached;
+      if (isFirestoreQuotaCoolingDown()) return cached;
       try {
         return await getDocsFromServer(q);
-      } catch {
+      } catch (err) {
+        noteFirestoreQuotaExceeded(err);
         return cached;
       }
     }
     try {
       return await getDocsFromServer(q);
-    } catch {
+    } catch (err) {
+      noteFirestoreQuotaExceeded(err);
       return await getDocs(q);
     }
-  });
+  };
+
+  if (forceServer) {
+    return runFirestoreReadWithRetry(readOnce, { maxAttempts: 2 });
+  }
+  return readOnce();
 }
 
 function emailQueryVariants(email = "") {
@@ -142,10 +166,10 @@ export async function loadMergedAllowedEventsByEmail(email = "", primaryUid = ""
 
 function scheduleProfileServerRefresh(uid = "", email = "") {
   const id = String(uid || "").trim();
-  if (!id) return;
+  if (!id || isFirestoreQuotaCoolingDown()) return;
   if (profileRefreshInflight.has(id)) return;
   const task = loadUserProfileFresh(id, email, {
-    preferCacheFirst: false,
+    preferCacheFirst: true,
     skipLoginCache: true
   }).finally(() => {
     profileRefreshInflight.delete(id);
