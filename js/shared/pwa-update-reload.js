@@ -5,8 +5,9 @@
  */
 const VERSION_URL = "./app-version.json";
 const VERSION_STORAGE_KEY = "hanPitAppVersion";
-const VERSION_CHECK_INTERVAL_MS = 5 * 60_000;
-const VERSION_CHECK_DEBOUNCE_MS = 3_000;
+const VERSION_CHECK_INTERVAL_MS = 15 * 60_000;
+const VERSION_CHECK_DEBOUNCE_MS = 8_000;
+const VERSION_CHECK_GRACE_MS = 10_000;
 const BUILD_META_SELECTOR = 'meta[name="han-pit-build"]';
 
 function getPageBuildVersion() {
@@ -38,6 +39,7 @@ async function fetchRemoteAppVersion() {
 let versionCheckInflight = false;
 let swReloaded = false;
 let versionCheckDebounceTimer = null;
+const pageLoadedAt = Date.now();
 
 function persistAppVersion(v) {
   try {
@@ -142,6 +144,7 @@ async function checkAppVersionAndReloadIfNeeded() {
 
 function scheduleVersionAndSwCheck() {
   if (document.visibilityState !== "visible") return;
+  if (Date.now() - pageLoadedAt < VERSION_CHECK_GRACE_MS) return;
   clearTimeout(versionCheckDebounceTimer);
   versionCheckDebounceTimer = window.setTimeout(() => {
     versionCheckDebounceTimer = null;

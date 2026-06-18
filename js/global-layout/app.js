@@ -313,10 +313,6 @@ export function startGlobalLayoutApp() {
 
     globalLayoutSessionUid = user.uid;
 
-    const bootUiTimeout = window.setTimeout(() => {
-      if (GL.app?.dataset.pageBootLoaded !== "1") markPageBootLoaded(GL.app);
-    }, 2500);
-
     try {
       GL.currentUser = user;
       GL.userProfile = readBootUserProfile(user);
@@ -344,8 +340,6 @@ export function startGlobalLayoutApp() {
           : "통합 배치도를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."
       );
       markPageBootLoaded(GL.app);
-    } finally {
-      clearTimeout(bootUiTimeout);
     }
   });
 }

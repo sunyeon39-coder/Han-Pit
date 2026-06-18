@@ -8,7 +8,7 @@
     document.documentElement.style.backgroundColor="#060c17";
     document.documentElement.style.colorScheme="dark";
   }catch(e){}
-  var BUILD="20260618164503";
+  var BUILD="20260618165628";
   var KEY="hanPitAppVersion";
   var meta=document.querySelector('meta[name="han-pit-build"]');
   var pageBuild=meta?String(meta.getAttribute("content")||"").trim():"";
@@ -98,7 +98,7 @@
 </script>
   <!-- /han-pit-inline-update -->
   <!-- han-pit-critical-shell -->
-  <style id="han-pit-critical-shell">html{color-scheme:dark;background:#060c17}body{margin:0;min-height:100%;background:#060c17;color:#eef2ff}.page-boot-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;min-height:100dvh;min-height:100vh;padding:24px;background:#060c17}.page-boot-spinner{width:32px;height:32px;border-radius:50%;border:3px solid rgba(255,255,255,.12);border-top-color:rgba(77,163,255,.9);animation:han-pit-boot-spin .75s linear infinite}@keyframes han-pit-boot-spin{to{transform:rotate(360deg)}}.page-boot-text{margin:0;font-size:14px;color:rgba(255,255,255,.62)}.layout-canvas-viewport,.canvas.pc-canvas{background:#0a1022}</style>
+  <style id="han-pit-critical-shell">html{color-scheme:dark;background:#060c17}body{margin:0;min-height:100%;background:#060c17;color:#eef2ff}.page-boot-loading{display:none!important}.layout-canvas-viewport,.canvas.pc-canvas{background:#0a1022}</style>
   <!-- /han-pit-critical-shell -->
   <!-- han-pit-asset-fix -->
   <script id="han-pit-asset-fix">
@@ -129,7 +129,7 @@
 })();
 </script>
   <!-- /han-pit-asset-fix -->
-  <meta name="han-pit-build" content="20260618164503" />
+  <meta name="han-pit-build" content="20260618165628" />
   <meta charset="UTF-8" />
   <meta
     name="viewport"
@@ -142,10 +142,28 @@
   <meta name="theme-color" content="#111832" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <link rel="stylesheet" href="./css/app-shared.css?v=20260618164503" />
-  <link rel="stylesheet" href="./css/index.css?v=20260618164503" />
+  <link rel="stylesheet" href="./css/app-shared.css?v=20260618165628" />
+  <link rel="stylesheet" href="./css/index.css?v=20260618165628" />
 </head>
 <body>
+  <!-- han-pit-boot-dismiss -->
+<script id="han-pit-boot-dismiss">
+(function(){
+  function dismiss(){
+    var list=document.querySelectorAll(".page-boot-loading");
+    for(var i=0;i<list.length;i++)list[i].remove();
+    ["indexRoot","eventList","app"].forEach(function(id){
+      var el=document.getElementById(id);
+      if(el)el.dataset.pageBootLoaded="1";
+    });
+  }
+  dismiss();
+  if(document.readyState==="loading"){
+    document.addEventListener("DOMContentLoaded",dismiss,{once:true});
+  }
+})();
+</script>
+<!-- /han-pit-boot-dismiss -->
   <header class="index-topbar">
     <div class="topbar-left">
       <a class="app-mark" href="./hub.html" aria-label="Han Pit Hub">
@@ -177,9 +195,7 @@
   <main class="index-page">
   <section id="dealerOpsMount" class="dealer-ops-mount"></section>
   <div id="indexRoot" class="index-root">
-    <div class="page-boot-loading" role="status" aria-live="polite">
-      <div class="page-boot-spinner" aria-hidden="true"></div>
-      <p class="page-boot-text">이벤트 목록 불러오는 중…</p>
+    <p class="page-boot-text">이벤트 목록 불러오는 중…</p>
     </div>
   </div>
 </main>
@@ -321,6 +337,6 @@
   </div>
 </div>
 
-  <script type="module" src="./js/index.js?v=20260618164503"></script>
+  <script type="module" src="./js/index.js?v=20260618165628"></script>
 </body>
 </html>

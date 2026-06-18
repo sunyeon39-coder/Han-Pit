@@ -686,10 +686,6 @@ import {
 
   seatNotify.bindMyNotificationWatch();
 
-  const bootUiTimeout = window.setTimeout(() => {
-    if (app?.dataset.pageBootLoaded !== "1") markPageBootLoaded(app);
-  }, 2500);
-
   try {
     const profile = await raceFirestoreTimeout(layoutLoadMyUserProfile(TOURNAMENT_ID), 10000);
     if (profile) {
@@ -708,9 +704,6 @@ import {
     console.error("layout auth init error:", err);
     alert("배치 화면을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
     if (layoutUi) render();
-  } finally {
-    clearTimeout(bootUiTimeout);
-    markPageBootLoaded(app);
   }
 
   requestAnimationFrame(() => {

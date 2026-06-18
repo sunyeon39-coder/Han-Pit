@@ -4,13 +4,17 @@ import { fileURLToPath } from "node:url";
 import {
   buildInlineAppUpdateSnippet,
   buildAppAssetInlineFixSnippet,
+  buildBootDismissSnippet,
   APP_ASSET_FIX_MARKER,
+  BOOT_DISMISS_MARKER,
   CRITICAL_SHELL_STYLE_TAG
 } from "./inline-app-update-snippet.mjs";
 
 const CRITICAL_SHELL_MARKER = "<!-- han-pit-critical-shell -->";
+const BOOT_DISMISS_END = "<!-- /han-pit-boot-dismiss -->";
 const ASSET_FIX_END = "<!-- /han-pit-asset-fix -->";
 const assetFixSnippet = buildAppAssetInlineFixSnippet();
+const bootDismissSnippet = buildBootDismissSnippet();
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const v = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
@@ -93,6 +97,18 @@ for (const name of htmlFiles) {
     /(<link\s+rel="stylesheet"\s+href="\.\/css\/[^"]+\.css)(")/g,
     `$1?v=${v}$2`
   );
+  html = html.replace(
+    /<div class="page-boot-loading"[\s\S]*?<\/div>\s*/g,
+    ""
+  );
+  if (html.includes(BOOT_DISMISS_MARKER)) {
+    html = html.replace(
+      new RegExp(`${BOOT_DISMISS_MARKER}[\\s\\S]*?${BOOT_DISMISS_END}`, "m"),
+      bootDismissSnippet
+    );
+  } else if (/<body[^>]*>/i.test(html)) {
+    html = html.replace(/<body([^>]*)>/i, `<body$1>\n  ${bootDismissSnippet}`);
+  }
   writeFileSync(path, html, "utf8");
 }
 

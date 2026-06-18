@@ -179,6 +179,7 @@ function applyIndexBootProfile(user) {
 async function loadIndexUserProfile(user) {
   if (!user?.uid) return null;
   return loadUserProfileForTournamentOps(user.uid, user.email || "", getTournamentId(), {
+    preferCacheFirst: true,
     tournamentMeta: indexTournamentMeta()
   });
 }
@@ -201,24 +202,30 @@ async function ensureIndexOpsChrome(user = auth.currentUser) {
   applyIndexOpsPermissions(user);
   if (indexOpsAccessOk(user)) return;
 
-  const maxAttempts = isLoginProfileCacheFresh(user.uid) ? 2 : 4;
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+  const cached = await raceFirestoreTimeout(
+    loadUserProfileFresh(user.uid, user.email || "", {
+      preferCacheFirst: true,
+      skipLoginCache: false
+    }),
+    5000
+  );
+  if (cached) {
+    IX.currentUserProfile = cached;
+    seedMyUserProfileCache(cached);
+    writeLoginProfileCache(user.uid, cached);
     applyIndexOpsPermissions(user);
     if (indexOpsAccessOk(user)) return;
-
-    const profile = await loadIndexUserProfile(user);
-    if (profile) {
-      IX.currentUserProfile = profile;
-      seedMyUserProfileCache(profile);
-      writeLoginProfileCache(user.uid, profile);
-    }
-    applyIndexOpsPermissions(user);
-    if (indexOpsAccessOk(user)) return;
-
-    if (attempt + 1 < maxAttempts) {
-      await sleep(isLoginProfileCacheFresh(user.uid) ? 350 : 600 + attempt * 400);
-    }
   }
+
+  if (isLoginProfileCacheFresh(user.uid) && indexOpsAccessOk(user)) return;
+
+  const profile = await raceFirestoreTimeout(loadIndexUserProfile(user), 8000);
+  if (profile) {
+    IX.currentUserProfile = profile;
+    seedMyUserProfileCache(profile);
+    writeLoginProfileCache(user.uid, profile);
+  }
+  applyIndexOpsPermissions(user);
 }
 
 function tryEarlyIndexChromePaint() {
@@ -715,33 +722,12 @@ onAuthStateChanged(auth, async (user) => {
         flushAppBadgeIfVisible();
       }
       applyIndexOpsPermissions(user);
-      void loadIndexUserProfile(user)
-        .then((fresh) => {
-          if (!fresh) return;
-          IX.currentUserProfile = fresh;
-          seedMyUserProfileCache(fresh);
-          writeLoginProfileCache(user.uid, fresh);
-          applyIndexOpsPermissions(user);
-        })
-        .catch((err) => console.warn("index ops profile refresh:", err));
       return profile;
     })();
 
-    const bootUiTimeout = window.setTimeout(() => {
-      if (IX.root?.dataset.pageBootLoaded !== "1") markPageBootLoaded(IX.root);
-    }, 2500);
-
-    try {
-      await Promise.all([init(), periodPromise]);
-      if (flow !== indexAuthFlowGen) return;
-      void profilePromise;
-    } finally {
-      clearTimeout(bootUiTimeout);
-      if (flow === indexAuthFlowGen && IX.root?.dataset.pageBootLoaded !== "1") {
-        markPageBootLoaded(IX.root);
-      }
-    }
-
+    await Promise.all([init(), periodPromise]);
+    if (flow !== indexAuthFlowGen) return;
+    void profilePromise;
     if (flow !== indexAuthFlowGen) return;
     await profilePromise.catch(() => null);
     if (flow !== indexAuthFlowGen) return;

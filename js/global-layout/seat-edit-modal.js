@@ -190,8 +190,8 @@ export async function openSeatEditModal(seatId = "") {
   els.root.setAttribute("aria-hidden", "false");
   document.body.classList.add("global-seat-edit-modal-open");
   renderEventList(els, [], ev);
-  if (els.eventTriggerText) {
-    els.eventTriggerText.textContent = "카드 목록 불러오는 중…";
+  if (els.eventTriggerText && !ev) {
+    els.eventTriggerText.textContent = "카드 선택";
   }
 
   requestAnimationFrame(() => {

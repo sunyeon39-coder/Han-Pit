@@ -64,6 +64,7 @@ export function renderTournaments(tournaments, userProfile, user) {
   const list = Array.isArray(tournaments) ? tournaments : [];
 
   if (!list.length && hubState.tournamentsBootstrapping && !hubState.tournamentsListReady && !hubState.tournamentsCache.length) {
+    eventListEl.classList.remove("event-list--loading");
     return;
   }
 
