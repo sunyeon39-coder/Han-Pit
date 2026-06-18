@@ -3,6 +3,7 @@ import { collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/
 import {
   filterEventsForOperationalDay,
   getEventCardIdFromRecord,
+  getOperationalEventDate,
   normalizeEventCardDate
 } from "../shared/tournament-event-instance.js";
 import { GL } from "./state.js";
@@ -54,5 +55,22 @@ export async function fetchTournamentEvents() {
  */
 export async function fetchEventCardsForSeatEdit() {
   const list = await fetchTournamentEvents();
-  return filterEventsForOperationalDay(list);
+  const forOpDay = filterEventsForOperationalDay(list);
+  if (forOpDay.length) return forOpDay;
+  if (!list.length) return [];
+
+  const op = getOperationalEventDate();
+  const opMs = new Date(op).getTime();
+  return [...list].sort((a, b) => {
+    const da = normalizeEventCardDate(a?.date) || "";
+    const db = normalizeEventCardDate(b?.date) || "";
+    const distA = Number.isFinite(new Date(da).getTime())
+      ? Math.abs(new Date(da).getTime() - opMs)
+      : Number.MAX_SAFE_INTEGER;
+    const distB = Number.isFinite(new Date(db).getTime())
+      ? Math.abs(new Date(db).getTime() - opMs)
+      : Number.MAX_SAFE_INTEGER;
+    if (distA !== distB) return distA - distB;
+    return db.localeCompare(da);
+  });
 }

@@ -627,6 +627,15 @@ body.page-global-layout .seat-manage-name {
   white-space: nowrap;
 }
 
+body.page-global-layout .seat-manage-eb-meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.25;
+  color: rgba(255, 255, 255, 0.52);
+  word-break: break-all;
+}
+
 body.page-global-layout .meta-line.seat-manage-submeta {
   display: block;
   min-width: 0;

@@ -10,6 +10,10 @@ import { writePersistedSeatAddForm } from "./seat-add-form-persist.js";
 let docListener = null;
 let seatAddEventsCache = [];
 
+export function getSeatAddEventsCache() {
+  return seatAddEventsCache;
+}
+
 function eventCardDisplayId(event = {}, fallbackId = "") {
   const display = getEventCardIdFromRecord(event);
   if (display) return display;

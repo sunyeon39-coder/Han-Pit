@@ -35,8 +35,10 @@ import {
   wireGlobalLayoutCanvasViewport,
   refreshGlobalLayoutAlignButtonState
 } from "./canvas-viewport.js";
-import { wireSeatAddEventPicker } from "./seat-add-event-picker.js";
+import { wireSeatAddEventPicker, getSeatAddEventsCache } from "./seat-add-event-picker.js";
 import { readPersistedSeatAddForm } from "./seat-add-form-persist.js";
+import { getEventCardIdFromRecord } from "../shared/tournament-event-instance.js";
+import { resolveSeatEventBox } from "./utils.js";
 import { buildEventBoxPaletteMap, getEventBoxPaletteClass } from "./event-box-palette.js";
 import { syncSeatBoxesInContainer } from "../shared/sync-seat-box-dom.js";
 
@@ -162,12 +164,32 @@ export function isTypingInPanel() {
 
 export { getSeatById };
 
+function formatSeatPanelEventBoxMeta(seat = {}) {
+  const { eventId, boxId } = resolveSeatEventBox(seat);
+  if (!eventId && !boxId) return "";
+  const card = getEventCardIdFromRecord({ id: eventId }) || eventId;
+  return `카드 ${card} · Box ${boxId}`;
+}
+
 export function getDefaultEventBoxForNewSeat() {
   if (GL.urlEventId && GL.urlBoxId) return { eventId: GL.urlEventId, boxId: GL.urlBoxId };
 
   const se = String(sessionStorage.getItem("eventId") || "").trim();
   const sb = String(sessionStorage.getItem("boxId") || "").trim();
   if (se && sb) return { eventId: se, boxId: sb };
+
+  const persisted = readPersistedSeatAddForm();
+  if (persisted?.eventId && persisted?.boxId) {
+    return { eventId: persisted.eventId, boxId: persisted.boxId };
+  }
+
+  const cachedEvents = getSeatAddEventsCache();
+  if (cachedEvents.length) {
+    const ev = cachedEvents[0];
+    const eventId = String(ev.id || "").trim();
+    const boxId = String(ev.boxId || "").trim();
+    if (eventId && boxId) return { eventId, boxId };
+  }
 
   const counts = new Map();
   GL.globalSeats.forEach((s) => {
@@ -189,7 +211,7 @@ export function getDefaultEventBoxForNewSeat() {
     const [e, b] = bestKey.split("\t");
     return { eventId: e, boxId: b };
   }
-  return { eventId: "1", boxId: "1" };
+  return { eventId: "", boxId: "" };
 }
 
 function renderGlobalLayoutMobileView() {
@@ -426,6 +448,7 @@ export function renderSeatPanel() {
       const seatedAt = getGlobalSeatSeatedAtMs(s);
       const elapsed = seatedAt ? Date.now() - seatedAt : 0;
       const tClass = timerClass(elapsed);
+      const ebMeta = !occupied ? formatSeatPanelEventBoxMeta(s) : "";
       return `
       <div class="seat-manage-row gl-panel-list-row ${paletteClass} ${selectedRowClass}" data-select-seat="${escapeHtml(seatId)}">
         <div class="seat-manage-main seat-manage-main--oneline">
@@ -433,6 +456,7 @@ export function renderSeatPanel() {
             <span class="seat-manage-num">${escapeHtml(seatCanvasDigitsOnly(s.label, s.no))}</span>
             <div class="seat-manage-namecol">
               <span class="seat-manage-name ${occupied ? "" : "is-empty"} ${isSelf ? "is-self" : ""}">${escapeHtml(name)}</span>
+              ${ebMeta ? `<span class="seat-manage-eb-meta muted">${escapeHtml(ebMeta)}</span>` : ""}
             </div>
           </div>
           <div class="seat-inline-actions">
@@ -467,7 +491,9 @@ export function renderSeatPanel() {
   const defEb = stored
     ? { eventId: stored.eventId, boxId: stored.boxId || baseEb.boxId }
     : baseEb;
-  const seatAddTitle = `카드 ID는 드롭다운에서 선택합니다. Box ID는 해당 카드(Firestore·기존 좌석) 기준으로 자동 채워지며 필요 시 수정할 수 있습니다. 비우면 ${defEb.eventId} / ${defEb.boxId} 사용.`;
+  const seatAddTitle = defEb.eventId && defEb.boxId
+    ? `카드 ID는 드롭다운에서 선택합니다. Box ID는 해당 카드(Firestore·기존 좌석) 기준으로 자동 채워지며 필요 시 수정할 수 있습니다. 비우면 ${defEb.eventId} / ${defEb.boxId} 사용.`
+    : "index「이벤트 카드 관리」에서 오늘 운영일 카드를 저장한 뒤, 드롭다운에서 카드·Box ID를 선택하세요.";
 
   const seatAssignBannerHtml =
     GL.isAdminUser && selectedWaiting
@@ -500,6 +526,7 @@ export function renderSeatPanel() {
     restorePanelScroll();
     updateGlobalMetaToolbar();
     refreshGlobalLayoutAlignButtonState();
+    if (GL.isAdminUser) void wireSeatAddEventPicker();
     return;
   }
 

@@ -1,4 +1,5 @@
 import { escapeHtml } from "../shared/dom-utils.js";
+import { getOperationalEventDate } from "../shared/tournament-event-instance.js";
 import { getNowInAppTime } from "./time-utils.js";
 import { IX } from "./state.js";
 
@@ -17,13 +18,9 @@ export function makeNextEventDefaults() {
   const nextNo = IX.events.length + 1;
   const now = getNowInAppTime();
 
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-
   IX.eventCardId.value = `event_${nextNo}`;
   IX.eventCardBoxId.value = `box_${nextNo}`;
-  IX.eventCardDate.value = `${yyyy}-${mm}-${dd}`;
+  IX.eventCardDate.value = getOperationalEventDate(now);
   IX.eventCardTitle.value = `Event ${nextNo}`;
   IX.eventCardStart.value = "21:00";
   IX.eventCardClose.value = "21:30";
