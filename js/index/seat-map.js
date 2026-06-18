@@ -470,11 +470,10 @@ export function wireSeatMapListeners() {
   if (indexSeatMapControlsWired) return;
 
   try {
-  bindSeatMapRealtime();
-
   IX.seatMapBtn?.addEventListener("click", () => {
     setSeatMapEditMode(false);
     openModal(IX.seatMapModal);
+    bindSeatMapRealtime();
     renderSeatMap();
     void loadSeatMapLayout()
       .then(() => {
@@ -497,6 +496,7 @@ export function wireSeatMapListeners() {
 
   IX.seatMapCloseBtn?.addEventListener("click", () => {
     setSeatMapEditMode(false);
+    disposeSeatMapRealtime();
     closeModal(IX.seatMapModal);
   });
 

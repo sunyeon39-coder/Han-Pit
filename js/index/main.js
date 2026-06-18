@@ -278,7 +278,6 @@ async function refreshIndexOpsFromServer(user = auth.currentUser) {
     applyIndexOpsPermissions(user);
     if (getTournamentId() && hadOps !== indexHadOps) {
       bindDealerAttendanceRealtime();
-      bindAttendanceLogsRealtime();
       await loadDealerAttendanceOnce();
     }
   } catch (err) {
@@ -349,7 +348,6 @@ async function init() {
 
   setupAttendanceLogEvents();
   setupWorkSummaryEvents();
-  bindAttendanceLogsRealtime();
 
   applyIndexOpsPermissions(auth.currentUser);
 }

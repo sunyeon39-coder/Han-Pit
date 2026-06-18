@@ -39,6 +39,7 @@ import {
   bindMyProfileRealtime,
   bindTournamentsRealtime,
   bindUsersRealtime,
+  disposeUsersRealtime,
   clearHubProfileCacheResyncDebounce,
   disposeHubForegroundAccessResync,
   disposeHubPeriodicAccessResync,
@@ -178,6 +179,7 @@ adminBtn?.addEventListener("click", () => {
   clearAdminBulkSelection();
   populateTournamentSelect();
   renderAdminUserList();
+  bindUsersRealtime();
   openModal(adminModal);
 
   void Promise.all([
@@ -194,6 +196,7 @@ saveProfileBtn?.addEventListener("click", saveNickname);
 
 closeAdminBtn?.addEventListener("click", () => {
   clearAdminBulkSelection();
+  disposeUsersRealtime();
   closeModal(adminModal);
 });
 
@@ -286,6 +289,7 @@ hubRefs.profileModal?.addEventListener("click", (e) => {
 adminModal?.addEventListener("click", (e) => {
   if (e.target === adminModal) {
     clearAdminBulkSelection();
+    disposeUsersRealtime();
     closeModal(adminModal);
   }
 });
@@ -462,7 +466,6 @@ async function bootstrapHubSession(user) {
 
   if (isAdmin) {
     adminBtn?.classList.remove("hidden");
-    bindUsersRealtime();
     void loadAllUsers()
       .then(() => {
         if (flow !== hubState.hubAuthFlowGen) return;

@@ -445,6 +445,13 @@ export function bindTournamentsRealtime() {
   );
 }
 
+export function disposeUsersRealtime() {
+  if (hubState.stopUsersWatch) {
+    hubState.stopUsersWatch();
+    hubState.stopUsersWatch = null;
+  }
+}
+
 export function bindUsersRealtime() {
   if (hubState.stopUsersWatch) {
     hubState.stopUsersWatch();
@@ -457,11 +464,6 @@ export function bindUsersRealtime() {
       if (shouldSkipEmptyCacheSnapshot(snap, hubState.usersCache.length)) return;
 
       hubState.usersCache = snap.docs.map(normalizeUserDoc);
-      healStaleUserRolesFromCache(hubState.usersCache);
-      healStaleAllowedEventsFromCache(hubState.usersCache);
-      void reconcileDirectAllowOpsOnServer(hubState.usersCache).catch((err) => {
-        console.warn("reconcileDirectAllowOpsOnServer on users realtime:", err);
-      });
       scheduleHubAdminRender();
     },
     (err) => {

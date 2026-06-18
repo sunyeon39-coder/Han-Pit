@@ -3,8 +3,11 @@ import {
   collection,
   doc,
   deleteDoc,
+  limit,
   onSnapshot,
-  setDoc
+  query,
+  setDoc,
+  where
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 import { canUseTournamentOps } from "../shared/auth-helpers.js";
@@ -215,14 +218,25 @@ function renderAttendanceLogs() {
   }).join("");
 }
 
-export function bindAttendanceLogsRealtime() {
+export function disposeAttendanceLogsRealtime() {
   if (IX.stopAttendanceLogsWatch) {
     IX.stopAttendanceLogsWatch();
     IX.stopAttendanceLogsWatch = null;
   }
+}
+
+/** 출근 로그 — 모달을 열 때만 구독 (전체 collection 상시 listen 방지) */
+export function bindAttendanceLogsRealtime() {
+  disposeAttendanceLogsRealtime();
+
+  const tournamentId = getTournamentId();
+  const col = collection(db, "dealer_attendance_logs");
+  const q = tournamentId
+    ? query(col, where("tournamentId", "==", tournamentId), limit(250))
+    : query(col, limit(250));
 
   IX.stopAttendanceLogsWatch = onSnapshot(
-    collection(db, "dealer_attendance_logs"),
+    q,
     (snap) => {
       IX.attendanceLogs = snap.docs
         .map((d) => ({
@@ -247,11 +261,13 @@ export function bindAttendanceLogsRealtime() {
 }
 
 function openAttendanceLogModal() {
+  bindAttendanceLogsRealtime();
   renderAttendanceLogs();
   openModal(IX.attendanceLogModal);
 }
 
 function closeAttendanceLogModal() {
+  disposeAttendanceLogsRealtime();
   closeModal(IX.attendanceLogModal);
 }
 
