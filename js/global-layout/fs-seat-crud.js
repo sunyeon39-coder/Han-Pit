@@ -127,32 +127,87 @@ export async function saveSeatPosition(seatId = "", x = 0, y = 0) {
 export async function deleteGlobalSeat(seatId = "") {
   const targetSeatId = String(seatId || "").trim();
   if (!targetSeatId) return;
+
   const seat = getSeatById(targetSeatId);
-  if (!seat) return;
-  const eventId = String(seat.currentEventId || seat.mappedEventId || "").trim();
-  const boxId = String(seat.boxId || "").trim();
-  if (!eventId || !boxId) return;
+  if (!seat) {
+    alert("삭제할 Seat를 찾을 수 없습니다.");
+    return;
+  }
 
   const idx = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === targetSeatId);
   const removedSeat = idx >= 0 ? { ...GL.globalSeats[idx] } : { ...seat };
+
+  const docsById = new Map();
+  const resolved = await resolveGlobalSeatFirestoreDoc(seat, GL.tournamentId);
+  if (resolved?.ref) {
+    docsById.set(resolved.docId, resolved);
+  }
+
+  const matched = await listGlobalSeatDocRefsBySeatId(GL.tournamentId, targetSeatId);
+  for (const item of matched) {
+    if (!docsById.has(item.id)) {
+      docsById.set(item.id, {
+        ref: item.ref,
+        data: item.data || {},
+        docId: item.id
+      });
+    }
+  }
+
+  if (!docsById.size) {
+    if (idx >= 0) {
+      GL.globalSeats.splice(idx, 1);
+      GL.selectedSeatIds.delete(targetSeatId);
+      flushOptimisticGlobalLayoutUi();
+      return;
+    }
+    alert("Firestore에서 삭제할 Seat 문서를 찾지 못했습니다.");
+    return;
+  }
+
   if (idx >= 0) GL.globalSeats.splice(idx, 1);
   GL.selectedSeatIds.delete(targetSeatId);
+  GL.seatMutationInFlight = true;
   flushOptimisticGlobalLayoutUi();
 
-  const ref = doc(db, "tournaments", GL.tournamentId, "global_seats", buildGlobalSeatDocId(eventId, boxId, targetSeatId));
+  const projectionKeys = new Set();
   try {
-    const snap = await getDoc(ref);
-    if (!snap.exists()) return;
-    const seatDoc = snap.data() || {};
-    await deleteDoc(ref);
-    pushGlobalUndo({ kind: "delete_seat", seatId: targetSeatId, eventId, boxId, seatDoc });
-    await syncLayoutProjection(eventId, boxId);
+    for (const docInfo of docsById.values()) {
+      const data = docInfo.data || {};
+      let eventId = String(data.currentEventId || data.mappedEventId || "").trim();
+      let boxId = String(data.boxId || "").trim();
+      if (!eventId || !boxId) {
+        const parsed = parseGlobalSeatDocId(docInfo.docId, targetSeatId);
+        if (parsed) {
+          eventId = parsed.eventId;
+          boxId = parsed.boxId;
+        }
+      }
+      if (eventId && boxId) projectionKeys.add(`${eventId}\t${boxId}`);
+
+      await deleteDoc(docInfo.ref);
+      pushGlobalUndo({
+        kind: "delete_seat",
+        seatId: targetSeatId,
+        eventId,
+        boxId,
+        seatDoc: data
+      });
+    }
+
+    for (const key of projectionKeys) {
+      const [eventId, boxId] = key.split("\t");
+      if (eventId && boxId) await syncLayoutProjection(eventId, boxId);
+    }
   } catch (err) {
     console.error("deleteGlobalSeat error:", err);
     if (idx >= 0) GL.globalSeats.splice(idx, 0, removedSeat);
     else GL.globalSeats.push(removedSeat);
     flushOptimisticGlobalLayoutUi();
     alert("좌석 삭제에 실패했습니다.");
+  } finally {
+    GL.seatMutationInFlight = false;
+    flushOptimisticGlobalLayoutUi();
   }
 }
 
