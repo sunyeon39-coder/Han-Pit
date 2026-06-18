@@ -40,6 +40,7 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
 import { normalizeAndPersistUserRole } from "../login/user-sync.js";
 import {
   ensureDocumentShellBackground,
+  instantDismissAllBootLoaders,
   markPageBootLoaded
 } from "../shared/page-boot-shell.js";
 import { isSameAuthSession } from "../shared/auth-session-guard.js";
@@ -118,6 +119,8 @@ export function startGlobalLayoutApp() {
   ensureDocumentShellBackground();
   initGlFromUrl();
   initGlDomRefs();
+  instantDismissAllBootLoaders();
+  markPageBootLoaded(GL.app);
   if (GL.app && GL.app.dataset.pageBootLoaded !== "1") {
     renderSeats([]);
   }

@@ -79,7 +79,7 @@ import {
 } from "../shared/fcm-web-push.js";
 import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
 import { createLayoutRealtimeUi } from "./layout-realtime-ui.js";
-import { markPageBootLoaded } from "../shared/page-boot-shell.js";
+import { markPageBootLoaded, instantDismissAllBootLoaders, ensureDocumentShellBackground } from "../shared/page-boot-shell.js";
 import { isSameAuthSession } from "../shared/auth-session-guard.js";
 import { raceFirestoreTimeout } from "../shared/load-user-profile.js";
 import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
@@ -93,6 +93,9 @@ import {
   "use strict";
 
   const app = document.getElementById("app");
+  ensureDocumentShellBackground();
+  instantDismissAllBootLoaders();
+  markPageBootLoaded(app);
   const menuBtn = document.getElementById("menuBtn");
   const backBtn = document.getElementById("backBtn");
   const pcPanel = document.getElementById("pcPanel");

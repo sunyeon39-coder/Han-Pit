@@ -79,20 +79,8 @@ function ensureSeatMapDom() {
   return !!IX.seatMapCanvas;
 }
 
-function setSeatMapLoading(active, message = "배치도 불러오는 중…") {
-  if (!ensureSeatMapDom()) return;
-  const scroll = IX.seatMapScroll;
-  let overlay = scroll.querySelector(".seat-map-loading-overlay");
-  if (!active) {
-    overlay?.remove();
-    return;
-  }
-  if (!overlay) {
-    overlay = document.createElement("div");
-    overlay.className = "seat-map-loading-overlay";
-    scroll.appendChild(overlay);
-  }
-  overlay.innerHTML = `<p class="seat-map-loading">${escapeHtml(message)}</p>`;
+function setSeatMapLoading(_active, _message = "") {
+  /* 배치도는 모달을 즉시 열고 백그라운드에서 로드 */
 }
 
 function isSeatMapMultiSelectPointer(e) {
@@ -487,10 +475,9 @@ export function wireSeatMapListeners() {
   IX.seatMapBtn?.addEventListener("click", () => {
     setSeatMapEditMode(false);
     openModal(IX.seatMapModal);
-    setSeatMapLoading(true);
+    renderSeatMap();
     void loadSeatMapLayout()
       .then(() => {
-        setSeatMapLoading(false);
         renderSeatMap();
         if (!IX.seatMapLayout.length && IX.seatMapCanvas) {
           const hint = document.createElement("p");
@@ -504,7 +491,7 @@ export function wireSeatMapListeners() {
       })
       .catch((err) => {
         console.error("loadSeatMapLayout error:", err);
-        setSeatMapLoading(false, "배치도를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        alert("배치도를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
       });
   });
 

@@ -54,18 +54,7 @@ function wireHubEmptyState() {
 }
 
 export function showHubListLoading() {
-  const { eventListEl } = hubRefs;
-  if (!eventListEl) return;
-  if (hubState.tournamentsListReady || hubState.tournamentsCache.length > 0) return;
-
-  eventListEl.classList.remove("event-list--empty");
-  eventListEl.classList.add("event-list--loading");
-  eventListEl.innerHTML = `
-    <div class="hub-loading" role="status" aria-live="polite">
-      <span class="hub-loading-spinner" aria-hidden="true"></span>
-      <p class="hub-loading-text">대회 목록을 불러오는 중…</p>
-    </div>
-  `;
+  /* 즉시 UI — 전체 화면/목록 스피너 대신 빈 상태·캐시 카드를 바로 표시 */
 }
 
 export function renderTournaments(tournaments, userProfile, user) {
@@ -75,7 +64,6 @@ export function renderTournaments(tournaments, userProfile, user) {
   const list = Array.isArray(tournaments) ? tournaments : [];
 
   if (!list.length && hubState.tournamentsBootstrapping && !hubState.tournamentsListReady && !hubState.tournamentsCache.length) {
-    showHubListLoading();
     return;
   }
 

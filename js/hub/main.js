@@ -13,11 +13,10 @@ import {
 import { getIsAdminUser } from "./hub-helpers.js";
 import { closeModal, openModal } from "../shared/dom-utils.js";
 import { isAppDebugEnabled } from "../shared/app-debug.js";
-import { ensureDocumentShellBackground } from "../shared/page-boot-shell.js";
+import { ensureDocumentShellBackground, instantDismissAllBootLoaders, markPageBootLoaded } from "../shared/page-boot-shell.js";
 import { isSameAuthSession } from "../shared/auth-session-guard.js";
 
 import { initHubRefs, hubRefs } from "./hub-dom-refs.js";
-import { showHubListLoading } from "./hub-tournament-list.js";
 import { FALLBACK_TOURNAMENTS, hubState } from "./hub-state.js";
 import { sortTournaments } from "./hub-helpers.js";
 import { applyHubOpsChrome } from "./hub-ops-chrome.js";
@@ -76,14 +75,13 @@ import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
 
 initHubRefs();
 ensureDocumentShellBackground();
-hubState.tournamentsListReady = false;
+instantDismissAllBootLoaders();
+markPageBootLoaded(hubRefs.eventListEl);
+
 const hubSeededFromSession = seedHubTournamentsFromSessionCache();
+hubState.tournamentsListReady = true;
 hubState.tournamentsBootstrapping = !hubSeededFromSession;
-if (hubSeededFromSession) {
-  scheduleHubTournamentsRender();
-} else {
-  showHubListLoading();
-}
+scheduleHubTournamentsRender();
 void prefetchHubTournamentsCache();
 
 let hubSessionUid = "";
@@ -363,9 +361,8 @@ function disposeHubSessionWatches() {
 async function bootstrapHubSession(user) {
   const flow = ++hubState.hubAuthFlowGen;
   let bootTimeoutId = 0;
-  if (!hubState.tournamentsCache.length && !hubState.tournamentsListReady) {
+  if (!hubState.tournamentsCache.length) {
     hubState.tournamentsBootstrapping = true;
-    showHubListLoading();
   }
 
   const cachedProfile = readLoginProfileCache(user.uid);
@@ -523,9 +520,6 @@ onAuthStateChanged(auth, (user) => {
   hubSessionUid = user.uid;
   hubState.currentUser = user;
   disposeHubSessionWatches();
-  if (!hubState.tournamentsCache.length && !hubState.tournamentsListReady) {
-    showHubListLoading();
-  }
 
   const run = bootstrapHubSession(user)
     .catch((err) => {

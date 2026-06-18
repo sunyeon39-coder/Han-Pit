@@ -80,6 +80,7 @@ import {
 import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
 import {
   ensureDocumentShellBackground,
+  instantDismissAllBootLoaders,
   markPageBootLoaded
 } from "../shared/page-boot-shell.js";
 import { prefetchPageOnce } from "../shared/page-prefetch.js";
@@ -104,6 +105,9 @@ import {
 const flushAppBadgeIfVisible = bindAppBadgeClearOnForeground(db, auth);
 void ensureForegroundFcmBadgeListener();
 ensureDocumentShellBackground();
+refreshIndexDomRefs();
+instantDismissAllBootLoaders();
+markPageBootLoaded(IX.root);
 
 function resolveGlobalLayoutEventContext() {
   const selectedDocId = String(IX.eventCardSelect?.value || "").trim();
@@ -277,6 +281,7 @@ async function refreshIndexOpsFromServer(user = auth.currentUser) {
 
 async function init() {
   refreshIndexDomRefs();
+  markPageBootLoaded(IX.root);
 
   if (!getTournamentId()) {
     const hubHref = resolveRelativePage("hub.html");
@@ -302,7 +307,6 @@ async function init() {
   const paintedFromSession = seedIndexEventsFromSessionCache();
   if (paintedFromSession) {
     render();
-    markPageBootLoaded(IX.root);
   }
 
   renderDealerOps();
@@ -316,16 +320,13 @@ async function init() {
     .catch((err) => console.error("loadDealerAttendanceOnce error:", err))
     .finally(() => scheduleRenderDealerOps());
 
-  const eventsTask = raceFirestoreTimeout(loadEvents(), 12000);
-  if (paintedFromSession) {
-    void eventsTask.then(() => {
+  void raceFirestoreTimeout(loadEvents(), 12000)
+    .then(() => {
       render();
       renderDealerOps();
       refreshCardStatuses();
-    });
-  } else {
-    await eventsTask;
-  }
+    })
+    .catch((err) => console.error("loadEvents error:", err));
 
   void ensureMeRecovered(auth.currentUser)
     .catch((err) => {
@@ -338,7 +339,6 @@ async function init() {
   render();
   renderDealerOps();
   refreshCardStatuses();
-  if (!paintedFromSession) markPageBootLoaded(IX.root);
 
   setupAttendanceLogEvents();
   setupWorkSummaryEvents();

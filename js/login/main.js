@@ -35,6 +35,7 @@ import { loadUserProfileRevalidated } from "../shared/load-user-profile.js";
 import { refreshFcmTokenIfGranted } from "../shared/fcm-web-push.js";
 import { prefetchHubTournamentsCache } from "../hub/hub-loaders-realtime.js";
 import { syncUserDisplayNameAfterNicknameChange } from "../shared/sync-user-waiting-display.js";
+import { instantDismissAllBootLoaders } from "../shared/page-boot-shell.js";
 import {
   isGoogleOAuthLikelyBlockedBrowser,
   shouldPreferGoogleRedirectOverPopup,
@@ -46,11 +47,12 @@ import {
   copyCurrentUrlToClipboard
 } from "../shared/google-oauth-environment.js";
 
+instantDismissAllBootLoaders();
+
 const googleBtn = document.getElementById("googleLogin");
 const signupModal = document.getElementById("signupModal");
 const signupConfirm = document.getElementById("signupConfirm");
 const loginBusyOverlay = document.getElementById("loginBusyOverlay");
-const loginBusyText = document.getElementById("loginBusyText");
 
 const nicknameInput = document.getElementById("nicknameInput");
 const phoneInput = document.getElementById("phoneInput");
@@ -62,25 +64,14 @@ const copyLoginUrlBtn = document.getElementById("copyLoginUrlBtn");
 let selectedGender = "none";
 let loginBusy = false;
 
-const LOGIN_BUSY_LABELS = {
-  connecting: "Google 계정 연결 중…",
-  profile: "프로필 확인 중…",
-  entering: "허브로 이동 중…"
-};
-
-function setLoginBusy(active, phase = "connecting") {
+function setLoginBusy(active) {
   loginBusy = !!active;
   if (googleBtn) {
     googleBtn.disabled = loginBusy;
     googleBtn.setAttribute("aria-busy", loginBusy ? "true" : "false");
   }
-  if (loginBusyOverlay) {
-    loginBusyOverlay.classList.toggle("hidden", !loginBusy);
-    loginBusyOverlay.setAttribute("aria-hidden", loginBusy ? "false" : "true");
-  }
-  if (loginBusyText) {
-    loginBusyText.textContent = LOGIN_BUSY_LABELS[phase] || LOGIN_BUSY_LABELS.connecting;
-  }
+  loginBusyOverlay?.classList.add("hidden");
+  loginBusyOverlay?.setAttribute("aria-hidden", "true");
 }
 
 function openSignupModal(profile = null) {
@@ -154,101 +145,66 @@ async function readUserDocSnapFromServer(uid) {
   }
 }
 
-async function waitForAuthBeforeFirestore(user) {
-  if (typeof auth.authStateReady === "function") {
-    await auth.authStateReady();
-  }
-  if (user?.getIdToken) {
+function scheduleLoginProfileBackgroundSync(user) {
+  if (!user?.uid) return;
+  scheduleBackgroundUserProfileSync(user);
+  void (async () => {
     try {
-      await user.getIdToken();
+      if (typeof auth.authStateReady === "function") {
+        await auth.authStateReady();
+      }
+      if (user.getIdToken) {
+        await user.getIdToken();
+      }
+      const email = user.email || "";
+      const fast = await syncUserProfileFast(user);
+      if (!fast.ok || !hasValidNickname(fast.profile)) {
+        await syncUserProfile(user);
+      }
+      const fresh = await loadUserProfileRevalidated(user.uid, email);
+      if (fresh) writeLoginProfileCache(user.uid, fresh);
     } catch (err) {
-      console.warn("[login] getIdToken:", err);
+      console.warn("[login] background profile sync:", err);
     }
-  }
+  })();
 }
 
-async function resolveProfileForLogin(user) {
-  await waitForAuthBeforeFirestore(user);
-
-  const email = user.email || "";
-  let profile = buildOptimisticProfileFromAuthUser(user, readLoginProfileCache(user.uid) || {});
-
-  try {
-    const server = await loadUserProfileRevalidated(user.uid, email);
-    if (server) profile = server;
-  } catch (err) {
-    console.warn("[resolveProfileForLogin] server profile:", err);
-  }
-
-  if (!hasValidNickname(profile)) {
-    const fast = await syncUserProfileFast(user);
-    if (fast.ok && fast.profile) profile = fast.profile;
-    if (!hasValidNickname(profile)) {
-      const full = await syncUserProfile(user);
-      if (!full.ok) throw full.error || new Error("profile-sync-failed");
-      profile = full.profile || profile;
-    }
-  }
-
+/** 캐시·Google displayName 만으로 즉시 허브 진입 — Firestore 동기화는 백그라운드 */
+function resolveProfileForLoginInstant(user) {
+  const profile = buildOptimisticProfileFromAuthUser(user, readLoginProfileCache(user.uid) || {});
   writeLoginProfileCache(user.uid, profile);
-  scheduleBackgroundUserProfileSync(user);
-  void loadUserProfileRevalidated(user.uid, email)
-    .then((fresh) => {
-      if (fresh) writeLoginProfileCache(user.uid, fresh);
-    })
-    .catch(() => {});
+  scheduleLoginProfileBackgroundSync(user);
   return profile;
 }
 
-async function redirectToHubWithTournamentPrefetch() {
-  try {
-    await Promise.race([
-      prefetchHubTournamentsCache(),
-      new Promise((resolve) => setTimeout(resolve, 1200))
-    ]);
-  } catch (prefetchErr) {
-    console.warn("[login] tournament prefetch:", prefetchErr);
-  }
+function redirectToHubImmediately() {
+  void prefetchHubTournamentsCache();
+  void refreshFcmTokenIfGranted(auth.currentUser?.uid);
   location.replace("./hub.html");
 }
 
-async function finalizeLoginFlow(user) {
+function finalizeLoginFlow(user) {
   if (!user) return;
 
-  setLoginBusy(true, "profile");
+  setLoginBusy(false);
 
-  try {
-    const profile = await resolveProfileForLogin(user);
+  const profile = resolveProfileForLoginInstant(user);
 
-    if (isAppDebugEnabled()) {
-      console.debug("[LOGIN FLOW]", {
-        uid: user.uid,
-        email: user.email || "",
-        nickname: profile?.nickname,
-        role: profile?.role
-      });
-    }
-
-    void refreshFcmTokenIfGranted(user.uid);
-    scheduleBackgroundUserProfileSync(user);
-
-    if (!hasValidNickname(profile)) {
-      setLoginBusy(false);
-      openSignupModal(profile);
-      return;
-    }
-
-    setLoginBusy(true, "entering");
-    await redirectToHubWithTournamentPrefetch();
-  } catch (err) {
-    console.error("[finalizeLoginFlow]", err);
-    setLoginBusy(false);
-    alert(
-      "구글 로그인은 성공했지만 프로필 동기화에 실패했습니다.\n" +
-        "대부분 Firestore Rules 또는 users 문서 권한 문제입니다.\n\n" +
-        `에러: ${err?.message || err}`
-    );
+  if (isAppDebugEnabled()) {
+    console.debug("[LOGIN FLOW]", {
+      uid: user.uid,
+      email: user.email || "",
+      nickname: profile?.nickname,
+      role: profile?.role
+    });
   }
+
+  if (!hasValidNickname(profile)) {
+    openSignupModal(profile);
+    return;
+  }
+
+  redirectToHubImmediately();
 }
 
 async function login() {
@@ -262,7 +218,7 @@ async function login() {
     return;
   }
 
-  setLoginBusy(true, "connecting");
+  setLoginBusy(true);
 
   if (auth.currentUser) {
     try {
@@ -287,7 +243,7 @@ async function login() {
 
   try {
     const result = await signInWithPopup(auth, provider);
-    await finalizeLoginFlow(result.user);
+    finalizeLoginFlow(result.user);
   } catch (error) {
     console.error("login popup error:", error);
 
@@ -331,11 +287,9 @@ async function saveProfile() {
       return;
     }
 
-    setLoginBusy(true, "entering");
+    setLoginBusy(true);
 
     const user = auth.currentUser;
-    await waitForAuthBeforeFirestore(user);
-
     const uid = user.uid;
     const email = String(user.email || "").trim().toLowerCase();
     const userRef = doc(db, "users", uid);
@@ -376,11 +330,9 @@ async function saveProfile() {
 
     writeLoginProfileCache(uid, profile);
 
-    try {
-      await syncUserDisplayNameAfterNicknameChange(uid, nickname);
-    } catch (syncErr) {
+    void syncUserDisplayNameAfterNicknameChange(uid, nickname).catch((syncErr) => {
       console.warn("[saveProfile] display name sync:", syncErr);
-    }
+    });
 
     if (isAppDebugEnabled()) {
       console.debug("[PROFILE SAVED]", {
@@ -391,8 +343,7 @@ async function saveProfile() {
       });
     }
 
-    void refreshFcmTokenIfGranted(user.uid);
-    await redirectToHubWithTournamentPrefetch();
+    redirectToHubImmediately();
   } catch (error) {
     console.error("save profile error:", error);
     setLoginBusy(false);
@@ -421,9 +372,6 @@ function waitForSignedInUser(authInstance, timeoutMs) {
 
 async function consumeGoogleRedirectResult() {
   const expectedRedirect = isOAuthRedirectPending();
-  if (expectedRedirect) {
-    setLoginBusy(true, "connecting");
-  }
   try {
     let cred = null;
     try {
@@ -440,15 +388,15 @@ async function consumeGoogleRedirectResult() {
     let user = cred?.user || auth.currentUser;
     if (user) {
       clearOAuthRedirectPending();
-      await finalizeLoginFlow(user);
+      finalizeLoginFlow(user);
       return;
     }
 
     if (expectedRedirect) {
-      user = await waitForSignedInUser(auth, 5000);
+      user = await waitForSignedInUser(auth, 3000);
       clearOAuthRedirectPending();
       if (user) {
-        await finalizeLoginFlow(user);
+        finalizeLoginFlow(user);
       } else {
         setLoginBusy(false);
       }

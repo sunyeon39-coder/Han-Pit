@@ -33,3 +33,13 @@ export function markPageBootLoaded(container) {
   container.dataset.pageBootLoaded = "1";
   dismissPageBootLoading(container);
 }
+
+/** HTML 인라인 스피너·page-boot-loading 을 JS 로드 직후 즉시 제거 */
+export function instantDismissAllBootLoaders() {
+  ensureDocumentShellBackground();
+  document.querySelectorAll(".page-boot-loading").forEach((el) => el.remove());
+  for (const id of ["indexRoot", "eventList", "app", "globalLayoutApp"]) {
+    const el = document.getElementById(id);
+    if (el) markPageBootLoaded(el);
+  }
+}
