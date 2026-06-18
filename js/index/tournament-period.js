@@ -3,7 +3,7 @@ import {
   doc,
   getDoc,
   onSnapshot
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 import { getTournamentId, resolveRelativePage } from "./core-utils.js";
 import { isTournamentActive } from "./time-utils.js";
@@ -59,7 +59,7 @@ async function initTournamentPeriodWatch() {
       }
       setTimeout(() => {
         location.href = hubHref;
-      }, 400);
+      }, 0);
       return;
     }
 

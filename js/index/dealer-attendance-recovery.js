@@ -1,5 +1,5 @@
 import { db } from "../firebase.js";
-import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 import { canUseTournamentOps } from "../shared/auth-helpers.js";
 import { getTournamentId } from "./core-utils.js";

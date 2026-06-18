@@ -8,7 +8,7 @@ import {
   setDoc,
   serverTimestamp,
   where
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { getEventCardIdFromRecord } from "../shared/tournament-event-instance.js";
 import { normalizeAndPersistUserRole } from "../login/user-sync.js";
 import { loadUserProfileForTournamentOps } from "../shared/load-user-profile.js";
@@ -25,7 +25,8 @@ export async function layoutLoadMyUserProfile(tournamentId = "") {
     const profile = await loadUserProfileForTournamentOps(
       auth.currentUser.uid,
       auth.currentUser.email || "",
-      tid
+      tid,
+      { preferCacheFirst: true }
     );
     if (!profile) return null;
     writeLoginProfileCache(auth.currentUser.uid, profile);

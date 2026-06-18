@@ -1,11 +1,10 @@
-import { db } from "../firebase.js";
+import { db, auth } from "../firebase.js";
 import {
   collection,
   doc,
-  getDocs,
   onSnapshot,
   serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
   buildAttendanceInactiveUidSet,
   filterAttendanceRowsForWaitingMerge
@@ -196,25 +195,13 @@ async function recoverRemovedSeatPeopleToWaiting(removedSeats = [], currentSeats
   });
 }
 
-/** PWA·모바일: attendance 스냅샷 전에 global_waiting 유령 행이 보이지 않도록 1회 프라임 */
-async function primeDealerAttendanceFilter() {
-  const tid = String(GL.tournamentId || "").trim();
-  if (!tid) {
-    GL.attendanceFilterReady = true;
+function logFirestoreWatchError(label, err) {
+  const code = String(err?.code || "").trim();
+  if (code === "already-exists") {
+    console.warn(`${label}: listener target conflict (${code})`);
     return;
   }
-  try {
-    const q = dealerAttendanceQueryForTournament(tid);
-    const snap = await getDocs(q);
-    applyDealerAttendanceSnap(snap);
-  } catch (err) {
-    console.warn("primeDealerAttendanceFilter:", err?.code || err);
-    GL.attendanceInactiveUids = new Set();
-    GL.attendanceWaiting = [];
-    GL.attendanceFilterReady = true;
-    bumpGlobalLayoutDataRevision();
-    scheduleGlobalLayoutRealtimeUi({ metaOnly: true });
-  }
+  console.error(`${label}:`, err);
 }
 
 export { disposeGlobalLayoutRealtime };
@@ -228,10 +215,9 @@ export function bindRealtime() {
 
   sessionStorage.setItem("tournamentId", GL.tournamentId);
   disposeGlobalLayoutRealtime();
-  GL.attendanceFilterReady = true;
+  GL.attendanceFilterReady = false;
   GL.attendanceInactiveUids = new Set();
   GL.attendanceWaiting = [];
-  void primeDealerAttendanceFilter();
 
   let prevSeats = [];
   GL.stopSeatWatch = onSnapshot(
@@ -246,7 +232,9 @@ export function bindRealtime() {
         __firestoreDocId: d.id
       }));
       const mergedSeats = mergeGlobalSeatsFromSnapshot(GL.globalSeats, nextSeats);
-      const nextSeatIds = new Set(mergedSeats.map((s) => String(s?.seatId || "").trim()).filter(Boolean));
+      const nextSeatIds = new Set(
+        mergedSeats.map((s) => String(s?.seatId || "").trim()).filter(Boolean)
+      );
       const removedOccupiedSeats = prevSeats.filter((s) => {
         const sid = String(s?.seatId || "").trim();
         if (!sid || nextSeatIds.has(sid)) return false;
@@ -267,8 +255,7 @@ export function bindRealtime() {
         });
       }
 
-      const flags = { seats: true, seatPanel: true, waiting: true };
-      scheduleGlobalLayoutRealtimeUi(flags);
+      scheduleGlobalLayoutRealtimeUi({ seats: true, seatPanel: true, waiting: true });
 
       if (
         removedOccupiedSeats.length &&
@@ -279,7 +266,7 @@ export function bindRealtime() {
       }
     },
     (err) => {
-      console.error("global seats watch error:", err);
+      logFirestoreWatchError("global seats watch error", err);
       if (String(err?.code || "").includes("permission-denied") && !GL.hasShownPermissionAlert) {
         GL.hasShownPermissionAlert = true;
         alert("global_seats 권한이 없습니다. Firestore Rules 배포 상태를 확인해주세요.");
@@ -287,7 +274,6 @@ export function bindRealtime() {
     }
   );
 
-  if (GL.stopWaitingWatch) GL.stopWaitingWatch();
   GL.stopWaitingWatch = onSnapshot(
     doc(db, "layout_shared", "global_waiting"),
     (snap) => {
@@ -299,14 +285,14 @@ export function bindRealtime() {
       updateGlobalLayoutWaitingMeta();
       scheduleGlobalLayoutRealtimeUi({ waiting: true });
     },
-    (err) => console.error("global waiting watch error:", err)
+    (err) => logFirestoreWatchError("global waiting watch error", err)
   );
 
   GL.stopAttendanceWatch = onSnapshot(
     dealerAttendanceQueryForTournament(GL.tournamentId),
     applyDealerAttendanceSnap,
     (err) => {
-      console.warn("dealer attendance watch error (대기 병합만 제한):", err?.code || err);
+      logFirestoreWatchError("dealer attendance watch error", err);
       GL.attendanceWaiting = [];
       GL.attendanceFilterReady = true;
       bumpGlobalLayoutDataRevision();

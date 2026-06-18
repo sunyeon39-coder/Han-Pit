@@ -1,7 +1,7 @@
 import { auth, db } from "../firebase.js";
 import {
   onAuthStateChanged
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 
 import { escapeHtml } from "../shared/dom-utils.js";
 import { createLayoutPersistServices } from "./layout-persist.js";
@@ -687,14 +687,27 @@ import {
   seatNotify.bindMyNotificationWatch();
 
   try {
-    const profile = await raceFirestoreTimeout(layoutLoadMyUserProfile(TOURNAMENT_ID), 10000);
-    if (profile) {
+    const profilePromise = raceFirestoreTimeout(layoutLoadMyUserProfile(TOURNAMENT_ID), 10000);
+    const bootstrapPromise = raceFirestoreTimeout(layoutBootstrap.init(), 15000);
+
+    void profilePromise.then((profile) => {
+      if (profile) {
+        currentUserProfile = profile;
+        seedMyUserProfileCache(profile);
+        applyLayoutOpsPermissions();
+        if (layoutUi) {
+          render();
+          renderPanel();
+        }
+      }
+    });
+
+    await bootstrapPromise;
+    const profile = await profilePromise.catch(() => null);
+    if (profile && !currentUserProfile) {
       currentUserProfile = profile;
       seedMyUserProfileCache(profile);
-      applyLayoutOpsPermissions();
     }
-
-    await raceFirestoreTimeout(layoutBootstrap.init(), 15000);
     applyLayoutOpsPermissions();
     if (layoutUi) {
       render();

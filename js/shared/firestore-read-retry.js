@@ -1,4 +1,3 @@
-import { ensureFirestoreOnline } from "../firebase.js";
 import {
   isFirestoreQuotaCoolingDown,
   noteFirestoreQuotaExceeded
@@ -16,17 +15,16 @@ function sleep(ms = 0) {
 }
 
 /**
- * Safari·iOS PWA에서 WebChannel/batchGet 이 unavailable 로 끊길 때
- * enableNetwork 후 짧게 재시도합니다.
- * resource-exhausted(429) 는 재시도·enableNetwork 로 한도만 악화됩니다.
+ * Safari·iOS PWA에서 batchGet 이 unavailable 로 끊길 때 짧게 재시도합니다.
+ * resource-exhausted(429) 는 재시도하지 않습니다.
  */
 export async function runFirestoreReadWithRetry(readFn, options = {}) {
   if (isFirestoreQuotaCoolingDown()) {
     return readFn();
   }
 
-  const maxAttempts = Math.max(1, options.maxAttempts ?? 3);
-  const baseDelayMs = options.baseDelayMs ?? 200;
+  const maxAttempts = Math.max(1, options.maxAttempts ?? 4);
+  const baseDelayMs = options.baseDelayMs ?? 350;
   let lastErr = null;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
@@ -36,7 +34,6 @@ export async function runFirestoreReadWithRetry(readFn, options = {}) {
       noteFirestoreQuotaExceeded(err);
       if (isFirestoreQuotaCoolingDown()) throw err;
       if (!isRetryableFirestoreReadError(err) || attempt >= maxAttempts - 1) throw err;
-      await ensureFirestoreOnline();
       await sleep(baseDelayMs * (attempt + 1));
     }
   }

@@ -1,7 +1,7 @@
 /**
  * layout.html: tournaments/.../global_seats 스냅샷을 로컬 맵에 반영하고 layout_events Seat과 병합
  */
-import { onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 export function createLayoutGlobalSeatsMerge(deps) {
   const {

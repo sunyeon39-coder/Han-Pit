@@ -5,12 +5,12 @@
  *   (일반 Safari 탭·iOS Chrome 탭은 Apple 정책상 FCM 웹 푸시 불가)
  */
 import { db, getMessagingSafe } from "../firebase.js";
-import { getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
+import { getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging.js";
 import {
   doc,
   serverTimestamp,
   setDoc
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 export const FCM_VAPID_KEY =
   "BAZXsr3GQtq_nPLrF7C89mr3ejM7DbS-cBBfWNZzHfcHggNier7C2fbIG0uex3DZl8ykVxbqrli54cCdLkena94";
@@ -288,13 +288,17 @@ export async function refreshFcmTokenIfGranted(uid) {
   }
 }
 
-/** 로그인·허브 진입 시 FCM 토큰·포그라운드 리스너를 안정적으로 준비 */
-export async function bootstrapAppPush(uid) {
+/** 로그인·허브 진입 시 FCM 토큰·포그라운드 리스너를 안정적으로 준비 (Firestore 부트와 경쟁하지 않도록 지연) */
+export function bootstrapAppPush(uid) {
   if (!uid) return;
   void ensureForegroundFcmBadgeListener();
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (attempt > 0) await sleep(400 + attempt * 350);
-    await refreshFcmTokenIfGranted(uid);
+  const run = () => {
+    void refreshFcmTokenIfGranted(uid);
+  };
+  if (typeof requestIdleCallback === "function") {
+    requestIdleCallback(run, { timeout: 6000 });
+  } else {
+    setTimeout(run, 2500);
   }
 }
 

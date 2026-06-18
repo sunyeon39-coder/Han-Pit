@@ -1,6 +1,6 @@
 import { auth, db } from "../firebase.js";
 
-import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { logout } from "../auth.js";
 
 import { normalizeUserProfile } from "../shared/auth-helpers.js";
@@ -48,7 +48,6 @@ import {
   loadUserProfile,
   resyncHubAccessFromServer,
   healNonAdminUsersToBasic,
-  prefetchHubTournamentsCache,
   seedHubTournamentsFromSessionCache
 } from "./hub-loaders-realtime.js";
 import { scheduleHubTournamentsRender } from "./hub-realtime-ui.js";
@@ -88,7 +87,6 @@ const hubSeededFromSession = seedHubTournamentsFromSessionCache();
 hubState.tournamentsListReady = true;
 hubState.tournamentsBootstrapping = !hubSeededFromSession;
 scheduleHubTournamentsRender();
-void prefetchHubTournamentsCache();
 
 let hubSessionUid = "";
 let disposeGlobalSeatNotifyVisibility = null;
@@ -395,7 +393,7 @@ async function bootstrapHubSession(user) {
     hubState.tournamentsListReady = true;
     hubState.tournamentsBootstrapping = false;
     paintHubTournamentList();
-  }, 4000);
+  }, 2500);
 
   let [profile] = await Promise.all([
     raceFirestoreTimeout(

@@ -1,5 +1,5 @@
 import { db } from "../firebase.js";
-import { doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { mergeOpsProfile, normalizeUserProfile } from "./auth-helpers.js";
 import { enrichProfileWithEmailAllows } from "./load-user-profile.js";
 
@@ -40,6 +40,11 @@ export function bindMyUserProfileRealtime(uid, { email = "", onProfileChange } =
         });
     },
     (err) => {
+      const code = String(err?.code || "").trim();
+      if (code === "already-exists") {
+        console.warn("bindMyUserProfileRealtime: listener target conflict");
+        return;
+      }
       console.error("bindMyUserProfileRealtime error:", err);
     }
   );

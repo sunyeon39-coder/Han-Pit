@@ -5,7 +5,7 @@ import {
   getDoc,
   setDoc,
   onSnapshot
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 import { openModal, closeModal, escapeHtml } from "../shared/dom-utils.js";
 import { getStableEventBoxPaletteClass } from "../global-layout/event-box-palette.js";

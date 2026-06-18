@@ -1,5 +1,5 @@
 import { auth } from "../firebase.js";
-import { deleteDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { deleteDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 import { canUseTournamentOps } from "../shared/auth-helpers.js";
 import { ensureTournamentContextOrAlert, getTournamentId } from "./core-utils.js";

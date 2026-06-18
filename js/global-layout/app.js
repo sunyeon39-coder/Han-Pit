@@ -1,5 +1,5 @@
 import { auth, db } from "../firebase.js";
-import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { GL, initGlFromUrl, initGlDomRefs } from "./state.js";
 import { resolveLayoutAccentColor } from "../shared/layout-operator-colors.js";
 import { clearMyWaitingPick } from "./waiting-picks.js";
@@ -36,6 +36,7 @@ import {
   initGlobalLayoutZoomBarDom,
   wireGlobalLayoutZoomBarOnce
 } from "./canvas-viewport.js";
+import { refreshGlobalLayoutMobileTimers } from "./mobile-panel-render.js";
 import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
 import { normalizeAndPersistUserRole } from "../login/user-sync.js";
 import {
@@ -279,9 +280,7 @@ export function startGlobalLayoutApp() {
     GL.timerHandle = setInterval(() => {
       if (isTypingInPanel()) return;
       if (layoutIsMobile()) {
-        void import("./mobile-panel-render.js")
-          .then((m) => m.refreshGlobalLayoutMobileTimers())
-          .catch((err) => console.error("refreshGlobalLayoutMobileTimers error:", err));
+        refreshGlobalLayoutMobileTimers();
         return;
       }
       updateCanvasSeatTimerClasses();
@@ -319,8 +318,13 @@ export function startGlobalLayoutApp() {
       seedMyUserProfileCache(GL.userProfile);
       markPageBootLoaded(GL.app);
 
-      const hasOps =
-        syncGlobalLayoutOpsFromProfile(user) || (await ensureGlobalLayoutOpsChrome(user));
+      if (syncGlobalLayoutOpsFromProfile(user)) {
+        startGlobalLayoutSession(user);
+        void refreshGlobalLayoutOpsProfileBackground(user);
+        return;
+      }
+
+      const hasOps = await ensureGlobalLayoutOpsChrome(user);
       if (!hasOps) {
         alert(
           "운영 권한이 없습니다. 허브에서「직접 허용」을 받았는지, 같은 대회로 들어왔는지 확인해 주세요."

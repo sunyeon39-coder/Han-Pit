@@ -3,7 +3,7 @@
  * OS 알림을 띄웁니다. (layout/global-layout 은 전용 UI 컨트롤러가 처리)
  */
 import { db } from "../firebase.js";
-import { doc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { doc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { buildSeatAssignedNotifyMessage } from "./seat-notification-label.js";
 import {
   buildSeatNotifyTag,

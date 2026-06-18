@@ -1,14 +1,14 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getAuth } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
-  enableNetwork,
-  initializeFirestore
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { isFirestoreQuotaCoolingDown } from "./shared/firestore-quota-guard.js";
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
   getMessaging,
   isSupported
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD6KXHIf1aaSDjbhHo8VtzbeMcaDIMP4SA",
@@ -44,18 +44,24 @@ function isStandalonePwa() {
   }
 }
 
+export function isSafariLikeFirestoreClient() {
+  return isSafariLikeBrowser() || isStandalonePwa();
+}
+
 /**
- * Safari·iOS PWA: WebChannel(Fetch Streams)이
- * "XMLHttpRequest … due to access control checks" 로 끊기는 문제 완화.
- * Listen·Write 채널 모두 long-polling + 비-stream 모드로 고정합니다.
+ * Safari·iOS PWA WebChannel: fetch streams / hanging GET 이 끊길 때
+ * "XMLHttpRequest … due to access control checks" 가 콘솔에 남을 수 있습니다.
+ * IndexedDB 캐시 + long-polling 고정 + useFetchStreams false 로 완화합니다.
  *
- * 영속 IndexedDB 캐시는 유지합니다. memoryLocalCache 는 모든 읽기를 batchGet 으로
- * 강제해 채널 불안정 시 unavailable 이 잦아져 사용하지 않습니다.
- * (페이지 이탈·백그라운드 시 hanging GET 이 끊길 때 콘솔 CORS 경고가 남을 수 있으나
- *  Firebase SDK 측 알려진 동작이며, 실제 읽기/쓰기 실패 시 reconnect·read retry 로 복구)
+ * 웹에서는 enableNetwork/disableNetwork 토글 시 "Target ID already exists" 가
+ * 발생하므로 사용하지 않습니다 (Firebase 지원팀 권고).
  */
-const firestoreSettings = {};
-if (isSafariLikeBrowser() || isStandalonePwa()) {
+const firestoreSettings = {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager()
+  })
+};
+if (isSafariLikeFirestoreClient()) {
   Object.assign(firestoreSettings, {
     experimentalForceLongPolling: true,
     experimentalAutoDetectLongPolling: false,
@@ -68,27 +74,8 @@ if (isSafariLikeBrowser() || isStandalonePwa()) {
 
 export const db = initializeFirestore(app, firestoreSettings);
 
-export async function ensureFirestoreOnline() {
-  if (isFirestoreQuotaCoolingDown()) return;
-  try {
-    await enableNetwork(db);
-  } catch {
-    // offline persistence may still serve cached reads
-  }
-}
-
 export { app };
 export const auth = getAuth(app);
-
-if (typeof document !== "undefined") {
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "visible") return;
-    void ensureFirestoreOnline();
-  });
-  window.addEventListener("pageshow", (ev) => {
-    if (ev.persisted) void ensureFirestoreOnline();
-  });
-}
 
 export async function getMessagingSafe() {
   try {

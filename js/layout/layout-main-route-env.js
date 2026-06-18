@@ -1,5 +1,5 @@
 import { db } from "../firebase.js";
-import { collection, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { collection, doc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 export { FCM_VAPID_KEY as VAPID_KEY } from "../shared/fcm-web-push.js";
 export const ALERT_VOLUME = 0.4;

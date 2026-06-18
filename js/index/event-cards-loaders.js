@@ -3,7 +3,7 @@ import {
   collection,
   getDocs,
   onSnapshot
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
@@ -73,6 +73,7 @@ export function bindEventsRealtime() {
     getEventsCollectionRef(),
     (snap) => {
       IX.events = normalizeEvents(snap.docs);
+      if (IX.events.length) writeIndexEventsSessionCache(tournamentId, IX.events);
       scheduleIndexCardsRender({
         adminForm: IX.eventAdminModal?.classList.contains("show")
       });

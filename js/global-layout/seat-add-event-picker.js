@@ -6,12 +6,41 @@ import {
 import { fetchEventCardsForSeatEdit } from "./tournament-events.js";
 import { resolveBoxIdForEventId } from "./event-box-resolve.js";
 import { writePersistedSeatAddForm } from "./seat-add-form-persist.js";
+import { GL } from "./state.js";
 
 let docListener = null;
 let seatAddEventsCache = [];
+let seatAddEventsTournamentId = "";
+let seatAddEventsFetchInflight = null;
 
 export function getSeatAddEventsCache() {
   return seatAddEventsCache;
+}
+
+export function invalidateSeatAddEventsCache() {
+  seatAddEventsCache = [];
+  seatAddEventsTournamentId = "";
+  seatAddEventsFetchInflight = null;
+}
+
+async function loadSeatAddEvents() {
+  const tid = String(GL.tournamentId || "").trim();
+  if (!tid) return [];
+  if (tid === seatAddEventsTournamentId && seatAddEventsCache.length) {
+    return seatAddEventsCache;
+  }
+  if (seatAddEventsFetchInflight) return seatAddEventsFetchInflight;
+
+  seatAddEventsFetchInflight = fetchEventCardsForSeatEdit()
+    .then((events) => {
+      seatAddEventsCache = events;
+      seatAddEventsTournamentId = tid;
+      return events;
+    })
+    .finally(() => {
+      seatAddEventsFetchInflight = null;
+    });
+  return seatAddEventsFetchInflight;
 }
 
 function eventCardDisplayId(event = {}, fallbackId = "") {
@@ -121,9 +150,15 @@ export async function wireSeatAddEventPicker() {
 
   let events = [];
   try {
-    events = await fetchEventCardsForSeatEdit();
+    events = await loadSeatAddEvents();
   } catch (err) {
-    console.error("wireSeatAddEventPicker fetch error:", err);
+    const code = String(err?.code || "").trim();
+    if (code === "already-exists") {
+      console.warn("wireSeatAddEventPicker: fetch skipped (listener target conflict)");
+      events = seatAddEventsCache;
+    } else {
+      console.error("wireSeatAddEventPicker fetch error:", err);
+    }
   }
   seatAddEventsCache = events;
 

@@ -7,7 +7,7 @@ import {
   orderBy,
   query,
   where
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 /** 대회당 최신 N건만 유지 (Cloud Function 과 동일) */
 export const ATTENDANCE_LOG_MAX_PER_TOURNAMENT = 400;

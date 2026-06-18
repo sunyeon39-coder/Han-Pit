@@ -5,7 +5,7 @@ import {
   getRedirectResult,
   onAuthStateChanged,
   signOut
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { createGoogleAuthProvider } from "../shared/google-auth-provider.js";
 import {
   doc,
@@ -14,7 +14,7 @@ import {
   setDoc,
   updateDoc,
   serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { resolveStoredUserRole } from "../shared/auth-helpers.js";
 import { isAppDebugEnabled } from "../shared/app-debug.js";
 import {

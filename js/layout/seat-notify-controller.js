@@ -14,8 +14,8 @@ import {
   getOrRegisterFcmServiceWorker,
   saveUserFcmToken as saveUserFcmTokenShared
 } from "../shared/fcm-web-push.js";
-import { doc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { getToken } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
+import { doc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { getToken } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging.js";
 
 /**
  * 레이아웃 페이지: 좌석 배치 알림(오버레이·반복 비프·브라우저 알림) 및

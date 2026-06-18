@@ -5,7 +5,7 @@ import {
   getDoc,
   getDocs,
   setDoc
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 import { mergeOpsProfile, normalizeUserProfile } from "../shared/auth-helpers.js";
 import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";

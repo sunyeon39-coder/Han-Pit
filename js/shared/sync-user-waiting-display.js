@@ -8,7 +8,7 @@ import {
   serverTimestamp,
   where,
   writeBatch
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 const WAITING_REF = () => doc(db, "layout_shared", "global_waiting");
 

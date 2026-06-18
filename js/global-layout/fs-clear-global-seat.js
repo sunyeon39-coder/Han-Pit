@@ -3,7 +3,7 @@ import {
   doc,
   runTransaction,
   serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { GL } from "./state.js";
 import {
   getAttendanceRef,

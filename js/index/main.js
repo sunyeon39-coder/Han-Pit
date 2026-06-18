@@ -2,13 +2,13 @@ import { auth, db } from "../firebase.js";
 
 import {
   onAuthStateChanged
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 
 import {
   doc,
   getDoc,
   setDoc
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 import { isAdminEmail } from "../app_config.js";
 import { resolveStoredUserRole } from "../shared/auth-helpers.js";
@@ -306,7 +306,7 @@ async function init() {
       if (!getTournamentId()) {
         location.href = hubHref;
       }
-    }, 400);
+    }, 0);
     return;
   }
 
@@ -321,18 +321,6 @@ async function init() {
   bindLayoutSeatSummaryRealtime();
   bindDealerAttendanceRealtime();
   bindDealerSeatRealtime();
-
-  void loadDealerAttendanceOnce()
-    .catch((err) => console.error("loadDealerAttendanceOnce error:", err))
-    .finally(() => scheduleRenderDealerOps());
-
-  void raceFirestoreTimeout(loadEvents(), 12000)
-    .then(() => {
-      render();
-      renderDealerOps();
-      refreshCardStatuses();
-    })
-    .catch((err) => console.error("loadEvents error:", err));
 
   void ensureMeRecovered(auth.currentUser)
     .catch((err) => {
@@ -725,11 +713,9 @@ onAuthStateChanged(auth, async (user) => {
 
     await Promise.all([init(), periodPromise]);
     if (flow !== indexAuthFlowGen) return;
-    void profilePromise;
-    if (flow !== indexAuthFlowGen) return;
-    await profilePromise.catch(() => null);
-    if (flow !== indexAuthFlowGen) return;
-    await ensureIndexOpsChrome(user);
+    void profilePromise
+      .then(() => ensureIndexOpsChrome(user))
+      .catch(() => null);
     void refreshIndexOpsFromServer(user);
   } catch (err) {
     console.error("index auth init error:", err);
@@ -750,12 +736,12 @@ document.addEventListener("visibilitychange", () => {
   indexOpsResyncTimer = window.setTimeout(() => {
     indexOpsResyncTimer = 0;
     void ensureIndexOpsChrome(auth.currentUser);
-  }, 1200);
+  }, 300);
 });
 
 setInterval(() => {
   refreshCardStatuses();
-}, 1000);
+}, 30000);
 
 setInterval(() => {
   if (IX.currentTournament && !isTournamentActive(IX.currentTournament)) {
