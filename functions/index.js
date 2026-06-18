@@ -15,6 +15,7 @@
  */
 const {setGlobalOptions} = require("firebase-functions/v2");
 const {onDocumentWritten} = require("firebase-functions/v2/firestore");
+const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {initializeApp} = require("firebase-admin/app");
 const {getFirestore, FieldValue} = require("firebase-admin/firestore");
 const {getMessaging} = require("firebase-admin/messaging");
@@ -224,3 +225,107 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten("layout_notifications/{uid}
     throw err;
   }
 });
+
+const ATTENDANCE_LOGS = "dealer_attendance_logs";
+const LOG_RETENTION_DAYS = 14;
+const LOG_MAX_TOTAL = 2000;
+const LOG_MAX_PER_TOURNAMENT = 400;
+const LOG_DELETE_BATCH = 400;
+
+async function deleteLogQuery(queryRef, batchSize = LOG_DELETE_BATCH) {
+  const snap = await queryRef.limit(batchSize).get();
+  if (snap.empty) return 0;
+  const batch = db.batch();
+  snap.docs.forEach((d) => batch.delete(d.ref));
+  await batch.commit();
+  return snap.size;
+}
+
+async function pruneLogsOlderThan(cutoffMs) {
+  let deleted = 0;
+  for (let round = 0; round < 30; round++) {
+    const n = await deleteLogQuery(
+      db.collection(ATTENDANCE_LOGS).where("createdAt", "<", cutoffMs)
+    );
+    if (!n) break;
+    deleted += n;
+  }
+  return deleted;
+}
+
+async function pruneGlobalExcess() {
+  const snap = await db
+    .collection(ATTENDANCE_LOGS)
+    .orderBy("createdAt", "desc")
+    .limit(LOG_MAX_TOTAL + 1)
+    .get();
+  if (snap.size <= LOG_MAX_TOTAL) return 0;
+
+  const threshold = toMillis(snap.docs[snap.docs.length - 1].data().createdAt);
+  if (!threshold) return 0;
+
+  let deleted = 0;
+  for (let round = 0; round < 30; round++) {
+    const n = await deleteLogQuery(
+      db.collection(ATTENDANCE_LOGS).where("createdAt", "<=", threshold)
+    );
+    if (!n) break;
+    deleted += n;
+  }
+  return deleted;
+}
+
+async function prunePerTournamentExcess() {
+  const seed = await db
+    .collection(ATTENDANCE_LOGS)
+    .orderBy("createdAt", "desc")
+    .limit(400)
+    .get();
+  const tids = new Set();
+  seed.docs.forEach((d) => {
+    const tid = String(d.data()?.tournamentId || "").trim();
+    if (tid) tids.add(tid);
+  });
+
+  let deleted = 0;
+  for (const tid of tids) {
+    const snap = await db
+      .collection(ATTENDANCE_LOGS)
+      .where("tournamentId", "==", tid)
+      .orderBy("createdAt", "desc")
+      .limit(LOG_MAX_PER_TOURNAMENT + 1)
+      .get();
+    if (snap.size <= LOG_MAX_PER_TOURNAMENT) continue;
+
+    const threshold = toMillis(snap.docs[snap.docs.length - 1].data().createdAt);
+    if (!threshold) continue;
+
+    for (let round = 0; round < 15; round++) {
+      const n = await deleteLogQuery(
+        db
+          .collection(ATTENDANCE_LOGS)
+          .where("tournamentId", "==", tid)
+          .where("createdAt", "<=", threshold)
+      );
+      if (!n) break;
+      deleted += n;
+    }
+  }
+  return deleted;
+}
+
+/** 매일 새벽 — 14일 초과·대회당 400건·전체 2000건 초과 로그 정리 */
+exports.pruneDealerAttendanceLogs = onSchedule(
+  {
+    schedule: "0 4 * * *",
+    timeZone: "Asia/Seoul",
+    region: "asia-northeast3"
+  },
+  async () => {
+    const cutoff = Date.now() - LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    const byAge = await pruneLogsOlderThan(cutoff);
+    const byTournament = await prunePerTournamentExcess();
+    const byTotal = await pruneGlobalExcess();
+    console.info("[pruneDealerAttendanceLogs]", {byAge, byTournament, byTotal});
+  }
+);

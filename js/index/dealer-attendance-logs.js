@@ -15,6 +15,7 @@ import { escapeHtml, openModal, closeModal } from "../shared/dom-utils.js";
 import { getTournamentId } from "./core-utils.js";
 import { IX, refreshIndexDomRefs } from "./state.js";
 import { formatClock } from "./dealer-attendance-format.js";
+import { maybePruneAttendanceLogsForTournament } from "../shared/attendance-log-retention.js";
 
 export async function writeAttendanceLog({
   uid = "",
@@ -262,6 +263,10 @@ export function bindAttendanceLogsRealtime() {
 
 function openAttendanceLogModal() {
   bindAttendanceLogsRealtime();
+  const tid = getTournamentId();
+  void maybePruneAttendanceLogsForTournament(tid, {
+    isAdmin: canUseTournamentOps(auth.currentUser?.email, IX.currentUserProfile, tid)
+  });
   renderAttendanceLogs();
   openModal(IX.attendanceLogModal);
 }
