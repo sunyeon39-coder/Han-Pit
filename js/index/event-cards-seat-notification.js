@@ -6,7 +6,7 @@ import {
   buildSeatAssignedNotifyMessage,
   resolveSeatNotificationCardLabel
 } from "../shared/seat-notification-label.js";
-import { seatNotificationKey } from "../shared/seat-notification-push.js";
+import { buildSeatNotifyTag, seatNotificationKey } from "../shared/seat-notification-push.js";
 import {
   buildOptimisticSeatAlertKey,
   markOptimisticSeatAlertShown,
@@ -15,6 +15,7 @@ import {
   shouldUseOptimisticSeatAlertOnMobile,
   wasOptimisticSeatAlertShown
 } from "../shared/optimistic-seat-assigned-notify.js";
+import { showSeatAssignedOsNotification } from "../shared/fcm-web-push.js";
 import { IX } from "./state.js";
 import { scheduleIndexCardsRender } from "./index-realtime-ui.js";
 
@@ -319,17 +320,29 @@ export function bindMySeatAssignment(user) {
 
         activeSeatNotificationId = notificationKey;
 
-        void showSeatAssignmentModal({
-          message:
-            buildSeatAssignedNotifyMessage({
-              eventId: data.eventId,
-              eventTitle: data.eventTitle,
-              cardId: eventCardLabel,
-              seatLabel: data.seatLabel
-            }),
-          targetUrl: String(data.targetUrl || "").trim(),
-          uid: user.uid
+        const message = buildSeatAssignedNotifyMessage({
+          eventId: data.eventId,
+          eventTitle: data.eventTitle,
+          cardId: eventCardLabel,
+          seatLabel: data.seatLabel
         });
+        const targetUrl = String(data.targetUrl || "").trim();
+
+        if (typeof document !== "undefined" && (document.visibilityState === "hidden" || !document.hasFocus())) {
+          void showSeatAssignedOsNotification({
+            title: "배치 알림",
+            body: message,
+            targetUrl: targetUrl || "./layout.html",
+            uid: user.uid,
+            tag: buildSeatNotifyTag(user.uid)
+          });
+        } else {
+          void showSeatAssignmentModal({
+            message,
+            targetUrl,
+            uid: user.uid
+          });
+        }
       } else {
         hideSeatAssignmentModal();
       }

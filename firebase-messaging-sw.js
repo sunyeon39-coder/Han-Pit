@@ -2,7 +2,7 @@ importScripts("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js
 importScripts("https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js");
 
 /** 배포마다 1 올리면 브라우저가 새 SW 로 인식해 controllerchange → 홈 화면 자동 새로고침이 걸립니다. */
-const SW_DEPLOY_REVISION = 63;
+const SW_DEPLOY_REVISION = 65;
 
 /** SW 갱신 시 홈 화면 웹앱이 오래된 탭에 머물지 않도록 즉시 활성화 */
 self.addEventListener("install", (event) => {
@@ -94,6 +94,51 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+const NOTIFY_ICON = "./icons/icon-192.png";
+
+function showSeatNotificationFromPayload(data = {}, titleOverride = "") {
+  const title = String(titleOverride || data.title || "").trim() || "Han Pit";
+  const body =
+    String(data.body || data.message || "").trim() || "좌석이 배치되었습니다.";
+  const targetUrl = String(data.targetUrl || "").trim() || "./layout.html";
+  const notifyTag =
+    String(data.notifyTag || "").trim() ||
+    (data.uid ? `hanpit-seat-${String(data.uid).trim()}` : "") ||
+    "hanpit-seat";
+
+  return self.registration.showNotification(title, {
+    body,
+    lang: "ko",
+    tag: notifyTag,
+    renotify: true,
+    icon: NOTIFY_ICON,
+    badge: NOTIFY_ICON,
+    vibrate: [180, 80, 180],
+    data: {
+      targetUrl,
+      appBadgeCount: data.appBadgeCount != null ? String(data.appBadgeCount) : ""
+    }
+  });
+}
+
+self.addEventListener("message", (event) => {
+  const msg = event?.data;
+  if (!msg || msg.type !== "HAN_PIT_SHOW_NOTIFICATION") return;
+  event.waitUntil(
+    showSeatNotificationFromPayload(
+      {
+        title: msg.title,
+        body: msg.body,
+        targetUrl: msg.targetUrl,
+        notifyTag: msg.tag,
+        uid: msg.uid,
+        appBadgeCount: msg.appBadgeCount
+      },
+      msg.title
+    ).catch((e) => console.error("[firebase-messaging-sw.js] message notify:", e))
+  );
+});
+
 function applyAppBadgeFromPayload(data) {
   if (!data) return Promise.resolve();
   const raw = data.appBadgeCount;
@@ -115,35 +160,9 @@ messaging.onBackgroundMessage((payload) => {
 
   const data = payload?.data || {};
   const title = String(data.title || payload?.notification?.title || "").trim() || "Han Pit";
-  const body =
-    String(data.body || payload?.notification?.body || data.message || "").trim() ||
-    "좌석이 배치되었습니다.";
 
-  const targetUrl = data.targetUrl || "./layout.html";
-  const notifyTag =
-    String(data.notifyTag || "").trim() ||
-    (data.uid ? `hanpit-seat-${String(data.uid).trim()}` : "") ||
-    "hanpit-seat";
-
-  const noteData = {
-    targetUrl,
-    appBadgeCount: data.appBadgeCount != null ? String(data.appBadgeCount) : ""
-  };
-
-  // data-only FCM: SW에서만 1회 표시 (notification 페이로드 자동 표시와 중복 방지)
-  const nPromise = Promise.resolve().then(() => {
-    try {
-      return self.registration.showNotification(title, {
-        body,
-        lang: "ko",
-        tag: notifyTag,
-        renotify: false,
-        vibrate: [180, 80, 180],
-        data: noteData
-      });
-    } catch (e) {
-      console.error("[firebase-messaging-sw.js] showNotification failed:", e);
-    }
+  const nPromise = showSeatNotificationFromPayload(data, title).catch((e) => {
+    console.error("[firebase-messaging-sw.js] showNotification failed:", e);
   });
   const badgeP = applyAppBadgeFromPayload(payload?.data || {});
   return Promise.all([nPromise, badgeP]);

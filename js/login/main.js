@@ -32,7 +32,7 @@ import {
   writeLoginProfileCache
 } from "../shared/login-profile-cache.js";
 import { loadUserProfileRevalidated } from "../shared/load-user-profile.js";
-import { refreshFcmTokenIfGranted } from "../shared/fcm-web-push.js";
+import { bootstrapAppPush } from "../shared/fcm-web-push.js";
 import { prefetchHubTournamentsCache } from "../hub/hub-loaders-realtime.js";
 import { syncUserDisplayNameAfterNicknameChange } from "../shared/sync-user-waiting-display.js";
 import { instantDismissAllBootLoaders } from "../shared/page-boot-shell.js";
@@ -179,7 +179,7 @@ function resolveProfileForLoginInstant(user) {
 
 function redirectToHubImmediately() {
   void prefetchHubTournamentsCache();
-  void refreshFcmTokenIfGranted(auth.currentUser?.uid);
+  void bootstrapAppPush(auth.currentUser?.uid);
   location.replace("./hub.html");
 }
 

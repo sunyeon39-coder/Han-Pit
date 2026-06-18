@@ -66,11 +66,16 @@ import {
 import { wireHanSupportHub } from "./hub-han-support.js";
 import {
   alertFcmRegistrationResult,
+  bootstrapAppPush,
   ensureForegroundFcmBadgeListener,
   registerFcmWebPushAndSave,
-  refreshFcmTokenIfGranted,
   syncPushOfferButton
 } from "../shared/fcm-web-push.js";
+import {
+  bindGlobalSeatNotificationWatch,
+  disposeGlobalSeatNotificationWatch,
+  wireGlobalSeatNotificationVisibilityResync
+} from "../shared/global-seat-notification-watch.js";
 import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
 
 initHubRefs();
@@ -85,6 +90,7 @@ scheduleHubTournamentsRender();
 void prefetchHubTournamentsCache();
 
 let hubSessionUid = "";
+let disposeGlobalSeatNotifyVisibility = null;
 
 const flushAppBadgeIfVisible = bindAppBadgeClearOnForeground(db, auth);
 void ensureForegroundFcmBadgeListener();
@@ -479,7 +485,10 @@ async function bootstrapHubSession(user) {
   }
 
   syncPushOfferButton(hubRefs.hubEnablePushBtn, user.uid);
-  void refreshFcmTokenIfGranted(user.uid);
+  void bootstrapAppPush(user.uid);
+  bindGlobalSeatNotificationWatch(user);
+  if (disposeGlobalSeatNotifyVisibility) disposeGlobalSeatNotifyVisibility();
+  disposeGlobalSeatNotifyVisibility = wireGlobalSeatNotificationVisibilityResync(user);
   flushAppBadgeIfVisible();
 
   if (flow !== hubState.hubAuthFlowGen || hubState.currentUser?.uid !== user.uid) return;
@@ -506,6 +515,11 @@ onAuthStateChanged(auth, (user) => {
     hubState.hubAuthFlowGen = 0;
     hubState.currentUser = null;
     hubState.currentUserProfile = null;
+    disposeGlobalSeatNotificationWatch();
+    if (disposeGlobalSeatNotifyVisibility) {
+      disposeGlobalSeatNotifyVisibility();
+      disposeGlobalSeatNotifyVisibility = null;
+    }
     disposeHubSessionWatches();
     location.replace("./login.html");
     return;
@@ -513,7 +527,8 @@ onAuthStateChanged(auth, (user) => {
 
   if (isSameAuthSession(hubSessionUid, user)) {
     hubState.currentUser = user;
-    void refreshFcmTokenIfGranted(user.uid);
+    void bootstrapAppPush(user.uid);
+    bindGlobalSeatNotificationWatch(user);
     return;
   }
 

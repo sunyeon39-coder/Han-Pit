@@ -72,9 +72,9 @@ import { routeToHub, initTournamentPeriodWatch } from "./tournament-period.js";
 import { wireSeatMapListeners } from "./seat-map.js";
 import {
   alertFcmRegistrationResult,
+  bootstrapAppPush,
   ensureForegroundFcmBadgeListener,
   registerFcmWebPushAndSave,
-  refreshFcmTokenIfGranted,
   syncPushOfferButton
 } from "../shared/fcm-web-push.js";
 import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
@@ -633,7 +633,7 @@ onAuthStateChanged(auth, async (user) => {
   }
 
   if (isSameAuthSession(indexSessionUid, user)) {
-    void refreshFcmTokenIfGranted(user.uid);
+    void bootstrapAppPush(user.uid);
     return;
   }
 
@@ -658,7 +658,7 @@ onAuthStateChanged(auth, async (user) => {
         }
       });
       syncPushOfferButton(IX.enablePushBtn, user.uid);
-      void refreshFcmTokenIfGranted(user.uid);
+      void bootstrapAppPush(user.uid);
       flushAppBadgeIfVisible();
     }
 
@@ -711,7 +711,7 @@ onAuthStateChanged(auth, async (user) => {
           }
         });
         syncPushOfferButton(IX.enablePushBtn, user.uid);
-        void refreshFcmTokenIfGranted(user.uid);
+        void bootstrapAppPush(user.uid);
         flushAppBadgeIfVisible();
       }
       applyIndexOpsPermissions(user);

@@ -56,6 +56,62 @@ function notifyIconUrl() {
   }
 }
 
+function sleep(ms = 0) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** layout·hub·index 공통 — SW 경유 OS 알림 (백그라운드·숨김 탭 포함) */
+export async function showSeatAssignedOsNotification({
+  title = "Han Pit",
+  body = "",
+  targetUrl = "./layout.html",
+  uid = "",
+  tag = "",
+  appBadgeCount = ""
+} = {}) {
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return false;
+
+  const icon = notifyIconUrl();
+  const notifyTag = String(tag || "").trim() || resolveSeatNotifyTag({ uid });
+  const noteOpts = {
+    body: body || "좌석이 배치되었습니다.",
+    tag: notifyTag,
+    renotify: true,
+    lang: "ko",
+    data: {
+      targetUrl: String(targetUrl || "./layout.html").trim() || "./layout.html",
+      appBadgeCount: appBadgeCount != null ? String(appBadgeCount) : ""
+    },
+    vibrate: [180, 80, 180]
+  };
+  if (icon) Object.assign(noteOpts, { icon, badge: icon });
+
+  try {
+    const reg = await getOrRegisterFcmServiceWorker();
+    if (reg.active) {
+      reg.active.postMessage({
+        type: "HAN_PIT_SHOW_NOTIFICATION",
+        title: String(title || "Han Pit").trim() || "Han Pit",
+        body: noteOpts.body,
+        tag: notifyTag,
+        targetUrl: noteOpts.data.targetUrl,
+        appBadgeCount: noteOpts.data.appBadgeCount,
+        uid: String(uid || "").trim()
+      });
+    }
+    await reg.showNotification(String(title || "Han Pit").trim() || "Han Pit", noteOpts);
+    return true;
+  } catch (e) {
+    try {
+      new Notification(String(title || "Han Pit").trim() || "Han Pit", noteOpts);
+      return true;
+    } catch (e2) {
+      console.debug("[fcm-web-push] showSeatAssignedOsNotification:", e2);
+      return false;
+    }
+  }
+}
+
 async function handleForegroundFcmPayload(payload) {
   const data = payload?.data || {};
   const raw = data.appBadgeCount;
@@ -75,28 +131,14 @@ async function handleForegroundFcmPayload(payload) {
   if (!body && !data.targetUrl) return;
   if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
 
-  const icon = notifyIconUrl();
-  const notifyTag = resolveSeatNotifyTag(data);
-  const noteOpts = {
-    body: body || "좌석이 배치되었습니다.",
-    tag: notifyTag,
-    renotify: false,
-    lang: "ko",
-    data: { ...data },
-    vibrate: [180, 80, 180]
-  };
-  if (icon) Object.assign(noteOpts, { icon, badge: icon });
-
-  try {
-    const reg = await getOrRegisterFcmServiceWorker();
-    await reg.showNotification(title, noteOpts);
-  } catch (e) {
-    try {
-      new Notification(title, noteOpts);
-    } catch (e2) {
-      console.debug("[fcm-web-push] foreground showNotification:", e2);
-    }
-  }
+  await showSeatAssignedOsNotification({
+    title,
+    body,
+    targetUrl: data.targetUrl,
+    uid: data.uid,
+    tag: resolveSeatNotifyTag(data),
+    appBadgeCount: data.appBadgeCount
+  });
 }
 
 /** 앱이 켜져 있을 때 수신되는 FCM — 배지·탭 제목 + OS 알림(Android 포그라운드 등). */
@@ -243,6 +285,16 @@ export async function refreshFcmTokenIfGranted(uid) {
     }
   } catch (err) {
     console.debug("[fcm-web-push] refreshFcmTokenIfGranted:", err);
+  }
+}
+
+/** 로그인·허브 진입 시 FCM 토큰·포그라운드 리스너를 안정적으로 준비 */
+export async function bootstrapAppPush(uid) {
+  if (!uid) return;
+  void ensureForegroundFcmBadgeListener();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (attempt > 0) await sleep(400 + attempt * 350);
+    await refreshFcmTokenIfGranted(uid);
   }
 }
 

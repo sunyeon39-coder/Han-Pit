@@ -72,9 +72,9 @@ import { createLayoutSeatWaitingMutations } from "./layout-main-seat-waiting-mut
 import { setupLayoutMainDomWiring } from "./layout-main-dom-wiring.js";
 import {
   alertFcmRegistrationResult,
+  bootstrapAppPush,
   ensureForegroundFcmBadgeListener,
   registerFcmWebPushAndSave,
-  refreshFcmTokenIfGranted,
   syncPushOfferButton
 } from "../shared/fcm-web-push.js";
 import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
@@ -644,7 +644,7 @@ import {
 
   if (isSameAuthSession(layoutSessionUid, user)) {
     currentUser = user;
-    void refreshFcmTokenIfGranted(user.uid);
+    void bootstrapAppPush(user.uid);
     return;
   }
 
@@ -681,7 +681,7 @@ import {
   });
 
   syncPushOfferButton(enablePushBtn, user.uid);
-  void refreshFcmTokenIfGranted(user.uid);
+  void bootstrapAppPush(user.uid);
   flushAppBadgeIfVisible();
 
   seatNotify.bindMyNotificationWatch();

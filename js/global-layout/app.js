@@ -31,9 +31,9 @@ import {
 } from "./canvas-viewport.js";
 import {
   alertFcmRegistrationResult,
+  bootstrapAppPush,
   ensureForegroundFcmBadgeListener,
   registerFcmWebPushAndSave,
-  refreshFcmTokenIfGranted,
   syncPushOfferButton
 } from "../shared/fcm-web-push.js";
 import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
@@ -219,7 +219,7 @@ export function startGlobalLayoutApp() {
       sessionStorage.setItem("boxId", GL.urlBoxId);
     }
     syncPushOfferButton(GL.enablePushBtn, user.uid);
-    void refreshFcmTokenIfGranted(user.uid);
+    void bootstrapAppPush(user.uid);
     flushAppBadgeIfVisible();
     ensureGlobalLayoutMobileSeatNotify(user);
 
@@ -259,7 +259,7 @@ export function startGlobalLayoutApp() {
 
     if (isSameAuthSession(globalLayoutSessionUid, user)) {
       GL.currentUser = user;
-      void refreshFcmTokenIfGranted(user.uid);
+      void bootstrapAppPush(user.uid);
       return;
     }
 
