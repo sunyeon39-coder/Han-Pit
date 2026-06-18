@@ -18,6 +18,10 @@ import { isAppDebugEnabled } from "../shared/app-debug.js";
 import { isSameAuthSession } from "../shared/auth-session-guard.js";
 import { openModal, closeModal, escapeHtml } from "../shared/dom-utils.js";
 import { getTournamentId, resolveRelativePage, sleep } from "./core-utils.js";
+import {
+  buildEventInstanceDocId,
+  normalizeEventCardDate
+} from "../shared/tournament-event-instance.js";
 import { isTournamentActive } from "./time-utils.js";
 import { IX, refreshIndexDomRefs } from "./state.js";
 
@@ -101,16 +105,38 @@ const flushAppBadgeIfVisible = bindAppBadgeClearOnForeground(db, auth);
 void ensureForegroundFcmBadgeListener();
 ensureDocumentShellBackground();
 
+function resolveGlobalLayoutEventContext() {
+  const selectedDocId = String(IX.eventCardSelect?.value || "").trim();
+  const selected = selectedDocId
+    ? IX.events.find((ev) => String(ev.id || "") === selectedDocId)
+    : null;
+  if (selected?.id && selected?.boxId) {
+    return { eventId: selected.id, boxId: selected.boxId };
+  }
+
+  const cardId = String(IX.eventCardId?.value || "").trim();
+  const boxId = String(IX.eventCardBoxId?.value || "").trim();
+  const date = normalizeEventCardDate(IX.eventCardDate?.value || "");
+  if (date && cardId && boxId) {
+    const docId = buildEventInstanceDocId(date, cardId, boxId);
+    const match = docId ? IX.events.find((ev) => String(ev.id || "") === docId) : null;
+    if (match?.id && match?.boxId) {
+      return { eventId: match.id, boxId: match.boxId };
+    }
+  }
+
+  return { eventId: cardId, boxId };
+}
+
 function buildGlobalLayoutHref() {
   const tournamentId = getTournamentId();
   if (!tournamentId) return "";
   const q = new URLSearchParams();
   q.set("tournamentId", tournamentId);
-  const eid = String(IX.eventCardId?.value || "").trim();
-  const bid = String(IX.eventCardBoxId?.value || "").trim();
-  if (eid && bid) {
-    q.set("eventId", eid);
-    q.set("boxId", bid);
+  const { eventId, boxId } = resolveGlobalLayoutEventContext();
+  if (eventId && boxId) {
+    q.set("eventId", eventId);
+    q.set("boxId", boxId);
   }
   return `./global-layout.html?${q.toString()}`;
 }
@@ -402,11 +428,10 @@ function wireIndexPageControls() {
       return;
     }
     sessionStorage.setItem("tournamentId", tournamentId);
-    const eid = String(IX.eventCardId?.value || "").trim();
-    const bid = String(IX.eventCardBoxId?.value || "").trim();
-    if (eid && bid) {
-      sessionStorage.setItem("eventId", eid);
-      sessionStorage.setItem("boxId", bid);
+    const { eventId, boxId } = resolveGlobalLayoutEventContext();
+    if (eventId && boxId) {
+      sessionStorage.setItem("eventId", eventId);
+      sessionStorage.setItem("boxId", boxId);
     }
     const href = buildGlobalLayoutHref();
     if (href) location.href = href;
@@ -484,6 +509,56 @@ function wireIndexPageControls() {
 
       const user = auth.currentUser;
       const tid = getTournamentId();
+
+      const selfBtn = e.target.closest("[data-self-action]");
+      if (selfBtn && user) {
+        const action = String(selfBtn.getAttribute("data-self-action") || "").trim();
+        if (!action) return;
+
+        if (action === "waiting") {
+          const prevSnap = snapshotAttendanceEntry(tid, user.uid);
+          try {
+            await updateMyAttendanceStatus("waiting", { optimistic: true });
+          } catch (err) {
+            console.error("updateMyAttendanceStatus(waiting):", err);
+            alert(
+              String(err?.code || "") === "permission-denied"
+                ? "출근 기록 저장 권한이 없습니다. 다시 로그인해 주세요."
+                : "출근 기록 저장에 실패했습니다."
+            );
+            return;
+          }
+
+          void (async () => {
+            const joinResult = await joinSharedWaitingOnCheckIn(user);
+            const ok = joinResult === true || joinResult?.ok === true;
+            if (!ok) {
+              restoreAttendanceSnapshot(tid, user.uid, prevSnap);
+              void loadDealerAttendanceOnce();
+              return;
+            }
+            void loadDealerAttendanceOnce();
+          })();
+          return;
+        }
+
+        if (action === "checked_out") {
+          try {
+            await forceSelfCheckedOut(user);
+          } catch (err) {
+            console.error("forceSelfCheckedOut:", err);
+            alert("퇴근 처리에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+          }
+          return;
+        }
+      }
+
+      const summaryBtn = e.target.closest("[data-show-work-summary]");
+      if (summaryBtn && user) {
+        handleShowWorkSummaryClick();
+        return;
+      }
+
       const canOps = canShowTournamentOpsUi(
         user?.email,
         IX.currentUserProfile,
@@ -506,61 +581,8 @@ function wireIndexPageControls() {
 
             await forceAdminCheckedOut(target);
             void loadDealerAttendanceOnce();
-            return;
           }
         }
-
-        return;
-      }
-
-      const summaryBtn = e.target.closest("[data-show-work-summary]");
-      if (summaryBtn && user) {
-        handleShowWorkSummaryClick();
-        return;
-      }
-
-      const selfBtn = e.target.closest("[data-self-action]");
-      if (!selfBtn || !user) return;
-
-      const action = String(selfBtn.getAttribute("data-self-action") || "").trim();
-      if (!action) return;
-
-      if (action === "waiting") {
-        const prevSnap = snapshotAttendanceEntry(tid, user.uid);
-        try {
-          await updateMyAttendanceStatus("waiting", { optimistic: true });
-        } catch (err) {
-          console.error("updateMyAttendanceStatus(waiting):", err);
-          alert(
-            String(err?.code || "") === "permission-denied"
-              ? "출근 기록 저장 권한이 없습니다. 다시 로그인해 주세요."
-              : "출근 기록 저장에 실패했습니다."
-          );
-          return;
-        }
-
-        void (async () => {
-          const joinResult = await joinSharedWaitingOnCheckIn(user);
-          const ok = joinResult === true || joinResult?.ok === true;
-          if (!ok) {
-            restoreAttendanceSnapshot(tid, user.uid, prevSnap);
-            void loadDealerAttendanceOnce();
-            return;
-          }
-          void loadDealerAttendanceOnce();
-        })();
-        return;
-      }
-
-      if (action === "checked_out") {
-        try {
-          await forceSelfCheckedOut(user);
-        } catch (err) {
-          console.error("forceSelfCheckedOut:", err);
-          alert("퇴근 처리에 실패했습니다. 잠시 후 다시 시도해 주세요.");
-          return;
-        }
-        return;
       }
     } catch (err) {
       console.error("dealerOps click error:", err);

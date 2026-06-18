@@ -78,6 +78,46 @@ function isSeatInLayoutEventDoc(data = {}, seatId = "") {
   });
 }
 
+async function eventExistsInCurrentTournament(eventId = "") {
+  const eid = String(eventId || "").trim();
+  if (!eid || !GL.tournamentId) return false;
+  try {
+    const snap = await getDoc(doc(db, "tournaments", GL.tournamentId, "events", eid));
+    return snap.exists();
+  } catch (err) {
+    console.warn("eventExistsInCurrentTournament:", err?.code || err);
+    return false;
+  }
+}
+
+/** layout_events 키(event__box)는 대회 간 공유될 수 있음 — 현재 대회 문맥이면 tournamentId 갱신 */
+async function reconcileLayoutEventTournamentId(ref, data = {}, eventId = "", boxId = "") {
+  const docTid = String(data.tournamentId || "").trim();
+  if (!GL.tournamentId || !docTid || docTid === GL.tournamentId) return true;
+
+  const canReassign =
+    hasGlobalSeatForEventBox(eventId, boxId) ||
+    (await eventExistsInCurrentTournament(eventId));
+
+  if (!canReassign) return false;
+
+  try {
+    await setDoc(
+      ref,
+      {
+        tournamentId: GL.tournamentId,
+        updatedAt: Date.now(),
+        updatedAtServer: serverTimestamp()
+      },
+      { merge: true }
+    );
+    return true;
+  } catch (err) {
+    console.error("reconcileLayoutEventTournamentId error:", err);
+    return false;
+  }
+}
+
 /** layout_events 스텁이 없거나 nextSeatNo가 비어 있을 때 통합 배치도 작업이 막히지 않도록 보장 */
 export async function ensureLayoutEventShellForGlobalOps(eventId = "", boxId = "") {
   const e = String(eventId || "").trim();
@@ -100,8 +140,10 @@ export async function ensureLayoutEventShellForGlobalOps(eventId = "", boxId = "
 
   if (snap.exists() && hasNextNo && hasNextOrder) {
     const docTid = String(data.tournamentId || "").trim();
-    if (GL.tournamentId && docTid && docTid !== GL.tournamentId) return;
-    if (!docTid) {
+    if (GL.tournamentId && docTid && docTid !== GL.tournamentId) {
+      const ok = await reconcileLayoutEventTournamentId(ref, data, e, b);
+      if (!ok) return;
+    } else if (!docTid) {
       try {
         await setDoc(
           ref,
@@ -177,7 +219,11 @@ export async function validateLayoutEventForGlobalOps(eventId = "", boxId = "", 
   const data = snap.data() || {};
   const docTid = String(data.tournamentId || "").trim();
   if (docTid && GL.tournamentId && docTid !== GL.tournamentId) {
-    return { ok: false, message: "이 event/box는 현재 대회와 연결되어 있지 않습니다." };
+    const ref = doc(db, "layout_events", getProjectionDocId(e, b));
+    const reconciled = await reconcileLayoutEventTournamentId(ref, data, e, b);
+    if (!reconciled) {
+      return { ok: false, message: "이 event/box는 현재 대회와 연결되어 있지 않습니다." };
+    }
   }
 
   const hasNextNo = typeof data.nextSeatNo === "number" && Number.isFinite(data.nextSeatNo);
