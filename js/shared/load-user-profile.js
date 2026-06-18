@@ -18,6 +18,7 @@ import {
 } from "./auth-helpers.js";
 import { readLoginProfileCache, isLoginProfileCacheFresh } from "./login-profile-cache.js";
 import { canUseTournamentOps } from "./auth-helpers.js";
+import { runFirestoreReadWithRetry } from "./firestore-read-retry.js";
 
 const profileRefreshInflight = new Map();
 const DEFAULT_FIRESTORE_TIMEOUT_MS = 10000;
@@ -37,54 +38,58 @@ async function readUserDocSnap(uid, options = {}) {
   const forceServer = options.forceServer === true;
   const preferCacheFirst = !forceServer && options.preferCacheFirst !== false;
   const userRef = doc(db, "users", uid);
-  if (forceServer) {
+  return runFirestoreReadWithRetry(async () => {
+    if (forceServer) {
+      try {
+        return await getDocFromServer(userRef);
+      } catch {
+        return await getDoc(userRef);
+      }
+    }
+    if (preferCacheFirst) {
+      const cached = await getDoc(userRef);
+      if (cached.exists()) return cached;
+      try {
+        return await getDocFromServer(userRef);
+      } catch {
+        return cached;
+      }
+    }
     try {
       return await getDocFromServer(userRef);
     } catch {
       return await getDoc(userRef);
     }
-  }
-  if (preferCacheFirst) {
-    const cached = await getDoc(userRef);
-    if (cached.exists()) return cached;
-    try {
-      return await getDocFromServer(userRef);
-    } catch {
-      return cached;
-    }
-  }
-  try {
-    return await getDocFromServer(userRef);
-  } catch {
-    return await getDoc(userRef);
-  }
+  });
 }
 
 async function readUsersByEmailVariant(variant, options = {}) {
   const forceServer = options.forceServer === true;
   const preferCacheFirst = !forceServer && options.preferCacheFirst !== false;
   const q = query(collection(db, "users"), where("email", "==", variant), limit(12));
-  if (forceServer) {
+  return runFirestoreReadWithRetry(async () => {
+    if (forceServer) {
+      try {
+        return await getDocsFromServer(q);
+      } catch {
+        return await getDocs(q);
+      }
+    }
+    if (preferCacheFirst) {
+      const cached = await getDocs(q);
+      if (!cached.empty) return cached;
+      try {
+        return await getDocsFromServer(q);
+      } catch {
+        return cached;
+      }
+    }
     try {
       return await getDocsFromServer(q);
     } catch {
       return await getDocs(q);
     }
-  }
-  if (preferCacheFirst) {
-    const cached = await getDocs(q);
-    if (!cached.empty) return cached;
-    try {
-      return await getDocsFromServer(q);
-    } catch {
-      return cached;
-    }
-  }
-  try {
-    return await getDocsFromServer(q);
-  } catch {
-    return await getDocs(q);
-  }
+  });
 }
 
 function emailQueryVariants(email = "") {

@@ -40,6 +40,7 @@ import {
   readHubTournamentsSessionCache,
   writeHubTournamentsSessionCache
 } from "./hub-tournaments-session-cache.js";
+import { runFirestoreReadWithRetry } from "../shared/firestore-read-retry.js";
 
 /** 오프라인·PWA에서 빈 캐시 스냅샷이 서버로 읽은 목록을 지우는 것을 막음 */
 function shouldSkipEmptyCacheSnapshot(snap, cachedCount = 0) {
@@ -48,19 +49,24 @@ function shouldSkipEmptyCacheSnapshot(snap, cachedCount = 0) {
 
 async function readTournamentsSnap() {
   const col = collection(db, "tournaments");
-  const cacheSnap = await getDocs(col);
-  if (!cacheSnap.empty) return cacheSnap;
-  try {
-    return await getDocsFromServer(col);
-  } catch (err) {
-    console.warn("readTournamentsSnap server:", err?.code || err);
-    return cacheSnap;
-  }
+  return runFirestoreReadWithRetry(async () => {
+    const cacheSnap = await getDocs(col);
+    if (!cacheSnap.empty) return cacheSnap;
+    try {
+      return await getDocsFromServer(col);
+    } catch (err) {
+      console.warn("readTournamentsSnap server:", err?.code || err);
+      return cacheSnap;
+    }
+  });
 }
 
 async function refreshTournamentsFromServer() {
   try {
-    const serverSnap = await getDocsFromServer(collection(db, "tournaments"));
+    const serverSnap = await runFirestoreReadWithRetry(
+      () => getDocsFromServer(collection(db, "tournaments")),
+      { maxAttempts: 3 }
+    );
     if (serverSnap.empty) return;
     applyTournamentsSnap(serverSnap);
     hubState.tournamentsListReady = true;
