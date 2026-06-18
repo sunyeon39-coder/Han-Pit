@@ -10,7 +10,14 @@ import {
   maybeShowOptimisticSeatAlertFromSeats,
   registerOptimisticSeatAssignedAlertHandler
 } from "../shared/optimistic-seat-assigned-notify.js";
-import { FCM_VAPID_KEY as VAPID_KEY } from "../shared/fcm-web-push.js";
+import {
+  FCM_VAPID_KEY as VAPID_KEY,
+  alertFcmRegistrationResult,
+  bootstrapAppPush,
+  ensureForegroundFcmBadgeListener,
+  registerFcmWebPushAndSave,
+  syncPushOfferButton
+} from "../shared/fcm-web-push.js";
 import {
   updateCanvasSeatTimerClasses,
   updateSeatPanelTimers,
@@ -29,13 +36,6 @@ import {
   initGlobalLayoutZoomBarDom,
   wireGlobalLayoutZoomBarOnce
 } from "./canvas-viewport.js";
-import {
-  alertFcmRegistrationResult,
-  bootstrapAppPush,
-  ensureForegroundFcmBadgeListener,
-  registerFcmWebPushAndSave,
-  syncPushOfferButton
-} from "../shared/fcm-web-push.js";
 import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
 import { normalizeAndPersistUserRole } from "../login/user-sync.js";
 import {
