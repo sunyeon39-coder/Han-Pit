@@ -40,6 +40,17 @@ import { getGlobalRedoCount, getGlobalUndoCount } from "./undo-stack.js";
 
 const GLOBAL_SEAT_DOUBLE_ACTIVATE_MS = 350;
 
+function assignSeatFailureHint(err) {
+  const code = String(err?.code || "").trim();
+  if (code === "resource-exhausted") {
+    return "\n\nFirestore 요청 한도를 초과했습니다. 10~30초 후 다시 시도해 주세요.";
+  }
+  if (code === "failed-precondition" || code === "unavailable") {
+    return "\n\n네트워크·Safari 연결 문제이거나 저장 순서 오류일 수 있습니다. 잠시 후 다시 시도해 주세요.";
+  }
+  return "";
+}
+
 function isMultiSelectPointer(e) {
   return !!(e && (e.ctrlKey || e.metaKey));
 }
@@ -201,12 +212,7 @@ export function bindGlobalLayoutEventHandlers() {
           alert("Seat 정보를 찾을 수 없습니다. 잠시 후 다시 시도해 주세요.");
         } else {
           console.error("assignSelectedWaitingToSeat error:", err);
-          const code = String(err?.code || "").trim();
-          const hint =
-            code === "failed-precondition" || code === "unavailable"
-              ? "\n\n네트워크·Safari 연결 문제이거나 저장 순서 오류일 수 있습니다. 잠시 후 다시 시도해 주세요."
-              : "";
-          alert(`대기 배치에 실패했습니다.${hint}`);
+          alert(`대기 배치에 실패했습니다.${assignSeatFailureHint(err)}`);
         }
       }
       return;
@@ -435,7 +441,7 @@ export function bindGlobalLayoutEventHandlers() {
           alert("Seat 정보를 찾을 수 없습니다. 잠시 후 다시 시도해 주세요.");
         } else {
           console.error("canvas assignSelectedWaitingToSeat error:", err);
-          alert("대기 배치에 실패했습니다.");
+          alert(`대기 배치에 실패했습니다.${assignSeatFailureHint(err)}`);
         }
       }
       return;

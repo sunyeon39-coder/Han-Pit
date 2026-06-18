@@ -14,6 +14,33 @@ import { getProjectionDocId, isEmptyPerson } from "./utils.js";
 import { getEventCardIdFromRecord } from "../shared/tournament-event-instance.js";
 
 const tournamentEventTitleCache = new Map();
+const layoutValidationCache = new Map();
+const layoutShellEnsureTimers = new Map();
+const LAYOUT_VALIDATION_TTL_MS = 45000;
+
+function layoutEventKey(eventId = "", boxId = "") {
+  return `${String(eventId || "").trim()}__${String(boxId || "").trim()}`;
+}
+
+export function invalidateLayoutValidationCache(eventId = "", boxId = "") {
+  layoutValidationCache.delete(layoutEventKey(eventId, boxId));
+}
+
+/** assign 등 빈번한 경로에서 layout_events getDoc 폭주 방지 */
+export function scheduleEnsureLayoutEventShellDebounced(eventId = "", boxId = "") {
+  const e = String(eventId || "").trim();
+  const b = String(boxId || "").trim();
+  if (!e || !b) return;
+  const key = layoutEventKey(e, b);
+  if (layoutShellEnsureTimers.has(key)) return;
+  layoutShellEnsureTimers.set(
+    key,
+    setTimeout(() => {
+      layoutShellEnsureTimers.delete(key);
+      void ensureLayoutEventShellForGlobalOps(e, b);
+    }, 2500)
+  );
+}
 
 export async function resolveTournamentEventTitle(eventId = "") {
   const eid = String(eventId || "").trim();
@@ -187,10 +214,24 @@ export async function validateLayoutEventForGlobalOps(eventId = "", boxId = "", 
 
   const requireSeatId = String(opts.requireSeatId || "").trim();
   const trustGlobalSeats = opts.trustGlobalSeats !== false;
+  const cacheKey = layoutEventKey(e, b);
+  const cached = layoutValidationCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < LAYOUT_VALIDATION_TTL_MS && (!requireSeatId || cached.ok)) {
+    return { ok: cached.ok, message: cached.message };
+  }
 
   if (opts.allowSeatMigration) {
-    await ensureLayoutEventShellForGlobalOps(e, b);
-    return { ok: true };
+    scheduleEnsureLayoutEventShellDebounced(e, b);
+    const result = { ok: true };
+    layoutValidationCache.set(cacheKey, { ...result, ts: Date.now() });
+    return result;
+  }
+
+  if (trustGlobalSeats && hasGlobalSeatForEventBox(e, b, requireSeatId || "")) {
+    scheduleEnsureLayoutEventShellDebounced(e, b);
+    const result = { ok: true };
+    layoutValidationCache.set(cacheKey, { ...result, ts: Date.now() });
+    return result;
   }
 
   if (opts.ensureShell) {
@@ -207,8 +248,10 @@ export async function validateLayoutEventForGlobalOps(eventId = "", boxId = "", 
 
   if (!snap.exists()) {
     if (trustGlobalSeats && hasGlobalSeatForEventBox(e, b, requireSeatId || "")) {
-      await ensureLayoutEventShellForGlobalOps(e, b);
-      return { ok: true };
+      scheduleEnsureLayoutEventShellDebounced(e, b);
+      const result = { ok: true };
+      layoutValidationCache.set(cacheKey, { ...result, ts: Date.now() });
+      return result;
     }
     return {
       ok: false,
@@ -230,8 +273,10 @@ export async function validateLayoutEventForGlobalOps(eventId = "", boxId = "", 
   const hasNextOrder = typeof data.nextSeatOrder === "number" && Number.isFinite(data.nextSeatOrder);
   if (!hasNextNo && !hasNextOrder) {
     if (trustGlobalSeats && hasGlobalSeatForEventBox(e, b)) {
-      await ensureLayoutEventShellForGlobalOps(e, b);
-      return { ok: true };
+      scheduleEnsureLayoutEventShellDebounced(e, b);
+      const result = { ok: true };
+      layoutValidationCache.set(cacheKey, { ...result, ts: Date.now() });
+      return result;
     }
     return {
       ok: false,
@@ -250,7 +295,9 @@ export async function validateLayoutEventForGlobalOps(eventId = "", boxId = "", 
     }
   }
 
-  return { ok: true };
+  const result = { ok: true };
+  layoutValidationCache.set(cacheKey, { ...result, ts: Date.now() });
+  return result;
 }
 
 export async function syncLayoutProjection(eventId = "", boxId = "") {

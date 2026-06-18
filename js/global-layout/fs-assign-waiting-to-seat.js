@@ -18,8 +18,8 @@ import { getCandidateSeatRefsForPerson } from "./seat-candidates.js";
 import { getCurrentTournamentWaiting, resolveSelectedWaitingForAssign } from "./waiting.js";
 import { renderWaiting } from "./panel-ui.js";
 import {
-  ensureLayoutEventShellForGlobalOps,
   hasGlobalSeatForEventBox,
+  scheduleEnsureLayoutEventShellDebounced,
   scheduleSyncLayoutProjection,
   validateLayoutEventForGlobalOps
 } from "./fs-layout-projection.js";
@@ -146,8 +146,9 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   GL.seatMutationInFlight = true;
   try {
     const { eventId: ev0, boxId: bx0 } = resolveSeatEventBox(seat);
+    const seatRefEarly = getGlobalSeatDocRef(seat, GL.tournamentId);
     if (hasGlobalSeatForEventBox(ev0, bx0, targetSeatId)) {
-      void ensureLayoutEventShellForGlobalOps(ev0, bx0);
+      scheduleEnsureLayoutEventShellDebounced(ev0, bx0);
     } else {
       const layoutGate = await validateLayoutEventForGlobalOps(ev0, bx0, {
         requireSeatId: targetSeatId,
@@ -166,7 +167,7 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
       .filter((s) => String(s?.seatId || "").trim() === targetSeatId)
       .map((s) => resolveSeatEventBox(s));
 
-    let seatRef = getGlobalSeatDocRef(seat, GL.tournamentId);
+    let seatRef = seatRefEarly || getGlobalSeatDocRef(seat, GL.tournamentId);
     canonicalSeatEventId = String(seat.currentEventId || seat.mappedEventId || "").trim();
     canonicalSeatBoxId = String(seat.boxId || "").trim();
 

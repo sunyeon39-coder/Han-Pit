@@ -1,12 +1,6 @@
 import { ensureFirestoreOnline } from "../firebase.js";
 
-const RETRYABLE = new Set([
-  "unavailable",
-  "deadline-exceeded",
-  "aborted",
-  "resource-exhausted",
-  "internal"
-]);
+const RETRYABLE = new Set(["unavailable", "deadline-exceeded", "aborted", "internal"]);
 
 export function isRetryableFirestoreReadError(err) {
   const code = String(err?.code || "").trim();
@@ -20,6 +14,7 @@ function sleep(ms = 0) {
 /**
  * Safari·iOS PWA에서 WebChannel/batchGet 이 unavailable 로 끊길 때
  * enableNetwork 후 짧게 재시도합니다.
+ * resource-exhausted(429) 는 재시도하면 한도 초과만 악화됩니다.
  */
 export async function runFirestoreReadWithRetry(readFn, options = {}) {
   const maxAttempts = Math.max(1, options.maxAttempts ?? 4);

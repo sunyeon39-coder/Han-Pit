@@ -153,8 +153,22 @@ export async function resolveGlobalSeatFirestoreDoc(
   const sid = String(seat?.seatId || "").trim();
   if (!tid || !sid) return null;
 
+  const cachedId = String(seat?.__firestoreDocId || "").trim();
+  if (cachedId) {
+    const cachedRef = doc(db, "tournaments", tid, "global_seats", cachedId);
+    try {
+      const snap = await getDoc(cachedRef);
+      if (snap.exists()) {
+        return { ref: cachedRef, snap, data: snap.data() || {}, docId: snap.id };
+      }
+    } catch (err) {
+      console.warn("resolveGlobalSeatFirestoreDoc cached getDoc:", err?.code || err);
+    }
+  }
+
   const refs = getGlobalSeatDocRefs(seat, tid, fallbackPairs);
   for (const ref of refs) {
+    if (cachedId && String(ref.path || "").endsWith(`/${cachedId}`)) continue;
     try {
       const snap = await getDoc(ref);
       if (snap.exists()) {
@@ -240,9 +254,14 @@ export async function ensureGlobalSeatFirestoreDoc(
     { merge: true }
   );
 
-  const snap = await getDoc(ref);
-  if (!snap.exists()) return null;
-  return { ref, snap, data: snap.data() || {}, docId };
+  const data = {
+    seatId: sid,
+    label: String(seat.label ?? seat.no ?? sid).trim(),
+    currentEventId: eventId,
+    mappedEventId: eventId,
+    boxId
+  };
+  return { ref, snap: null, data, docId };
 }
 
 /** global_seats 문서 ID → eventId / boxId (eventId에 __ 없음 가정) */
