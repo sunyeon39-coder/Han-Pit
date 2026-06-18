@@ -1,4 +1,4 @@
-import { buildSeatAssignedNotificationWrite } from "../shared/seat-notification-push.js";
+import { buildSeatAssignedNotificationWrite, buildSeatAssignedTargetUrl, fireSeatAssignedPushNotification } from "../shared/seat-notification-push.js";
 import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
 import { db } from "../firebase.js";
 import {
@@ -136,6 +136,41 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   const now = Date.now();
   const waitingRef = doc(db, "layout_shared", "global_waiting");
   const touchedProjectionKeys = new Set();
+
+  const waitingUidEarly = String(waiting.uid || "").trim();
+  if (waitingUidEarly) {
+    const { eventId: evEarly, boxId: bxEarly } = resolveSeatEventBox(seat);
+    const eventTitleEarly =
+      getEventCardIdFromRecord({ id: evEarly }) || evEarly || "이벤트";
+    fireSeatAssignedPushNotification(
+      db,
+      doc,
+      setDoc,
+      serverTimestamp,
+      waitingUidEarly,
+      {
+        tournamentId: GL.tournamentId,
+        eventId: evEarly,
+        eventTitle: eventTitleEarly,
+        boxId: bxEarly,
+        seatId: targetSeatId,
+        seatLabel: seat.label || seat.no || "",
+        targetUrl: buildSeatAssignedTargetUrl(
+          GL.tournamentId,
+          evEarly,
+          bxEarly,
+          targetSeatId
+        ),
+        message: buildSeatAssignedNotifyMessage({
+          eventId: evEarly,
+          cardId: eventTitleEarly,
+          seatLabel: seat.label || seat.no || ""
+        }),
+        createdAt: now,
+        updatedAt: now
+      }
+    );
+  }
 
   let undoSeatBefore = null;
   let undoWaitingBefore = null;
@@ -378,6 +413,37 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
         );
       }
 
+      if (waitingUid) {
+        tx.set(
+          doc(db, "layout_notifications", waitingUid),
+          {
+            ...buildSeatAssignedNotificationWrite(waitingUid, {
+              tournamentId: GL.tournamentId,
+              eventId: canonicalSeatEventId,
+              eventTitle: eventCardLabel,
+              boxId: canonicalSeatBoxId,
+              seatId: seat.seatId || targetSeatId,
+              seatLabel: seat.label || seat.no || "",
+              targetUrl: buildSeatAssignedTargetUrl(
+                GL.tournamentId,
+                canonicalSeatEventId,
+                canonicalSeatBoxId,
+                seat.seatId || targetSeatId
+              ),
+              message: buildSeatAssignedNotifyMessage({
+                eventId: canonicalSeatEventId,
+                cardId: eventCardLabel,
+                seatLabel: seat.label || seat.no || ""
+              }),
+              createdAt: now,
+              updatedAt: now,
+              updatedAtServer: serverTimestamp()
+            })
+          },
+          { merge: true }
+        );
+      }
+
       if (wasOccupied && prevUid) {
         tx.set(
           getAttendanceRef(db, GL.tournamentId, prevUid),
@@ -415,33 +481,6 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
         }
       }
     });
-
-    const assigneeUid = String(waiting.uid || "").trim();
-    if (assigneeUid) {
-      await setDoc(
-        doc(db, "layout_notifications", assigneeUid),
-        {
-          ...buildSeatAssignedNotificationWrite(assigneeUid, {
-            tournamentId: GL.tournamentId,
-            eventId: canonicalSeatEventId,
-            eventTitle: assignEventCardLabel,
-            boxId: canonicalSeatBoxId,
-            seatId: seat.seatId || "",
-            seatLabel: seat.label || seat.no || "",
-            targetUrl: `./layout.html?tournamentId=${encodeURIComponent(GL.tournamentId)}&eventId=${encodeURIComponent(canonicalSeatEventId)}&boxId=${encodeURIComponent(canonicalSeatBoxId)}&focusSeatId=${encodeURIComponent(seat.seatId || "")}`,
-            message: buildSeatAssignedNotifyMessage({
-              eventId: canonicalSeatEventId,
-              cardId: assignEventCardLabel,
-              seatLabel: seat.label || seat.no || ""
-            }),
-            createdAt: now,
-            updatedAt: now,
-            updatedAtServer: serverTimestamp()
-          })
-        },
-        { merge: true }
-      );
-    }
 
     flushOptimisticGlobalLayoutUi();
   } catch (err) {

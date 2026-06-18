@@ -107,7 +107,13 @@ function resolveTargetUrlForPush(raw) {
   }
 }
 
-exports.notifyLayoutSeatAssigned = onDocumentWritten("layout_notifications/{uid}", async (event) => {
+exports.notifyLayoutSeatAssigned = onDocumentWritten(
+  {
+    document: "layout_notifications/{uid}",
+    region: "asia-northeast3",
+    minInstances: 1
+  },
+  async (event) => {
   const change = event.data;
   if (!change.after.exists) return;
 
@@ -124,6 +130,7 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten("layout_notifications/{uid}
   const notifyTag = buildSeatNotifyTag(uid);
   const createdMs = toMillis(after.createdAt);
   const notifyRef = change.after.ref;
+  const userRef = db.doc(`users/${uid}`);
 
   if (createdMs > 0 && Date.now() - createdMs > STALE_SEAT_NOTIFY_MAX_AGE_MS) {
     try {
@@ -137,6 +144,8 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten("layout_notifications/{uid}
     console.info("[notifyLayoutSeatAssigned] skip stale FCM", uid, createdMs);
     return;
   }
+
+  const userSnapPromise = userRef.get();
   let shouldSend = false;
   try {
     shouldSend = await db.runTransaction(async (tx) => {
@@ -154,7 +163,7 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten("layout_notifications/{uid}
   }
   if (!shouldSend) return;
 
-  const userSnap = await db.doc(`users/${uid}`).get();
+  const userSnap = await userSnapPromise;
   const token = userSnap.exists ? String(userSnap.get("fcmToken") || "").trim() : "";
   if (!token) {
     await notifyRef.set(
@@ -167,19 +176,10 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten("layout_notifications/{uid}
   const title = PUSH_APP_TITLE;
   const body = buildSeatAssignedPushBody(after);
   const targetUrl = resolveTargetUrlForPush(after.targetUrl);
-  const userRef = db.doc(`users/${uid}`);
 
-  let badgeN = 1;
-  try {
-    await userRef.set({appBadgeCount: FieldValue.increment(1)}, {merge: true});
-    const badgeSnap = await userRef.get();
-    badgeN = Math.min(
-      99,
-      Math.max(1, Number(badgeSnap.exists ? badgeSnap.get("appBadgeCount") || 1 : 1))
-    );
-  } catch (e) {
+  void userRef.set({appBadgeCount: FieldValue.increment(1)}, {merge: true}).catch((e) => {
     console.error("[notifyLayoutSeatAssigned] badge increment failed", uid, e);
-  }
+  });
 
   try {
     // 웹: notification 페이로드 + SW showNotification 이 겹치면 모바일에서 알림이 2개 뜸 → data-only
@@ -189,12 +189,16 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten("layout_notifications/{uid}
         title,
         body,
         targetUrl,
-        appBadgeCount: String(badgeN),
+        appBadgeCount: "1",
         dedupKey,
         notifyTag,
         uid
       },
       android: {priority: "high"},
+      apns: {
+        headers: {"apns-priority": "10"},
+        payload: {aps: {contentAvailable: true}}
+      },
       webpush: {
         fcmOptions: {link: targetUrl},
         headers: {
@@ -210,11 +214,9 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten("layout_notifications/{uid}
   } catch (err) {
     const code = String(err?.code || "");
     console.error("[notifyLayoutSeatAssigned] FCM send failed", uid, code, err?.message || err);
-    try {
-      await userRef.set({appBadgeCount: FieldValue.increment(-1)}, {merge: true});
-    } catch (_) {}
+    void userRef.set({appBadgeCount: FieldValue.increment(-1)}, {merge: true}).catch(() => {});
     if (code === "messaging/invalid-registration-token" || code === "messaging/registration-token-not-registered") {
-      await db.doc(`users/${uid}`).set({fcmToken: ""}, {merge: true});
+      await userRef.set({fcmToken: ""}, {merge: true});
       await notifyRef.set(
         {fcmSeatNotifyDedupKey: dedupKey, fcmSeatNotifySending: FieldValue.delete()},
         {merge: true}

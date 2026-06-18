@@ -46,3 +46,26 @@ export function buildSeatAssignedNotificationWrite(uid, fields = {}) {
     ...seatAssignedNotificationMergeExtras()
   };
 }
+
+export function buildSeatAssignedTargetUrl(tournamentId, eventId, boxId, seatId) {
+  return `./layout.html?tournamentId=${encodeURIComponent(String(tournamentId || "").trim())}&eventId=${encodeURIComponent(String(eventId || "").trim())}&boxId=${encodeURIComponent(String(boxId || "").trim())}&focusSeatId=${encodeURIComponent(String(seatId || "").trim())}`;
+}
+
+/** FCM 트리거용 — await 없이 즉시 layout_notifications 기록 (트랜잭션·검증과 병렬) */
+export function fireSeatAssignedPushNotification(db, docFn, setDocFn, serverTimestampFn, uid, fields = {}) {
+  const u = String(uid || "").trim();
+  if (!u || !db || typeof docFn !== "function" || typeof setDocFn !== "function") return;
+
+  const body = buildSeatAssignedNotificationWrite(u, fields);
+  void setDocFn(
+    docFn(db, "layout_notifications", u),
+    {
+      ...body,
+      updatedAt: Number(fields.updatedAt) || body.createdAt,
+      updatedAtServer: typeof serverTimestampFn === "function" ? serverTimestampFn() : undefined
+    },
+    { merge: true }
+  ).catch((err) => {
+    console.warn("fireSeatAssignedPushNotification:", err?.code || err);
+  });
+}

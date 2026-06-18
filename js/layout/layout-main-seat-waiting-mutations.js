@@ -406,6 +406,31 @@ export function createLayoutSeatWaitingMutations(deps) {
         });
       }
 
+      const notifyCreatedAt = Date.now();
+      if (incomingUid) {
+        const seatLabel = String(seat.label ?? seat.no ?? "").trim();
+        const eventCardLabel = getCurrentEventTitle();
+        const tournamentId = getCurrentTournamentId();
+        void writeUserNotification({
+          uid: incomingUid,
+          type: "seat_assigned",
+          acknowledged: false,
+          createdAt: notifyCreatedAt,
+          tournamentId,
+          eventId: EVENT_ID,
+          eventTitle: eventCardLabel,
+          boxId: BOX_ID,
+          seatId: seat.id,
+          seatLabel,
+          targetUrl: buildSeatTargetUrl(EVENT_ID, BOX_ID, seat.id),
+          message: buildSeatAssignedNotifyMessage({
+            eventId: EVENT_ID,
+            cardId: eventCardLabel,
+            seatLabel
+          })
+        });
+      }
+
       void (async () => {
         try {
           const needsPrevAwait = shouldSwapPrevToWaiting && prevUid;
@@ -462,33 +487,6 @@ export function createLayoutSeatWaitingMutations(deps) {
                 seatLabel: seat.label ?? seat.no ?? "",
                 eventId: EVENT_ID,
                 boxId: BOX_ID
-              })
-            );
-          }
-
-          if (incomingUid) {
-            const seatLabel = String(seat.label ?? seat.no ?? "").trim();
-            const eventCardLabel = getCurrentEventTitle();
-            const tournamentId = getCurrentTournamentId();
-
-            followUps.push(
-              writeUserNotification({
-                uid: incomingUid,
-                type: "seat_assigned",
-                acknowledged: false,
-                createdAt: Date.now(),
-                tournamentId,
-                eventId: EVENT_ID,
-                eventTitle: eventCardLabel,
-                boxId: BOX_ID,
-                seatId: seat.id,
-                seatLabel,
-                targetUrl: buildSeatTargetUrl(EVENT_ID, BOX_ID, seat.id),
-                message: buildSeatAssignedNotifyMessage({
-                  eventId: EVENT_ID,
-                  cardId: eventCardLabel,
-                  seatLabel
-                })
               })
             );
           }
