@@ -14,6 +14,7 @@ import {
 import { resolveEventDocIdFromForm, resolveSelectedEventDocId } from "./event-cards-ids.js";
 import { ensureLayoutEventShellAfterCardSave } from "./event-cards-layout-shell.js";
 import { forceCheckOutUsersForDeletedEvent } from "./event-cards-delete-cleanup.js";
+import { upsertIndexEventInCache, removeIndexEventFromCache } from "./event-cards-loaders.js";
 
 function canManageCurrentTournamentOps() {
   const tournamentId = getTournamentId();
@@ -100,6 +101,19 @@ export async function saveEventCard() {
       boxId
     });
 
+    upsertIndexEventInCache(
+      {
+        id: docId,
+        cardId,
+        boxId,
+        date,
+        title,
+        start: IX.eventCardStart.value.trim(),
+        close: IX.eventCardClose.value.trim()
+      },
+      tournamentId
+    );
+
     alert(
       "카드가 저장되었습니다.\n같은 카드 ID·Box ID라도 날짜가 다르면 별도 카드로 생성됩니다."
     );
@@ -138,6 +152,8 @@ export async function deleteEventCardCurrent() {
     });
 
     await deleteDoc(getEventDocRef(docId));
+
+    removeIndexEventFromCache(docId, tournamentId);
 
     alert(
       affectedUsers.length
