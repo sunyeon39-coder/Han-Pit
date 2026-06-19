@@ -2,84 +2,16 @@ importScripts("https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js
 importScripts("https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js");
 
 /** 배포마다 1 올리면 브라우저가 새 SW 로 인식해 controllerchange → 홈 화면 자동 새로고침이 걸립니다. */
-const SW_DEPLOY_REVISION = 121;
+const SW_DEPLOY_REVISION = 122;
 
-/** SW 갱신 시 홈 화면 웹앱이 오래된 탭에 머물지 않도록 즉시 활성화 */
+/** SW 갱신 시 즉시 활성화 — 클라이언트 강제 reload 는 pwa-update-reload.js 가 처리 */
 self.addEventListener("install", (event) => {
   void SW_DEPLOY_REVISION;
   self.skipWaiting();
-  event.waitUntil(
-    (async () => {
-      const version = await fetchDeployAppVersion();
-      await notifyClientsToReload(version || String(Date.now()));
-    })()
-  );
 });
-
-/** PWA가 HTML/문서를 디스크 캐시에 묶지 않도록 네트워크 우선 */
-self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") return;
-  const url = new URL(event.request.url);
-  if (url.origin !== self.location.origin) return;
-  const isDoc =
-    event.request.mode === "navigate" ||
-    event.request.destination === "document" ||
-    /\.html?$/i.test(url.pathname);
-  if (!isDoc) return;
-  event.respondWith(
-    fetch(event.request, { cache: "no-store" }).catch(() => fetch(event.request))
-  );
-});
-async function fetchDeployAppVersion() {
-  try {
-    const res = await fetch("./app-version.json", { cache: "no-store" });
-    if (!res.ok) return "";
-    const data = await res.json();
-    return String(data?.v ?? data?.version ?? "").trim();
-  } catch {
-    return "";
-  }
-}
-
-function buildBustedClientUrl(clientUrl, version) {
-  const url = new URL(clientUrl);
-  if (version) url.searchParams.set("_hanpit_v", version);
-  return url.toString();
-}
-
-async function notifyClientsToReload(version) {
-  const clients = await self.clients.matchAll({
-    type: "window",
-    includeUncontrolled: true
-  });
-  await Promise.all(
-    clients.map(async (client) => {
-      const busted = buildBustedClientUrl(client.url, version);
-      if (typeof client.navigate === "function" && busted !== client.url) {
-        try {
-          await client.navigate(busted);
-          return;
-        } catch {
-          /* fall through to postMessage */
-        }
-      }
-      try {
-        client.postMessage({ type: "HAN_PIT_FORCE_RELOAD", v: version });
-      } catch {
-        /* ignore */
-      }
-    })
-  );
-}
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    (async () => {
-      await self.clients.claim();
-      const version = await fetchDeployAppVersion();
-      await notifyClientsToReload(version || String(Date.now()));
-    })()
-  );
+  event.waitUntil(self.clients.claim());
 });
 
 firebase.initializeApp({

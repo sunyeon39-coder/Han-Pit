@@ -8,7 +8,7 @@
     document.documentElement.style.backgroundColor="#060c17";
     document.documentElement.style.colorScheme="dark";
   }catch(e){}
-  var BUILD="20260619180318";
+  var BUILD="20260619181020";
   var KEY="hanPitAppVersion";
   var meta=document.querySelector('meta[name="han-pit-build"]');
   var pageBuild=meta?String(meta.getAttribute("content")||"").trim():"";
@@ -69,25 +69,50 @@
     return true;
   }
 
+  function swScope(){
+    var b=appBase();
+    return b.endsWith("/")?b:b+"/";
+  }
+
+  function runVersionCheck(){
+    fetch("./app-version.json?t="+Date.now(),{cache:"no-store",credentials:"same-origin"})
+      .then(function(r){return r.ok?r.json():null;})
+      .then(function(d){
+        var remote=String((d&&(d.v||d.version))||"").trim();
+        if(needsReload(remote))reload(remote);
+        else syncBustInPlace(remote);
+      })
+      .catch(function(){
+        if(isLegacyShell()||!pageBuild)reload("net");
+      });
+  }
+
   if(!pageBuild&&!bust){
     reload("boot");
     return;
   }
 
-  fetch(appUrl("app-version.json")+"?t="+Date.now(),{cache:"no-store",credentials:"same-origin"})
-    .then(function(r){return r.ok?r.json():null;})
-    .then(function(d){
-      var remote=String((d&&(d.v||d.version))||"").trim();
-      if(needsReload(remote))reload(remote);
-      else syncBustInPlace(remote);
-    })
-    .catch(function(){
-      if(isLegacyShell()||!pageBuild)reload("net");
-    });
+  if(pageBuild&&bust===pageBuild){
+    try{
+      if(localStorage.getItem(KEY)===pageBuild){
+        setTimeout(runVersionCheck,15000);
+      }else{
+        runVersionCheck();
+      }
+    }catch(e){
+      runVersionCheck();
+    }
+  }else{
+    runVersionCheck();
+  }
 
   if("serviceWorker" in navigator){
-    navigator.serviceWorker.register(appUrl("firebase-messaging-sw.js"),{scope:appBase()})
-      .then(function(reg){return reg.update();})
+    navigator.serviceWorker.register("./firebase-messaging-sw.js",{scope:swScope()})
+      .then(function(reg){
+        setTimeout(function(){
+          try{reg.update();}catch(e){}
+        },8000);
+      })
       .catch(function(){});
     navigator.serviceWorker.addEventListener("message",function(ev){
       var d=ev&&ev.data;
@@ -129,7 +154,7 @@
 })();
 </script>
   <!-- /han-pit-asset-fix -->
-  <meta name="han-pit-build" content="20260619180318" />
+  <meta name="han-pit-build" content="20260619181020" />
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Han Pit - Global Layout</title>
@@ -139,8 +164,8 @@
   <meta name="theme-color" content="#111832" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <link rel="stylesheet" href="./css/layout.css?v=20260619180318" />
-  <link rel="stylesheet" href="./css/global-layout.css?v=20260619180318" />
+  <link rel="stylesheet" href="./css/layout.css?v=20260619181020" />
+  <link rel="stylesheet" href="./css/global-layout.css?v=20260619181020" />
 </head>
 <body class="page-global-layout">
   <!-- han-pit-boot-dismiss -->
@@ -344,6 +369,6 @@
     </div>
   </div>
 
-  <script type="module" src="./js/global-layout.js?v=20260619180318"></script>
+  <script type="module" src="./js/global-layout.js?v=20260619181020"></script>
 </body>
 </html>

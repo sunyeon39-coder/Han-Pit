@@ -126,25 +126,50 @@ export function buildInlineAppUpdateSnippet(v) {
     return true;
   }
 
+  function swScope(){
+    var b=appBase();
+    return b.endsWith("/")?b:b+"/";
+  }
+
+  function runVersionCheck(){
+    fetch("./app-version.json?t="+Date.now(),{cache:"no-store",credentials:"same-origin"})
+      .then(function(r){return r.ok?r.json():null;})
+      .then(function(d){
+        var remote=String((d&&(d.v||d.version))||"").trim();
+        if(needsReload(remote))reload(remote);
+        else syncBustInPlace(remote);
+      })
+      .catch(function(){
+        if(isLegacyShell()||!pageBuild)reload("net");
+      });
+  }
+
   if(!pageBuild&&!bust){
     reload("boot");
     return;
   }
 
-  fetch(appUrl("app-version.json")+"?t="+Date.now(),{cache:"no-store",credentials:"same-origin"})
-    .then(function(r){return r.ok?r.json():null;})
-    .then(function(d){
-      var remote=String((d&&(d.v||d.version))||"").trim();
-      if(needsReload(remote))reload(remote);
-      else syncBustInPlace(remote);
-    })
-    .catch(function(){
-      if(isLegacyShell()||!pageBuild)reload("net");
-    });
+  if(pageBuild&&bust===pageBuild){
+    try{
+      if(localStorage.getItem(KEY)===pageBuild){
+        setTimeout(runVersionCheck,15000);
+      }else{
+        runVersionCheck();
+      }
+    }catch(e){
+      runVersionCheck();
+    }
+  }else{
+    runVersionCheck();
+  }
 
   if("serviceWorker" in navigator){
-    navigator.serviceWorker.register(appUrl("firebase-messaging-sw.js"),{scope:appBase()})
-      .then(function(reg){return reg.update();})
+    navigator.serviceWorker.register("./firebase-messaging-sw.js",{scope:swScope()})
+      .then(function(reg){
+        setTimeout(function(){
+          try{reg.update();}catch(e){}
+        },8000);
+      })
       .catch(function(){});
     navigator.serviceWorker.addEventListener("message",function(ev){
       var d=ev&&ev.data;

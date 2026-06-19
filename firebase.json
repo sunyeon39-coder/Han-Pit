@@ -20,16 +20,20 @@
         ]
       },
       {
-        "source": "**/*.js",
+        "source": "/firebase-messaging-sw.js",
         "headers": [
           {
             "key": "Cache-Control",
-            "value": "max-age=0, no-cache, no-store, must-revalidate"
+            "value": "max-age=0, must-revalidate"
+          },
+          {
+            "key": "Service-Worker-Allowed",
+            "value": "/"
           }
         ]
       },
       {
-        "source": "**/*.css",
+        "source": "/app-version.json",
         "headers": [
           {
             "key": "Cache-Control",
@@ -47,20 +51,20 @@
         ]
       },
       {
-        "source": "/firebase-messaging-sw.js",
+        "source": "**/*.{png,jpg,jpeg,gif,webp,svg,ico,woff2}",
         "headers": [
           {
             "key": "Cache-Control",
-            "value": "max-age=0, must-revalidate"
+            "value": "public, max-age=31536000, immutable"
           }
         ]
       },
       {
-        "source": "/app-version.json",
+        "source": "**/*.@(js|css)",
         "headers": [
           {
             "key": "Cache-Control",
-            "value": "max-age=0, no-cache, no-store, must-revalidate"
+            "value": "public, max-age=604800, stale-while-revalidate=86400"
           }
         ]
       }

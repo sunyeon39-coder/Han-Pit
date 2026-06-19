@@ -15,12 +15,17 @@ function getPageBuildVersion() {
   return String(el?.getAttribute("content") || "").trim();
 }
 
-function requestServiceWorkerUpdateCheck() {
-  if (!navigator.serviceWorker?.register) return;
-  void navigator.serviceWorker
-    .register("./firebase-messaging-sw.js", { scope: "./" })
-    .then((reg) => reg.update())
-    .catch(() => {});
+async function requestServiceWorkerUpdateCheck() {
+  if (!navigator.serviceWorker?.getRegistration) return;
+  try {
+    let reg = await navigator.serviceWorker.getRegistration();
+    if (!reg) {
+      reg = await navigator.serviceWorker.register("./firebase-messaging-sw.js", { scope: "./" });
+    }
+    await reg.update();
+  } catch {
+    /* ignore — inline head script owns primary registration */
+  }
 }
 
 async function fetchRemoteAppVersion() {

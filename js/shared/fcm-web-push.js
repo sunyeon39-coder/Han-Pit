@@ -256,7 +256,7 @@ export async function saveUserFcmToken(uid, token) {
  */
 export async function getOrRegisterFcmServiceWorker() {
   let registration = await navigator.serviceWorker.getRegistration();
-  if (!registration?.active?.scriptURL?.includes("firebase-messaging-sw")) {
+  if (!registration) {
     registration = await navigator.serviceWorker.register("./firebase-messaging-sw.js", {
       scope: "./"
     });
