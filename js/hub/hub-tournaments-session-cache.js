@@ -38,6 +38,21 @@ export function readHubTournamentsPersistedCache() {
   return readHubTournamentsSessionCache() || readHubTournamentsLocalCache();
 }
 
+/** TTL 만료 후에도 UI 복구용 — 서버/캐시 모두 비었을 때만 */
+export function readHubTournamentsLegacyCache() {
+  try {
+    const raw =
+      localStorage.getItem(HUB_TOURNAMENTS_LOCAL_KEY) ||
+      sessionStorage.getItem(HUB_TOURNAMENTS_SESSION_KEY);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    const list = Array.isArray(o?.list) ? o.list : null;
+    return list?.length ? list : null;
+  } catch {
+    return null;
+  }
+}
+
 export function writeHubTournamentsSessionCache(list = []) {
   const safe = Array.isArray(list) ? list : [];
   if (!safe.length) return;

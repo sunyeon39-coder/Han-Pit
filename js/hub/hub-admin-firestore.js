@@ -29,6 +29,7 @@ import { cleanupUserFromLayoutState } from "./layout-cleanup.js";
 import { hubState } from "./hub-state.js";
 import { hubRefs } from "./hub-dom-refs.js";
 import { scheduleHubTournamentsRender } from "./hub-realtime-ui.js";
+import { upsertHubTournamentInCache, removeHubTournamentFromCache } from "./hub-loaders-realtime.js";
 import {
   getTournamentById,
   populateTournamentSelect,
@@ -102,6 +103,7 @@ export async function saveTournament() {
       { merge: true }
     );
 
+    upsertHubTournamentInCache({ id, name, startDate, endDate, logoText, requiredCode });
     alert("대회가 저장되었습니다.");
   } catch (err) {
     console.error(err);
@@ -131,7 +133,7 @@ export async function deleteTournamentCurrent() {
   try {
     await deleteDoc(doc(db, "tournaments", id));
 
-    hubState.tournamentsCache = hubState.tournamentsCache.filter((t) => t.id !== id);
+    removeHubTournamentFromCache(id);
     renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
 
     if (

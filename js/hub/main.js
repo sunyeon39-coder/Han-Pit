@@ -17,7 +17,7 @@ import { ensureDocumentShellBackground, instantDismissAllBootLoaders, markPageBo
 import { isSameAuthSession } from "../shared/auth-session-guard.js";
 
 import { initHubRefs, hubRefs } from "./hub-dom-refs.js";
-import { FALLBACK_TOURNAMENTS, hubState } from "./hub-state.js";
+import { hubState } from "./hub-state.js";
 import { sortTournaments } from "./hub-helpers.js";
 import { applyHubOpsChrome } from "./hub-ops-chrome.js";
 import {
@@ -386,9 +386,8 @@ async function bootstrapHubSession(user) {
   bootTimeoutId = window.setTimeout(() => {
     if (flow !== hubState.hubAuthFlowGen) return;
     if (!hubRefs.eventListEl?.classList.contains("event-list--loading")) return;
-    console.warn("[hub] bootstrap timeout — showing fallback tournaments");
     if (!hubState.tournamentsCache.length) {
-      hubState.tournamentsCache = sortTournaments(FALLBACK_TOURNAMENTS);
+      seedHubTournamentsFromSessionCache();
     }
     hubState.tournamentsListReady = true;
     hubState.tournamentsBootstrapping = false;
@@ -534,7 +533,7 @@ onAuthStateChanged(auth, (user) => {
       hubState.tournamentsBootstrapping = false;
       hubState.tournamentsListReady = true;
       if (!hubState.tournamentsCache.length) {
-        hubState.tournamentsCache = sortTournaments(FALLBACK_TOURNAMENTS);
+        seedHubTournamentsFromSessionCache();
       }
       paintHubTournamentList();
       alert("허브 데이터를 불러오지 못했습니다.");

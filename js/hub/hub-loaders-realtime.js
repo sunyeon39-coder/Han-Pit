@@ -32,11 +32,12 @@ import {
 } from "./hub-helpers.js";
 import { isSystemAdminEmail } from "../shared/auth-helpers.js";
 import { applyHubOpsChrome } from "./hub-ops-chrome.js";
-import { hubState, FALLBACK_TOURNAMENTS } from "./hub-state.js";
+import { hubState } from "./hub-state.js";
 import { hubRefs } from "./hub-dom-refs.js";
 import { scheduleHubTournamentsRender, scheduleHubAdminRender } from "./hub-realtime-ui.js";
 import { populateTournamentSelect } from "./hub-admin-ui.js";
 import {
+  readHubTournamentsLegacyCache,
   readHubTournamentsPersistedCache,
   writeHubTournamentsSessionCache
 } from "./hub-tournaments-session-cache.js";
@@ -50,37 +51,61 @@ function shouldSkipEmptyCacheSnapshot(snap, cachedCount = 0) {
   return Boolean(snap?.empty && snap.metadata?.fromCache && cachedCount > 0);
 }
 
-async function refreshTournamentsFromServer({ allowClearOnEmpty = false } = {}) {
+async function refreshTournamentsFromServer() {
   if (hubState.stopTournamentsWatch || isFirestoreQuotaCoolingDown()) return;
   try {
     const serverSnap = await getDocsFromServer(collection(db, "tournaments"));
-    applyTournamentsSnap(serverSnap, { allowClearOnEmpty });
+    applyTournamentsSnap(serverSnap);
     hubState.tournamentsListReady = true;
     scheduleHubTournamentsRender();
   } catch (err) {
     noteFirestoreQuotaExceeded(err);
     console.warn("refreshTournamentsFromServer:", err?.code || err);
+    if (!hubState.tournamentsCache.length) restoreTournamentsFromPersistedCache();
   }
 }
 
 function restoreTournamentsFromPersistedCache() {
-  const cached = readHubTournamentsPersistedCache();
+  const cached = readHubTournamentsPersistedCache() || readHubTournamentsLegacyCache();
   if (!cached?.length) return false;
   hubState.tournamentsCache = sortTournaments(cached);
   return true;
 }
 
-function applyTournamentsSnap(snap, { allowClearOnEmpty = false } = {}) {
+/** 대회 저장 직후 로컬·persisted 캐시 즉시 반영 */
+export function upsertHubTournamentInCache(entry = {}) {
+  const id = String(entry.id || "").trim();
+  if (!id) return;
+  const row = {
+    id,
+    name: String(entry.name || id).trim(),
+    startDate: String(entry.startDate || "").trim(),
+    endDate: String(entry.endDate || "").trim(),
+    logoText: String(entry.logoText || "HAN").trim(),
+    requiredCode: String(entry.requiredCode || "").trim()
+  };
+  const next = hubState.tournamentsCache.filter((t) => t.id !== id);
+  next.push(row);
+  hubState.tournamentsCache = sortTournaments(next);
+  writeHubTournamentsSessionCache(hubState.tournamentsCache);
+  hubState.tournamentsListReady = true;
+  scheduleHubTournamentsRender();
+}
+
+export function removeHubTournamentFromCache(tournamentId = "") {
+  const id = String(tournamentId || "").trim();
+  if (!id) return;
+  hubState.tournamentsCache = hubState.tournamentsCache.filter((t) => t.id !== id);
+  writeHubTournamentsSessionCache(hubState.tournamentsCache);
+  scheduleHubTournamentsRender();
+}
+
+/** 빈 Firestore 스냅샷으로 목록을 지우지 않음 — 데이터가 있을 때만 갱신 */
+function applyTournamentsSnap(snap) {
   if (!snap || snap.empty) {
-    if (snap?.metadata?.fromCache) {
-      return hubState.tournamentsCache;
-    }
-    if (!allowClearOnEmpty) {
-      if (hubState.tournamentsCache.length > 0) return hubState.tournamentsCache;
-      if (restoreTournamentsFromPersistedCache()) return hubState.tournamentsCache;
-      return hubState.tournamentsCache;
-    }
-    hubState.tournamentsCache = [];
+    if (snap?.metadata?.fromCache) return hubState.tournamentsCache;
+    if (hubState.tournamentsCache.length > 0) return hubState.tournamentsCache;
+    restoreTournamentsFromPersistedCache();
     return hubState.tournamentsCache;
   }
   hubState.tournamentsCache = sortTournaments(snap.docs.map(normalizeTournamentDoc));
@@ -129,7 +154,7 @@ export async function loadTournaments() {
 
     try {
       const serverSnap = await getDocsFromServer(collection(db, "tournaments"));
-      applyTournamentsSnap(serverSnap, { allowClearOnEmpty: true });
+      applyTournamentsSnap(serverSnap);
       hubState.tournamentsListReady = true;
       return hubState.tournamentsCache;
     } catch (err) {
@@ -144,8 +169,6 @@ export async function loadTournaments() {
     hubState.tournamentsListReady = true;
     if (hubState.tournamentsCache.length) return hubState.tournamentsCache;
     if (restoreTournamentsFromPersistedCache()) return hubState.tournamentsCache;
-    hubState.tournamentsCache = sortTournaments(FALLBACK_TOURNAMENTS);
-    writeHubTournamentsSessionCache(hubState.tournamentsCache);
     return hubState.tournamentsCache;
   }
 }
@@ -428,12 +451,8 @@ export function bindTournamentsRealtime() {
 
       if (snap.empty) {
         if (snap.metadata?.fromCache) return;
-        if (hubState.tournamentsCache.length > 0 || readHubTournamentsPersistedCache()?.length) {
-          void refreshTournamentsFromServer({ allowClearOnEmpty: true });
-          return;
-        }
-        hubState.tournamentsCache = [];
-        hubState.tournamentsListReady = true;
+        void refreshTournamentsFromServer();
+        return;
       } else {
         hubState.tournamentsCache = sortTournaments(snap.docs.map(normalizeTournamentDoc));
         hubState.tournamentsListReady = true;
@@ -452,12 +471,7 @@ export function bindTournamentsRealtime() {
     },
     (err) => {
       console.error("bindTournamentsRealtime error:", err);
-      if (!hubState.tournamentsCache.length) {
-        if (!restoreTournamentsFromPersistedCache()) {
-          hubState.tournamentsCache = sortTournaments(FALLBACK_TOURNAMENTS);
-          writeHubTournamentsSessionCache(hubState.tournamentsCache);
-        }
-      }
+      if (!hubState.tournamentsCache.length) restoreTournamentsFromPersistedCache();
       hubState.tournamentsListReady = true;
       hubState.tournamentsBootstrapping = false;
       scheduleHubTournamentsRender();
