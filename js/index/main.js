@@ -302,11 +302,6 @@ async function init() {
           <a class="manage-btn index-boot-btn" href="${escapeHtml(hubHref)}">Han Pit 허브로 이동</a>
         </section>`;
     }
-    setTimeout(() => {
-      if (!getTournamentId()) {
-        location.href = hubHref;
-      }
-    }, 0);
     return;
   }
 
