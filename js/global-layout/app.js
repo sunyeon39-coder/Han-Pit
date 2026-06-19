@@ -150,12 +150,17 @@ export function startGlobalLayoutApp() {
       null,
       user.uid
     );
+    const wasAdmin = GL.isAdminUser === true;
     GL.isAdminUser = canOps;
     GL.layoutAccentColor = resolveLayoutAccentColor(
       GL.userProfile,
       user.uid || "",
       user.email || ""
     );
+    if (wasAdmin && !canOps) {
+      GL.selectedWaitingId = "";
+      void clearMyWaitingPick();
+    }
     return canOps;
   }
 

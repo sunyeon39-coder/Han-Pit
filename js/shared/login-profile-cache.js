@@ -80,8 +80,8 @@ export function readOpsSessionSnapshot(uid = "") {
 export function writeOpsSessionSnapshot(uid = "", profile = null) {
   const id = String(uid || "").trim();
   if (!id || !profile) return;
-  const allowed = opsAllowedEventsFromProfile(profile);
-  if (!Object.keys(allowed).length) {
+  const allowed = sanitizeAllowedEvents(profile?.allowedEvents);
+  if (!hasAnyDirectEventAllow(allowed)) {
     clearOpsSessionSnapshot();
     return;
   }
@@ -99,24 +99,21 @@ export function clearOpsSessionSnapshot() {
   removeFromStores(OPS_LOCAL_KEY);
 }
 
-/** 앱 부트 — login 캐시 + 직접 허용 스냅샷 병합 (모바일 localStorage 우선) */
+/** 앱 부트 — login 캐시 프로필 (운영 권한은 Firestore allowedEvents 만 인정) */
 export function readBootUserProfile(user, prev = {}) {
   const uid = String(user?.uid || "").trim();
   const cached = uid ? readLoginProfileCache(uid) : null;
-  const opsSnap = uid ? readOpsSessionSnapshot(uid) : null;
   const email = String(user?.email || cached?.email || prev.email || "").trim();
-  const mergedAllowed = mergeAllowedEventsMaps(
-    cached?.allowedEvents && typeof cached.allowedEvents === "object" ? cached.allowedEvents : {},
-    opsSnap?.allowedEvents || {},
-    prev.allowedEvents && typeof prev.allowedEvents === "object" ? prev.allowedEvents : {}
-  );
+  const base = cached || prev;
   return normalizeUserProfile(
     {
-      ...(cached || prev),
+      ...base,
       email: email || cached?.email || "",
-      opsTournamentIds:
-        cached?.opsTournamentIds ?? prev.opsTournamentIds ?? [],
-      allowedEvents: mergedAllowed
+      allowedEvents:
+        base?.allowedEvents && typeof base.allowedEvents === "object"
+          ? sanitizeAllowedEvents(base.allowedEvents)
+          : {},
+      opsTournamentIds: Array.isArray(base?.opsTournamentIds) ? base.opsTournamentIds : []
     },
     email
   );

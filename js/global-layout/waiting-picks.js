@@ -116,6 +116,7 @@ export function getWaitingRowPickState(waitingId = "") {
 }
 
 export function buildOperatorLegendHtml() {
+  if (!GL.isAdminUser) return "";
   const picks = getActiveOperatorPicks();
   if (!picks.length) return "";
 

@@ -112,7 +112,7 @@ export function resolveStoredUserRole(email = "", profile = {}) {
     .trim()
     .toLowerCase();
   if (isAdminEmail(mail)) return "admin";
-  if (hasAnyDirectEventAllow(opsAllowedEventsFromProfile(profile))) return "admin";
+  if (hasPersistedDirectOpsAllow(profile)) return "admin";
   return "user";
 }
 
@@ -144,8 +144,6 @@ export function mergeOpsProfile(prev = null, next = null, meta = {}) {
   const prevAllowed = opsAllowedEventsFromProfile(prev);
   const nextAllowed = opsAllowedEventsFromProfile(normalized);
   const mergedAllowed = mergeAllowedEventsMaps(prevAllowed, nextAllowed);
-  const prevRole = String(prev.role || "").trim().toLowerCase();
-  const nextRole = String(normalized.role || "").trim().toLowerCase();
   let patched = normalized;
 
   if (Object.keys(prevAllowed).length > 0 && Object.keys(nextAllowed).length === 0) {
@@ -161,9 +159,10 @@ export function mergeOpsProfile(prev = null, next = null, meta = {}) {
   }
 
   const prevHadOps = hasPersistedDirectOpsAllow(prev);
+  const nextHadOps = hasPersistedDirectOpsAllow(normalized);
   const mergedHadOps = hasAnyDirectEventAllow(mergedAllowed);
 
-  if ((prevRole === "admin" || prevHadOps || mergedHadOps) && nextRole !== "admin") {
+  if ((prevHadOps || mergedHadOps) && !nextHadOps) {
     patched = normalizeUserProfile(
       {
         ...patched,
@@ -182,7 +181,7 @@ export function canManageTournamentOps(email = "", profile = {}, tournamentId = 
   return canUseTournamentOps(email, profile, tournamentId);
 }
 
-/** index·layout 운영 UI — 시스템 admin 또는 직접 허용(role admin) */
+/** index·layout 운영 UI — 시스템 admin 또는 Firestore 직접 허용(allowedEvents) */
 export function canUseTournamentOps(
   email = "",
   profile = {},
@@ -191,7 +190,8 @@ export function canUseTournamentOps(
 ) {
   if (!profile || typeof profile !== "object") profile = {};
   if (isSystemAdminEmail(email || profile?.email)) return true;
-  const allowed = opsAllowedEventsFromProfile(profile);
+  if (!hasPersistedDirectOpsAllow(profile)) return false;
+  const allowed = sanitizeAllowedEvents(profile?.allowedEvents);
   return hasDirectEventAllowForTournament(allowed, tournamentId, tournamentMeta);
 }
 

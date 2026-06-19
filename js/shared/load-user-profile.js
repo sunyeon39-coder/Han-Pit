@@ -14,7 +14,8 @@ import {
   hasAnyDirectEventAllow,
   mergeAllowedEventsMaps,
   normalizeUserProfile,
-  opsAllowedEventsFromProfile
+  opsAllowedEventsFromProfile,
+  sanitizeAllowedEvents
 } from "./auth-helpers.js";
 import { readLoginProfileCache, isLoginProfileCacheFresh } from "./login-profile-cache.js";
 import { canUseTournamentOps } from "./auth-helpers.js";
@@ -130,21 +131,28 @@ export async function loadMergedAllowedEventsByEmail(email = "", primaryUid = ""
   let merged = {};
   const seenUids = new Set();
   const readOpts = { preferCacheFirst: options.preferCacheFirst !== false };
+  let primaryRevoked = false;
 
   if (primaryUid) {
     try {
       const primarySnap = await readUserDocSnap(primaryUid, readOpts);
       if (primarySnap.exists()) {
         seenUids.add(primaryUid);
-        merged = mergeAllowedEventsMaps(
-          merged,
-          opsAllowedEventsFromProfile(primarySnap.data() || {})
-        );
+        const primaryData = primarySnap.data() || {};
+        const primaryAllowed = sanitizeAllowedEvents(primaryData.allowedEvents);
+        const primaryRole = String(primaryData.role || "user").trim().toLowerCase();
+        if (primaryRole !== "admin" && !hasAnyDirectEventAllow(primaryAllowed)) {
+          primaryRevoked = true;
+          return {};
+        }
+        merged = mergeAllowedEventsMaps(merged, primaryAllowed);
       }
     } catch (err) {
       console.warn("[loadMergedAllowedEventsByEmail] primary uid read failed:", err);
     }
   }
+
+  if (primaryRevoked) return merged;
 
   await Promise.all(
     variants.map(async (variant) => {
@@ -153,7 +161,11 @@ export async function loadMergedAllowedEventsByEmail(email = "", primaryUid = ""
         for (const d of snap.docs) {
           if (seenUids.has(d.id)) continue;
           seenUids.add(d.id);
-          merged = mergeAllowedEventsMaps(merged, opsAllowedEventsFromProfile(d.data() || {}));
+          const data = d.data() || {};
+          merged = mergeAllowedEventsMaps(
+            merged,
+            sanitizeAllowedEvents(data.allowedEvents)
+          );
         }
       } catch (err) {
         console.warn("[loadMergedAllowedEventsByEmail] email query failed:", variant, err);
