@@ -1,6 +1,6 @@
 /**
- * hub 등 layout 이 아닌 페이지에서 layout_notifications 를 구독해
- * OS 알림을 띄웁니다. (layout/global-layout 은 전용 UI 컨트롤러가 처리)
+ * hub 등 layout 이 아닌 페이지에서 layout_notifications 를 구독합니다.
+ * 백그라운드 OS 알림은 FCM(service worker)만 사용 — onSnapshot 중복 방지.
  */
 import { db } from "../firebase.js";
 import { doc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
@@ -19,6 +19,11 @@ let activeNotificationKey = "";
 function isDedicatedLayoutNotificationPage() {
   const path = String(location.pathname || "").toLowerCase();
   return path.endsWith("/layout.html") || path.endsWith("/global-layout.html");
+}
+
+function isPageBackgroundForPush() {
+  if (typeof document === "undefined") return true;
+  return document.visibilityState === "hidden" || !document.hasFocus();
 }
 
 async function applySeatNotificationSnap(snap, uid) {
@@ -41,6 +46,8 @@ async function applySeatNotificationSnap(snap, uid) {
   const notificationKey = seatNotificationKey(uid, data);
   if (activeNotificationKey === notificationKey) return;
   activeNotificationKey = notificationKey;
+
+  if (isPageBackgroundForPush()) return;
 
   const body = buildSeatAssignedNotifyMessage({
     eventId: data.eventId,

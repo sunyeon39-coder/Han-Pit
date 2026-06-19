@@ -29,6 +29,7 @@ import {
   restoreGlobalRedo,
   restoreGlobalUndo
 } from "./undo-stack.js";
+import { markGlobalLayoutLocalMutation } from "./layout-mutation-guard.js";
 
 export async function updateGlobalWaiting(nextWaiting = []) {
   await setDoc(
@@ -649,6 +650,8 @@ export async function addManualWaiting() {
   flushOptimisticGlobalLayoutUi();
   if (input) input.value = "";
 
+  GL.waitingMutationInFlight = true;
+  markGlobalLayoutLocalMutation();
   try {
     await updateGlobalWaiting([...(GL.globalWaiting || [])]);
   } catch (err) {
@@ -656,6 +659,8 @@ export async function addManualWaiting() {
     replaceGlobalWaitingLocal(snapshotBefore);
     flushOptimisticGlobalLayoutUi();
     alert("대기 추가에 실패했습니다.");
+  } finally {
+    GL.waitingMutationInFlight = false;
   }
 }
 
@@ -667,6 +672,8 @@ export async function removeManualWaiting(waitingId = "") {
   if (!row) return;
 
   const next = snapshotBefore.filter((w) => String(w?.id || "").trim() !== wid);
+  GL.waitingMutationInFlight = true;
+  markGlobalLayoutLocalMutation();
   replaceGlobalWaitingLocal(next);
   flushOptimisticGlobalLayoutUi();
 
@@ -687,6 +694,8 @@ export async function removeManualWaiting(waitingId = "") {
     replaceGlobalWaitingLocal(snapshotBefore);
     flushOptimisticGlobalLayoutUi();
     alert("대기자 삭제에 실패했습니다.");
+  } finally {
+    GL.waitingMutationInFlight = false;
   }
 }
 
@@ -704,6 +713,8 @@ export async function setWaitingBlocked(waitingId = "", checked = false) {
   applyWaitingBlockLocal(wid, nextChecked);
   flushOptimisticGlobalLayoutUi();
 
+  GL.waitingMutationInFlight = true;
+  markGlobalLayoutLocalMutation();
   try {
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(waitingRef);
@@ -775,5 +786,7 @@ export async function setWaitingBlocked(waitingId = "", checked = false) {
     replaceGlobalWaitingLocal(snapshotBefore);
     flushOptimisticGlobalLayoutUi();
     alert("BLOCK 변경에 실패했습니다.");
+  } finally {
+    GL.waitingMutationInFlight = false;
   }
 }

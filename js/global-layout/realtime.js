@@ -23,6 +23,10 @@ import {
   bumpGlobalLayoutDataRevision,
   scheduleGlobalLayoutRealtimeUi
 } from "./realtime-ui.js";
+import {
+  shouldIgnoreStaleGlobalLayoutSnapshot,
+  shouldSkipSeatRecoveryNow
+} from "./layout-mutation-guard.js";
 import { layoutIsMobile } from "../layout/layout-main-route-env.js";
 import {
   maybeShowOptimisticSeatAlertFromSeats,
@@ -224,6 +228,7 @@ export function bindRealtime() {
     collection(db, "tournaments", GL.tournamentId, "global_seats"),
     (snap) => {
       if (GL.seatMutationInFlight) return;
+      if (shouldIgnoreStaleGlobalLayoutSnapshot(snap)) return;
       if (snap.empty && snap.metadata?.fromCache && GL.globalSeats.length > 0) {
         return;
       }
@@ -235,10 +240,17 @@ export function bindRealtime() {
       const nextSeatIds = new Set(
         mergedSeats.map((s) => String(s?.seatId || "").trim()).filter(Boolean)
       );
+      const nextBySeatId = new Map(
+        nextSeats.map((s) => [String(s?.seatId || "").trim(), s])
+      );
       const removedOccupiedSeats = prevSeats.filter((s) => {
         const sid = String(s?.seatId || "").trim();
-        if (!sid || nextSeatIds.has(sid)) return false;
-        return !isEmptyPerson(String(s?.person || "").trim());
+        if (!sid || !nextSeatIds.has(sid)) return false;
+        const next = nextBySeatId.get(sid);
+        if (!next) return false;
+        const prevName = String(s?.person || "").trim();
+        const nextName = String(next?.person || "").trim();
+        return !isEmptyPerson(prevName) && isEmptyPerson(nextName);
       });
 
       GL.globalSeats = mergedSeats;
@@ -259,6 +271,7 @@ export function bindRealtime() {
 
       if (
         removedOccupiedSeats.length &&
+        !shouldSkipSeatRecoveryNow() &&
         !snap.metadata?.fromCache &&
         !snap.metadata?.hasPendingWrites
       ) {
@@ -277,7 +290,8 @@ export function bindRealtime() {
   GL.stopWaitingWatch = onSnapshot(
     doc(db, "layout_shared", "global_waiting"),
     (snap) => {
-      if (GL.seatMutationInFlight) return;
+      if (GL.seatMutationInFlight || GL.waitingMutationInFlight) return;
+      if (shouldIgnoreStaleGlobalLayoutSnapshot(snap)) return;
       const data = snap.exists() ? snap.data() || {} : {};
       GL.globalWaiting = Array.isArray(data.waiting) ? data.waiting : [];
       applyOperatorPicksFromDoc(data);

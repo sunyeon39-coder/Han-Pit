@@ -1043,7 +1043,13 @@ body {
 .modal-card.admin-modal-card .form-group select {
   background: rgba(0, 0, 0, 0.3);
   color: #f7f8fc;
+  -webkit-text-fill-color: #f7f8fc;
   border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.modal-card.admin-modal-card .form-group input:disabled {
+  color: rgba(255, 255, 255, 0.55);
+  -webkit-text-fill-color: rgba(255, 255, 255, 0.55);
 }
 
 .modal-card.admin-modal-card .form-group input:focus,

@@ -44,6 +44,10 @@ import { syncSeatAddEventPickerFromHidden } from "./seat-add-event-picker.js";
 import { writePersistedSeatAddForm } from "./seat-add-form-persist.js";
 import { pushGlobalUndo } from "./undo-stack.js";
 import { flushOptimisticGlobalLayoutUi } from "./optimistic-seat-mutation.js";
+import {
+  markGlobalLayoutLocalMutation,
+  markSkipSeatRecovery
+} from "./layout-mutation-guard.js";
 
 /** 멀티 선택된 좌석을 같은 y(가로 일렬) 또는 같은 x(세로 일렬)로 맞춥니다. */
 export async function alignSelectedGlobalSeats(axis = "") {
@@ -167,6 +171,8 @@ export async function deleteGlobalSeat(seatId = "") {
 
   if (idx >= 0) GL.globalSeats.splice(idx, 1);
   GL.selectedSeatIds.delete(targetSeatId);
+  markGlobalLayoutLocalMutation();
+  markSkipSeatRecovery();
   GL.seatMutationInFlight = true;
   flushOptimisticGlobalLayoutUi();
 

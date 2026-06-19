@@ -20,6 +20,7 @@ import {
   applyOptimisticClear,
   flushOptimisticGlobalLayoutUi
 } from "./optimistic-seat-mutation.js";
+import { markGlobalLayoutLocalMutation } from "./layout-mutation-guard.js";
 
 export async function clearSeat(seatId = "") {
   const targetSeatId = String(seatId || "").trim();
@@ -38,6 +39,7 @@ export async function clearSeat(seatId = "") {
 
   const rollbackOptimistic = applyOptimisticClear({ targetSeatId, seat });
   flushOptimisticGlobalLayoutUi();
+  markGlobalLayoutLocalMutation();
 
   const now = Date.now();
   const waitingRef = doc(db, "layout_shared", "global_waiting");

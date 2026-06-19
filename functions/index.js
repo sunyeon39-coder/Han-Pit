@@ -36,10 +36,8 @@ function toMillis(v) {
 
 function buildDedupKey(uid, after) {
   const createdMs = toMillis(after.createdAt);
-  const eventId = String(after.eventId || "").trim();
-  const boxId = String(after.boxId || "").trim();
   const seatId = String(after.seatId || "").trim();
-  return `${uid}|${createdMs}|${eventId}|${boxId}|${seatId}`;
+  return `${uid}|${createdMs}|${seatId}`;
 }
 
 function buildSeatNotifyTag(uid) {

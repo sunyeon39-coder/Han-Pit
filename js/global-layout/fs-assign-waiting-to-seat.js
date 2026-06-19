@@ -1,4 +1,4 @@
-import { buildSeatAssignedNotificationWrite, buildSeatAssignedTargetUrl, fireSeatAssignedPushNotification } from "../shared/seat-notification-push.js";
+import { buildSeatAssignedNotificationWrite, buildSeatAssignedTargetUrl } from "../shared/seat-notification-push.js";
 import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
 import { db } from "../firebase.js";
 import {
@@ -33,6 +33,7 @@ import {
   flushOptimisticGlobalLayoutUi
 } from "./optimistic-seat-mutation.js";
 import { triggerOptimisticMobileSeatAssignedAlert } from "../shared/optimistic-seat-assigned-notify.js";
+import { markGlobalLayoutLocalMutation } from "./layout-mutation-guard.js";
 
 function uniqueDocRefs(refs = []) {
   const seen = new Set();
@@ -137,41 +138,7 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   const waitingRef = doc(db, "layout_shared", "global_waiting");
   const touchedProjectionKeys = new Set();
 
-  const waitingUidEarly = String(waiting.uid || "").trim();
-  if (waitingUidEarly) {
-    const { eventId: evEarly, boxId: bxEarly } = resolveSeatEventBox(seat);
-    const eventTitleEarly =
-      getEventCardIdFromRecord({ id: evEarly }) || evEarly || "이벤트";
-    fireSeatAssignedPushNotification(
-      db,
-      doc,
-      setDoc,
-      serverTimestamp,
-      waitingUidEarly,
-      {
-        tournamentId: GL.tournamentId,
-        eventId: evEarly,
-        eventTitle: eventTitleEarly,
-        boxId: bxEarly,
-        seatId: targetSeatId,
-        seatLabel: seat.label || seat.no || "",
-        targetUrl: buildSeatAssignedTargetUrl(
-          GL.tournamentId,
-          evEarly,
-          bxEarly,
-          targetSeatId
-        ),
-        message: buildSeatAssignedNotifyMessage({
-          eventId: evEarly,
-          cardId: eventTitleEarly,
-          seatLabel: seat.label || seat.no || ""
-        }),
-        createdAt: now,
-        updatedAt: now
-      }
-    );
-  }
-
+  markGlobalLayoutLocalMutation();
   let undoSeatBefore = null;
   let undoWaitingBefore = null;
   let canonicalSeatEventId = "";

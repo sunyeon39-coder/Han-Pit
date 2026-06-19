@@ -31,6 +31,12 @@ export const GL = {
   dataRevision: 0,
   /** 배치·비우기 동시 클릭 방지 */
   seatMutationInFlight: false,
+  /** 대기 추가·삭제·BLOCK 중 realtime 덮어쓰기 방지 */
+  waitingMutationInFlight: false,
+  /** 로컬 변경 후 캐시 스냅샷 무시 시각(unix ms) */
+  localMutationUntil: 0,
+  /** admin 좌석 삭제 직후 자동 대기 복구 억제 시각(unix ms) */
+  skipSeatRecoveryUntil: 0,
   attendanceWaiting: [],
   /** 현재 대회 출석 문서 기준 퇴근·미출근 uid — global_waiting 유령 행 제거용 */
   attendanceInactiveUids: new Set(),
