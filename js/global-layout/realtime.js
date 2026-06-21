@@ -38,6 +38,7 @@ import {
   isFirestoreQuotaCoolingDown,
   noteFirestoreQuotaExceeded
 } from "../shared/firestore-quota-guard.js";
+import { writeGlobalSeatsCache } from "./global-seats-session-cache.js";
 
 /** Firestore 전파 전 캐시 스냅샷이 방금 배치한 좌석을 비우는 것 방지 */
 const RECENT_LOCAL_SEAT_MS = 12000;
@@ -274,6 +275,9 @@ function applyGlobalSeatsFromSnapshot(snap, prevSeatsRef = { value: [] }) {
   GL.globalSeats = mergedSeats;
   bumpGlobalLayoutDataRevision();
   prevSeatsRef.value = mergedSeats;
+  if (!snap?.metadata?.fromCache || mergedSeats.length) {
+    writeGlobalSeatsCache(GL.tournamentId, mergedSeats);
+  }
 
   const seatsFp = globalSeatsUiFingerprint(mergedSeats);
   const seatsUiChanged = seatsFp !== lastSeatsUiFingerprint;

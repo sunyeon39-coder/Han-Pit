@@ -36,6 +36,7 @@ import {
   hasReceivedGlobalSeatsSnapshot
 } from "./realtime.js";
 import { armFirestoreStallWatchdog, showFirestoreStallBanner } from "../shared/firestore-stall-recovery.js";
+import { readGlobalSeatsCache } from "./global-seats-session-cache.js";
 import { bindGlobalLayoutEventHandlers, syncGlobalLayoutMobileChrome } from "./ui-events.js";
 import {
   initGlobalLayoutZoomBarDom,
@@ -130,7 +131,14 @@ export function startGlobalLayoutApp() {
   initGlDomRefs();
   instantDismissAllBootLoaders();
   markPageBootLoaded(GL.app);
-  renderSeats([]);
+  // 진입 즉시 마지막으로 본 좌석을 캔버스에 그려 반응성을 높인다(이후 realtime 이 최신값으로 교체).
+  const cachedSeats = readGlobalSeatsCache(GL.tournamentId);
+  if (cachedSeats?.length) {
+    GL.globalSeats = cachedSeats;
+    renderSeats(cachedSeats);
+  } else {
+    renderSeats([]);
+  }
   initGlobalLayoutZoomBarDom();
   wireGlobalLayoutZoomBarOnce();
   bindGlobalLayoutPushUiOnce();
