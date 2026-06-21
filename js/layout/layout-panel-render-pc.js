@@ -98,7 +98,13 @@ export function createLayoutPcPanelRender(deps) {
       }
       const row = e.target.closest("[data-wid]");
       if (!row) return;
-      if (e.target.closest("[data-del-w]") || e.target.closest("[data-block-w]")) return;
+      if (
+        e.target.closest("[data-del-w]") ||
+        e.target.closest("[data-block-w]") ||
+        e.target.closest(".wait-block-check-wrap, .wait-check-slot")
+      ) {
+        return;
+      }
       const wid = row.getAttribute("data-wid");
       ui.selectedWaitingId = ui.selectedWaitingId === wid ? null : wid;
       ui.selectedSeatId = null;

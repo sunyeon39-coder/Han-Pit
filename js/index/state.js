@@ -93,6 +93,7 @@ export const IX = {
   stopEventsWatch: null,
   stopLayoutEventsWatch: null,
   periodBlocked: false,
+  indexBootComplete: false,
 
   seatMapLayout: [],
   seatMapData: new Map(),

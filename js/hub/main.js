@@ -16,6 +16,7 @@ import { closeModal, openModal } from "../shared/dom-utils.js";
 import { isAppDebugEnabled } from "../shared/app-debug.js";
 import { ensureDocumentShellBackground, instantDismissAllBootLoaders, markPageBootLoaded } from "../shared/page-boot-shell.js";
 import { isSameAuthSession } from "../shared/auth-session-guard.js";
+import { armFirestoreStallWatchdog, showFirestoreStallBanner } from "../shared/firestore-stall-recovery.js";
 
 import { initHubRefs, hubRefs } from "./hub-dom-refs.js";
 import { hubState } from "./hub-state.js";
@@ -189,6 +190,16 @@ adminBtn?.addEventListener("click", () => {
     populateTournamentSelect();
     renderAdminUserList();
   });
+
+  // 캐시 멈춤(hang)으로 유저 목록이 영영 안 뜨면 복구 배너 안내
+  armFirestoreStallWatchdog({
+    timeoutMs: 12000,
+    dataReady: () => hubState.usersCache.length > 0 || hubState.usersLoading === false,
+    onStall: () =>
+      showFirestoreStallBanner(
+        "유저 목록을 불러오지 못했습니다(연결 지연). 연결 새로고침을 눌러 주세요."
+      )
+  });
 });
 
 closeProfileBtn?.addEventListener("click", () => closeModal(profileModal));
@@ -354,7 +365,8 @@ function applyHubAccessChromeEarly(user) {
   if (!user) return;
   applyHubOpsChrome(user);
   if (!isSystemAdminEmail(user.email || "")) return;
-  void loadAllUsers({ forceServer: true })
+  // 부트 프리로드는 캐시 우선 — 서버 강제 읽기는 관리 모달 열 때(bindUsersRealtime/forceServer)로 미뤄 Firestore 읽기량을 아낀다.
+  void loadAllUsers()
     .then(() => {
       if (hubState.currentUser?.uid !== user.uid) return;
       if (hubRefs.adminModal?.classList.contains("show")) renderAdminUserList();
@@ -401,10 +413,6 @@ async function bootstrapHubSession(user) {
 
   applyHubAccessChromeEarly(user);
 
-  if (isSystemAdminEmail(user.email || "")) {
-    void loadAllUsers({ forceServer: true }).catch((err) => console.warn("hub preload users:", err));
-  }
-
   try {
   bootTimeoutId = window.setTimeout(() => {
     if (flow !== hubState.hubAuthFlowGen) return;
@@ -422,7 +430,7 @@ async function bootstrapHubSession(user) {
       loadUserProfileFresh(user.uid, user.email || "", { preferCacheFirst: true }),
       4000
     ).catch(() => hubState.currentUserProfile || null),
-    raceFirestoreTimeout(loadTournaments({ forceServer: true }), 8000)
+    raceFirestoreTimeout(loadTournaments(), 8000)
       .catch(() => hubState.tournamentsCache)
       .finally(() => {
         if (flow !== hubState.hubAuthFlowGen) return;

@@ -155,7 +155,11 @@ export function createLayoutMobilePanelRender(deps) {
       }
 
       const waitRow = e.target.closest("[data-mobile-wait]");
-      if (waitRow && !e.target.closest("[data-del-w]") && !e.target.closest("input.wait-block-check")) {
+      if (
+        waitRow &&
+        !e.target.closest("[data-del-w]") &&
+        !e.target.closest(".wait-block-check-wrap, .wait-check-slot, input.wait-block-check")
+      ) {
         const wid = waitRow.getAttribute("data-mobile-wait");
         if (!wid) return;
         ui.selectedWaitingId = wid;

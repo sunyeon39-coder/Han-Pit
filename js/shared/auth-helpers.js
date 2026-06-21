@@ -170,9 +170,13 @@ export function canUseTournamentOps(
   if (!profile || typeof profile !== "object") profile = {};
   if (isSystemAdminEmail(email || profile?.email)) return true;
 
-  const persistedAllowed = sanitizeAllowedEvents(profile?.allowedEvents);
+  const persistedAllowed = opsAllowedEventsFromProfile(profile);
   if (!hasAnyDirectEventAllow(persistedAllowed)) return false;
-  if (String(profile?.role || "user").trim().toLowerCase() !== "admin") return false;
+  const role = resolveStoredUserRole(email || profile?.email, {
+    ...profile,
+    allowedEvents: persistedAllowed
+  });
+  if (role !== "admin") return false;
   return hasDirectEventAllowForTournament(persistedAllowed, tournamentId, tournamentMeta);
 }
 

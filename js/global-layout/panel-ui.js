@@ -42,6 +42,7 @@ import { getEventCardIdFromRecord } from "../shared/tournament-event-instance.js
 import { resolveSeatEventBox } from "./utils.js";
 import { buildEventBoxPaletteMap, getEventBoxPaletteClass } from "./event-box-palette.js";
 import { syncSeatBoxesInContainer } from "../shared/sync-seat-box-dom.js";
+import { canManageGlobalLayoutOps } from "./ops-access.js";
 
 function buildGlobalSeatsByIdMap() {
   const map = new Map();
@@ -54,13 +55,17 @@ function buildGlobalSeatsByIdMap() {
 
 function waitingPanelFingerprint(waiting = []) {
   return waiting
-    .map((w) => {
+    .map((w, index) => {
       const wid = String(w.id || "").trim();
       const blocked = isWaitingBlocked(w) ? 1 : 0;
       const pickUi = waitingRowPickClass(wid);
-      return `${wid}|${String(w.name || w.uid || "").trim()}|${blocked}|${pickUi.isSelected ? 1 : 0}|${Number(w.blockAccumulatedMs || 0)}|${Number(w.blockCheckedAt || 0)}`;
+      return `${index}:${wid}|${String(w.name || w.uid || "").trim()}|${blocked}|${pickUi.isSelected ? 1 : 0}|${Number(w.blockAccumulatedMs || 0)}|${Number(w.blockCheckedAt || 0)}`;
     })
     .join(";");
+}
+
+export function invalidateWaitingPanelFingerprint() {
+  GL._waitingPanelFp = "";
 }
 
 function seatPanelFingerprint(seats = []) {
@@ -348,7 +353,7 @@ export function renderWaiting(waiting = []) {
       const startMs = getWaitingDisplayStartMs(w);
       const elapsed = Date.now() - startMs;
       const tClass = timerClass(elapsed);
-      const blockCheck = GL.isAdminUser
+      const blockCheck = canManageGlobalLayoutOps()
         ? `<label class="wait-check-slot" title="체크 시 배치 블락 + 체크 시각 기준 타이머">
             <input type="checkbox" class="wait-block-check" data-block-wid="${escapeHtml(wid)}" ${blocked ? "checked" : ""} />
           </label>`
@@ -365,7 +370,7 @@ export function renderWaiting(waiting = []) {
         ) || 0;
       const blockAccumulatedMs = Number(w.blockAccumulatedMs || 0) || 0;
       const blockCheckedAtMs = Number(w.blockCheckedAt || 0) || 0;
-      const deleteBtn = GL.isAdminUser
+      const deleteBtn = canManageGlobalLayoutOps()
         ? `<button class="pill-inline danger" type="button" data-delete-wid="${escapeHtml(wid)}">삭제</button>`
         : "";
       return `
@@ -410,7 +415,7 @@ export function renderWaiting(waiting = []) {
   }
 
   waitCol.innerHTML = `
-    <div class="global-form single admin-only ${GL.isAdminUser ? "" : "hidden"}">
+    <div class="global-form single admin-only ${canManageGlobalLayoutOps() ? "" : "hidden"}">
       <input id="manualWaitingNameInput" placeholder="-" autocomplete="off" />
       <button id="addManualWaitingBtn" class="pill-inline full" type="button">+ 대기</button>
     </div>
@@ -513,19 +518,19 @@ export function renderSeatPanel() {
                 : `<span class="seat-manage-empty-dash">-</span>`
             }
             ${
-              GL.isAdminUser && GL.selectedWaitingId
+              canManageGlobalLayoutOps() && GL.selectedWaitingId
                 ? !occupied
                   ? `<button class="pill-inline" data-assign-seat="${escapeHtml(seatId)}">여기 배치</button>`
                   : `<button class="pill-inline" data-assign-seat="${escapeHtml(seatId)}">대기↔스왑</button>`
                 : ``
             }
-            ${GL.isAdminUser && occupied ? `<button class="pill-inline seat-icon-btn warn" type="button" data-clear-seat="${escapeHtml(seatId)}" title="비우기" aria-label="비우기">🧹</button>` : ``}
+            ${canManageGlobalLayoutOps() && occupied ? `<button class="pill-inline seat-icon-btn warn" type="button" data-clear-seat="${escapeHtml(seatId)}" title="비우기" aria-label="비우기">🧹</button>` : ``}
             ${
-              GL.isAdminUser
+              canManageGlobalLayoutOps()
                 ? `<button class="pill-inline seat-icon-btn" type="button" data-rename-seat="${escapeHtml(seatId)}" title="수정" aria-label="수정">⚙</button>`
                 : ``
             }
-            ${GL.isAdminUser ? `<button class="pill-inline seat-icon-btn danger" data-delete-seat="${escapeHtml(seatId)}" data-delete-doc="${escapeHtml(firestoreDocId)}" title="삭제" aria-label="삭제">🗑</button>` : ``}
+            ${canManageGlobalLayoutOps() ? `<button class="pill-inline seat-icon-btn danger" data-delete-seat="${escapeHtml(seatId)}" data-delete-doc="${escapeHtml(firestoreDocId)}" title="삭제" aria-label="삭제">🗑</button>` : ``}
           </div>
         </div>
       </div>
@@ -543,7 +548,7 @@ export function renderSeatPanel() {
     : "index「이벤트 카드 관리」에서 오늘 운영일 카드를 저장한 뒤, 드롭다운에서 카드·Box ID를 선택하세요.";
 
   const seatAssignBannerHtml =
-    GL.isAdminUser && selectedWaiting
+    canManageGlobalLayoutOps() && selectedWaiting
       ? `
     <div class="mobile-selection-banner layout-seat-assign-banner">
       <span class="badge sel">배치할 대기</span>
@@ -571,14 +576,14 @@ export function renderSeatPanel() {
     restorePanelScroll();
     updateGlobalMetaToolbar();
     refreshGlobalLayoutAlignButtonState();
-    if (GL.isAdminUser || GL.opsServerVerified) void wireSeatAddEventPicker();
+    if (canManageGlobalLayoutOps()) void wireSeatAddEventPicker();
     return;
   }
 
   seatCol.innerHTML = `
     <div class="gl-panel-seat-toolbar">
       <div
-        class="seat-add-one-row global-form-seat-add admin-only ${GL.isAdminUser ? "" : "hidden"}"
+        class="seat-add-one-row global-form-seat-add admin-only ${canManageGlobalLayoutOps() ? "" : "hidden"}"
         title="${escapeHtml(seatAddTitle)}"
       >
         <input
@@ -636,5 +641,5 @@ export function renderSeatPanel() {
   restorePanelScroll();
   updateGlobalMetaToolbar();
   refreshGlobalLayoutAlignButtonState();
-  if (GL.isAdminUser || GL.opsServerVerified) void wireSeatAddEventPicker();
+  if (canManageGlobalLayoutOps()) void wireSeatAddEventPicker();
 }

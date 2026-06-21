@@ -51,12 +51,13 @@ import {
   markGlobalLayoutLocalMutation,
   markSkipSeatRecovery
 } from "./layout-mutation-guard.js";
+import { canManageGlobalLayoutOps } from "./ops-access.js";
 
 /** 멀티 선택된 좌석을 같은 y(가로 일렬) 또는 같은 x(세로 일렬)로 맞춥니다. */
 export async function alignSelectedGlobalSeats(axis = "") {
   const ax = String(axis || "").trim();
   if (ax !== "row" && ax !== "col") return;
-  if (!GL.isAdminUser) return;
+  if (!canManageGlobalLayoutOps()) return;
   const ids = [...GL.selectedSeatIds];
   if (ids.length < 2) return;
 

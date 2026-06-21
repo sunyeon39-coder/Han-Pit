@@ -32,7 +32,7 @@ export function createLayoutPersistServices({
       boxId,
       eventDocId,
       seats,
-      eventUpdatedAt: Number(eventState?.updatedAt || 0) || Date.now(),
+      eventUpdatedAt: Number(eventState?.updatedAt || 0),
       isEmptyPerson
     });
   }

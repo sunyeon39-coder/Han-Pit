@@ -161,6 +161,7 @@ function buildGlobalLayoutHref() {
 }
 
 let indexHadOps = false;
+let indexOpsVerified = false;
 /** onAuthStateChanged·모바일 토큰 갱신 시 이전 init 이 리스너를 중복 등록하지 않도록 */
 let indexAuthFlowGen = 0;
 let indexSessionUid = "";
@@ -187,6 +188,18 @@ function resolveIndexBootProfile(user) {
 }
 
 function applyIndexBootProfile(user) {
+  if (!user?.uid) return null;
+  const loginCached = readLoginProfileCache(user.uid);
+  if (loginCached) {
+    IX.currentUserProfile = loginCached;
+    seedMyUserProfileCache(loginCached);
+    applyIndexOpsPermissions(user, { fromCache: true });
+    return {
+      profile: loginCached,
+      fromCache: true,
+      stale: !isLoginProfileCacheFresh(user.uid)
+    };
+  }
   const boot = resolveIndexBootProfile(user);
   if (!boot?.profile) return null;
   IX.currentUserProfile = boot.profile;
@@ -271,18 +284,24 @@ function applyIndexOpsPermissions(user = auth.currentUser, meta = {}) {
   renderDealerOps();
 
   if (canOps) {
+    indexOpsVerified = true;
     IX.globalLayoutBtn?.classList.remove("hidden");
     IX.seatMapOpenEditorBtn?.classList.remove("hidden");
     IX.eventAdminBtn?.classList.remove("hidden");
     IX.attendanceLogBtn?.classList.remove("hidden");
     if (IX.seatMapOpenEditorBtn) IX.seatMapOpenEditorBtn.dataset.canEdit = "1";
-  } else {
-    IX.globalLayoutBtn?.classList.add("hidden");
-    IX.seatMapOpenEditorBtn?.classList.add("hidden");
-    IX.eventAdminBtn?.classList.add("hidden");
-    IX.attendanceLogBtn?.classList.add("hidden");
-    if (IX.seatMapOpenEditorBtn) IX.seatMapOpenEditorBtn.dataset.canEdit = "0";
+    return;
   }
+
+  if (indexOpsVerified) {
+    return;
+  }
+
+  IX.globalLayoutBtn?.classList.add("hidden");
+  IX.seatMapOpenEditorBtn?.classList.add("hidden");
+  IX.eventAdminBtn?.classList.add("hidden");
+  IX.attendanceLogBtn?.classList.add("hidden");
+  if (IX.seatMapOpenEditorBtn) IX.seatMapOpenEditorBtn.dataset.canEdit = "0";
 }
 
 async function refreshIndexOpsFromServer(user = auth.currentUser) {
@@ -357,6 +376,7 @@ async function init() {
   setupWorkSummaryEvents();
 
   applyIndexOpsPermissions(auth.currentUser);
+  IX.indexBootComplete = true;
 }
 
 function wireIndexPageControls() {
@@ -655,6 +675,7 @@ onAuthStateChanged(auth, async (user) => {
     indexSessionUid = "";
     indexAuthFlowGen += 1;
     indexHadOps = false;
+  indexOpsVerified = false;
     disposeIndexRealtimeWatches();
     location.replace("./login.html");
     return;
@@ -674,7 +695,7 @@ onAuthStateChanged(auth, async (user) => {
     refreshIndexDomRefs();
 
     const userRef = doc(db, "users", user.uid);
-    const periodPromise = initTournamentPeriodWatch();
+    IX.indexBootComplete = false;
 
     const boot = applyIndexBootProfile(user);
     if (boot) {
@@ -746,8 +767,9 @@ onAuthStateChanged(auth, async (user) => {
       return profile;
     })();
 
-    await Promise.all([init(), periodPromise]);
+    await init();
     if (flow !== indexAuthFlowGen) return;
+    await initTournamentPeriodWatch();
     void profilePromise
       .then(() => ensureIndexOpsChrome(user))
       .catch(() => null);
@@ -759,6 +781,11 @@ onAuthStateChanged(auth, async (user) => {
 });
 
 window.addEventListener("hanpit-index-tournament-ready", () => {
+  applyIndexOpsPermissions(auth.currentUser);
+  if (IX.events.length) {
+    render();
+    refreshCardStatuses();
+  }
   if (!indexOpsAccessOk(auth.currentUser)) {
     void ensureIndexOpsChrome(auth.currentUser);
   }

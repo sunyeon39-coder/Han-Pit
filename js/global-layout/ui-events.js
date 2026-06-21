@@ -6,8 +6,10 @@ import {
   renderSeatPanel,
   renderWaiting,
   refreshGlobalLayoutPcOpsPanel,
-  setPanelOpen
+  setPanelOpen,
+  invalidateWaitingPanelFingerprint
 } from "./panel-ui.js";
+import { canManageGlobalLayoutOps, canViewGlobalLayoutSeatHistory } from "./ops-access.js";
 import {
   applyOptimisticWaitingBlockRow,
   applyWaitingBlockLocal,
@@ -31,6 +33,7 @@ import {
 import { initGlobalSeatEditModal, openSeatEditModal } from "./seat-edit-modal.js";
 import {
   initGlobalSeatHistoryModal,
+  tryOpenSeatHistoryFromPersonClick,
   wireSeatHistoryLongPress
 } from "./seat-history-modal.js";
 import {
@@ -87,7 +90,7 @@ async function runGlobalMobileAddWaiting() {
 
 /** 관리자 로그인 후 하단 시트 버튼 표시 */
 export function syncGlobalLayoutMobileChrome() {
-  const show = !!GL.isAdminUser;
+  const show = canManageGlobalLayoutOps();
   if (GL.mobileAddSeatBtn) GL.mobileAddSeatBtn.style.display = show ? "" : "none";
   if (GL.mobileAddWaitingBtn) GL.mobileAddWaitingBtn.style.display = show ? "" : "none";
 }
@@ -115,12 +118,12 @@ export function bindGlobalLayoutEventHandlers() {
 
   if (GL.app) {
     wireSeatHistoryLongPress(GL.app, {
-      canOpen: () => !!GL.isAdminUser || !!GL.opsServerVerified
+      canOpen: () => canViewGlobalLayoutSeatHistory()
     });
   }
   if (GL.panelContent) {
     wireSeatHistoryLongPress(GL.panelContent, {
-      canOpen: () => !!GL.isAdminUser || !!GL.opsServerVerified
+      canOpen: () => canViewGlobalLayoutSeatHistory()
     });
   }
 
@@ -129,7 +132,7 @@ export function bindGlobalLayoutEventHandlers() {
   });
 
   document.getElementById("metaStats")?.addEventListener("click", async (e) => {
-    if (!GL.isAdminUser) return;
+    if (!canManageGlobalLayoutOps()) return;
     if (layoutIsMobile() && GL.activeTab !== "seat") return;
     if (e.target.closest("#globalUndoToolbarBtn")) {
       e.preventDefault();
@@ -149,7 +152,16 @@ export function bindGlobalLayoutEventHandlers() {
   });
 
   GL.panelContent?.addEventListener("click", async (e) => {
-    if (!GL.isAdminUser && !GL.opsServerVerified) return;
+    const selectSeatRowEarly = e.target.closest("[data-select-seat]");
+    if (
+      selectSeatRowEarly &&
+      !e.target.closest("[data-assign-seat],[data-clear-seat],[data-delete-seat],[data-rename-seat]")
+    ) {
+      const sid = String(selectSeatRowEarly.getAttribute("data-select-seat") || "").trim();
+      if (sid && tryOpenSeatHistoryFromPersonClick(e, sid)) return;
+    }
+
+    if (!canManageGlobalLayoutOps() && !GL.opsServerVerified) return;
 
     if (e.target.closest("#addSeatToolbarBtn")) {
       try {
@@ -278,7 +290,7 @@ export function bindGlobalLayoutEventHandlers() {
       return;
     }
 
-    if (e.target.closest("input[data-block-wid]")) return;
+    if (e.target.closest(".wait-check-slot, input[data-block-wid]")) return;
 
     const row = e.target.closest("[data-wid]");
     if (!row) return;
@@ -288,16 +300,21 @@ export function bindGlobalLayoutEventHandlers() {
   });
 
   GL.panelContent?.addEventListener("change", async (e) => {
-    if (!GL.isAdminUser) return;
     const blockCb = e.target.closest("[data-block-wid]");
     if (!blockCb) return;
+    e.stopPropagation();
+    if (!canManageGlobalLayoutOps()) {
+      blockCb.checked = !blockCb.checked;
+      alert("운영 권한이 필요합니다.");
+      return;
+    }
     const wid = String(blockCb.getAttribute("data-block-wid") || "").trim();
     if (!wid) return;
-    const row = blockCb.closest("[data-wid]");
     const nextChecked = !!blockCb.checked;
-    applyOptimisticWaitingBlockRow(row, nextChecked);
     applyWaitingBlockLocal(wid, nextChecked);
-    flushOptimisticGlobalLayoutUi();
+    invalidateWaitingPanelFingerprint();
+    renderWaiting(getCurrentTournamentWaiting());
+    updateGlobalLayoutWaitingMeta();
     blockCb.disabled = true;
     try {
       await setWaitingBlocked(wid, nextChecked);
@@ -311,7 +328,7 @@ export function bindGlobalLayoutEventHandlers() {
   });
 
   GL.panelContent?.addEventListener("dblclick", async (e) => {
-    if (!GL.isAdminUser) return;
+    if (!canManageGlobalLayoutOps()) return;
     const row = e.target.closest("[data-select-seat]");
     if (!row) return;
     const seatId = String(row.getAttribute("data-select-seat") || "").trim();
@@ -337,7 +354,7 @@ export function bindGlobalLayoutEventHandlers() {
   });
 
   GL.mobileAddSeatBtn?.addEventListener("click", () => {
-    if (!GL.isAdminUser) return;
+    if (!canManageGlobalLayoutOps()) return;
     if (layoutIsMobile()) {
       void runGlobalMobileAddSeat();
       return;
@@ -349,7 +366,7 @@ export function bindGlobalLayoutEventHandlers() {
   });
 
   GL.mobileAddWaitingBtn?.addEventListener("click", () => {
-    if (!GL.isAdminUser) return;
+    if (!canManageGlobalLayoutOps()) return;
     if (layoutIsMobile()) {
       void runGlobalMobileAddWaiting();
       return;
@@ -382,7 +399,7 @@ export function bindGlobalLayoutEventHandlers() {
   });
 
   GL.app?.addEventListener("pointerdown", (e) => {
-    if (!GL.isAdminUser) return;
+    if (!canManageGlobalLayoutOps()) return;
     const box = e.target.closest(".seat-box[data-seat-id]");
     if (!box) return;
     const seatId = String(box.getAttribute("data-seat-id") || "").trim();
@@ -537,9 +554,14 @@ export function bindGlobalLayoutEventHandlers() {
   });
 
   GL.app?.addEventListener("click", async (e) => {
-    if (!GL.isAdminUser) return;
-
     const box = e.target.closest(".seat-box[data-seat-id]");
+    if (box) {
+      const seatId = String(box.getAttribute("data-seat-id") || "").trim();
+      if (seatId && tryOpenSeatHistoryFromPersonClick(e, seatId)) return;
+    }
+
+    if (!canManageGlobalLayoutOps()) return;
+
     if (box) {
       if (Date.now() < GL.suppressSeatClickUntil) return;
 
@@ -558,7 +580,7 @@ export function bindGlobalLayoutEventHandlers() {
   });
 
   window.addEventListener("keydown", async (e) => {
-    if (!GL.isAdminUser) return;
+    if (!canManageGlobalLayoutOps()) return;
     if (e.key !== "Delete" && e.key !== "Backspace") return;
     if (GL.selectedWaitingId && (layoutIsMobile() ? GL.activeTab === "wait" : true)) {
       try {

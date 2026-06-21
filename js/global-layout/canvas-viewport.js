@@ -1,4 +1,5 @@
 import { GL } from "./state.js";
+import { canManageGlobalLayoutOps } from "./ops-access.js";
 
 const CANVAS_ZOOM_MIN = 0.35;
 const CANVAS_ZOOM_MAX = 1.85;
@@ -81,7 +82,7 @@ export function zoomBarHtml() {
 export function refreshGlobalLayoutAlignButtonState() {
   const bar = GL.canvasZoomBar || document.getElementById("canvasZoomBar");
   if (!bar) return;
-  const ok = GL.isAdminUser && GL.selectedSeatIds.size >= 2;
+  const ok = canManageGlobalLayoutOps() && GL.selectedSeatIds.size >= 2;
   for (const sel of ["[data-align-row]", "[data-align-col]"]) {
     const btn = bar.querySelector(sel);
     if (!btn) continue;
@@ -178,12 +179,12 @@ export function wireGlobalLayoutZoomBarOnce() {
   });
 
   bar.querySelector("[data-align-row]")?.addEventListener("click", async () => {
-    if (!GL.isAdminUser || GL.selectedSeatIds.size < 2) return;
+    if (!canManageGlobalLayoutOps() || GL.selectedSeatIds.size < 2) return;
     const { alignSelectedGlobalSeats } = await import("./firestore-ops.js");
     await alignSelectedGlobalSeats("row");
   });
   bar.querySelector("[data-align-col]")?.addEventListener("click", async () => {
-    if (!GL.isAdminUser || GL.selectedSeatIds.size < 2) return;
+    if (!canManageGlobalLayoutOps() || GL.selectedSeatIds.size < 2) return;
     const { alignSelectedGlobalSeats } = await import("./firestore-ops.js");
     await alignSelectedGlobalSeats("col");
   });

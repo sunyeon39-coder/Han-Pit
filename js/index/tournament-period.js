@@ -10,6 +10,8 @@ import { getTournamentId, resolveRelativePage } from "./core-utils.js";
 import { isTournamentActive } from "./time-utils.js";
 import { IX } from "./state.js";
 import { escapeHtml } from "../shared/dom-utils.js";
+import { readIndexEventsPersistedCache } from "./index-events-session-cache.js";
+import { render } from "./event-cards-render.js";
 import {
   isFirestoreQuotaCoolingDown,
   noteFirestoreQuotaExceeded
@@ -34,6 +36,17 @@ function showMissingTournamentOnIndex() {
   if (IX.topbarTournamentName) {
     IX.topbarTournamentName.textContent = "Tournament Events";
   }
+
+  const tid = getTournamentId();
+  if (!IX.events.length && tid) {
+    const cached = readIndexEventsPersistedCache(tid);
+    if (cached?.length) {
+      IX.events = cached;
+      render();
+      return;
+    }
+  }
+
   if (IX.events.length > 0) {
     console.warn("[index] tournament doc missing but events are loaded — keeping list");
     return;
@@ -108,7 +121,7 @@ async function initTournamentPeriodWatch() {
     if (!snap.exists()) {
       if (snap.metadata?.fromCache) {
         console.warn("[index] tournament cache miss — waiting for realtime/server");
-      } else {
+      } else if (IX.indexBootComplete === true) {
         showMissingTournamentOnIndex();
         return;
       }
@@ -131,6 +144,7 @@ async function initTournamentPeriodWatch() {
       (docSnap) => {
         if (!docSnap.exists()) {
           if (docSnap.metadata?.fromCache) return;
+          if (IX.indexBootComplete !== true) return;
           showMissingTournamentOnIndex();
           return;
         }

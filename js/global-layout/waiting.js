@@ -8,6 +8,107 @@ function toPositiveMs(v) {
   return Number.isFinite(ms) && ms > 0 ? Math.floor(ms) : 0;
 }
 
+function waitingPersonIdentityKey(raw = {}) {
+  const uid = String(raw?.uid || "").trim();
+  const email = String(raw?.email || "").trim().toLowerCase();
+  const name = String(raw?.name || raw?.nickname || "").trim();
+  if (uid) return `uid:${uid}`;
+  if (email) return `email:${email}`;
+  if (name) return `name:${name}`;
+  return "";
+}
+
+function isSameWaitingPerson(a = {}, b = {}) {
+  const aUid = String(a?.uid || "").trim();
+  const bUid = String(b?.uid || "").trim();
+  const aEmail = String(a?.email || "").trim().toLowerCase();
+  const bEmail = String(b?.email || "").trim().toLowerCase();
+  const aName = String(a?.name || a?.nickname || "").trim();
+  const bName = String(b?.name || b?.nickname || "").trim();
+  if (aUid && bUid && aUid === bUid) return true;
+  if (aEmail && bEmail && aEmail === bEmail) return true;
+  if (!aUid && !aEmail && aName && bName === aName) return true;
+  return false;
+}
+
+function findGlobalWaitingForPerson(raw = {}, tournamentId = "") {
+  const tid = String(tournamentId || GL.tournamentId || "").trim();
+  const wid = String(raw?.id || "").trim();
+  const list = Array.isArray(GL.globalWaiting) ? GL.globalWaiting : [];
+
+  if (wid) {
+    const byId = list.find(
+      (w) => waitingRowBelongsToTournament(w, tid) && String(w?.id || "").trim() === wid
+    );
+    if (byId) return byId;
+  }
+
+  const key = waitingPersonIdentityKey(raw);
+  if (!key) return null;
+  return (
+    list.find(
+      (w) => waitingRowBelongsToTournament(w, tid) && waitingPersonIdentityKey(w) === key
+    ) || null
+  );
+}
+
+function copyWaitingBlockFields(row = {}, source = null) {
+  if (!source || source.blockChecked !== true) {
+    return {
+      ...row,
+      blockChecked: false,
+      blockCheckedAt: null,
+      blockAccumulatedMs: 0
+    };
+  }
+  return {
+    ...row,
+    blockChecked: true,
+    blockCheckedAt: source.blockCheckedAt ?? null,
+    blockAccumulatedMs: Number(source.blockAccumulatedMs || 0) || 0
+  };
+}
+
+function buildAttendanceFallbackWaitingRow(item = {}, attId = "") {
+  const uid = String(item?.uid || "").trim();
+  const id = String(attId || item?.id || `att_${uid || makeUid("att")}`).trim();
+  const row = {
+    id,
+    uid,
+    email: String(item.email || "").trim(),
+    name: String(item.name || item.nickname || "").trim() || uid || "-",
+    tournamentId: GL.tournamentId,
+    joinedAt: Number(item.statusChangedAt || item.checkedInAt || Date.now()) || Date.now(),
+    source: "attendance_fallback"
+  };
+  return copyWaitingBlockFields(row, findGlobalWaitingForPerson({ ...row, id }, GL.tournamentId));
+}
+
+function materializeWaitingInGlobal(waitingId = "") {
+  const wid = String(waitingId || "").trim();
+  if (!wid || !Array.isArray(GL.globalWaiting)) return null;
+
+  const existing = GL.globalWaiting.find((w) => String(w?.id || "").trim() === wid);
+  if (existing) return existing;
+
+  const cached = GL._waitingListCache?.find((w) => String(w?.id || "").trim() === wid);
+  if (cached) {
+    GL.globalWaiting = [...GL.globalWaiting, { ...cached }];
+    return cached;
+  }
+
+  for (const item of GL.attendanceWaiting || []) {
+    const uid = String(item?.uid || "").trim();
+    const attId = String(item.id || `att_${uid || makeUid("att")}`).trim();
+    if (attId !== wid && wid !== uid && `att_${uid}` !== wid) continue;
+    const row = buildAttendanceFallbackWaitingRow(item, attId);
+    GL.globalWaiting = [...GL.globalWaiting, row];
+    return row;
+  }
+
+  return null;
+}
+
 export function getWaitingJoinMs(raw = {}) {
   const keys = ["joinedAt", "createdAt", "joinedAtServer", "addedAt", "carryStartedAt"];
   for (const key of keys) {
@@ -19,6 +120,15 @@ export function getWaitingJoinMs(raw = {}) {
 
 export function isWaitingBlocked(raw = {}) {
   return raw?.blockChecked === true;
+}
+
+/** global_waiting 행 — tournamentId 없는 레거시 데이터도 현재 대회에 포함 */
+export function waitingRowBelongsToTournament(row = {}, tournamentId = "") {
+  const tid = String(tournamentId || GL.tournamentId || "").trim();
+  if (!tid) return false;
+  const wTid = String(row?.tournamentId || "").trim();
+  if (!wTid) return true;
+  return wTid === tid;
 }
 
 /** BLOCK 체크 직후 상단 카운트용 — Firestore 스냅샷 전 로컬 대기 목록 반영 */
@@ -35,8 +145,17 @@ export function applyWaitingBlockLocal(waitingId = "", checked = false) {
   const now = Date.now();
   const nextChecked = checked === true;
   GL.dataRevision = (GL.dataRevision || 0) + 1;
+
+  const seed =
+    materializeWaitingInGlobal(wid) ||
+    GL.globalWaiting.find((w) => String(w?.id || "").trim() === wid) ||
+    null;
+
   GL.globalWaiting = GL.globalWaiting.map((w) => {
-    if (String(w?.id || "").trim() !== wid) return w;
+    const sameId = String(w?.id || "").trim() === wid;
+    const samePerson = seed ? isSameWaitingPerson(w, seed) : false;
+    if (!sameId && !samePerson) return w;
+
     const base = { ...w };
     if (nextChecked) {
       base.blockChecked = true;
@@ -50,6 +169,8 @@ export function applyWaitingBlockLocal(waitingId = "", checked = false) {
     }
     return base;
   });
+  GL._waitingListCache = null;
+  GL._waitingListCacheRev = -1;
 }
 
 /** 목록 행 DOM — BLOCK 체크 직후 타이머·뱃지 즉시 반영 */
@@ -199,9 +320,9 @@ export function getCurrentTournamentWaiting() {
   const filterReady = GL.attendanceFilterReady === true;
   const seatedSet = getSeatedIdentitySet();
 
-  const waitingBase = (filterReady ? GL.globalWaiting : [])
-    .filter((w) => String(w?.tournamentId || "").trim() === GL.tournamentId)
-    .filter((w) => !isInactiveWaitingEntry(w, inactive))
+  const waitingBase = (GL.globalWaiting || [])
+    .filter((w) => waitingRowBelongsToTournament(w, GL.tournamentId))
+    .filter((w) => !filterReady || !isInactiveWaitingEntry(w, inactive))
     .filter((w) => !isPersonSeatedInIdentitySet(seatedSet, { uid: w?.uid, email: w?.email, name: w?.name }));
 
   const merged = [...waitingBase];
@@ -232,18 +353,9 @@ export function getCurrentTournamentWaiting() {
       return;
     }
     if (hasEntry(item)) return;
-    merged.push({
-      id: String(item.id || `att_${uid || makeUid("att")}`),
-      uid,
-      email: String(item.email || "").trim(),
-      name: String(item.name || item.nickname || "").trim() || uid || "-",
-      tournamentId: GL.tournamentId,
-      joinedAt: Number(item.statusChangedAt || item.checkedInAt || Date.now()) || Date.now(),
-      source: "attendance_fallback",
-      blockChecked: false,
-      blockCheckedAt: null,
-      blockAccumulatedMs: 0
-    });
+    merged.push(
+      buildAttendanceFallbackWaitingRow(item, String(item.id || `att_${uid || makeUid("att")}`))
+    );
   });
 
   GL._waitingListCache = merged;
@@ -251,19 +363,19 @@ export function getCurrentTournamentWaiting() {
   return merged;
 }
 
-/** 패널에 선택된 대기자 — 목록 필터(이미 좌석)와 무관하게 배치 트랜잭션용으로 조회 */
-export function resolveSelectedWaitingForAssign() {
-  const selId = String(GL.selectedWaitingId || "").trim();
-  if (!selId) return null;
+/** BLOCK·배치 등 — 화면 id로 대기 행 조회 (출석 fallback·globalWaiting 포함) */
+export function resolveWaitingEntryById(waitingId = "") {
+  const wid = String(waitingId || "").trim();
+  if (!wid) return null;
 
-  const inDisplay = getCurrentTournamentWaiting().find((w) => String(w.id || "").trim() === selId);
+  const inDisplay = getCurrentTournamentWaiting().find((w) => String(w?.id || "").trim() === wid);
   if (inDisplay) return inDisplay;
 
   const inactive = GL.attendanceInactiveUids instanceof Set ? GL.attendanceInactiveUids : new Set();
 
-  const fromGlobal = GL.globalWaiting.find((w) => {
-    if (String(w?.tournamentId || "").trim() !== GL.tournamentId) return false;
-    if (String(w?.id || "").trim() !== selId) return false;
+  const fromGlobal = (GL.globalWaiting || []).find((w) => {
+    if (!waitingRowBelongsToTournament(w, GL.tournamentId)) return false;
+    if (String(w?.id || "").trim() !== wid) return false;
     const uid = String(w?.uid || "").trim();
     if (uid && inactive.has(uid)) return false;
     return true;
@@ -273,21 +385,17 @@ export function resolveSelectedWaitingForAssign() {
   for (const item of GL.attendanceWaiting || []) {
     const uid = String(item?.uid || "").trim();
     const attId = String(item.id || `att_${uid || makeUid("att")}`).trim();
-    if (attId !== selId && selId !== uid && `att_${uid}` !== selId) continue;
+    if (attId !== wid && wid !== uid && `att_${uid}` !== wid) continue;
     if (uid && inactive.has(uid)) return null;
-    return {
-      id: attId,
-      uid,
-      email: String(item.email || "").trim(),
-      name: String(item.name || item.nickname || "").trim() || uid || "-",
-      tournamentId: GL.tournamentId,
-      joinedAt: Number(item.statusChangedAt || item.checkedInAt || Date.now()) || Date.now(),
-      source: "attendance_fallback",
-      blockChecked: false,
-      blockCheckedAt: null,
-      blockAccumulatedMs: 0
-    };
+    return buildAttendanceFallbackWaitingRow(item, attId);
   }
 
   return null;
+}
+
+/** 패널에 선택된 대기자 — 목록 필터(이미 좌석)와 무관하게 배치 트랜잭션용으로 조회 */
+export function resolveSelectedWaitingForAssign() {
+  const selId = String(GL.selectedWaitingId || "").trim();
+  if (!selId) return null;
+  return resolveWaitingEntryById(selId);
 }

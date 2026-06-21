@@ -6,6 +6,7 @@ import {
   sanitizeAllowedEvents
 } from "../shared/auth-helpers.js";
 import { hasEventAccess, sortUsersForAdminList } from "./hub-helpers.js";
+import { isFirestoreQuotaCoolingDown } from "../shared/firestore-quota-guard.js";
 import { hubState } from "./hub-state.js";
 import { hubRefs } from "./hub-dom-refs.js";
 
@@ -286,7 +287,11 @@ export function renderAdminUserList() {
   hubState._hubAdminUsersFp = nextFp;
 
   if (!users.length) {
-    adminUserList.innerHTML = `<div class="empty-users">표시할 유저가 없습니다.</div>`;
+    const loadingHint =
+      hubState.usersLoading || isFirestoreQuotaCoolingDown()
+        ? `<div class="empty-users">유저 목록 불러오는 중… (Firestore 응답 대기)</div>`
+        : `<div class="empty-users">표시할 유저가 없습니다.</div>`;
+    adminUserList.innerHTML = loadingHint;
     syncAdminBulkSelectAllCheckbox();
     return;
   }

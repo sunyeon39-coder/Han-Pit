@@ -83,14 +83,25 @@ export async function syncLayoutGlobalSeatsForCurrentLayout({
     });
 
     const safeEventUpdatedAt = Number(eventUpdatedAt || 0) || 0;
+    // 소스 레이아웃 updatedAt 을 신뢰할 수 없거나(아직 로드 전), 좌석이 비었는데 기존 좌석이 남아 있으면
+    // 로드 경합으로 좌석을 통째로 지우는 사고를 막기 위해 삭제 자체를 건너뛴다.
+    const sourceTrusted = safeEventUpdatedAt > 0;
+    const skipDeletes = !sourceTrusted || (safeSeats.length === 0 && existingDocs.length > 0);
+    if (skipDeletes && safeSeats.length === 0 && existingDocs.length > 0) {
+      console.warn(
+        "[syncLayoutGlobalSeats] empty/untrusted layout — global_seats 삭제를 건너뜀",
+        { eventDocId, existing: existingDocs.length, sourceTrusted }
+      );
+    }
     existingDocs.forEach((d) => {
+      if (skipDeletes) return;
       const data = d.data() || {};
       const seatId = String(data.seatId || "").trim();
       if (!seatId || nextSeatIds.has(seatId)) return;
       if (data.managedByLayoutSync !== true) return;
       const docUpdatedAt = Number(data.updatedAt || 0) || 0;
       // 오래된 layout 탭이 newer global_seats를 지우는 것을 방지한다.
-      if (safeEventUpdatedAt > 0 && docUpdatedAt > safeEventUpdatedAt) return;
+      if (docUpdatedAt > safeEventUpdatedAt) return;
       ops.push({ kind: "del", ref: d.ref });
     });
 

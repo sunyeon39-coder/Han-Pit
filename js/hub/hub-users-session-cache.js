@@ -1,0 +1,55 @@
+const HUB_USERS_SESSION_KEY = "hanpit_hub_users_v1";
+const HUB_USERS_LOCAL_KEY = "hanpit_hub_users_ls_v1";
+const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const LOCAL_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+function readCacheEntry(raw, maxAgeMs) {
+  if (!raw) return null;
+  try {
+    const o = JSON.parse(raw);
+    const list = Array.isArray(o?.list) ? o.list : null;
+    if (!list?.length) return null;
+    const age = Date.now() - Number(o.savedAt || 0);
+    if (age < 0 || age > maxAgeMs) return null;
+    return list;
+  } catch {
+    return null;
+  }
+}
+
+export function readHubUsersSessionCache() {
+  try {
+    return readCacheEntry(sessionStorage.getItem(HUB_USERS_SESSION_KEY), SESSION_MAX_AGE_MS);
+  } catch {
+    return null;
+  }
+}
+
+function readHubUsersLocalCache() {
+  try {
+    return readCacheEntry(localStorage.getItem(HUB_USERS_LOCAL_KEY), LOCAL_MAX_AGE_MS);
+  } catch {
+    return null;
+  }
+}
+
+/** sessionStorage → localStorage 순으로 마지막으로 확인된 유저 목록 */
+export function readHubUsersPersistedCache() {
+  return readHubUsersSessionCache() || readHubUsersLocalCache();
+}
+
+export function writeHubUsersSessionCache(list = []) {
+  const safe = Array.isArray(list) ? list : [];
+  if (!safe.length) return;
+  const payload = JSON.stringify({ savedAt: Date.now(), list: safe });
+  try {
+    sessionStorage.setItem(HUB_USERS_SESSION_KEY, payload);
+  } catch {
+    /* ignore */
+  }
+  try {
+    localStorage.setItem(HUB_USERS_LOCAL_KEY, payload);
+  } catch {
+    /* ignore */
+  }
+}

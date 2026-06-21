@@ -30,7 +30,12 @@ import {
 } from "./panel-ui.js";
 import { getCurrentTournamentWaiting } from "./waiting.js";
 import { updateGlobalMetaToolbar } from "./toolbar.js";
-import { bindRealtime, disposeGlobalLayoutRealtime } from "./realtime.js";
+import {
+  bindRealtime,
+  disposeGlobalLayoutRealtime,
+  hasReceivedGlobalSeatsSnapshot
+} from "./realtime.js";
+import { armFirestoreStallWatchdog, showFirestoreStallBanner } from "../shared/firestore-stall-recovery.js";
 import { bindGlobalLayoutEventHandlers, syncGlobalLayoutMobileChrome } from "./ui-events.js";
 import {
   initGlobalLayoutZoomBarDom,
@@ -195,6 +200,14 @@ export function startGlobalLayoutApp() {
       }
     }
 
+    const bootProfile = readBootUserProfile(user, GL.userProfile || {});
+    GL.userProfile = bootProfile;
+    seedMyUserProfileCache(bootProfile);
+    if (syncGlobalLayoutOpsFromProfile(user)) {
+      GL.opsServerVerified = true;
+      return true;
+    }
+
     let profile = await raceFirestoreTimeout(
       loadUserProfileForTournamentOps(user.uid, user.email || "", GL.tournamentId, {
         preferCacheFirst: true,
@@ -241,6 +254,11 @@ export function startGlobalLayoutApp() {
         if (!fresh || globalLayoutSessionUid !== user.uid) return null;
         GL.userProfile = fresh;
         writeLoginProfileCache(user.uid, fresh);
+        if (!syncGlobalLayoutOpsFromProfile(user, { fromCache: false })) {
+          if (globalLayoutSessionStarted && GL.opsServerVerified) return null;
+          applyGlobalLayoutOpsPermissions(user, { fromCache: false });
+          return null;
+        }
         applyGlobalLayoutOpsPermissions(user, { fromCache: false });
         if (!GL.isAdminUser) return null;
         return normalizeAndPersistUserRole(user.uid, GL.userProfile, user.email || "");
@@ -265,14 +283,18 @@ export function startGlobalLayoutApp() {
 
     if (!canOps) {
       refreshGlobalLayoutAdminUi();
-      if (!meta.fromCache) {
-        GL.opsServerVerified = false;
-        alert("운영 권한이 없습니다. 허브에서 대회 접근을 확인해 주세요.");
-        location.replace("./index.html");
+      if (globalLayoutSessionStarted) {
+        console.warn("[global-layout] ops deny during session — keeping layout visible");
+        return;
       }
+      if (meta.fromCache) return;
+      GL.opsServerVerified = false;
+      alert("운영 권한이 없습니다. 허브에서 대회 접근을 확인해 주세요.");
+      location.replace("./index.html");
       return;
     }
 
+    GL.opsServerVerified = true;
     refreshGlobalLayoutAdminUi();
   }
 
@@ -308,6 +330,14 @@ export function startGlobalLayoutApp() {
 
     setPanelOpen(!layoutIsMobile());
     bindRealtime();
+    armFirestoreStallWatchdog({
+      timeoutMs: 12000,
+      dataReady: () => hasReceivedGlobalSeatsSnapshot(),
+      onStall: () =>
+        showFirestoreStallBanner(
+          "좌석 데이터를 불러오지 못했습니다(연결 지연). 연결 새로고침을 눌러 주세요."
+        )
+    });
     void refreshOperatorPicksFromServer()
       .then(() => pruneOperatorPicksWithoutOps())
       .then(() => refreshGlobalLayoutAdminUi());
@@ -373,23 +403,40 @@ export function startGlobalLayoutApp() {
 
     try {
       GL.currentUser = user;
-      GL.userProfile = readBootUserProfile(user);
+      GL.userProfile = readLoginProfileCache(user.uid) || readBootUserProfile(user);
       seedMyUserProfileCache(GL.userProfile);
       markPageBootLoaded(GL.app);
 
       await loadGlobalLayoutTournamentMeta();
 
-      const hasOps = await ensureGlobalLayoutOpsChrome(user);
-      if (!hasOps) {
-        alert(
-          "운영 권한이 없습니다. 허브에서「직접 허용」을 받았는지, 같은 대회로 들어왔는지 확인해 주세요."
-        );
-        location.replace("./index.html");
+      if (syncGlobalLayoutOpsFromProfile(user)) {
+        GL.opsServerVerified = true;
+        startGlobalLayoutSession(user);
+        void ensureGlobalLayoutOpsChrome(user);
+        void refreshGlobalLayoutOpsProfileBackground(user);
         return;
       }
 
-      startGlobalLayoutSession(user);
-      void refreshGlobalLayoutOpsProfileBackground(user);
+      const hasOps = await ensureGlobalLayoutOpsChrome(user);
+      if (hasOps) {
+        startGlobalLayoutSession(user);
+        void refreshGlobalLayoutOpsProfileBackground(user);
+        return;
+      }
+
+      GL.userProfile = readBootUserProfile(user, GL.userProfile || {});
+      seedMyUserProfileCache(GL.userProfile);
+      if (syncGlobalLayoutOpsFromProfile(user)) {
+        GL.opsServerVerified = true;
+        startGlobalLayoutSession(user);
+        void refreshGlobalLayoutOpsProfileBackground(user);
+        return;
+      }
+
+      alert(
+        "운영 권한이 없습니다. 허브에서「직접 허용」을 받았는지, 같은 대회로 들어왔는지 확인해 주세요."
+      );
+      location.replace("./index.html");
     } catch (err) {
       console.error("global layout init error:", err);
       const detail = String(err?.message || err || "").trim();

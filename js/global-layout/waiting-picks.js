@@ -11,6 +11,7 @@ import { resolveLayoutAccentColor } from "../shared/layout-operator-colors.js";
 import { GL } from "./state.js";
 import { escapeHtml } from "./utils.js";
 import { flushOptimisticGlobalLayoutUi } from "./optimistic-seat-mutation.js";
+import { canManageGlobalLayoutOps } from "./ops-access.js";
 
 const WAITING_REF = () => doc(db, "layout_shared", "global_waiting");
 
@@ -42,7 +43,7 @@ export function applyOperatorPicksFromDoc(data = {}, meta = {}) {
       : {};
 
   const myUid = String(GL.currentUser?.uid || auth.currentUser?.uid || "").trim();
-  if (myUid && !GL.isAdminUser) {
+  if (myUid && !canManageGlobalLayoutOps()) {
     delete picks[myUid];
     void clearOperatorPickForUid(myUid);
   }
@@ -68,7 +69,7 @@ export async function refreshOperatorPicksFromServer() {
 
 /** layout_shared/global_waiting.operatorPicks — ops 권한 없는 uid 자동 삭제 */
 export async function pruneOperatorPicksWithoutOps() {
-  if (!GL.isAdminUser && !GL.opsServerVerified) return;
+  if (!canManageGlobalLayoutOps() && !GL.opsServerVerified) return;
 
   let snap = null;
   try {
@@ -210,7 +211,7 @@ export function syncSelectedWaitingFromMyOperatorPick() {
 /** Firestore 반영 전 로컬에 내 선택을 즉시 표시 */
 export function applyOptimisticMyWaitingPick(waitingId = "") {
   const uid = String(GL.currentUser?.uid || auth.currentUser?.uid || "").trim();
-  if (!uid || !GL.isAdminUser) return;
+  if (!uid || !canManageGlobalLayoutOps()) return;
   const wid = String(waitingId || "").trim();
   if (!wid) {
     const next = { ...(GL.operatorPicks || {}) };
@@ -281,7 +282,7 @@ export function getWaitingRowPickState(waitingId = "") {
 }
 
 export function buildOperatorLegendHtml() {
-  if (!GL.isAdminUser) return "";
+  if (!canManageGlobalLayoutOps()) return "";
   const picks = getActiveOperatorPicks();
   if (!picks.length) return "";
 
@@ -320,7 +321,7 @@ export function buildWaitingPickBadgesHtml(waitingId = "") {
 
 export async function syncMyWaitingPick(waitingId = "") {
   const uid = String(GL.currentUser?.uid || auth.currentUser?.uid || "").trim();
-  if (!uid || !GL.isAdminUser) return;
+  if (!uid || !canManageGlobalLayoutOps()) return;
 
   const wid = String(waitingId || "").trim();
   try {

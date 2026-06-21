@@ -1,5 +1,6 @@
 import { GL } from "./state.js";
-import { escapeHtml } from "./utils.js";
+import { escapeHtml, isEmptyPerson } from "./utils.js";
+import { canViewGlobalLayoutSeatHistory } from "./ops-access.js";
 import {
   SEAT_HISTORY_LONG_PRESS_MS,
   findGlobalSeatByAnyKey,
@@ -76,6 +77,21 @@ export function closeSeatHistoryModal() {
   els.root.classList.remove("global-seat-edit-modal--open");
   els.root.setAttribute("aria-hidden", "true");
   document.body.classList.remove("global-seat-edit-modal-open");
+}
+
+/** 배치된 Seat — 사람 이름 영역 클릭 시 이력 모달 (직접 허용 운영자 포함) */
+export function tryOpenSeatHistoryFromPersonClick(e, seatKey = "") {
+  if (!canViewGlobalLayoutSeatHistory()) return false;
+  const key = String(seatKey || "").trim();
+  if (!key) return false;
+  const seat = findGlobalSeatByAnyKey(key);
+  if (!seat || isEmptyPerson(String(seat.person || "").trim())) return false;
+  const onPerson = e.target.closest(
+    ".seat-person:not(.is-empty), .seat-manage-name, .mobile-seat-person"
+  );
+  if (!onPerson) return false;
+  openSeatHistoryModal(key);
+  return true;
 }
 
 export function initGlobalSeatHistoryModal() {

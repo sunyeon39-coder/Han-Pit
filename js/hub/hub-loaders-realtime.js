@@ -42,6 +42,10 @@ import {
   writeHubTournamentsSessionCache
 } from "./hub-tournaments-session-cache.js";
 import {
+  readHubUsersPersistedCache,
+  writeHubUsersSessionCache
+} from "./hub-users-session-cache.js";
+import {
   isFirestoreQuotaCoolingDown,
   noteFirestoreQuotaExceeded
 } from "../shared/firestore-quota-guard.js";
@@ -393,15 +397,26 @@ function healStaleAllowedEventsFromCache(users = []) {
 
 let loadAllUsersInflight = null;
 
+/** 서버·캐시 스냅샷이 모두 비었을 때 마지막으로 본 유저 목록으로 복구 */
+function restoreUsersFromPersistedCache() {
+  if (hubState.usersCache.length) return false;
+  const cached = readHubUsersPersistedCache();
+  if (!cached?.length) return false;
+  hubState.usersCache = cached;
+  return true;
+}
+
 function applyUsersCacheFromSnap(snap) {
   if (!snap || snap.empty) {
     if (snap?.metadata?.fromCache && hubState.usersCache.length) return hubState.usersCache;
     if (hubState.usersCache.length) return hubState.usersCache;
+    restoreUsersFromPersistedCache();
     return hubState.usersCache;
   }
   hubState.usersCache = snap.docs.map(normalizeUserDoc);
   healStaleUserRolesFromCache(hubState.usersCache);
   healStaleAllowedEventsFromCache(hubState.usersCache);
+  writeHubUsersSessionCache(hubState.usersCache);
   return hubState.usersCache;
 }
 
@@ -466,6 +481,8 @@ export async function loadAllUsers(options = {}) {
 
 async function loadAllUsersImpl(options = {}) {
   const forceServer = options.forceServer === true;
+  hubState.usersLoading = true;
+  scheduleHubAdminRender();
   try {
     const col = collection(db, "users");
 
@@ -501,12 +518,19 @@ async function loadAllUsersImpl(options = {}) {
       } catch (err) {
         noteFirestoreQuotaExceeded(err);
         console.warn("loadAllUsers server:", err?.code || err);
+        restoreUsersFromPersistedCache();
       }
+    } else {
+      restoreUsersFromPersistedCache();
     }
     return hubState.usersCache;
   } catch (err) {
     console.error("loadAllUsers error:", err);
+    restoreUsersFromPersistedCache();
     return hubState.usersCache;
+  } finally {
+    hubState.usersLoading = false;
+    scheduleHubAdminRender();
   }
 }
 
@@ -592,7 +616,7 @@ export function bindUsersRealtime() {
       if (shouldSkipEmptyCacheSnapshot(snap, hubState.usersCache.length)) return;
 
       if (snap.empty) {
-        void refreshUsersFromServer();
+        void loadAllUsers({ forceServer: true }).then(() => scheduleHubAdminRender());
         return;
       }
 

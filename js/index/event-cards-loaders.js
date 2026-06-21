@@ -184,6 +184,10 @@ export async function loadEvents(tournamentId = "", options = {}) {
   } catch (err) {
     console.error("loadEvents error:", err);
     if (!IX.events.length) restoreIndexEventsFromPersistedCache(tid);
+  } finally {
+    scheduleIndexCardsRender({
+      adminForm: IX.eventAdminModal?.classList.contains("show")
+    });
   }
 }
 
@@ -210,6 +214,9 @@ export function bindEventsRealtime(tournamentId = "") {
 
       if (snap?.empty && !IX.events.length) {
         void refreshEventsFromServer(tid);
+        scheduleIndexCardsRender({
+          adminForm: IX.eventAdminModal?.classList.contains("show")
+        });
       }
 
       if (

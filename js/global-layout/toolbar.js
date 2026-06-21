@@ -1,6 +1,7 @@
 import { GL } from "./state.js";
 import { layoutIsMobile } from "../layout/layout-main-route-env.js";
 import { getGlobalRedoCount, getGlobalUndoCount, peekGlobalRedo, peekGlobalUndo } from "./undo-stack.js";
+import { canManageGlobalLayoutOps } from "./ops-access.js";
 
 export function updateTabUi() {
   GL.tabs.forEach((t) => t.classList.toggle("active", t.dataset.tab === GL.activeTab));
@@ -59,7 +60,7 @@ export function updateGlobalMetaToolbar() {
   const undoBtn = document.getElementById("globalUndoToolbarBtn");
   const redoBtn = document.getElementById("globalRedoToolbarBtn");
   if (!wrap || !undoBtn) return;
-  const show = GL.isAdminUser && (layoutIsMobile() ? GL.activeTab === "seat" : true);
+  const show = canManageGlobalLayoutOps() && (layoutIsMobile() ? GL.activeTab === "seat" : true);
   wrap.classList.toggle("hidden", !show);
   wrap.setAttribute("aria-hidden", show ? "false" : "true");
   applyGlobalHistoryToolbarButtons(undoBtn, redoBtn, show);

@@ -15,6 +15,7 @@ export const hubState = {
   currentUserProfile: null,
   tournamentsCache: [],
   usersCache: [],
+  usersLoading: false,
   selectedManageUid: null,
   /** 접근 허용 관리 — 유저 목록 일괄 선택 (uid) */
   adminBulkSelectedUids: new Set(),

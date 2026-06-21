@@ -36,6 +36,9 @@ import {
   updateGlobalLayoutWaitingMeta,
   syncGlobalLayoutMetaPills
 } from "./meta-ui.js";
+import { invalidateWaitingPanelFingerprint } from "./panel-ui.js";
+import { canManageGlobalLayoutOps } from "./ops-access.js";
+import { tryOpenSeatHistoryFromPersonClick } from "./seat-history-modal.js";
 
 function formatMobileSeatEventBoxMeta(seat = {}) {
   const { eventId, boxId } = resolveSeatEventBox(seat);
@@ -368,7 +371,11 @@ export function wireGlobalLayoutMobileEventsOnce() {
     }
 
     const waitRow = e.target.closest("[data-mobile-wait]");
-    if (waitRow && !e.target.closest("[data-del-w]") && !e.target.closest("input.wait-block-check")) {
+    if (
+      waitRow &&
+      !e.target.closest("[data-del-w]") &&
+      !e.target.closest(".wait-check-slot, input.wait-block-check")
+    ) {
       const wid = String(waitRow.getAttribute("data-mobile-wait") || "").trim();
       if (!wid) return;
       setWaitingRowSelection(wid);
@@ -386,6 +393,7 @@ export function wireGlobalLayoutMobileEventsOnce() {
     ) {
       const sid = String(seatRow.getAttribute("data-mobile-seat") || "").trim();
       if (!sid) return;
+      if (tryOpenSeatHistoryFromPersonClick(e, sid)) return;
       const seat = GL.globalSeats.find((x) => getGlobalSeatRowKey(x) === sid || String(x.seatId || "").trim() === sid);
       const occupied = seat && !isEmptyPerson(String(seat.person || "").trim());
       const now = Date.now();
@@ -447,14 +455,18 @@ export function wireGlobalLayoutMobileEventsOnce() {
     const cb = e.target.closest("[data-mobile-block-w]");
     if (!cb) return;
     e.stopPropagation();
+    if (!canManageGlobalLayoutOps()) {
+      cb.checked = !cb.checked;
+      alert("운영 권한이 필요합니다.");
+      return;
+    }
     const wid = String(cb.getAttribute("data-mobile-block-w") || "").trim();
     if (!wid) return;
-    const row = cb.closest("[data-mobile-wait]");
     const nextChecked = !!cb.checked;
-    applyOptimisticWaitingBlockRow(row, nextChecked);
     applyWaitingBlockLocal(wid, nextChecked);
+    invalidateWaitingPanelFingerprint();
+    renderGlobalLayoutMobile({ forceFull: true });
     updateGlobalLayoutWaitingMeta();
-    syncGlobalLayoutMetaPills(getGlobalLayoutMobileScrollEl());
     cb.disabled = true;
     try {
       const { setWaitingBlocked } = await loadFirestoreOps();

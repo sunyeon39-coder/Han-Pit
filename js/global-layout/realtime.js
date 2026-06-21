@@ -2,6 +2,7 @@ import { db, auth } from "../firebase.js";
 import {
   collection,
   doc,
+  getDocFromServer,
   getDocsFromServer,
   onSnapshot,
   serverTimestamp
@@ -43,6 +44,12 @@ const RECENT_LOCAL_SEAT_MS = 12000;
 let seatRecoverDebounceTimer = null;
 let lastSeatsUiFingerprint = "";
 let lastWaitingUiFingerprint = "";
+let seatSnapshotReceived = false;
+
+/** 좌석 onSnapshot 이 한 번이라도 콜백을 받았는지 — 캐시 멈춤(hang) 감지용 */
+export function hasReceivedGlobalSeatsSnapshot() {
+  return seatSnapshotReceived;
+}
 
 function globalSeatsUiFingerprint(seats = []) {
   return seats
@@ -114,11 +121,7 @@ function applyDealerAttendanceSnap(snap) {
   ).map(({ id: _id, ...rest }) => rest);
 
   bumpGlobalLayoutDataRevision();
-  if (GL.activeTab === "wait") {
-    scheduleGlobalLayoutRealtimeUi({ waiting: true });
-  } else {
-    scheduleGlobalLayoutRealtimeUi({ metaOnly: true });
-  }
+  scheduleGlobalLayoutRealtimeUi({ waiting: true });
 }
 
 function shouldKeepLocalSeatOverRemoteEmpty(prevSeat, nextSeat) {
@@ -293,6 +296,24 @@ function applyGlobalSeatsFromSnapshot(snap, prevSeatsRef = { value: [] }) {
   return { mergedSeats, removedOccupiedSeats, nextSeats };
 }
 
+async function refreshGlobalWaitingFromServer() {
+  if (isFirestoreQuotaCoolingDown()) return;
+  try {
+    const snap = await getDocFromServer(doc(db, "layout_shared", "global_waiting"));
+    const data = snap.exists() ? snap.data() || {} : {};
+    const nextWaiting = Array.isArray(data.waiting) ? data.waiting : [];
+    GL.globalWaiting = nextWaiting;
+    applyOperatorPicksFromDoc(data, snap.metadata || {});
+    bumpGlobalLayoutDataRevision();
+    lastWaitingUiFingerprint = globalWaitingUiFingerprint(nextWaiting);
+    updateGlobalLayoutWaitingMeta();
+    scheduleGlobalLayoutRealtimeUi({ waiting: true, seatPanel: true });
+  } catch (err) {
+    noteFirestoreQuotaExceeded(err);
+    console.warn("refreshGlobalWaitingFromServer:", err?.code || err);
+  }
+}
+
 async function refreshGlobalSeatsFromServer() {
   if (!GL.tournamentId || isFirestoreQuotaCoolingDown()) return;
   try {
@@ -323,15 +344,18 @@ export function bindRealtime() {
   GL.attendanceWaiting = [];
   lastSeatsUiFingerprint = "";
   lastWaitingUiFingerprint = "";
+  seatSnapshotReceived = false;
 
   let prevSeats = [];
   const prevSeatsRef = { value: prevSeats };
 
-  void refreshGlobalSeatsFromServer();
+  // onSnapshot 첫 스냅샷이 곧 서버 데이터를 전달하고, 캐시가 비면 아래 fallback 이 서버를 읽으므로
+  // 여기서 별도 getDocsFromServer 를 또 호출하지 않는다(중복 읽기로 Firestore quota 소모 방지).
 
   GL.stopSeatWatch = onSnapshot(
     collection(db, "tournaments", GL.tournamentId, "global_seats"),
     (snap) => {
+      seatSnapshotReceived = true;
       if (GL.seatMutationInFlight) return;
       if (shouldIgnoreStaleGlobalLayoutSnapshot(snap)) return;
       if (snap.empty && snap.metadata?.fromCache && GL.globalSeats.length > 0) {
@@ -354,6 +378,7 @@ export function bindRealtime() {
       }
     },
     (err) => {
+      seatSnapshotReceived = true;
       logFirestoreWatchError("global seats watch error", err);
       if (String(err?.code || "").includes("permission-denied") && !GL.hasShownPermissionAlert) {
         GL.hasShownPermissionAlert = true;
@@ -378,10 +403,20 @@ export function bindRealtime() {
       bumpGlobalLayoutDataRevision();
       updateGlobalLayoutWaitingMeta();
       if (waitingUiChanged) {
-        scheduleGlobalLayoutRealtimeUi({ waiting: true });
+        scheduleGlobalLayoutRealtimeUi({ waiting: true, seatPanel: true });
+      }
+
+      if (
+        snap.metadata?.fromCache &&
+        (!snap.exists() || !nextWaiting.length)
+      ) {
+        void refreshGlobalWaitingFromServer();
       }
     },
-    (err) => logFirestoreWatchError("global waiting watch error", err)
+    (err) => {
+      logFirestoreWatchError("global waiting watch error", err);
+      void refreshGlobalWaitingFromServer();
+    }
   );
 
   GL.stopAttendanceWatch = onSnapshot(
@@ -392,7 +427,7 @@ export function bindRealtime() {
       GL.attendanceWaiting = [];
       GL.attendanceFilterReady = true;
       bumpGlobalLayoutDataRevision();
-      scheduleGlobalLayoutRealtimeUi({ metaOnly: true });
+      scheduleGlobalLayoutRealtimeUi({ waiting: true, metaOnly: true });
     }
   );
 }

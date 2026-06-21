@@ -101,12 +101,23 @@ export function clearOpsSessionSnapshot() {
   removeFromStores(OPS_LOCAL_KEY);
 }
 
-/** 앱 부트 — 표시용 닉네임 등만 캐시, 운영 권한(allowedEvents)은 서버 확인 전 사용하지 않음 */
+/** 앱 부트 — 닉네임·직접 허용(allowedEvents) 캐시 우선, 없으면 표시용 최소 프로필 */
 export function readBootUserProfile(user, prev = {}) {
   const uid = String(user?.uid || "").trim();
   const cached = uid ? readLoginProfileCache(uid) : null;
   const email = String(user?.email || cached?.email || prev.email || "").trim();
   const base = cached || prev;
+
+  if (cached) {
+    const fromLoginCache = normalizeUserProfile(cached, email);
+    if (isAdminEmail(email) || hasPersistedDirectOpsAllow(fromLoginCache)) {
+      return fromLoginCache;
+    }
+  }
+
+  const opsSnap = uid ? readOpsSessionSnapshot(uid) : null;
+  const opsAllowed = opsSnap?.allowedEvents ? sanitizeAllowedEvents(opsSnap.allowedEvents) : {};
+
   const profile = normalizeUserProfile(
     {
       email: email || cached?.email || "",
@@ -115,7 +126,9 @@ export function readBootUserProfile(user, prev = {}) {
       gender: String(base?.gender || "none").trim() || "none",
       photoURL: String(base?.photoURL || user?.photoURL || "").trim(),
       accessCode: String(base?.accessCode || "").trim(),
-      allowedEvents: {},
+      allowedEvents: isAdminEmail(email)
+        ? sanitizeAllowedEvents(base?.allowedEvents)
+        : opsAllowed,
       role: "user"
     },
     email
@@ -129,6 +142,9 @@ export function readBootUserProfile(user, prev = {}) {
       },
       email
     );
+  }
+  if (hasAnyDirectEventAllow(opsAllowed)) {
+    return normalizeUserProfile({ ...profile, allowedEvents: opsAllowed }, email);
   }
   return profile;
 }
@@ -154,16 +170,32 @@ export function writeLoginProfileCache(uid = "", profile = null) {
   if (!id || !profile) return;
   let normalized = normalizeUserProfile(profile, profile.email || "");
   const mail = String(normalized.email || "").trim();
+  const existing = readLoginProfileCache(id);
+  const opsSnap = readOpsSessionSnapshot(id);
+  const mergedAllowed = mergeAllowedEventsMaps(
+    sanitizeAllowedEvents(existing?.allowedEvents),
+    mergeAllowedEventsMaps(
+      sanitizeAllowedEvents(opsSnap?.allowedEvents),
+      sanitizeAllowedEvents(normalized.allowedEvents)
+    )
+  );
+
   if (!isAdminEmail(mail) && !hasPersistedDirectOpsAllow(normalized)) {
-    normalized = normalizeUserProfile(
-      {
-        ...normalized,
-        role: "user",
-        allowedEvents: {},
-        opsTournamentIds: []
-      },
-      mail
-    );
+    if (hasAnyDirectEventAllow(mergedAllowed)) {
+      normalized = normalizeUserProfile({ ...normalized, allowedEvents: mergedAllowed }, mail);
+    } else {
+      normalized = normalizeUserProfile(
+        {
+          ...normalized,
+          role: "user",
+          allowedEvents: {},
+          opsTournamentIds: []
+        },
+        mail
+      );
+    }
+  } else if (hasAnyDirectEventAllow(mergedAllowed)) {
+    normalized = normalizeUserProfile({ ...normalized, allowedEvents: mergedAllowed }, mail);
   }
   const payload = {
     uid: id,

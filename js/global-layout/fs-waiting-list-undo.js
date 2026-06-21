@@ -14,9 +14,12 @@ import { runFirestoreTransactionWithRetry } from "../shared/firestore-transactio
 import {
   applyWaitingBlockLocal,
   getCurrentTournamentWaiting,
-  replaceGlobalWaitingLocal
+  replaceGlobalWaitingLocal,
+  resolveWaitingEntryById
 } from "./waiting.js";
 import { flushOptimisticGlobalLayoutUi } from "./optimistic-seat-mutation.js";
+import { invalidateWaitingPanelFingerprint } from "./panel-ui.js";
+import { canManageGlobalLayoutOps } from "./ops-access.js";
 import { clearMyWaitingPick } from "./waiting-picks.js";
 import { updateGlobalMetaToolbar } from "./toolbar.js";
 import { syncLayoutProjection } from "./fs-layout-projection.js";
@@ -834,7 +837,7 @@ function finishUndoRedoUiRefresh(snap = null) {
 }
 
 export async function undoLastGlobalAction() {
-  if (!GL.isAdminUser) return;
+  if (!canManageGlobalLayoutOps()) return;
   const snap = popGlobalUndo();
   if (!snap) return;
   beginUndoRedoMutation();
@@ -898,7 +901,7 @@ export async function undoLastGlobalAction() {
 }
 
 export async function redoLastGlobalAction() {
-  if (!GL.isAdminUser) return;
+  if (!canManageGlobalLayoutOps()) return;
   const snap = popGlobalRedo();
   if (!snap) return;
   beginUndoRedoMutation();
@@ -1032,7 +1035,11 @@ export async function removeManualWaiting(waitingId = "") {
 export async function setWaitingBlocked(waitingId = "", checked = false) {
   const wid = String(waitingId || "").trim();
   if (!wid) return;
-  const target = getCurrentTournamentWaiting().find((w) => String(w?.id || "").trim() === wid);
+  let target = resolveWaitingEntryById(wid);
+  if (!target) {
+    applyWaitingBlockLocal(wid, checked === true);
+    target = resolveWaitingEntryById(wid);
+  }
   if (!target) return;
 
   const waitingRef = doc(db, "layout_shared", "global_waiting");
@@ -1041,6 +1048,7 @@ export async function setWaitingBlocked(waitingId = "", checked = false) {
   const snapshotBefore = JSON.parse(JSON.stringify(GL.globalWaiting || []));
 
   applyWaitingBlockLocal(wid, nextChecked);
+  invalidateWaitingPanelFingerprint();
   flushOptimisticGlobalLayoutUi();
 
   GL.waitingMutationInFlight = true;
