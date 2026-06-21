@@ -565,11 +565,8 @@ export function bindGlobalLayoutEventHandlers() {
       return;
     }
 
+    // 캔버스 좌석 이력은 우측 상단 버튼으로만 연다(이름/박스 클릭으로는 열지 않음).
     const box = e.target.closest(".seat-box[data-seat-id]");
-    if (box) {
-      const seatId = String(box.getAttribute("data-seat-id") || "").trim();
-      if (seatId && tryOpenSeatHistoryFromPersonClick(e, seatId)) return;
-    }
 
     if (!canManageGlobalLayoutOps()) return;
 
