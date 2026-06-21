@@ -12,6 +12,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
   hasAnyDirectEventAllow,
+  isSystemAdminEmail,
   mergeAllowedEventsMaps,
   normalizeUserProfile,
   opsAllowedEventsFromProfile,
@@ -123,57 +124,30 @@ function emailQueryVariants(email = "") {
   return [...new Set([raw, lower].filter(Boolean))];
 }
 
-/** 같은 이메일 users 문서가 여러 uid 로 있을 때 allowedEvents 를 합침 (직접 허용 uid 불일치 대응) */
+/** 같은 이메일 users 문서가 여러 uid 로 있어도 **현재 uid 문서** allowedEvents 만 사용 */
 export async function loadMergedAllowedEventsByEmail(email = "", primaryUid = "", options = {}) {
-  const variants = emailQueryVariants(email);
-  if (!variants.length && !primaryUid) return {};
+  const uid = String(primaryUid || "").trim();
+  if (!uid) return {};
 
-  let merged = {};
-  const seenUids = new Set();
-  const readOpts = { preferCacheFirst: options.preferCacheFirst !== false };
-  let primaryRevoked = false;
+  const readOpts = {
+    preferCacheFirst: options.preferCacheFirst !== false,
+    forceServer: options.forceServer === true
+  };
 
-  if (primaryUid) {
-    try {
-      const primarySnap = await readUserDocSnap(primaryUid, readOpts);
-      if (primarySnap.exists()) {
-        seenUids.add(primaryUid);
-        const primaryData = primarySnap.data() || {};
-        const primaryAllowed = sanitizeAllowedEvents(primaryData.allowedEvents);
-        const primaryRole = String(primaryData.role || "user").trim().toLowerCase();
-        if (primaryRole !== "admin" && !hasAnyDirectEventAllow(primaryAllowed)) {
-          primaryRevoked = true;
-          return {};
-        }
-        merged = mergeAllowedEventsMaps(merged, primaryAllowed);
-      }
-    } catch (err) {
-      console.warn("[loadMergedAllowedEventsByEmail] primary uid read failed:", err);
+  try {
+    const primarySnap = await readUserDocSnap(uid, readOpts);
+    if (!primarySnap.exists()) return {};
+    const primaryData = primarySnap.data() || {};
+    const primaryAllowed = sanitizeAllowedEvents(primaryData.allowedEvents);
+    const primaryRole = String(primaryData.role || "user").trim().toLowerCase();
+    if (primaryRole !== "admin" && !hasAnyDirectEventAllow(primaryAllowed)) {
+      return {};
     }
+    return primaryAllowed;
+  } catch (err) {
+    console.warn("[loadMergedAllowedEventsByEmail] primary uid read failed:", err);
+    return {};
   }
-
-  if (primaryRevoked) return merged;
-
-  await Promise.all(
-    variants.map(async (variant) => {
-      try {
-        const snap = await readUsersByEmailVariant(variant, readOpts);
-        for (const d of snap.docs) {
-          if (seenUids.has(d.id)) continue;
-          seenUids.add(d.id);
-          const data = d.data() || {};
-          merged = mergeAllowedEventsMaps(
-            merged,
-            sanitizeAllowedEvents(data.allowedEvents)
-          );
-        }
-      } catch (err) {
-        console.warn("[loadMergedAllowedEventsByEmail] email query failed:", variant, err);
-      }
-    })
-  );
-
-  return merged;
 }
 
 function scheduleProfileServerRefresh(uid = "", email = "") {
@@ -201,7 +175,14 @@ export async function loadUserProfileFresh(uid, email = "", options = {}) {
     const loginCached = readLoginProfileCache(uid);
     const emailLc = String(email || "").trim().toLowerCase();
     const cachedEmailLc = String(loginCached?.email || "").trim().toLowerCase();
-    if (loginCached && (!emailLc || !cachedEmailLc || emailLc === cachedEmailLc)) {
+    const cachedHasOps =
+      !isSystemAdminEmail(emailLc || cachedEmailLc) &&
+      hasAnyDirectEventAllow(sanitizeAllowedEvents(loginCached?.allowedEvents));
+    if (
+      loginCached &&
+      (!emailLc || !cachedEmailLc || emailLc === cachedEmailLc) &&
+      !cachedHasOps
+    ) {
       scheduleProfileServerRefresh(uid, email);
       return loginCached;
     }
@@ -257,6 +238,17 @@ export async function enrichProfileWithEmailAllows(uid, email, profile, options 
   const resolvedEmail = String(email || profile.email || "").trim();
   if (!resolvedEmail) return profile;
 
+  const mailLc = resolvedEmail.toLowerCase();
+  const primaryRole = String(profile.role || "user").trim().toLowerCase();
+  const primaryAllowed = sanitizeAllowedEvents(profile.allowedEvents);
+  if (
+    !isSystemAdminEmail(mailLc) &&
+    primaryRole !== "admin" &&
+    !hasAnyDirectEventAllow(primaryAllowed)
+  ) {
+    return profile;
+  }
+
   const mergedAllowed = await loadMergedAllowedEventsByEmail(resolvedEmail, uid, {
     preferCacheFirst: options.preferCacheFirst !== false,
     forceServer: options.forceServer === true
@@ -271,8 +263,8 @@ export async function loadUserProfileForTournamentOps(uid, email = "", tournamen
   const tournamentMeta = options.tournamentMeta || null;
   const preferCacheFirst = options.preferCacheFirst === true;
   const readOpts = preferCacheFirst
-    ? { preferCacheFirst: true, skipLoginCache: false }
-    : { preferCacheFirst: false, skipLoginCache: true, forceServer: true };
+    ? { preferCacheFirst: true, skipLoginCache: true, mergeEmailAllows: true }
+    : { preferCacheFirst: false, skipLoginCache: true, forceServer: true, mergeEmailAllows: true };
   const enrichOpts = preferCacheFirst
     ? { preferCacheFirst: true, forceServer: false }
     : { preferCacheFirst: false, forceServer: true };
@@ -285,7 +277,7 @@ export async function loadUserProfileForTournamentOps(uid, email = "", tournamen
   if (!profile && uid) {
     profile = await loadUserProfileFresh(uid, email, {
       preferCacheFirst: true,
-      skipLoginCache: false
+      skipLoginCache: true
     });
   }
 

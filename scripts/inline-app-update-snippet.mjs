@@ -1,6 +1,6 @@
 /** bump-app-version.mjs 가 HTML <head> 에 삽입하는 인라인 스니펫 (모듈 로드 전 실행) */
 
-export const CRITICAL_SHELL_STYLE_TAG = `<style id="han-pit-critical-shell">html{color-scheme:dark;background:#060c17}body{margin:0;min-height:100%;background:#060c17;color:#eef2ff}.page-boot-loading{display:none!important}.layout-canvas-viewport,.canvas.pc-canvas{background:#0a1022}</style>`;
+export const CRITICAL_SHELL_STYLE_TAG = `<style id="han-pit-critical-shell">html{color-scheme:dark;background:#060c17}body{margin:0;min-height:100%;background:#060c17;color:#eef2ff}.page-boot-loading,.page-boot-text{display:none!important}.layout-canvas-viewport,.canvas.pc-canvas{background:#0a1022}</style>`;
 
 export const BOOT_DISMISS_MARKER = "<!-- han-pit-boot-dismiss -->";
 
@@ -10,7 +10,7 @@ export function buildBootDismissSnippet() {
 <script id="han-pit-boot-dismiss">
 (function(){
   function dismiss(){
-    var list=document.querySelectorAll(".page-boot-loading");
+    var list=document.querySelectorAll(".page-boot-loading,.page-boot-text");
     for(var i=0;i<list.length;i++)list[i].remove();
     ["indexRoot","eventList","app"].forEach(function(id){
       var el=document.getElementById(id);
@@ -58,6 +58,21 @@ export function buildAppAssetInlineFixSnippet() {
 </script>`;
 }
 
+export const PERFORMANCE_HINTS_MARKER = "<!-- han-pit-perf-hints -->";
+
+export function buildPerformanceHintsSnippet(v, moduleEntry = "") {
+  const mod = String(moduleEntry || "").trim();
+  const modulePreload = mod
+    ? `\n  <link rel="modulepreload" href="./js/${mod}?v=${v}" crossorigin />`
+    : "";
+  return `${PERFORMANCE_HINTS_MARKER}
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
+  <link rel="preconnect" href="https://firebase.googleapis.com" crossorigin />
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin />
+  <link rel="dns-prefetch" href="https://www.gstatic.com" />${modulePreload}
+  <!-- /han-pit-perf-hints -->`;
+}
+
 export function buildInlineAppUpdateSnippet(v) {
   return `<script id="han-pit-inline-update">
 (function(){
@@ -67,115 +82,83 @@ export function buildInlineAppUpdateSnippet(v) {
   }catch(e){}
   var BUILD="${v}";
   var KEY="hanPitAppVersion";
+  var RELOAD_ONCE="hanPitReloadOnce";
   var meta=document.querySelector('meta[name="han-pit-build"]');
-  var pageBuild=meta?String(meta.getAttribute("content")||"").trim():"";
-  var loc=new URL(location.href);
-  var bust=loc.searchParams.get("_hanpit_v")||"";
-
-  function appBase(){
-    var p=location.pathname||"/";
-    var i=p.lastIndexOf("/");
-    return i<0?"/":p.slice(0,i+1);
-  }
-  function appUrl(rel){
-    rel=String(rel||"").replace(/^\\.\\//,"");
-    return location.origin+appBase()+rel;
-  }
-
-  function isLegacyShell(){
-    var onIndex=document.getElementById("indexRoot")||document.getElementById("dealerOpsMount");
-    return !!onIndex&&!document.getElementById("workSummaryModal");
-  }
-
-  function persist(v){
-    try{localStorage.setItem(KEY,v);}catch(e){}
-  }
-
-  function reload(v){
-    var tag=v||String(Date.now());
-    if(loc.searchParams.get("_hanpit_v")===tag&&pageBuild&&pageBuild===tag)return;
-    var n=0;
-    try{n=Number(sessionStorage.getItem("hanPitReloadAttempt:"+tag)||0);}catch(e){}
-    var cap=isLegacyShell()||!pageBuild?12:4;
-    if(n>=cap)return;
-    try{sessionStorage.setItem("hanPitReloadAttempt:"+tag,String(n+1));}catch(e){}
-    if(v)persist(v);
-    loc.searchParams.set("_hanpit_v",tag);
-    location.replace(loc.toString());
-  }
-
-  function isPlaceholderBust(v){
-    v=String(v||"").trim();
-    return !v||v==="boot"||v==="net";
-  }
-
-  function syncBustInPlace(remote){
-    if(!remote||!pageBuild||pageBuild!==remote)return;
-    if(!isPlaceholderBust(bust)&&bust===remote)return;
-    persist(remote);
-    loc.searchParams.set("_hanpit_v",remote);
-    try{history.replaceState(null,"",loc.toString());}catch(e){}
-  }
-
-  function needsReload(remote){
-    if(isLegacyShell())return true;
-    if(!pageBuild)return true;
-    if(!remote)return false;
-    if(pageBuild===remote)return false;
-    if(bust===remote&&pageBuild===remote)return false;
-    return true;
-  }
+  var pageBuild=meta?String(meta.getAttribute("content")||"").trim():BUILD;
 
   function swScope(){
-    var b=appBase();
+    var p=location.pathname||"/";
+    var i=p.lastIndexOf("/");
+    var b=i<0?"/":p.slice(0,i+1);
     return b.endsWith("/")?b:b+"/";
   }
 
-  function runVersionCheck(){
+  function persist(ver){
+    if(!ver)return;
+    try{localStorage.setItem(KEY,String(ver));}catch(e){}
+  }
+
+  function syncBustParam(ver){
+    if(!ver)return;
+    var loc=new URL(location.href);
+    if(loc.searchParams.get("_hanpit_v")===ver)return;
+    loc.searchParams.set("_hanpit_v",ver);
+    try{history.replaceState(null,"",loc.toString());}catch(e){}
+  }
+
+  function alreadyReloaded(){
+    try{return sessionStorage.getItem(RELOAD_ONCE)==="1";}catch(e){return false;}
+  }
+
+  function markReloaded(){
+    try{sessionStorage.setItem(RELOAD_ONCE,"1");}catch(e){}
+  }
+
+  function reloadOnce(ver){
+    ver=String(ver||"").trim();
+    if(!ver||ver===pageBuild||alreadyReloaded())return;
+    markReloaded();
+    persist(ver);
+    var loc=new URL(location.href);
+    loc.searchParams.set("_hanpit_v",ver);
+    location.replace(loc.toString());
+  }
+
+  if(pageBuild){
+    persist(pageBuild);
+    syncBustParam(pageBuild);
+  }
+
+  function registerSwOnly(){
+    if(!("serviceWorker" in navigator))return;
+    var run=function(){
+      navigator.serviceWorker.register("./firebase-messaging-sw.js",{scope:swScope()}).catch(function(){});
+    };
+    if(typeof requestIdleCallback==="function"){
+      requestIdleCallback(run,{timeout:20000});
+    }else{
+      setTimeout(run,5000);
+    }
+  }
+
+  function checkRemoteVersionOnce(){
+    if(!pageBuild||alreadyReloaded())return;
     fetch("./app-version.json?t="+Date.now(),{cache:"no-store",credentials:"same-origin"})
       .then(function(r){return r.ok?r.json():null;})
       .then(function(d){
         var remote=String((d&&(d.v||d.version))||"").trim();
-        if(needsReload(remote))reload(remote);
-        else syncBustInPlace(remote);
-      })
-      .catch(function(){
-        if(isLegacyShell()||!pageBuild)reload("net");
-      });
-  }
-
-  if(!pageBuild&&!bust){
-    reload("boot");
-    return;
-  }
-
-  if(pageBuild&&bust===pageBuild){
-    try{
-      if(localStorage.getItem(KEY)===pageBuild){
-        setTimeout(runVersionCheck,15000);
-      }else{
-        runVersionCheck();
-      }
-    }catch(e){
-      runVersionCheck();
-    }
-  }else{
-    runVersionCheck();
-  }
-
-  if("serviceWorker" in navigator){
-    navigator.serviceWorker.register("./firebase-messaging-sw.js",{scope:swScope()})
-      .then(function(reg){
-        setTimeout(function(){
-          try{reg.update();}catch(e){}
-        },8000);
+        if(!remote||remote===pageBuild){
+          if(remote)persist(remote);
+          syncBustParam(remote||pageBuild);
+          return;
+        }
+        reloadOnce(remote);
       })
       .catch(function(){});
-    navigator.serviceWorker.addEventListener("message",function(ev){
-      var d=ev&&ev.data;
-      if(d&&d.type==="HAN_PIT_FORCE_RELOAD")reload(String(d.v||"").trim());
-    });
   }
+
+  registerSwOnly();
+  setTimeout(checkRemoteVersionOnce,60000);
 })();
 </script>`;
 }

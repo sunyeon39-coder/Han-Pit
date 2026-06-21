@@ -11,6 +11,7 @@ import {
   writeLoginProfileCache
 } from "../shared/login-profile-cache.js";
 import { getIsAdminUser } from "./hub-helpers.js";
+import { isSystemAdminEmail } from "../shared/auth-helpers.js";
 import { closeModal, openModal } from "../shared/dom-utils.js";
 import { isAppDebugEnabled } from "../shared/app-debug.js";
 import { ensureDocumentShellBackground, instantDismissAllBootLoaders, markPageBootLoaded } from "../shared/page-boot-shell.js";
@@ -84,9 +85,9 @@ instantDismissAllBootLoaders();
 markPageBootLoaded(hubRefs.eventListEl);
 
 const hubSeededFromSession = seedHubTournamentsFromSessionCache();
-hubState.tournamentsListReady = true;
+hubState.tournamentsListReady = hubSeededFromSession;
 hubState.tournamentsBootstrapping = !hubSeededFromSession;
-scheduleHubTournamentsRender();
+if (hubSeededFromSession) scheduleHubTournamentsRender();
 
 let hubSessionUid = "";
 let disposeGlobalSeatNotifyVisibility = null;
@@ -174,15 +175,16 @@ adminBtn?.addEventListener("click", () => {
 
   if (!isAdmin) return;
 
+  if (adminSearchInput) adminSearchInput.value = "";
   clearAdminBulkSelection();
-  populateTournamentSelect();
-  renderAdminUserList();
-  bindUsersRealtime();
   openModal(adminModal);
+  populateTournamentSelect();
+  bindUsersRealtime();
+  renderAdminUserList();
 
   void Promise.all([
     hubState.tournamentsCache.length ? Promise.resolve() : loadTournaments(),
-    hubState.usersCache.length ? Promise.resolve() : loadAllUsers()
+    loadAllUsers({ forceServer: true })
   ]).then(() => {
     populateTournamentSelect();
     renderAdminUserList();
@@ -347,6 +349,21 @@ function paintHubTournamentList() {
   scheduleHubTournamentsRender();
 }
 
+/** Access Manage는 시스템 admin 이메일만 필요 — Firestore 프로필·대회 로드 전에 표시 */
+function applyHubAccessChromeEarly(user) {
+  if (!user) return;
+  applyHubOpsChrome(user);
+  if (!isSystemAdminEmail(user.email || "")) return;
+  void loadAllUsers({ forceServer: true })
+    .then(() => {
+      if (hubState.currentUser?.uid !== user.uid) return;
+      if (hubRefs.adminModal?.classList.contains("show")) renderAdminUserList();
+    })
+    .catch((err) => {
+      console.warn("preload loadAllUsers:", err);
+    });
+}
+
 function disposeHubSessionWatches() {
   hubState.hubProfileWatchUid = null;
   clearHubProfileCacheResyncDebounce();
@@ -382,6 +399,12 @@ async function bootstrapHubSession(user) {
     }
   }
 
+  applyHubAccessChromeEarly(user);
+
+  if (isSystemAdminEmail(user.email || "")) {
+    void loadAllUsers({ forceServer: true }).catch((err) => console.warn("hub preload users:", err));
+  }
+
   try {
   bootTimeoutId = window.setTimeout(() => {
     if (flow !== hubState.hubAuthFlowGen) return;
@@ -397,9 +420,15 @@ async function bootstrapHubSession(user) {
   let [profile] = await Promise.all([
     raceFirestoreTimeout(
       loadUserProfileFresh(user.uid, user.email || "", { preferCacheFirst: true }),
-      8000
+      4000
     ).catch(() => hubState.currentUserProfile || null),
-    raceFirestoreTimeout(loadTournaments(), 8000).catch(() => hubState.tournamentsCache)
+    raceFirestoreTimeout(loadTournaments({ forceServer: true }), 8000)
+      .catch(() => hubState.tournamentsCache)
+      .finally(() => {
+        if (flow !== hubState.hubAuthFlowGen) return;
+        hubState.tournamentsListReady = true;
+        hubState.tournamentsBootstrapping = false;
+      })
   ]);
 
   void loadUserProfileRevalidated(user.uid, user.email || "")
@@ -458,22 +487,7 @@ async function bootstrapHubSession(user) {
     });
   }
 
-  const isAdmin = getIsAdminUser(user, hubState.currentUserProfile);
-  if (flow !== hubState.hubAuthFlowGen || hubState.currentUser?.uid !== user.uid) return;
-
-  if (isAdmin) {
-    adminBtn?.classList.remove("hidden");
-    void loadAllUsers()
-      .then(() => {
-        if (flow !== hubState.hubAuthFlowGen) return;
-        if (hubRefs.adminModal?.classList.contains("show")) renderAdminUserList();
-      })
-      .catch((err) => {
-        console.warn("loadAllUsers:", err);
-      });
-  } else {
-    adminBtn?.classList.add("hidden");
-  }
+  applyHubAccessChromeEarly(user);
 
   syncPushOfferButton(hubRefs.hubEnablePushBtn, user.uid);
   void bootstrapAppPush(user.uid);
@@ -485,6 +499,7 @@ async function bootstrapHubSession(user) {
   if (flow !== hubState.hubAuthFlowGen || hubState.currentUser?.uid !== user.uid) return;
   bindHubForegroundAccessResync(user.uid);
 
+  const isAdmin = getIsAdminUser(user, hubState.currentUserProfile);
   if (!isAdmin) {
     bindHubPeriodicAccessResync(user.uid);
   } else {
@@ -518,6 +533,7 @@ onAuthStateChanged(auth, (user) => {
 
   if (isSameAuthSession(hubSessionUid, user)) {
     hubState.currentUser = user;
+    applyHubAccessChromeEarly(user);
     void bootstrapAppPush(user.uid);
     bindGlobalSeatNotificationWatch(user);
     return;
@@ -525,6 +541,7 @@ onAuthStateChanged(auth, (user) => {
 
   hubSessionUid = user.uid;
   hubState.currentUser = user;
+  applyHubAccessChromeEarly(user);
   disposeHubSessionWatches();
 
   const run = bootstrapHubSession(user)

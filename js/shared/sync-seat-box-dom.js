@@ -45,7 +45,9 @@ export function syncSeatBoxesInContainer(inner, seats, options) {
     box.setAttribute(state.idAttr, seatId);
     box.style.left = `${state.x}px`;
     box.style.top = `${state.y}px`;
-    box.innerHTML = state.innerHtml;
+    if (box.innerHTML !== state.innerHtml) {
+      box.innerHTML = state.innerHtml;
+    }
   });
 
   existing.forEach((box, id) => {

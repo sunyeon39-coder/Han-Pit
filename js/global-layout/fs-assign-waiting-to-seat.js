@@ -27,6 +27,7 @@ import { getEventCardIdFromRecord } from "../shared/tournament-event-instance.js
 import { buildSeatAssignedNotifyMessage } from "../shared/seat-notification-label.js";
 import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
 import { pushGlobalUndo } from "./undo-stack.js";
+import { captureSeatShellSnapshot } from "./utils.js";
 import { clearMyWaitingPick } from "./waiting-picks.js";
 import {
   applyOptimisticAssign,
@@ -34,6 +35,10 @@ import {
 } from "./optimistic-seat-mutation.js";
 import { triggerOptimisticMobileSeatAssignedAlert } from "../shared/optimistic-seat-assigned-notify.js";
 import { markGlobalLayoutLocalMutation } from "./layout-mutation-guard.js";
+import {
+  appendSeatHistoryPatch,
+  entryFromSeatOccupant
+} from "./seat-history.js";
 
 function uniqueDocRefs(refs = []) {
   const seen = new Set();
@@ -141,6 +146,9 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   markGlobalLayoutLocalMutation();
   let undoSeatBefore = null;
   let undoWaitingBefore = null;
+  let undoFirestoreDocId = "";
+  let undoSeatSnapshot = null;
+  let swapReturnedJoinedAt = 0;
   let canonicalSeatEventId = "";
   let canonicalSeatBoxId = "";
   let assignEventCardLabel = "";
@@ -186,6 +194,7 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
         GL.globalSeats[idx] = { ...GL.globalSeats[idx], __firestoreDocId: seatDoc.docId };
       }
     }
+    undoFirestoreDocId = String(seatRef.id || seat.__firestoreDocId || "").trim();
 
     if (!canonicalSeatEventId || !canonicalSeatBoxId) {
       const fallback = resolveSeatEventBox(seat);
@@ -319,6 +328,7 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
           break;
         }
         if (!bumpedPrevHasOtherSeat) {
+          swapReturnedJoinedAt = now;
           nextWaiting = rebuildWaitingAfterSeatToWait(
             nextWaiting,
             GL.tournamentId,
@@ -329,6 +339,7 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
         }
       }
 
+      undoSeatSnapshot = captureSeatShellSnapshot(seat, seatData);
       undoSeatBefore = {
         person: String(seatData.person || "").trim(),
         personUid: String(seatData.personUid || "").trim(),
@@ -336,6 +347,11 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
         seatedAt: seatData.seatedAt ? Number(seatData.seatedAt) : null,
         status: isEmptyPerson(String(seatData.person || "").trim()) ? "empty" : "occupied"
       };
+
+      const replaceHistoryEntry = wasOccupied
+        ? entryFromSeatOccupant(seatData, now, "replace")
+        : null;
+      const nextSeatHistory = appendSeatHistoryPatch(seatData.seatHistory, replaceHistoryEntry);
 
       tx.set(
         seatRef,
@@ -346,7 +362,8 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
           seatedAt: now,
           status: "occupied",
           updatedAt: now,
-          updatedAtServer: serverTimestamp()
+          updatedAtServer: serverTimestamp(),
+          ...(nextSeatHistory ? { seatHistory: nextSeatHistory } : {})
         },
         { merge: true }
       );
@@ -468,6 +485,10 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
     targetSeatId,
     eventId: ev,
     boxId: bx,
+    firestoreDocId: undoFirestoreDocId,
+    assignedSeatedAt: now,
+    swapReturnedJoinedAt,
+    seatSnapshot: undoSeatSnapshot,
     waiting: JSON.parse(JSON.stringify(waiting)),
     waitingBefore: Array.isArray(undoWaitingBefore) ? undoWaitingBefore : [],
     seatBefore: undoSeatBefore || null

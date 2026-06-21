@@ -53,8 +53,7 @@ export function createLayoutUiRender(deps) {
 
   function render() {
     if (isMobile()) {
-      app.innerHTML = "";
-      layoutPanels.renderMobile();
+      layoutPanels.renderMobile({ sync: true });
       layoutTimers.updateTimers();
       mobileSheet?.classList.remove("open");
       return;

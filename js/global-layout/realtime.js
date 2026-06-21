@@ -2,6 +2,7 @@ import { db, auth } from "../firebase.js";
 import {
   collection,
   doc,
+  getDocsFromServer,
   onSnapshot,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
@@ -17,8 +18,8 @@ import {
 import { GL } from "./state.js";
 import { updateGlobalLayoutWaitingMeta } from "./meta-ui.js";
 import { applyOperatorPicksFromDoc } from "./waiting-picks.js";
-import { getAttendanceRef, isEmptyPerson, getGlobalSeatSeatedAtMs } from "./utils.js";
-import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
+import { getAttendanceRef, isEmptyPerson, dedupeGlobalSeats, normalizeGlobalSeatFromFirestore, parseGlobalSeatDocIdParts, getGlobalSeatRowKey, getGlobalSeatSeatedAtMs } from "./utils.js";
+import { rebuildWaitingAfterSeatToWait, waitingRowMatchesPerson } from "./fs-waiting-merge.js";
 import {
   bumpGlobalLayoutDataRevision,
   scheduleGlobalLayoutRealtimeUi
@@ -32,10 +33,47 @@ import {
   maybeShowOptimisticSeatAlertFromSeats,
   triggerOptimisticMobileSeatAssignedAlert
 } from "../shared/optimistic-seat-assigned-notify.js";
+import {
+  isFirestoreQuotaCoolingDown,
+  noteFirestoreQuotaExceeded
+} from "../shared/firestore-quota-guard.js";
 
 /** Firestore 전파 전 캐시 스냅샷이 방금 배치한 좌석을 비우는 것 방지 */
 const RECENT_LOCAL_SEAT_MS = 12000;
 let seatRecoverDebounceTimer = null;
+let lastSeatsUiFingerprint = "";
+let lastWaitingUiFingerprint = "";
+
+function globalSeatsUiFingerprint(seats = []) {
+  return seats
+    .map((s) =>
+      [
+        String(s?.seatId || "").trim(),
+        String(s?.person || "").trim(),
+        String(s?.personUid || "").trim(),
+        String(s?.label ?? s?.no ?? ""),
+        Number(s?.seatedAt || 0) || 0,
+        Number(s?.order || 0) || 0,
+        String(s?.status || "")
+      ].join(":")
+    )
+    .join("|");
+}
+
+function globalWaitingUiFingerprint(arr = []) {
+  return arr
+    .map((w) =>
+      [
+        String(w?.id || "").trim(),
+        String(w?.name || "").trim(),
+        String(w?.uid || "").trim(),
+        w?.blockChecked === true ? 1 : 0,
+        Number(w?.joinedAt || w?.createdAt || 0) || 0,
+        Number(w?.blockAccumulatedMs || 0) || 0
+      ].join(":")
+    )
+    .join("|");
+}
 
 function disposeGlobalLayoutRealtime() {
   if (GL.stopSeatWatch) {
@@ -166,6 +204,7 @@ async function recoverRemovedSeatPeopleToWaiting(removedSeats = [], currentSeats
     const waitingArr = Array.isArray(waitingData.waiting) ? waitingData.waiting : [];
     let nextWaiting = waitingArr;
     for (const p of people) {
+      if (waitingArr.some((w) => waitingRowMatchesPerson(w, GL.tournamentId, p))) continue;
       nextWaiting = rebuildWaitingAfterSeatToWait(nextWaiting, GL.tournamentId, p, now, {
         source: "seat_removed_recovery"
       });
@@ -208,6 +247,66 @@ function logFirestoreWatchError(label, err) {
   console.error(`${label}:`, err);
 }
 
+function applyGlobalSeatsFromSnapshot(snap, prevSeatsRef = { value: [] }) {
+  const nextSeats = dedupeGlobalSeats(
+    (snap?.docs || []).map((d) => normalizeGlobalSeatFromFirestore(d.data() || {}, d.id))
+  );
+  const mergedSeats = mergeGlobalSeatsFromSnapshot(GL.globalSeats, nextSeats);
+  const nextSeatIds = new Set(
+    mergedSeats.map((s) => String(s?.seatId || "").trim()).filter(Boolean)
+  );
+  const nextBySeatId = new Map(
+    nextSeats.map((s) => [String(s?.seatId || "").trim(), s])
+  );
+  const removedOccupiedSeats = prevSeatsRef.value.filter((s) => {
+    const sid = String(s?.seatId || "").trim();
+    if (!sid || !nextSeatIds.has(sid)) return false;
+    const next = nextBySeatId.get(sid);
+    if (!next) return false;
+    const prevName = String(s?.person || "").trim();
+    const nextName = String(next?.person || "").trim();
+    return !isEmptyPerson(prevName) && isEmptyPerson(nextName);
+  });
+
+  GL.globalSeats = mergedSeats;
+  bumpGlobalLayoutDataRevision();
+  prevSeatsRef.value = mergedSeats;
+
+  const seatsFp = globalSeatsUiFingerprint(mergedSeats);
+  const seatsUiChanged = seatsFp !== lastSeatsUiFingerprint;
+  lastSeatsUiFingerprint = seatsFp;
+
+  if (layoutIsMobile()) {
+    maybeShowOptimisticSeatAlertFromSeats(mergedSeats, {
+      user: GL.currentUser || auth.currentUser,
+      profile: GL.userProfile,
+      buildTargetUrl: (eventId, boxId, seatId) =>
+        `./layout.html?tournamentId=${encodeURIComponent(GL.tournamentId)}&eventId=${encodeURIComponent(eventId)}&boxId=${encodeURIComponent(boxId)}&focusSeatId=${encodeURIComponent(seatId)}`,
+      showAlert: (payload) => triggerOptimisticMobileSeatAssignedAlert(payload)
+    });
+  }
+
+  if (seatsUiChanged) {
+    scheduleGlobalLayoutRealtimeUi({ seats: true, seatPanel: true, waiting: true });
+  }
+
+  return { mergedSeats, removedOccupiedSeats, nextSeats };
+}
+
+async function refreshGlobalSeatsFromServer() {
+  if (!GL.tournamentId || isFirestoreQuotaCoolingDown()) return;
+  try {
+    const snap = await getDocsFromServer(
+      collection(db, "tournaments", GL.tournamentId, "global_seats")
+    );
+    applyGlobalSeatsFromSnapshot(snap, { value: GL.globalSeats });
+    scheduleGlobalLayoutRealtimeUi({ seats: true, seatPanel: true, waiting: true });
+  } catch (err) {
+    noteFirestoreQuotaExceeded(err);
+    console.warn("refreshGlobalSeatsFromServer:", err?.code || err);
+  }
+}
+
 export { disposeGlobalLayoutRealtime };
 
 export function bindRealtime() {
@@ -222,8 +321,14 @@ export function bindRealtime() {
   GL.attendanceFilterReady = false;
   GL.attendanceInactiveUids = new Set();
   GL.attendanceWaiting = [];
+  lastSeatsUiFingerprint = "";
+  lastWaitingUiFingerprint = "";
 
   let prevSeats = [];
+  const prevSeatsRef = { value: prevSeats };
+
+  void refreshGlobalSeatsFromServer();
+
   GL.stopSeatWatch = onSnapshot(
     collection(db, "tournaments", GL.tournamentId, "global_seats"),
     (snap) => {
@@ -232,42 +337,12 @@ export function bindRealtime() {
       if (snap.empty && snap.metadata?.fromCache && GL.globalSeats.length > 0) {
         return;
       }
-      const nextSeats = snap.docs.map((d) => ({
-        ...(d.data() || {}),
-        __firestoreDocId: d.id
-      }));
-      const mergedSeats = mergeGlobalSeatsFromSnapshot(GL.globalSeats, nextSeats);
-      const nextSeatIds = new Set(
-        mergedSeats.map((s) => String(s?.seatId || "").trim()).filter(Boolean)
-      );
-      const nextBySeatId = new Map(
-        nextSeats.map((s) => [String(s?.seatId || "").trim(), s])
-      );
-      const removedOccupiedSeats = prevSeats.filter((s) => {
-        const sid = String(s?.seatId || "").trim();
-        if (!sid || !nextSeatIds.has(sid)) return false;
-        const next = nextBySeatId.get(sid);
-        if (!next) return false;
-        const prevName = String(s?.person || "").trim();
-        const nextName = String(next?.person || "").trim();
-        return !isEmptyPerson(prevName) && isEmptyPerson(nextName);
-      });
+      const { removedOccupiedSeats, nextSeats } = applyGlobalSeatsFromSnapshot(snap, prevSeatsRef);
+      prevSeats = prevSeatsRef.value;
 
-      GL.globalSeats = mergedSeats;
-      bumpGlobalLayoutDataRevision();
-      prevSeats = mergedSeats;
-
-      if (layoutIsMobile()) {
-        maybeShowOptimisticSeatAlertFromSeats(mergedSeats, {
-          user: GL.currentUser || auth.currentUser,
-          profile: GL.userProfile,
-          buildTargetUrl: (eventId, boxId, seatId) =>
-            `./layout.html?tournamentId=${encodeURIComponent(GL.tournamentId)}&eventId=${encodeURIComponent(eventId)}&boxId=${encodeURIComponent(boxId)}&focusSeatId=${encodeURIComponent(seatId)}`,
-          showAlert: (payload) => triggerOptimisticMobileSeatAssignedAlert(payload)
-        });
+      if (snap?.empty && !GL.globalSeats.length) {
+        void refreshGlobalSeatsFromServer();
       }
-
-      scheduleGlobalLayoutRealtimeUi({ seats: true, seatPanel: true, waiting: true });
 
       if (
         removedOccupiedSeats.length &&
@@ -293,11 +368,18 @@ export function bindRealtime() {
       if (GL.seatMutationInFlight || GL.waitingMutationInFlight) return;
       if (shouldIgnoreStaleGlobalLayoutSnapshot(snap)) return;
       const data = snap.exists() ? snap.data() || {} : {};
-      GL.globalWaiting = Array.isArray(data.waiting) ? data.waiting : [];
-      applyOperatorPicksFromDoc(data);
+      const nextWaiting = Array.isArray(data.waiting) ? data.waiting : [];
+      const waitingFp = globalWaitingUiFingerprint(nextWaiting);
+      const waitingUiChanged = waitingFp !== lastWaitingUiFingerprint;
+      lastWaitingUiFingerprint = waitingFp;
+
+      GL.globalWaiting = nextWaiting;
+      applyOperatorPicksFromDoc(data, snap.metadata || {});
       bumpGlobalLayoutDataRevision();
       updateGlobalLayoutWaitingMeta();
-      scheduleGlobalLayoutRealtimeUi({ waiting: true });
+      if (waitingUiChanged) {
+        scheduleGlobalLayoutRealtimeUi({ waiting: true });
+      }
     },
     (err) => logFirestoreWatchError("global waiting watch error", err)
   );

@@ -120,8 +120,19 @@ export function createLayoutPcPanelRender(deps) {
 
   function renderWaitPanel() {
     const selected = ui.selectedWaitingId;
-    const html = [];
     const displayWaiting = getWaitingListForDisplay();
+    const nextWaitFp = `${selected || ""}|${displayWaiting
+      .map((w) => `${w.id}|${String(w.name || "").trim()}|${w.blockChecked === true ? 1 : 0}`)
+      .join(";")}`;
+    const existingWaitList = panelContent.querySelector(".layout-wait-list");
+    const existingAddBtn = document.getElementById("addWaitBtn");
+    if (nextWaitFp === panelContent.dataset.layoutWaitFp && existingWaitList && existingAddBtn) {
+      onTimersUpdate();
+      return;
+    }
+    panelContent.dataset.layoutWaitFp = nextWaitFp;
+
+    const html = [];
 
     if (canManageLayout()) {
       html.push(`<input id="waitNameInput" placeholder="-" />`);
@@ -170,8 +181,6 @@ export function createLayoutPcPanelRender(deps) {
     }
 
     const listHtml = html.slice(2).join("");
-    const existingWaitList = panelContent.querySelector(".layout-wait-list");
-    const existingAddBtn = document.getElementById("addWaitBtn");
     if (existingWaitList && existingAddBtn) {
       existingWaitList.innerHTML = listHtml;
       onTimersUpdate();
@@ -189,6 +198,18 @@ export function createLayoutPcPanelRender(deps) {
     const selectedWaiting = ui.selectedWaitingId
       ? waitingAll.find((w) => w.id === ui.selectedWaitingId) || null
       : null;
+
+    const sortedSeats = getSortedSeats(eventState.seats);
+    const nextSeatFp = `${ui.seatSortMode}|${ui.selectedWaitingId || ""}|${sortedSeats
+      .map((s) => `${s.id}|${String(s.person || "").trim()}|${ui.selectedSeatId === s.id ? 1 : 0}`)
+      .join(";")}`;
+    const existingSeatList = panelContent.querySelector(".layout-seat-tab-list");
+    const existingMeta = panelContent.querySelector(".global-meta");
+    if (nextSeatFp === panelContent.dataset.layoutSeatFp && existingSeatList && existingMeta) {
+      onTimersUpdate();
+      return;
+    }
+    panelContent.dataset.layoutSeatFp = nextSeatFp;
 
     const left = [];
     const seatCount = eventState.seats.length;
@@ -290,8 +311,6 @@ export function createLayoutPcPanelRender(deps) {
 
     const listHtml = listRows.join("");
     const shellHtml = left.join("");
-    const existingSeatList = panelContent.querySelector(".layout-seat-tab-list");
-    const existingMeta = panelContent.querySelector(".global-meta");
     if (existingSeatList && existingMeta) {
       const metaLeft = existingMeta.querySelector(".global-meta-left");
       if (metaLeft) {

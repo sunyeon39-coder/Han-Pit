@@ -1,14 +1,12 @@
 import { getTournamentId } from "./core-utils.js";
 import { formatDuration } from "./dealer-attendance-format.js";
 import { getWorkingMs } from "./dealer-attendance-derived.js";
+import { getOperationalDayKey } from "../shared/attendance-operational-day.js";
 
 const SESSION_START = new Set(["waiting", "checked_in"]);
 
 function localDateKey(ms) {
-  const d = new Date(Number(ms));
-  if (!Number.isFinite(d.getTime())) return "";
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return getOperationalDayKey(Number(ms) || Date.now());
 }
 
 function sessionDurationMs(session) {

@@ -30,6 +30,10 @@ import {
 } from "./firestore-ops.js";
 import { initGlobalSeatEditModal, openSeatEditModal } from "./seat-edit-modal.js";
 import {
+  initGlobalSeatHistoryModal,
+  wireSeatHistoryLongPress
+} from "./seat-history-modal.js";
+import {
   initGlobalMobileSeatAddModal,
   openGlobalMobileSeatAddModal
 } from "./mobile-seat-add-modal.js";
@@ -106,7 +110,19 @@ function applyCanvasSeatSelectionClick(seatId, multi) {
 
 export function bindGlobalLayoutEventHandlers() {
   initGlobalSeatEditModal();
+  initGlobalSeatHistoryModal();
   initGlobalMobileSeatAddModal();
+
+  if (GL.app) {
+    wireSeatHistoryLongPress(GL.app, {
+      canOpen: () => !!GL.isAdminUser || !!GL.opsServerVerified
+    });
+  }
+  if (GL.panelContent) {
+    wireSeatHistoryLongPress(GL.panelContent, {
+      canOpen: () => !!GL.isAdminUser || !!GL.opsServerVerified
+    });
+  }
 
   GL.backBtn?.addEventListener("click", () => {
     location.href = `./index.html?tournamentId=${encodeURIComponent(GL.tournamentId)}`;
@@ -116,12 +132,16 @@ export function bindGlobalLayoutEventHandlers() {
     if (!GL.isAdminUser) return;
     if (layoutIsMobile() && GL.activeTab !== "seat") return;
     if (e.target.closest("#globalUndoToolbarBtn")) {
+      e.preventDefault();
+      e.stopPropagation();
       const btn = e.target.closest("#globalUndoToolbarBtn");
       if (getGlobalUndoCount() <= 0 || btn?.disabled) return;
       await undoLastGlobalAction();
       return;
     }
     if (e.target.closest("#globalRedoToolbarBtn")) {
+      e.preventDefault();
+      e.stopPropagation();
       const btn = e.target.closest("#globalRedoToolbarBtn");
       if (getGlobalRedoCount() <= 0 || btn?.disabled) return;
       await redoLastGlobalAction();
@@ -129,7 +149,7 @@ export function bindGlobalLayoutEventHandlers() {
   });
 
   GL.panelContent?.addEventListener("click", async (e) => {
-    if (!GL.isAdminUser) return;
+    if (!GL.isAdminUser && !GL.opsServerVerified) return;
 
     if (e.target.closest("#addSeatToolbarBtn")) {
       try {
@@ -220,11 +240,12 @@ export function bindGlobalLayoutEventHandlers() {
 
     const deleteSeatBtn = e.target.closest("[data-delete-seat]");
     if (deleteSeatBtn) {
-      const sid = String(deleteSeatBtn.getAttribute("data-delete-seat") || "");
-      if (!sid) return;
+      const sid = String(deleteSeatBtn.getAttribute("data-delete-seat") || "").trim();
+      const docId = String(deleteSeatBtn.getAttribute("data-delete-doc") || "").trim();
+      if (!sid && !docId) return;
       if (!confirm("이 좌석을 삭제하시겠습니까?")) return;
       try {
-        await deleteGlobalSeat(sid);
+        await deleteGlobalSeat(sid, { firestoreDocId: docId });
         flushOptimisticGlobalLayoutUi();
       } catch (err) {
         console.error("deleteGlobalSeat error:", err);
@@ -554,8 +575,15 @@ export function bindGlobalLayoutEventHandlers() {
       return;
     }
     try {
-      for (const sid of toDelete) {
-        await deleteGlobalSeat(sid);
+      for (const key of toDelete) {
+        const seat = GL.globalSeats.find(
+          (s) =>
+            String(s.seatId || "").trim() === key ||
+            String(s.__firestoreDocId || "").trim() === key
+        );
+        await deleteGlobalSeat(String(seat?.seatId || key || "").trim(), {
+          firestoreDocId: String(seat?.__firestoreDocId || key || "").trim()
+        });
       }
       renderSeats(GL.globalSeats);
       if (layoutIsMobile()) {

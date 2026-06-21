@@ -1,6 +1,7 @@
 import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
 import { getAttendanceDocId } from "./dealer-attendance-refs.js";
+import { applyOperationalDayToAttendance } from "../shared/attendance-operational-day.js";
 
 export function getBaseAttendance(user) {
   if (!user) return null;
@@ -35,7 +36,7 @@ export function getDerivedAttendance(user) {
 
   if (!base) {
     const seatOnly = seatInfo && seatStillMatchesActiveEventCard(seatInfo);
-    return {
+    return applyOperationalDayToAttendance({
       uid: user.uid,
       nickname: IX.currentUserProfile?.nickname || user.displayName || "Unknown",
       status: seatOnly ? "assigned" : "off",
@@ -48,17 +49,17 @@ export function getDerivedAttendance(user) {
       currentSeatId: seatOnly ? (seatInfo.seatId || "") : "",
       currentSeatLabel: seatOnly ? (seatInfo.seatLabel || "") : "",
       updatedAt: 0
-    };
+    });
   }
 
-  return {
+  return applyOperationalDayToAttendance({
     ...base,
     status: useSeat ? "assigned" : base.status,
     currentEventId: useSeat ? (seatInfo.eventId || base.currentEventId || "") : base.currentEventId || "",
     currentBoxId: useSeat ? (seatInfo.boxId || base.currentBoxId || "") : base.currentBoxId || "",
     currentSeatId: useSeat ? (seatInfo.seatId || base.currentSeatId || "") : base.currentSeatId || "",
     currentSeatLabel: useSeat ? (seatInfo.seatLabel || base.currentSeatLabel || "") : base.currentSeatLabel || ""
-  };
+  });
 }
 
 export function getWorkingMs(item) {

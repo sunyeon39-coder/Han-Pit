@@ -25,6 +25,41 @@ import {
 import { normalizeAttendanceDoc } from "./dealer-attendance-derived.js";
 import { scheduleRenderDealerOps } from "./dealer-attendance-render.js";
 import { ensureMeRecovered } from "./dealer-attendance-recovery.js";
+import { maybeResetMyStaleOperationalDayAttendance } from "./dealer-attendance-operational-day-reset.js";
+
+let lastDealerAttendanceFp = "";
+let lastDealerSeatMapFp = "";
+
+function dealerAttendanceFingerprint() {
+  const parts = [];
+  IX.dealerAttendanceMap.forEach((v, k) => {
+    parts.push(
+      `${k}:${String(v?.status || "")}:${String(v?.nickname || v?.name || "")}:${Number(v?.checkedInAt || 0)}:${Number(v?.checkedOutAt || 0)}`
+    );
+  });
+  return parts.sort().join("|");
+}
+
+function dealerSeatMapFingerprint() {
+  const parts = [];
+  IX.dealerSeatMap.forEach((v, k) => {
+    parts.push(
+      `${k}:${String(v?.seatId || "")}:${String(v?.eventId || "")}:${String(v?.boxId || "")}:${Number(v?.seatedAt || 0)}`
+    );
+  });
+  return parts.sort().join("|");
+}
+
+function scheduleDealerOpsIfChanged(nextFp, storeKey = "attendance") {
+  if (storeKey === "attendance") {
+    if (nextFp === lastDealerAttendanceFp) return;
+    lastDealerAttendanceFp = nextFp;
+  } else {
+    if (nextFp === lastDealerSeatMapFp) return;
+    lastDealerSeatMapFp = nextFp;
+  }
+  scheduleRenderDealerOps();
+}
 
 function maybeTriggerOptimisticSeatAlertFromDealerSeatMap(user, previousSeatKey = "") {
   if (!layoutIsMobile() || !user?.uid) return previousSeatKey;
@@ -91,7 +126,8 @@ export function bindDealerAttendanceRealtime() {
           IX.dealerAttendanceMap.set(d.id, data);
         });
 
-        scheduleRenderDealerOps();
+        scheduleDealerOpsIfChanged(dealerAttendanceFingerprint(), "attendance");
+        void maybeResetMyStaleOperationalDayAttendance(user);
       },
       (err) => {
         console.error("bindDealerAttendanceRealtime(admin) error:", err);
@@ -105,14 +141,15 @@ export function bindDealerAttendanceRealtime() {
   IX.stopDealerAttendanceWatch = onSnapshot(
     getAttendanceRef(tournamentId, user.uid),
     (snap) => {
-      IX.dealerAttendanceMap.delete(getAttendanceDocId(tournamentId, user.uid));
+        IX.dealerAttendanceMap.delete(getAttendanceDocId(tournamentId, user.uid));
 
       if (snap.exists()) {
         const data = normalizeAttendanceDoc(snap.data() || {});
         IX.dealerAttendanceMap.set(snap.id, data);
       }
 
-      scheduleRenderDealerOps();
+      scheduleDealerOpsIfChanged(dealerAttendanceFingerprint(), "attendance");
+      void maybeResetMyStaleOperationalDayAttendance(user);
     },
     (err) => {
       console.error("bindDealerAttendanceRealtime(user) error:", err);
@@ -144,7 +181,7 @@ export function applyIndexGlobalSeatsSnapshot(snap) {
   );
 
   void ensureMeRecovered(auth.currentUser);
-  scheduleRenderDealerOps();
+  scheduleDealerOpsIfChanged(dealerSeatMapFingerprint(), "seat");
 }
 
 export function bindDealerSeatRealtime() {
@@ -185,7 +222,7 @@ export function bindDealerSeatRealtime() {
       });
 
       void ensureMeRecovered(auth.currentUser);
-      scheduleRenderDealerOps();
+      scheduleDealerOpsIfChanged(dealerSeatMapFingerprint(), "seat");
     },
     (err) => {
       console.error("bindDealerSeatRealtime(layout_events) error:", err);

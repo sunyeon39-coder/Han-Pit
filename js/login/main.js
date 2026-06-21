@@ -32,6 +32,7 @@ import {
   writeLoginProfileCache
 } from "../shared/login-profile-cache.js";
 import { loadUserProfileRevalidated } from "../shared/load-user-profile.js";
+import { isSameAuthSession } from "../shared/auth-session-guard.js";
 import { bootstrapAppPush } from "../shared/fcm-web-push.js";
 import { prefetchHubTournamentsCache } from "../hub/hub-loaders-realtime.js";
 import { syncUserDisplayNameAfterNicknameChange } from "../shared/sync-user-waiting-display.js";
@@ -63,6 +64,9 @@ const copyLoginUrlBtn = document.getElementById("copyLoginUrlBtn");
 
 let selectedGender = "none";
 let loginBusy = false;
+let loginSessionUid = "";
+let loginFlowInflight = null;
+let signupModalOpen = false;
 
 function setLoginBusy(active) {
   loginBusy = !!active;
@@ -75,8 +79,9 @@ function setLoginBusy(active) {
 }
 
 function openSignupModal(profile = null) {
+  const nickname = String(profile?.nickname || "").trim();
   if (nicknameInput) {
-    nicknameInput.value = String(profile?.nickname || "").trim();
+    nicknameInput.value = isValidNicknameLength(nickname) ? nickname : "";
   }
 
   if (phoneInput) {
@@ -90,6 +95,7 @@ function openSignupModal(profile = null) {
     btn.classList.toggle("active", gender === selectedGender);
   });
 
+  signupModalOpen = true;
   signupModal?.classList.remove("hidden");
 }
 
@@ -169,26 +175,15 @@ function scheduleLoginProfileBackgroundSync(user) {
   })();
 }
 
-/** 캐시·Google displayName 만으로 즉시 허브 진입 — Firestore 동기화는 백그라운드 */
-function resolveProfileForLoginInstant(user) {
-  const profile = buildOptimisticProfileFromAuthUser(user, readLoginProfileCache(user.uid) || {});
-  writeLoginProfileCache(user.uid, profile);
-  scheduleLoginProfileBackgroundSync(user);
-  return profile;
-}
-
 function redirectToHubImmediately() {
   void prefetchHubTournamentsCache();
   void bootstrapAppPush(auth.currentUser?.uid);
   location.replace("./hub.html");
 }
 
-function finalizeLoginFlow(user) {
-  if (!user) return;
-
-  setLoginBusy(false);
-
-  const profile = resolveProfileForLoginInstant(user);
+function completeLoginWithProfile(user, profile) {
+  writeLoginProfileCache(user.uid, profile);
+  scheduleLoginProfileBackgroundSync(user);
 
   if (isAppDebugEnabled()) {
     console.debug("[LOGIN FLOW]", {
@@ -199,12 +194,57 @@ function finalizeLoginFlow(user) {
     });
   }
 
-  if (!hasValidNickname(profile)) {
-    openSignupModal(profile);
-    return;
+  redirectToHubImmediately();
+}
+
+async function resolveStoredProfileForLogin(user) {
+  const cached = readLoginProfileCache(user.uid);
+
+  const fast = await syncUserProfileFast(user);
+  if (fast.ok && hasValidNickname(fast.profile)) return fast.profile;
+
+  if (!fast.ok || fast.needsFullSync) {
+    const full = await syncUserProfile(user);
+    if (full.ok && hasValidNickname(full.profile)) return full.profile;
   }
 
-  redirectToHubImmediately();
+  const fresh = await loadUserProfileRevalidated(user.uid, user.email || "");
+  if (fresh && hasValidNickname(fresh)) return fresh;
+
+  if (cached && hasValidNickname(cached)) return cached;
+
+  return buildOptimisticProfileFromAuthUser(
+    user,
+    fast.profile || fresh || cached || {}
+  );
+}
+
+/** Firestore·캐시 확인 후 허브 진입 또는 최초 가입 모달 */
+async function finalizeLoginFlow(user) {
+  if (!user) return;
+  if (loginFlowInflight) return loginFlowInflight;
+
+  loginFlowInflight = (async () => {
+    setLoginBusy(true);
+    try {
+      const profile = await resolveStoredProfileForLogin(user);
+
+      if (hasValidNickname(profile)) {
+        completeLoginWithProfile(user, profile);
+        return;
+      }
+
+      openSignupModal(profile);
+    } catch (err) {
+      console.warn("[finalizeLoginFlow]", err);
+      openSignupModal(buildOptimisticProfileFromAuthUser(user, readLoginProfileCache(user.uid) || {}));
+    } finally {
+      setLoginBusy(false);
+      loginFlowInflight = null;
+    }
+  })();
+
+  return loginFlowInflight;
 }
 
 async function login() {
@@ -243,7 +283,8 @@ async function login() {
 
   try {
     const result = await signInWithPopup(auth, provider);
-    finalizeLoginFlow(result.user);
+    loginSessionUid = result.user.uid;
+    await finalizeLoginFlow(result.user);
   } catch (error) {
     console.error("login popup error:", error);
 
@@ -388,7 +429,8 @@ async function consumeGoogleRedirectResult() {
     let user = cred?.user || auth.currentUser;
     if (user) {
       clearOAuthRedirectPending();
-      finalizeLoginFlow(user);
+      loginSessionUid = user.uid;
+      await finalizeLoginFlow(user);
       return;
     }
 
@@ -396,7 +438,8 @@ async function consumeGoogleRedirectResult() {
       user = await waitForSignedInUser(auth, 3000);
       clearOAuthRedirectPending();
       if (user) {
-        finalizeLoginFlow(user);
+        loginSessionUid = user.uid;
+        await finalizeLoginFlow(user);
       } else {
         setLoginBusy(false);
       }
@@ -417,6 +460,22 @@ async function consumeGoogleRedirectResult() {
 }
 
 void consumeGoogleRedirectResult();
+
+onAuthStateChanged(auth, (user) => {
+  if (!user) {
+    loginSessionUid = "";
+    loginFlowInflight = null;
+    setLoginBusy(false);
+    return;
+  }
+
+  if (signupModalOpen) return;
+  if (isOAuthRedirectPending()) return;
+  if (isSameAuthSession(loginSessionUid, user)) return;
+
+  loginSessionUid = user.uid;
+  void finalizeLoginFlow(user);
+});
 
 googleBtn?.addEventListener("click", login);
 signupConfirm?.addEventListener("click", saveProfile);

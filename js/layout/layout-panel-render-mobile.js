@@ -26,7 +26,197 @@ export function createLayoutMobilePanelRender(deps) {
     isSeatMine
   } = deps;
 
-  function renderMobile() {
+  let mobileEventsWired = false;
+
+  function layoutMobileStructureFingerprint() {
+    const seats = getSortedSeats(eventState.seats);
+    const displayWaiting = getWaitingListForDisplay();
+    const seatPart = seats
+      .map((s) => `${s.id}:${!isEmptyPerson(s.person) ? 1 : 0}`)
+      .join(",");
+    const waitPart = [...displayWaiting]
+      .sort((a, b) => getWaitingDisplayStartMs(a) - getWaitingDisplayStartMs(b))
+      .map((w) => w.id)
+      .join(",");
+    return `${ui.selectedWaitingId || ""}|${ui.selectedSeatId || ""}|${seatPart}|${waitPart}`;
+  }
+
+  function trySyncLayoutMobile() {
+    const root = app.querySelector(".mobile");
+    if (!root) return false;
+    const nextFp = layoutMobileStructureFingerprint();
+    if (root.getAttribute("data-layout-mobile-fp") !== nextFp) return false;
+
+    const selectedWaiting = ui.selectedWaitingId
+      ? getWaitingListForDisplay().find((w) => w.id === ui.selectedWaitingId) || null
+      : null;
+    const seatCard = root.querySelector(".card");
+    const banner = seatCard?.querySelector(".mobile-selection-banner");
+    if (selectedWaiting) {
+      const html = `
+        <div class="mobile-selection-banner">
+          <span class="badge sel">배치할 대기</span>
+          <strong>${escapeHtml(selectedWaiting.name)}</strong>
+        </div>`;
+      if (banner) banner.outerHTML = html.trim();
+      else seatCard?.querySelector(".mobile-section-head")?.insertAdjacentHTML("afterend", html);
+    } else {
+      banner?.remove();
+    }
+
+    const seatById = new Map(eventState.seats.map((s) => [s.id, s]));
+    root.querySelectorAll("[data-mobile-seat]").forEach((row) => {
+      const sid = row.getAttribute("data-mobile-seat");
+      const s = seatById.get(sid);
+      if (!s) return;
+      const hasPerson = !isEmptyPerson(s.person);
+      const isSel = ui.selectedSeatId === sid;
+      row.classList.toggle("selected", isSel);
+      const personEl = row.querySelector(".mobile-seat-person");
+      if (personEl) {
+        personEl.textContent = isEmptyPerson(s.person) ? "비어있음" : String(s.person);
+        personEl.classList.toggle("is-empty", isEmptyPerson(s.person));
+        personEl.classList.toggle("is-self", hasPerson && !!isSeatMine?.(s));
+      }
+      const chip = row.querySelector(".time-chip[data-timer='seat']");
+      if (hasPerson && chip) {
+        chip.setAttribute("data-start", String(s.seatedAt || Date.now()));
+      }
+    });
+
+    const waitById = new Map(getWaitingListForDisplay().map((w) => [w.id, w]));
+    root.querySelectorAll("[data-mobile-wait]").forEach((row) => {
+      const wid = row.getAttribute("data-mobile-wait");
+      const w = waitById.get(wid);
+      if (!w) return;
+      const isSel = ui.selectedWaitingId === wid;
+      const blocked = w.blockChecked === true;
+      row.classList.toggle("selected", isSel);
+      row.classList.toggle("is-blocked", blocked);
+      const nameEl = row.querySelector(".mobile-wait-name");
+      if (nameEl) nameEl.textContent = String(w.name || "");
+      const cb = row.querySelector(".wait-block-check");
+      if (cb) cb.checked = blocked;
+      const chip = row.querySelector(".time-chip[data-timer='wait']");
+      if (chip) chip.setAttribute("data-start", String(getWaitingDisplayStartMs(w)));
+    });
+    return true;
+  }
+
+  function wireLayoutMobileEventsOnce() {
+    if (mobileEventsWired) return;
+    mobileEventsWired = true;
+
+    const fullRender = () => renderMobile({ forceFull: true });
+
+    app.addEventListener("click", async (e) => {
+      if (!e.target.closest(".mobile")) return;
+
+      if (e.target.closest("#mobileAddSeatInline")) {
+        addSeat();
+        return;
+      }
+      if (e.target.closest("#mobileAddWaitingInline")) {
+        const name = prompt("대기자 이름");
+        if (name) addWaiting(name);
+        return;
+      }
+
+      const assignBtn = e.target.closest("[data-mobile-assign]");
+      if (assignBtn) {
+        e.stopPropagation();
+        const sid = assignBtn.getAttribute("data-mobile-assign");
+        if (!ui.selectedWaitingId || !sid) return;
+        void assignWaitingToSeat(ui.selectedWaitingId, sid);
+        ui.selectedSeatId = null;
+        fullRender();
+        return;
+      }
+
+      const delBtn = e.target.closest("[data-del]");
+      if (delBtn) {
+        e.stopPropagation();
+        deleteSeat(delBtn.getAttribute("data-del"));
+        return;
+      }
+
+      const delWaitBtn = e.target.closest("[data-del-w]");
+      if (delWaitBtn) {
+        e.stopPropagation();
+        deleteWaiting(delWaitBtn.getAttribute("data-del-w"));
+        return;
+      }
+
+      const clearBtn = e.target.closest("[data-clear-seat]");
+      if (clearBtn) {
+        e.stopPropagation();
+        await clearSeat(clearBtn.getAttribute("data-clear-seat"));
+        return;
+      }
+
+      const waitRow = e.target.closest("[data-mobile-wait]");
+      if (waitRow && !e.target.closest("[data-del-w]") && !e.target.closest("input.wait-block-check")) {
+        const wid = waitRow.getAttribute("data-mobile-wait");
+        if (!wid) return;
+        ui.selectedWaitingId = wid;
+        ui.selectedSeatId = null;
+        fullRender();
+        return;
+      }
+
+      const seatRow = e.target.closest("[data-mobile-seat]");
+      if (seatRow && !e.target.closest("[data-del]") && !e.target.closest("[data-mobile-assign]") && !e.target.closest("[data-clear-seat]")) {
+        const sid = seatRow.getAttribute("data-mobile-seat");
+        if (!sid) return;
+        const seatObj = eventState.seats.find((x) => x.id === sid);
+        const occupied = seatObj && !isEmptyPerson(seatObj.person);
+        const now = Date.now();
+
+        if (ui.selectedWaitingId) {
+          ui.selectedSeatId = sid;
+          void assignWaitingToSeat(ui.selectedWaitingId, sid);
+          ui.selectedSeatId = null;
+          ui.lastMobileTapAt = 0;
+          ui.lastMobileSeatId = "";
+          fullRender();
+          return;
+        }
+
+        if (occupied && canManageLayout()) {
+          if (ui.lastMobileSeatId === sid && now - ui.lastMobileTapAt < LAYOUT_SEAT_DOUBLE_ACTIVATE_MS) {
+            ui.lastMobileTapAt = 0;
+            ui.lastMobileSeatId = "";
+            await clearSeat(sid);
+            ui.selectedSeatId = null;
+            fullRender();
+            return;
+          }
+          ui.lastMobileTapAt = now;
+          ui.lastMobileSeatId = sid;
+          ui.selectedSeatId = sid;
+          fullRender();
+          return;
+        }
+
+        ui.lastMobileTapAt = now;
+        ui.lastMobileSeatId = sid;
+        ui.selectedSeatId = sid;
+        fullRender();
+      }
+    });
+
+    app.addEventListener("change", async (e) => {
+      const cb = e.target.closest("[data-mobile-block-w]");
+      if (!cb) return;
+      e.stopPropagation();
+      await setWaitingBlockChecked(cb.getAttribute("data-mobile-block-w"), cb.checked);
+    });
+  }
+
+  function renderMobile(options = {}) {
+    if (!options.forceFull && options.sync !== false && trySyncLayoutMobile()) return;
+
+    app.innerHTML = "";
     const wrap = document.createElement("div");
     wrap.className = "mobile";
 
@@ -191,142 +381,8 @@ export function createLayoutMobilePanelRender(deps) {
 
     wrap.append(seatCard, waitCard);
     app.appendChild(wrap);
-
-    if (!canManageLayout()) return;
-
-    const addSeatBtn = document.getElementById("mobileAddSeatInline");
-    if (addSeatBtn) {
-      addSeatBtn.onclick = () => addSeat();
-    }
-
-    const addWaitBtn = document.getElementById("mobileAddWaitingInline");
-    if (addWaitBtn) {
-      addWaitBtn.onclick = () => {
-        const name = prompt("대기자 이름");
-        if (name) addWaiting(name);
-      };
-    }
-
-    wrap.querySelectorAll("[data-mobile-seat]").forEach((row) => {
-      row.addEventListener("click", async (e) => {
-        if (
-          e.target.closest("[data-mobile-seat-select]") ||
-          e.target.closest("[data-del]") ||
-          e.target.closest("[data-mobile-assign]") ||
-          e.target.closest("[data-clear-seat]")
-        ) {
-          return;
-        }
-
-        const sid = row.getAttribute("data-mobile-seat");
-        if (!sid) return;
-
-        const seatObj = eventState.seats.find((x) => x.id === sid);
-        const occupied = seatObj && !isEmptyPerson(seatObj.person);
-        const now = Date.now();
-
-        if (ui.selectedWaitingId) {
-          const wid = ui.selectedWaitingId;
-          ui.selectedSeatId = sid;
-          void assignWaitingToSeat(wid, sid);
-          ui.selectedSeatId = null;
-          ui.lastMobileTapAt = 0;
-          ui.lastMobileSeatId = "";
-          onFullRender();
-          return;
-        }
-
-        if (occupied && canManageLayout()) {
-          if (ui.lastMobileSeatId === sid && now - ui.lastMobileTapAt < LAYOUT_SEAT_DOUBLE_ACTIVATE_MS) {
-            ui.lastMobileTapAt = 0;
-            ui.lastMobileSeatId = "";
-            await clearSeat(sid);
-            ui.selectedSeatId = null;
-            onFullRender();
-            return;
-          }
-
-          ui.lastMobileTapAt = now;
-          ui.lastMobileSeatId = sid;
-          ui.selectedSeatId = sid;
-          onFullRender();
-          return;
-        }
-
-        ui.lastMobileTapAt = now;
-        ui.lastMobileSeatId = sid;
-        ui.selectedSeatId = sid;
-        onFullRender();
-      });
-    });
-
-    wrap.querySelectorAll("[data-mobile-wait]").forEach((row) => {
-      row.addEventListener("click", (e) => {
-        if (e.target.closest("[data-mobile-wait-select]") || e.target.closest("[data-del-w]")) {
-          return;
-        }
-        if (e.target.closest("input.wait-block-check")) return;
-
-        const wid = row.getAttribute("data-mobile-wait");
-        if (!wid) return;
-
-        ui.selectedWaitingId = wid;
-        ui.selectedSeatId = null;
-        onFullRender();
-      });
-    });
-
-    wrap.querySelectorAll("[data-mobile-wait-select]").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const wid = btn.getAttribute("data-mobile-wait-select");
-        ui.selectedWaitingId = ui.selectedWaitingId === wid ? null : wid;
-        onFullRender();
-      });
-    });
-
-    wrap.querySelectorAll("[data-mobile-assign]").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        const sid = btn.getAttribute("data-mobile-assign");
-
-        if (!ui.selectedWaitingId) return;
-
-        const wid = ui.selectedWaitingId;
-        void assignWaitingToSeat(wid, sid);
-        ui.selectedSeatId = null;
-        onFullRender();
-      });
-    });
-
-    wrap.querySelectorAll("[data-del]").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        deleteSeat(btn.getAttribute("data-del"));
-      });
-    });
-
-    wrap.querySelectorAll("[data-del-w]").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        deleteWaiting(btn.getAttribute("data-del-w"));
-      });
-    });
-
-    wrap.querySelectorAll("[data-mobile-block-w]").forEach((cb) => {
-      cb.addEventListener("change", async (e) => {
-        e.stopPropagation();
-        const wid = cb.getAttribute("data-mobile-block-w");
-        await setWaitingBlockChecked(wid, cb.checked);
-      });
-    });
-
-    wrap.querySelectorAll("[data-clear-seat]").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        await clearSeat(btn.getAttribute("data-clear-seat"));
-      });
-    });
+    wrap.setAttribute("data-layout-mobile-fp", layoutMobileStructureFingerprint());
+    wireLayoutMobileEventsOnce();
   }
 
   return { renderMobile };

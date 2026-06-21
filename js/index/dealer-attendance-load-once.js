@@ -9,7 +9,9 @@ import { canUseTournamentOps } from "../shared/auth-helpers.js";
 import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
 import { getAttendanceRef, parseTournamentIdFromAttendanceDocId } from "./dealer-attendance-refs.js";
+import { normalizeAttendanceDoc } from "./dealer-attendance-derived.js";
 import { scheduleRenderDealerOps } from "./dealer-attendance-render.js";
+import { maybeResetMyStaleOperationalDayAttendance } from "./dealer-attendance-operational-day-reset.js";
 
 export async function loadDealerAttendanceOnce() {
   IX.dealerAttendanceMap.clear();
@@ -31,47 +33,20 @@ export async function loadDealerAttendanceOnce() {
         const data = d.data() || {};
         const tid =
           parseTournamentIdFromAttendanceDocId(d.id) || String(data.tournamentId || "").trim();
-        IX.dealerAttendanceMap.set(d.id, {
-          uid: String(data.uid || "").trim(),
-          nickname: String(data.nickname || "").trim(),
-          email: String(data.email || "").trim(),
-          tournamentId: tid,
-          status: String(data.status || "off").trim(),
-          checkedInAt: Number(data.checkedInAt || 0) || null,
-          checkedOutAt: Number(data.checkedOutAt || 0) || null,
-          breakStartedAt: Number(data.breakStartedAt || 0) || null,
-          totalBreakMs: Number(data.totalBreakMs || 0) || 0,
-          currentEventId: String(data.currentEventId || "").trim(),
-          currentBoxId: String(data.currentBoxId || "").trim(),
-          currentSeatId: String(data.currentSeatId || "").trim(),
-          currentSeatLabel: String(data.currentSeatLabel || "").trim(),
-          updatedAt: Number(data.updatedAt || 0) || 0
-        });
+        IX.dealerAttendanceMap.set(
+          d.id,
+          normalizeAttendanceDoc({ ...data, tournamentId: tid, uid: String(data.uid || d.id.split("__").pop() || "").trim() })
+        );
       });
     } else {
       const snap = await getDoc(getAttendanceRef(tournamentId, user.uid));
 
       if (snap.exists()) {
-        const data = snap.data() || {};
-        IX.dealerAttendanceMap.set(snap.id, {
-          uid: String(data.uid || "").trim(),
-          nickname: String(data.nickname || "").trim(),
-          email: String(data.email || "").trim(),
-          tournamentId: String(data.tournamentId || "").trim(),
-          status: String(data.status || "off").trim(),
-          checkedInAt: Number(data.checkedInAt || 0) || null,
-          checkedOutAt: Number(data.checkedOutAt || 0) || null,
-          breakStartedAt: Number(data.breakStartedAt || 0) || null,
-          totalBreakMs: Number(data.totalBreakMs || 0) || 0,
-          currentEventId: String(data.currentEventId || "").trim(),
-          currentBoxId: String(data.currentBoxId || "").trim(),
-          currentSeatId: String(data.currentSeatId || "").trim(),
-          currentSeatLabel: String(data.currentSeatLabel || "").trim(),
-          updatedAt: Number(data.updatedAt || 0) || 0
-        });
+        IX.dealerAttendanceMap.set(snap.id, normalizeAttendanceDoc(snap.data() || {}));
       }
     }
 
+    await maybeResetMyStaleOperationalDayAttendance(user);
     scheduleRenderDealerOps();
   } catch (err) {
     console.error("loadDealerAttendanceOnce error:", err);

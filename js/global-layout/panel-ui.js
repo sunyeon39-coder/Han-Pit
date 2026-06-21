@@ -7,6 +7,7 @@ import {
   escapeHtml,
   isEmptyPerson,
   seatCanvasDigitsOnly,
+  getGlobalSeatRowKey,
   compareSeatsByCanvasLabel,
   compareGlobalSeatsBySeatedTimeOldest,
   getGlobalSeatSeatedAtMs,
@@ -41,6 +42,38 @@ import { getEventCardIdFromRecord } from "../shared/tournament-event-instance.js
 import { resolveSeatEventBox } from "./utils.js";
 import { buildEventBoxPaletteMap, getEventBoxPaletteClass } from "./event-box-palette.js";
 import { syncSeatBoxesInContainer } from "../shared/sync-seat-box-dom.js";
+
+function buildGlobalSeatsByIdMap() {
+  const map = new Map();
+  for (const seat of GL.globalSeats || []) {
+    const sid = String(seat?.seatId || "").trim();
+    if (sid) map.set(sid, seat);
+  }
+  return map;
+}
+
+function waitingPanelFingerprint(waiting = []) {
+  return waiting
+    .map((w) => {
+      const wid = String(w.id || "").trim();
+      const blocked = isWaitingBlocked(w) ? 1 : 0;
+      const pickUi = waitingRowPickClass(wid);
+      return `${wid}|${String(w.name || w.uid || "").trim()}|${blocked}|${pickUi.isSelected ? 1 : 0}|${Number(w.blockAccumulatedMs || 0)}|${Number(w.blockCheckedAt || 0)}`;
+    })
+    .join(";");
+}
+
+function seatPanelFingerprint(seats = []) {
+  const sel = String(GL.selectedWaitingId || "").trim();
+  return `${sel}|${GL.seatSortMode}|${seats
+    .map((s) => {
+      const sid = String(s.seatId || "").trim();
+      const occupied = !isEmptyPerson(String(s.person || "").trim());
+      const selected = GL.selectedSeatIds.has(getGlobalSeatRowKey(s)) ? 1 : 0;
+      return `${sid}|${String(s.person || "").trim()}|${occupied ? 1 : 0}|${selected}|${String(s.label ?? s.no ?? "")}`;
+    })
+    .join(";")}`;
+}
 
 function buildGlobalSeatBoxState(s, idx, paletteMap) {
   const label = s.label || s.no || s.seatId || "-";
@@ -94,9 +127,10 @@ export function updateCanvasSeatTimerClasses() {
   const root = GL.app.querySelector(".pc-canvas");
   if (!root) return;
   const now = Date.now();
+  const seatById = buildGlobalSeatsByIdMap();
   root.querySelectorAll(".seat-box[data-seat-id]").forEach((box) => {
     const id = String(box.getAttribute("data-seat-id") || "").trim();
-    const s = GL.globalSeats.find((x) => String(x.seatId || "").trim() === id);
+    const s = seatById.get(id);
     if (!s || isEmptyPerson(String(s.person || "").trim())) {
       box.classList.remove("t-green", "t-yellow", "t-orange", "t-red");
       return;
@@ -214,19 +248,12 @@ export function getDefaultEventBoxForNewSeat() {
   return { eventId: "", boxId: "" };
 }
 
-function renderGlobalLayoutMobileView() {
-  try {
-    renderGlobalLayoutMobile();
-  } catch (err) {
-    console.error("renderGlobalLayoutMobile error:", err);
-  }
-}
-
 export function renderSeats(seats = []) {
   if (!GL.app) return;
   updateGlobalLayoutMetaCounts(seats);
   if (layoutIsMobile()) {
-    renderGlobalLayoutMobileView();
+    updateGlobalLayoutMetaCounts(GL.globalSeats);
+    renderGlobalLayoutMobile({ sync: true });
     return;
   }
   if (!seats.length) {
@@ -293,14 +320,24 @@ export function renderSeats(seats = []) {
 export function renderWaiting(waiting = []) {
   updateGlobalLayoutWaitingMeta();
   if (layoutIsMobile()) {
-    renderGlobalLayoutMobileView();
+    updateGlobalLayoutMetaCounts(GL.globalSeats);
+    renderGlobalLayoutMobile({ sync: true });
     return;
   }
   const waitCol = getPcWaitColEl();
   if (!waitCol) return;
   capturePanelScroll();
 
+  const existingList = waitCol.querySelector(".global-list");
+  const existingManual = waitCol.querySelector("#manualWaitingNameInput");
   const sortedWaiting = sortWaitingForDisplay(waiting);
+  const nextFp = waitingPanelFingerprint(sortedWaiting);
+  if (nextFp === GL._waitingPanelFp && existingList && existingManual) {
+    restorePanelScroll();
+    updateGlobalMetaToolbar();
+    return;
+  }
+  GL._waitingPanelFp = nextFp;
 
   const waitingRows = sortedWaiting
     .map((w) => {
@@ -360,8 +397,6 @@ export function renderWaiting(waiting = []) {
     .join("");
 
   const listHtml = waitingRows || `<div class="empty-panel">현재 대기자가 없습니다.</div>`;
-  const existingList = waitCol.querySelector(".global-list");
-  const existingManual = waitCol.querySelector("#manualWaitingNameInput");
   if (existingList && existingManual) {
     existingList.innerHTML = listHtml;
     const legend = waitCol.querySelector(".gl-operator-legend");
@@ -436,6 +471,16 @@ export function renderSeatPanel() {
     if (GL.seatSortMode === "time") return compareGlobalSeatsBySeatedTimeOldest(a, b);
     return compareSeatsByCanvasLabel(a, b);
   });
+  const existingList = seatCol.querySelector(".global-list");
+  const existingPicker = seatCol.querySelector("#seatAddEventPick");
+  const nextSeatFp = seatPanelFingerprint(sorted);
+  if (nextSeatFp === GL._seatPanelFp && existingList && existingPicker) {
+    restorePanelScroll();
+    updateSeatPanelTimers();
+    return;
+  }
+  GL._seatPanelFp = nextSeatFp;
+
   const panelPaletteMap = buildEventBoxPaletteMap(sorted);
   const rows = sorted
     .map((s) => {
@@ -443,14 +488,16 @@ export function renderSeatPanel() {
       const name = occupied ? String(s.person || "").trim() : "-";
       const isSelf = occupied && isSeatAssignedToCurrentUser(s, auth.currentUser, GL.userProfile);
       const seatId = String(s.seatId || "").trim();
+      const firestoreDocId = String(s.__firestoreDocId || "").trim();
+      const rowKey = getGlobalSeatRowKey(s);
       const paletteClass = getEventBoxPaletteClass(s, panelPaletteMap);
-      const selectedRowClass = GL.selectedSeatIds.has(seatId) ? "selected" : "";
+      const selectedRowClass = GL.selectedSeatIds.has(rowKey) ? "selected" : "";
       const seatedAt = getGlobalSeatSeatedAtMs(s);
       const elapsed = seatedAt ? Date.now() - seatedAt : 0;
       const tClass = timerClass(elapsed);
       const ebMeta = !occupied ? formatSeatPanelEventBoxMeta(s) : "";
       return `
-      <div class="seat-manage-row gl-panel-list-row ${paletteClass} ${selectedRowClass}" data-select-seat="${escapeHtml(seatId)}">
+      <div class="seat-manage-row gl-panel-list-row ${paletteClass} ${selectedRowClass}" data-select-seat="${escapeHtml(rowKey)}" data-firestore-doc="${escapeHtml(firestoreDocId)}">
         <div class="seat-manage-main seat-manage-main--oneline">
           <div class="seat-manage-namewrap seat-manage-namewrap--with-num">
             <span class="seat-manage-num">${escapeHtml(seatCanvasDigitsOnly(s.label, s.no))}</span>
@@ -478,7 +525,7 @@ export function renderSeatPanel() {
                 ? `<button class="pill-inline seat-icon-btn" type="button" data-rename-seat="${escapeHtml(seatId)}" title="수정" aria-label="수정">⚙</button>`
                 : ``
             }
-            ${GL.isAdminUser ? `<button class="pill-inline seat-icon-btn danger" data-delete-seat="${escapeHtml(seatId)}" title="삭제" aria-label="삭제">🗑</button>` : ``}
+            ${GL.isAdminUser ? `<button class="pill-inline seat-icon-btn danger" data-delete-seat="${escapeHtml(seatId)}" data-delete-doc="${escapeHtml(firestoreDocId)}" title="삭제" aria-label="삭제">🗑</button>` : ``}
           </div>
         </div>
       </div>
@@ -505,8 +552,6 @@ export function renderSeatPanel() {
       : "";
 
   const listHtml = rows || `<div class="empty-panel">전역 좌석이 없습니다.</div>`;
-  const existingList = seatCol.querySelector(".global-list");
-  const existingPicker = seatCol.querySelector("#seatAddEventPick");
   if (existingList && existingPicker) {
     existingList.innerHTML = listHtml;
     const orderBtn = seatCol.querySelector("#sortSeatOrderBtn");
@@ -526,7 +571,7 @@ export function renderSeatPanel() {
     restorePanelScroll();
     updateGlobalMetaToolbar();
     refreshGlobalLayoutAlignButtonState();
-    if (GL.isAdminUser) void wireSeatAddEventPicker();
+    if (GL.isAdminUser || GL.opsServerVerified) void wireSeatAddEventPicker();
     return;
   }
 
@@ -591,5 +636,5 @@ export function renderSeatPanel() {
   restorePanelScroll();
   updateGlobalMetaToolbar();
   refreshGlobalLayoutAlignButtonState();
-  if (GL.isAdminUser) void wireSeatAddEventPicker();
+  if (GL.isAdminUser || GL.opsServerVerified) void wireSeatAddEventPicker();
 }

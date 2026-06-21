@@ -271,6 +271,19 @@ export function renderAdminUserList() {
   const selectedEventId = adminEventSelect?.value || "";
   const selectedTournament = hubState.tournamentsCache.find((t) => t.id === selectedEventId);
   const users = sortUsersForAdminList(getFilteredUsers());
+  const bulk = [...hubState.adminBulkSelectedUids].sort().join(",");
+  const nextFp = `${selectedEventId}|${bulk}|${users
+    .map(
+      (user) =>
+        `${user.uid}:${user.nickname || ""}:${user.email || ""}:${isDirectAllowedForEvent(user, selectedEventId) ? 1 : 0}:${userRoleMetaForEvent(user, selectedEventId).label}`
+    )
+    .join(";")}`;
+
+  if (nextFp === hubState._hubAdminUsersFp && adminUserList.querySelector(".user-row")) {
+    syncAdminBulkSelectAllCheckbox();
+    return;
+  }
+  hubState._hubAdminUsersFp = nextFp;
 
   if (!users.length) {
     adminUserList.innerHTML = `<div class="empty-users">표시할 유저가 없습니다.</div>`;

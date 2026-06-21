@@ -48,6 +48,7 @@ import {
   bindDealerSeatRealtime,
   ensureMeRecovered,
   renderDealerOps,
+  updateDealerAdminList,
   scheduleRenderDealerOps,
   setupAttendanceLogEvents,
   setupWorkSummaryEvents,
@@ -109,6 +110,20 @@ refreshIndexDomRefs();
 instantDismissAllBootLoaders();
 markPageBootLoaded(IX.root);
 
+function paintIndexFromSessionEarly() {
+  const tournamentId = getTournamentId();
+  if (!tournamentId) return;
+  const cachedName = sessionStorage.getItem(`tournamentName:${tournamentId}`);
+  if (cachedName && IX.topbarTournamentName) {
+    IX.topbarTournamentName.textContent = cachedName;
+  }
+  if (seedIndexEventsFromSessionCache()) {
+    render();
+    refreshCardStatuses();
+  }
+}
+paintIndexFromSessionEarly();
+
 function resolveGlobalLayoutEventContext() {
   const selectedDocId = String(IX.eventCardSelect?.value || "").trim();
   const selected = selectedDocId
@@ -153,8 +168,12 @@ let indexOpsResyncTimer = 0;
 
 function indexTournamentMeta() {
   const t = IX.currentTournament;
-  if (!t) return null;
-  return { id: t.id, name: t.name, logoText: t.logoText };
+  if (t?.id) return { id: t.id, name: t.name, logoText: t.logoText };
+  const tid = getTournamentId();
+  if (!tid) return null;
+  const cachedName = sessionStorage.getItem(`tournamentName:${tid}`);
+  if (cachedName) return { id: tid, name: cachedName, logoText: "" };
+  return { id: tid };
 }
 
 function resolveIndexBootProfile(user) {
@@ -289,7 +308,8 @@ async function init() {
   refreshIndexDomRefs();
   markPageBootLoaded(IX.root);
 
-  if (!getTournamentId()) {
+  const bootTournamentId = getTournamentId();
+  if (!bootTournamentId) {
     const hubHref = resolveRelativePage("hub.html");
     if (IX.root) {
       IX.root.innerHTML = `
@@ -305,6 +325,8 @@ async function init() {
     return;
   }
 
+  sessionStorage.setItem("tournamentId", bootTournamentId);
+
   const paintedFromSession = seedIndexEventsFromSessionCache();
   if (paintedFromSession) {
     render();
@@ -312,10 +334,12 @@ async function init() {
 
   renderDealerOps();
 
-  bindEventsRealtime();
-  bindLayoutSeatSummaryRealtime();
+  bindEventsRealtime(bootTournamentId);
+  bindLayoutSeatSummaryRealtime(bootTournamentId);
   bindDealerAttendanceRealtime();
   bindDealerSeatRealtime();
+
+  await loadEvents(bootTournamentId, { forceServer: true });
 
   void ensureMeRecovered(auth.currentUser)
     .catch((err) => {
@@ -463,26 +487,42 @@ function wireIndexPageControls() {
     syncSelectedEventForm();
   });
 
-  IX.dealerOpsMount?.addEventListener("input", (e) => {
+  IX.dealerOpsMount?.addEventListener("compositionstart", (e) => {
+    if (e.target.closest("[data-dealer-search]")) {
+      IX.dealerSearchComposing = true;
+    }
+  });
+
+  IX.dealerOpsMount?.addEventListener("compositionend", (e) => {
     const searchEl = e.target.closest("[data-dealer-search]");
     if (!searchEl) return;
 
+    IX.dealerSearchComposing = false;
     IX.dealerAdminUi.search = String(searchEl.value || "");
-    renderDealerOps();
+    updateDealerAdminList();
+  });
+
+  IX.dealerOpsMount?.addEventListener("input", (e) => {
+    const searchEl = e.target.closest("[data-dealer-search]");
+    if (!searchEl) return;
+    if (IX.dealerSearchComposing) return;
+
+    IX.dealerAdminUi.search = String(searchEl.value || "");
+    updateDealerAdminList();
   });
 
   IX.dealerOpsMount?.addEventListener("change", (e) => {
     const filterEl = e.target.closest("[data-dealer-filter]");
     if (filterEl) {
       IX.dealerAdminUi.status = String(filterEl.value || "all");
-      renderDealerOps();
+      updateDealerAdminList();
       return;
     }
 
     const sortEl = e.target.closest("[data-dealer-sort]");
     if (sortEl) {
       IX.dealerAdminUi.sort = String(sortEl.value || "name");
-      renderDealerOps();
+      updateDealerAdminList();
     }
   });
 
@@ -657,7 +697,7 @@ onAuthStateChanged(auth, async (user) => {
           preferCacheFirst: true,
           mergeEmailAllows: true
         }),
-        8000
+        4000
       );
       if (!profile) {
         IX.currentUserProfile = {

@@ -25,6 +25,7 @@ export const GL = {
   stopWaitingWatch: null,
   stopAttendanceWatch: null,
 
+  currentTournament: null,
   globalSeats: [],
   globalWaiting: [],
   /** realtime 스냅샷마다 증가 — getCurrentTournamentWaiting 캐시 무효화 */
@@ -48,6 +49,8 @@ export const GL = {
   selectedSeatIds: new Set(),
 
   isAdminUser: false,
+  /** ensureGlobalLayoutOpsChrome 서버 통과 — 캐시만으로 ops UI 내리지 않음 */
+  opsServerVerified: false,
   currentUser: null,
   /** users.layoutAccentColor — 직접 허용 시 Hub에서 부여 */
   layoutAccentColor: "#4DA3FF",

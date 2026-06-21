@@ -22,8 +22,20 @@ import {
   noteFirestoreQuotaExceeded
 } from "../shared/firestore-quota-guard.js";
 
-function shouldSkipEmptyCacheSnapshot(snap, cachedCount = 0) {
-  return Boolean(snap?.empty && snap.metadata?.fromCache && cachedCount > 0);
+function eventsListSignature(events = []) {
+  return (Array.isArray(events) ? events : [])
+    .map((e) => String(e?.id || ""))
+    .join("\0");
+}
+
+function shouldSkipEmptyEventsSnapshot(snap, tournamentId = "") {
+  if (!snap?.empty) return false;
+
+  const tid = String(tournamentId || getTournamentId() || "").trim();
+  if (IX.events.length > 0) return true;
+  if (tid && restoreIndexEventsFromPersistedCache(tid)) return true;
+  // 빈 로컬 캐시는 건너뛰지 않음 — 서버 재조회(refreshEventsFromServer)가 필요함
+  return false;
 }
 
 function restoreIndexEventsFromPersistedCache(tournamentId = "") {
@@ -38,12 +50,21 @@ function restoreIndexEventsFromPersistedCache(tournamentId = "") {
 function applyEventsSnap(snap, tournamentId = "") {
   const tid = String(tournamentId || getTournamentId() || "").trim();
   if (!snap || snap.empty) {
-    if (snap?.metadata?.fromCache) return IX.events;
+    if (snap?.metadata?.fromCache) {
+      if (IX.events.length > 0) return IX.events;
+      restoreIndexEventsFromPersistedCache(tid);
+      return IX.events;
+    }
     if (IX.events.length > 0) return IX.events;
     restoreIndexEventsFromPersistedCache(tid);
     return IX.events;
   }
-  IX.events = normalizeEvents(snap.docs);
+  const next = normalizeEvents(snap.docs);
+  if (!next.length && IX.events.length > 0) {
+    restoreIndexEventsFromPersistedCache(tid);
+    return IX.events;
+  }
+  IX.events = next;
   if (IX.events.length && tid) writeIndexEventsSessionCache(tid, IX.events);
   return IX.events;
 }
@@ -52,7 +73,7 @@ async function refreshEventsFromServer(tournamentId = "") {
   const tid = String(tournamentId || getTournamentId() || "").trim();
   if (!tid || isFirestoreQuotaCoolingDown()) return;
   try {
-    const serverSnap = await getDocsFromServer(getEventsCollectionRef());
+    const serverSnap = await getDocsFromServer(getEventsCollectionRef(tid));
     applyEventsSnap(serverSnap, tid);
     scheduleIndexCardsRender({
       adminForm: IX.eventAdminModal?.classList.contains("show")
@@ -120,58 +141,92 @@ export function removeIndexEventFromCache(eventId = "", tournamentId = "") {
   scheduleIndexCardsRender({ adminForm: IX.eventAdminModal?.classList.contains("show") });
 }
 
-export async function loadEvents() {
-  const tournamentId = getTournamentId();
-  if (!tournamentId) {
-    IX.events = [];
+export async function loadEvents(tournamentId = "", options = {}) {
+  const tid = String(tournamentId || getTournamentId() || "").trim();
+  const forceServer = options.forceServer === true;
+  if (!tid) {
+    restoreIndexEventsFromPersistedCache(getTournamentId());
     return;
   }
   try {
-    const cacheSnap = await getDocs(getEventsCollectionRef());
+    if (forceServer && !isFirestoreQuotaCoolingDown()) {
+      try {
+        const serverSnap = await getDocsFromServer(getEventsCollectionRef(tid));
+        applyEventsSnap(serverSnap, tid);
+        if (IX.events.length) return;
+      } catch (err) {
+        noteFirestoreQuotaExceeded(err);
+        console.warn("loadEvents forceServer:", err?.code || err);
+      }
+    }
+
+    const cacheSnap = await getDocs(getEventsCollectionRef(tid));
     if (!cacheSnap.empty) {
-      applyEventsSnap(cacheSnap, tournamentId);
-      if (cacheSnap.metadata?.fromCache) void refreshEventsFromServer(tournamentId);
+      applyEventsSnap(cacheSnap, tid);
+      if (cacheSnap.metadata?.fromCache && !isFirestoreQuotaCoolingDown()) {
+        void refreshEventsFromServer(tid);
+      }
       return;
     }
 
-    try {
-      const serverSnap = await getDocsFromServer(getEventsCollectionRef());
-      applyEventsSnap(serverSnap, tournamentId);
-    } catch (err) {
-      noteFirestoreQuotaExceeded(err);
-      console.warn("loadEvents server:", err?.code || err);
-      if (!IX.events.length) restoreIndexEventsFromPersistedCache(tournamentId);
+    if (!isFirestoreQuotaCoolingDown()) {
+      try {
+        const serverSnap = await getDocsFromServer(getEventsCollectionRef(tid));
+        applyEventsSnap(serverSnap, tid);
+      } catch (err) {
+        noteFirestoreQuotaExceeded(err);
+        console.warn("loadEvents server:", err?.code || err);
+        if (!IX.events.length) restoreIndexEventsFromPersistedCache(tid);
+      }
+    } else if (!IX.events.length) {
+      restoreIndexEventsFromPersistedCache(tid);
     }
   } catch (err) {
     console.error("loadEvents error:", err);
-    if (!IX.events.length) restoreIndexEventsFromPersistedCache(tournamentId);
+    if (!IX.events.length) restoreIndexEventsFromPersistedCache(tid);
   }
 }
 
-export function bindEventsRealtime() {
+export function bindEventsRealtime(tournamentId = "") {
   if (IX.stopEventsWatch) {
     IX.stopEventsWatch();
     IX.stopEventsWatch = null;
   }
 
-  const tournamentId = getTournamentId();
-  if (!tournamentId) {
+  const tid = String(tournamentId || getTournamentId() || "").trim();
+  if (!tid) {
     console.warn("bindEventsRealtime: missing tournamentId, skip subscription");
     return;
   }
 
   IX.stopEventsWatch = onSnapshot(
-    getEventsCollectionRef(),
+    getEventsCollectionRef(tid),
     (snap) => {
-      if (shouldSkipEmptyCacheSnapshot(snap, IX.events.length)) return;
-      applyEventsSnap(snap, tournamentId);
+      if (shouldSkipEmptyEventsSnapshot(snap, tid)) return;
+
+      const beforeSig = eventsListSignature(IX.events);
+      applyEventsSnap(snap, tid);
+      const afterSig = eventsListSignature(IX.events);
+
+      if (snap?.empty && !IX.events.length) {
+        void refreshEventsFromServer(tid);
+      }
+
+      if (
+        beforeSig === afterSig &&
+        !snap?.empty &&
+        !IX.eventAdminModal?.classList.contains("show")
+      ) {
+        return;
+      }
+
       scheduleIndexCardsRender({
         adminForm: IX.eventAdminModal?.classList.contains("show")
       });
     },
     (err) => {
       console.error("bindEventsRealtime error:", err);
-      if (!IX.events.length) restoreIndexEventsFromPersistedCache(tournamentId);
+      if (!IX.events.length) restoreIndexEventsFromPersistedCache(tid);
       scheduleIndexCardsRender({
         adminForm: IX.eventAdminModal?.classList.contains("show")
       });
@@ -179,16 +234,16 @@ export function bindEventsRealtime() {
   );
 }
 
-export function bindLayoutSeatSummaryRealtime() {
+export function bindLayoutSeatSummaryRealtime(tournamentId = "") {
   if (IX.stopLayoutEventsWatch) {
     IX.stopLayoutEventsWatch();
     IX.stopLayoutEventsWatch = null;
   }
 
-  const tournamentId = getTournamentId();
-  if (tournamentId) {
+  const tid = String(tournamentId || getTournamentId() || "").trim();
+  if (tid) {
     IX.stopLayoutEventsWatch = onSnapshot(
-      collection(db, "tournaments", tournamentId, "global_seats"),
+      collection(db, "tournaments", tid, "global_seats"),
       (snap) => {
         IX.seatSummaryMap = buildSeatSummaryMapFromGlobalSeats(snap.docs);
         applyIndexGlobalSeatsSnapshot(snap);

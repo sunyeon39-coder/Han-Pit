@@ -140,33 +140,56 @@ export function seedHubTournamentsFromSessionCache() {
   return true;
 }
 
-export async function loadTournaments() {
+export async function loadTournaments(options = {}) {
+  const forceServer = options.forceServer === true;
   try {
-    const cacheSnap = await getDocs(collection(db, "tournaments"));
+    const col = collection(db, "tournaments");
+
+    if (forceServer && !isFirestoreQuotaCoolingDown()) {
+      try {
+        const serverSnap = await getDocsFromServer(col);
+        if (!serverSnap.empty) {
+          applyTournamentsSnap(serverSnap);
+          hubState.tournamentsListReady = true;
+          hubState.tournamentsBootstrapping = false;
+          return hubState.tournamentsCache;
+        }
+      } catch (err) {
+        noteFirestoreQuotaExceeded(err);
+        console.warn("loadTournaments forceServer:", err?.code || err);
+      }
+    }
+
+    const cacheSnap = await getDocs(col);
     if (!cacheSnap.empty) {
       applyTournamentsSnap(cacheSnap);
       hubState.tournamentsListReady = true;
-      if (cacheSnap.metadata?.fromCache) {
+      hubState.tournamentsBootstrapping = false;
+      if (cacheSnap.metadata?.fromCache && !isFirestoreQuotaCoolingDown()) {
         void refreshTournamentsFromServer();
       }
       return hubState.tournamentsCache;
     }
 
-    try {
-      const serverSnap = await getDocsFromServer(collection(db, "tournaments"));
-      applyTournamentsSnap(serverSnap);
-      hubState.tournamentsListReady = true;
-      return hubState.tournamentsCache;
-    } catch (err) {
-      noteFirestoreQuotaExceeded(err);
-      console.warn("loadTournaments server:", err?.code || err);
-      if (!hubState.tournamentsCache.length) restoreTournamentsFromPersistedCache();
-      hubState.tournamentsListReady = true;
-      return hubState.tournamentsCache;
+    if (!isFirestoreQuotaCoolingDown()) {
+      try {
+        const serverSnap = await getDocsFromServer(col);
+        applyTournamentsSnap(serverSnap);
+      } catch (err) {
+        noteFirestoreQuotaExceeded(err);
+        console.warn("loadTournaments server:", err?.code || err);
+        if (!hubState.tournamentsCache.length) restoreTournamentsFromPersistedCache();
+      }
+    } else if (!hubState.tournamentsCache.length) {
+      restoreTournamentsFromPersistedCache();
     }
+    hubState.tournamentsListReady = true;
+    hubState.tournamentsBootstrapping = false;
+    return hubState.tournamentsCache;
   } catch (err) {
     console.error("loadTournaments error:", err);
     hubState.tournamentsListReady = true;
+    hubState.tournamentsBootstrapping = false;
     if (hubState.tournamentsCache.length) return hubState.tournamentsCache;
     if (restoreTournamentsFromPersistedCache()) return hubState.tournamentsCache;
     return hubState.tournamentsCache;
@@ -368,45 +391,117 @@ function healStaleAllowedEventsFromCache(users = []) {
   }
 }
 
-export async function loadAllUsers() {
-  if (isFirestoreQuotaCoolingDown()) {
+let loadAllUsersInflight = null;
+
+function applyUsersCacheFromSnap(snap) {
+  if (!snap || snap.empty) {
+    if (snap?.metadata?.fromCache && hubState.usersCache.length) return hubState.usersCache;
+    if (hubState.usersCache.length) return hubState.usersCache;
     return hubState.usersCache;
   }
+  hubState.usersCache = snap.docs.map(normalizeUserDoc);
+  healStaleUserRolesFromCache(hubState.usersCache);
+  healStaleAllowedEventsFromCache(hubState.usersCache);
+  return hubState.usersCache;
+}
+
+function scheduleUsersRoleHealOnServer() {
+  if (hubState.usersRoleHealDone) return;
+  if (!hubState.usersCache.length) return;
+  hubState.usersRoleHealDone = true;
+  void Promise.all([
+    reconcileDirectAllowOpsOnServer(hubState.usersCache),
+    pruneStaleOpsTournamentIdsOnServer(hubState.usersCache)
+  ])
+    .then(([recon, pruned]) => {
+      if (recon.fixed > 0) {
+        console.info(
+          `[reconcileDirectAllowOpsOnServer] 직접 허용 ${recon.fixed}명 role/allowedEvents 복구`
+        );
+      }
+      if (pruned.fixed > 0) {
+        console.info(
+          `[pruneStaleOpsTournamentIdsOnServer] stale ops/role ${pruned.fixed}명 정리`
+        );
+        scheduleHubAdminRender();
+      }
+    })
+    .catch((err) => {
+      console.error("direct-allow reconcile/prune on loadAllUsers:", err);
+    });
+}
+
+async function refreshUsersFromServer() {
+  if (isFirestoreQuotaCoolingDown()) return hubState.usersCache;
+  try {
+    const serverSnap = await getDocsFromServer(collection(db, "users"));
+    if (!serverSnap.empty) {
+      applyUsersCacheFromSnap(serverSnap);
+    }
+    scheduleUsersRoleHealOnServer();
+    scheduleHubAdminRender();
+    return hubState.usersCache;
+  } catch (err) {
+    noteFirestoreQuotaExceeded(err);
+    console.warn("refreshUsersFromServer:", err?.code || err);
+    return hubState.usersCache;
+  }
+}
+
+export async function loadAllUsers(options = {}) {
+  const forceServer = options.forceServer === true;
+  if (loadAllUsersInflight) {
+    if (forceServer) {
+      await loadAllUsersInflight;
+      return loadAllUsersImpl({ forceServer: true });
+    }
+    return loadAllUsersInflight;
+  }
+
+  loadAllUsersInflight = loadAllUsersImpl(options).finally(() => {
+    loadAllUsersInflight = null;
+  });
+  return loadAllUsersInflight;
+}
+
+async function loadAllUsersImpl(options = {}) {
+  const forceServer = options.forceServer === true;
   try {
     const col = collection(db, "users");
-    let snap = await getDocs(col);
-    if (snap.empty && !hubState.stopUsersWatch) {
+
+    if (forceServer && !isFirestoreQuotaCoolingDown()) {
       try {
-        snap = await getDocsFromServer(col);
+        const serverSnap = await getDocsFromServer(col);
+        if (!serverSnap.empty) {
+          applyUsersCacheFromSnap(serverSnap);
+          scheduleUsersRoleHealOnServer();
+          return hubState.usersCache;
+        }
       } catch (err) {
         noteFirestoreQuotaExceeded(err);
+        console.warn("loadAllUsers forceServer:", err?.code || err);
       }
     }
-    hubState.usersCache = snap.docs.map(normalizeUserDoc);
-    healStaleUserRolesFromCache(hubState.usersCache);
-    healStaleAllowedEventsFromCache(hubState.usersCache);
-    if (!hubState.usersRoleHealDone) {
-      hubState.usersRoleHealDone = true;
-      void Promise.all([
-        reconcileDirectAllowOpsOnServer(hubState.usersCache),
-        pruneStaleOpsTournamentIdsOnServer(hubState.usersCache)
-      ])
-        .then(([recon, pruned]) => {
-          if (recon.fixed > 0) {
-            console.info(
-              `[reconcileDirectAllowOpsOnServer] 직접 허용 ${recon.fixed}명 role/allowedEvents 복구`
-            );
-          }
-          if (pruned.fixed > 0) {
-            console.info(
-              `[pruneStaleOpsTournamentIdsOnServer] stale ops/role ${pruned.fixed}명 정리`
-            );
-            scheduleHubAdminRender();
-          }
-        })
-        .catch((err) => {
-          console.error("direct-allow reconcile/prune on loadAllUsers:", err);
-        });
+
+    const cacheSnap = await getDocs(col);
+    if (!cacheSnap.empty) {
+      applyUsersCacheFromSnap(cacheSnap);
+      scheduleUsersRoleHealOnServer();
+      if (cacheSnap.metadata?.fromCache && !isFirestoreQuotaCoolingDown()) {
+        void refreshUsersFromServer();
+      }
+      return hubState.usersCache;
+    }
+
+    if (!isFirestoreQuotaCoolingDown()) {
+      try {
+        const serverSnap = await getDocsFromServer(col);
+        applyUsersCacheFromSnap(serverSnap);
+        scheduleUsersRoleHealOnServer();
+      } catch (err) {
+        noteFirestoreQuotaExceeded(err);
+        console.warn("loadAllUsers server:", err?.code || err);
+      }
     }
     return hubState.usersCache;
   } catch (err) {
@@ -450,7 +545,6 @@ export function bindTournamentsRealtime() {
       if (shouldSkipEmptyCacheSnapshot(snap, hubState.tournamentsCache.length)) return;
 
       if (snap.empty) {
-        if (snap.metadata?.fromCache) return;
         void refreshTournamentsFromServer();
         return;
       } else {
@@ -497,11 +591,23 @@ export function bindUsersRealtime() {
     (snap) => {
       if (shouldSkipEmptyCacheSnapshot(snap, hubState.usersCache.length)) return;
 
-      hubState.usersCache = snap.docs.map(normalizeUserDoc);
+      if (snap.empty) {
+        void refreshUsersFromServer();
+        return;
+      }
+
+      applyUsersCacheFromSnap(snap);
       scheduleHubAdminRender();
+
+      if (snap.metadata?.fromCache) {
+        void refreshUsersFromServer();
+      }
     },
     (err) => {
       console.error("bindUsersRealtime error:", err);
+      if (!hubState.usersCache.length) {
+        void loadAllUsers().then(() => scheduleHubAdminRender());
+      }
     }
   );
 }
@@ -559,10 +665,12 @@ export function bindMyProfileRealtime(uid) {
 
       const email =
         hubState.currentUser?.email || hubState.currentUserProfile?.email || "";
+      const rawData = snap.data() || {};
       const merged = mergeOpsProfile(
         hubState.currentUserProfile,
-        normalizeUserProfile(snap.data() || {}, email),
-        snap.metadata || {}
+        normalizeUserProfile(rawData, email),
+        snap.metadata || {},
+        rawData
       );
       const fromCache = snap.metadata?.fromCache === true;
       void enrichProfileWithEmailAllows(uid, email, merged, { preferCacheFirst: fromCache }).then(
@@ -618,13 +726,16 @@ export async function resyncHubAccessFromServer(uid, options = {}) {
     }
 
     if (!hubState.stopTournamentsWatch) {
-      await loadTournaments();
+      await loadTournaments({ forceServer: true });
       scheduleHubTournamentsRender();
     }
 
     const isAdmin = getIsAdminUser(hubState.currentUser, hubState.currentUserProfile);
-    if (isAdmin && hubRefs.adminModal?.classList.contains("show")) {
-      populateTournamentSelect();
+    if (isAdmin) {
+      await loadAllUsers({ forceServer: true });
+      if (hubRefs.adminModal?.classList.contains("show")) {
+        populateTournamentSelect();
+      }
       scheduleHubAdminRender();
     }
   } catch (err) {

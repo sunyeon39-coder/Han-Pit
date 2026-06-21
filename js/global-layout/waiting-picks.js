@@ -2,14 +2,168 @@ import { auth, db } from "../firebase.js";
 import {
   doc,
   deleteField,
+  getDoc,
+  getDocFromServer,
   updateDoc
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { canUseTournamentOps, isSystemAdminEmail, normalizeUserProfile } from "../shared/auth-helpers.js";
 import { resolveLayoutAccentColor } from "../shared/layout-operator-colors.js";
 import { GL } from "./state.js";
 import { escapeHtml } from "./utils.js";
 import { flushOptimisticGlobalLayoutUi } from "./optimistic-seat-mutation.js";
 
 const WAITING_REF = () => doc(db, "layout_shared", "global_waiting");
+
+/** ops 없는 uid · waitingId 없는 항목 제거 */
+const deniedOperatorPickUids = new Set();
+
+function sanitizeOperatorPicksMap(raw = {}) {
+  const picks = raw && typeof raw === "object" && !Array.isArray(raw) ? { ...raw } : {};
+  for (const [uid, pick] of Object.entries(picks)) {
+    if (!pick || typeof pick !== "object") {
+      delete picks[uid];
+      continue;
+    }
+    if (!String(pick.waitingId || "").trim()) delete picks[uid];
+    else if (deniedOperatorPickUids.has(uid)) delete picks[uid];
+  }
+  return picks;
+}
+
+export function applyOperatorPicksFromDoc(data = {}, meta = {}) {
+  if (meta.fromCache === true && meta.hasPendingWrites !== true) {
+    return;
+  }
+
+  const raw = data?.operatorPicks;
+  const picks =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? sanitizeOperatorPicksMap(raw)
+      : {};
+
+  const myUid = String(GL.currentUser?.uid || auth.currentUser?.uid || "").trim();
+  if (myUid && !GL.isAdminUser) {
+    delete picks[myUid];
+    void clearOperatorPickForUid(myUid);
+  }
+
+  GL.operatorPicks = picks;
+  syncSelectedWaitingFromMyOperatorPick();
+}
+
+/** IndexedDB 캐시 무시 — 서버 operatorPicks 로 UI 동기화 */
+export async function refreshOperatorPicksFromServer() {
+  try {
+    let snap = null;
+    try {
+      snap = await getDocFromServer(WAITING_REF());
+    } catch {
+      snap = await getDoc(WAITING_REF());
+    }
+    applyOperatorPicksFromDoc(snap?.exists() ? snap.data() || {} : {}, { fromCache: false });
+  } catch (err) {
+    console.warn("refreshOperatorPicksFromServer:", err?.code || err);
+  }
+}
+
+/** layout_shared/global_waiting.operatorPicks — ops 권한 없는 uid 자동 삭제 */
+export async function pruneOperatorPicksWithoutOps() {
+  if (!GL.isAdminUser && !GL.opsServerVerified) return;
+
+  let snap = null;
+  try {
+    snap = await getDocFromServer(WAITING_REF());
+  } catch {
+    try {
+      snap = await getDoc(WAITING_REF());
+    } catch (err) {
+      console.warn("pruneOperatorPicksWithoutOps read:", err?.code || err);
+      return;
+    }
+  }
+
+  if (!snap?.exists()) {
+    GL.operatorPicks = {};
+    return;
+  }
+
+  const data = snap.data() || {};
+  const picks = data.operatorPicks;
+  if (!picks || typeof picks !== "object" || Array.isArray(picks)) {
+    applyOperatorPicksFromDoc(data, { fromCache: false });
+    return;
+  }
+
+  const staleUids = [];
+  const tid = String(GL.tournamentId || "").trim();
+
+  for (const [uid, pick] of Object.entries(picks)) {
+    if (!uid || !pick || typeof pick !== "object") {
+      staleUids.push(uid);
+      continue;
+    }
+    if (!String(pick.waitingId || "").trim()) {
+      staleUids.push(uid);
+      continue;
+    }
+
+    let userSnap = null;
+    try {
+      userSnap = await getDocFromServer(doc(db, "users", uid));
+    } catch {
+      try {
+        userSnap = await getDoc(doc(db, "users", uid));
+      } catch {
+        userSnap = null;
+      }
+    }
+
+    if (!userSnap?.exists()) {
+      staleUids.push(uid);
+      continue;
+    }
+
+    const raw = userSnap.data() || {};
+    const email = String(raw.email || "").trim();
+    const profile = normalizeUserProfile(raw, email);
+    const pickTid = String(pick.tournamentId || "").trim();
+    const canOps =
+      isSystemAdminEmail(email) ||
+      (tid && pickTid && pickTid !== tid
+        ? canUseTournamentOps(email, profile, pickTid)
+        : canUseTournamentOps(email, profile, tid || pickTid));
+
+    if (!canOps) staleUids.push(uid);
+  }
+
+  if (staleUids.length) {
+    const patch = {};
+    for (const uid of staleUids) {
+      if (!uid) continue;
+      patch[`operatorPicks.${uid}`] = deleteField();
+      deniedOperatorPickUids.add(uid);
+    }
+    try {
+      await updateDoc(WAITING_REF(), patch);
+    } catch (err) {
+      console.warn("pruneOperatorPicksWithoutOps write:", err?.code || err);
+    }
+    for (const uid of staleUids) {
+      if (GL.operatorPicks?.[uid]) {
+        const next = { ...(GL.operatorPicks || {}) };
+        delete next[uid];
+        GL.operatorPicks = next;
+      }
+    }
+  }
+
+  const nextPicks = { ...picks };
+  for (const uid of staleUids) {
+    delete nextPicks[uid];
+  }
+
+  applyOperatorPicksFromDoc({ ...data, operatorPicks: nextPicks }, { fromCache: false });
+}
 
 export function getOperatorDisplayName(profile = {}, user = null) {
   const nick = String(profile?.nickname || "").trim();
@@ -25,10 +179,20 @@ export function getOperatorDisplayName(profile = {}, user = null) {
   return uid ? uid.slice(0, 8) : "운영";
 }
 
-export function applyOperatorPicksFromDoc(data = {}) {
-  const raw = data?.operatorPicks;
-  GL.operatorPicks = raw && typeof raw === "object" && !Array.isArray(raw) ? { ...raw } : {};
-  syncSelectedWaitingFromMyOperatorPick();
+export async function clearOperatorPickForUid(uid = "") {
+  const id = String(uid || "").trim();
+  if (!id) return;
+  deniedOperatorPickUids.add(id);
+  try {
+    await updateDoc(WAITING_REF(), { [`operatorPicks.${id}`]: deleteField() });
+  } catch (err) {
+    console.warn("clearOperatorPickForUid:", err?.code || err);
+  }
+  if (GL.operatorPicks?.[id]) {
+    const next = { ...(GL.operatorPicks || {}) };
+    delete next[id];
+    GL.operatorPicks = next;
+  }
 }
 
 /** Firestore operatorPicks 와 패널 selectedWaitingId 를 맞춤 (한 번만 눌러도 배치 가능) */
@@ -83,6 +247,7 @@ export function getActiveOperatorPicks() {
 
   for (const [uid, pick] of Object.entries(GL.operatorPicks || {})) {
     if (!pick || typeof pick !== "object") continue;
+    if (deniedOperatorPickUids.has(uid)) continue;
     const waitingId = String(pick.waitingId || "").trim();
     if (!waitingId) continue;
     const pickTid = String(pick.tournamentId || "").trim();

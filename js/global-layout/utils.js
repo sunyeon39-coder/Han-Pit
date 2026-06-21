@@ -69,6 +69,29 @@ export function resolveSeatEventBox(seat = {}) {
   return { eventId, boxId };
 }
 
+export function captureSeatShellSnapshot(seat = {}, seatData = {}) {
+  const data = seatData && typeof seatData === "object" ? seatData : {};
+  const hint = seat && typeof seat === "object" ? seat : {};
+  const seatId = String(hint.seatId || data.seatId || "").trim();
+  const label = String(hint.label ?? data.label ?? hint.no ?? data.no ?? seatId).trim();
+  const order = Number(hint.order ?? data.order ?? hint.no ?? data.no ?? 0) || 0;
+
+  return {
+    seatId,
+    label,
+    no: Number(hint.no ?? data.no ?? order) || order,
+    order,
+    x: Number(hint.x ?? data.x ?? 0) || 0,
+    y: Number(hint.y ?? data.y ?? 0) || 0,
+    currentEventId: String(
+      hint.currentEventId || hint.mappedEventId || data.currentEventId || data.mappedEventId || ""
+    ).trim(),
+    mappedEventId: String(hint.mappedEventId || data.mappedEventId || data.currentEventId || "").trim(),
+    boxId: String(hint.boxId || data.boxId || "").trim(),
+    tournamentId: String(hint.tournamentId || data.tournamentId || GL.tournamentId || "").trim()
+  };
+}
+
 /** realtime __firestoreDocId 우선 — currentEventId만 있을 때 mappedEventId 불일치로 문서를 못 찾는 경우 방지 */
 export function getGlobalSeatDocRef(seat = {}, tournamentId = "") {
   const tid = String(tournamentId || "").trim();
@@ -117,6 +140,39 @@ export function getGlobalSeatDocRefs(seat = {}, tournamentId = "", fallbackPairs
   }
 
   return refs;
+}
+
+/** undo/redo payload → global_seats 문서 ref (캐시 doc id 우선) */
+export function resolveGlobalSeatDocRefForUndo(
+  payload = {},
+  tournamentId = "",
+  seatHint = null
+) {
+  const tid = String(tournamentId || "").trim();
+  const seatId = String(payload.targetSeatId || payload.seatId || seatHint?.seatId || "").trim();
+  const seat =
+    seatHint ||
+    (seatId ? GL.globalSeats.find((s) => String(s.seatId || "").trim() === seatId) : null);
+
+  const firestoreDocId = String(
+    payload.firestoreDocId || seat?.__firestoreDocId || ""
+  ).trim();
+  if (tid && firestoreDocId) {
+    return doc(db, "tournaments", tid, "global_seats", firestoreDocId);
+  }
+
+  if (seat && tid) {
+    const ref = getGlobalSeatDocRef(seat, tid);
+    if (ref) return ref;
+  }
+
+  const eventId = String(payload.eventId || "").trim();
+  const boxId = String(payload.boxId || "").trim();
+  if (tid && eventId && boxId && seatId) {
+    return doc(db, "tournaments", tid, "global_seats", buildGlobalSeatDocId(eventId, boxId, seatId));
+  }
+
+  return null;
 }
 
 /** 동일 seatId 로 남은 중복 global_seats 문서 (이벤트 이동 시 고아 문서 정리) */
@@ -282,6 +338,63 @@ export function parseGlobalSeatDocId(docId = "", seatId = "") {
   const boxId = rest.slice(sep + 2).trim();
   if (!eventId || !boxId) return null;
   return { eventId, boxId };
+}
+
+/** global_seats 문서 ID만으로 eventId / boxId / seatId 추출 */
+export function parseGlobalSeatDocIdParts(docId = "") {
+  const id = String(docId || "").trim();
+  if (!id) return null;
+  const parts = id.split("__");
+  if (parts.length < 3) return null;
+  const seatId = String(parts[parts.length - 1] || "").trim();
+  const boxId = String(parts[parts.length - 2] || "").trim();
+  const eventId = parts.slice(0, -2).join("__").trim();
+  if (!eventId || !boxId || !seatId) return null;
+  return { eventId, boxId, seatId };
+}
+
+export function normalizeGlobalSeatFromFirestore(data = {}, docId = "") {
+  const firestoreDocId = String(docId || data.__firestoreDocId || "").trim();
+  const row = { ...(data || {}) };
+  if (firestoreDocId) row.__firestoreDocId = firestoreDocId;
+
+  let seatId = String(row.seatId || row.id || "").trim();
+  const parsedFromDoc = firestoreDocId ? parseGlobalSeatDocIdParts(firestoreDocId) : null;
+  if (!seatId && parsedFromDoc?.seatId) seatId = parsedFromDoc.seatId;
+  if (seatId) row.seatId = seatId;
+
+  if (parsedFromDoc) {
+    if (!String(row.currentEventId || "").trim()) row.currentEventId = parsedFromDoc.eventId;
+    if (!String(row.mappedEventId || "").trim()) row.mappedEventId = parsedFromDoc.eventId;
+    if (!String(row.boxId || "").trim()) row.boxId = parsedFromDoc.boxId;
+  }
+
+  if (!String(row.person || "").trim()) row.person = "비어있음";
+  row.seatHistory = Array.isArray(row.seatHistory)
+    ? row.seatHistory.filter((item) => item && typeof item === "object")
+    : [];
+  return row;
+}
+
+export function getGlobalSeatRowKey(seat = {}) {
+  const sid = String(seat?.seatId || "").trim();
+  if (sid) return sid;
+  return String(seat?.__firestoreDocId || "").trim();
+}
+
+export function dedupeGlobalSeats(seats = []) {
+  const seen = new Set();
+  const out = [];
+  for (const raw of seats || []) {
+    const row = normalizeGlobalSeatFromFirestore(raw, raw?.__firestoreDocId);
+    const key =
+      String(row.__firestoreDocId || "").trim() ||
+      String(row.seatId || "").trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  return out;
 }
 
 export function getProjectionDocId(eventId = "", boxId = "") {

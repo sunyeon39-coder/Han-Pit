@@ -16,11 +16,16 @@ import { getCandidateSeatRefsForPerson } from "./seat-candidates.js";
 import { scheduleSyncLayoutProjection } from "./fs-layout-projection.js";
 import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
 import { pushGlobalUndo } from "./undo-stack.js";
+import { captureSeatShellSnapshot } from "./utils.js";
 import {
   applyOptimisticClear,
   flushOptimisticGlobalLayoutUi
 } from "./optimistic-seat-mutation.js";
 import { markGlobalLayoutLocalMutation } from "./layout-mutation-guard.js";
+import {
+  appendSeatHistoryPatch,
+  entryFromSeatOccupant
+} from "./seat-history.js";
 
 export async function clearSeat(seatId = "") {
   const targetSeatId = String(seatId || "").trim();
@@ -47,6 +52,9 @@ export async function clearSeat(seatId = "") {
   let undoSeatBefore = null;
   let undoEventId = "";
   let undoBoxId = "";
+  let undoFirestoreDocId = "";
+  let undoSeatSnapshot = null;
+  let returnedJoinedAt = 0;
 
   GL.seatMutationInFlight = true;
   try {
@@ -61,7 +69,9 @@ export async function clearSeat(seatId = "") {
         break;
       }
       if (!seatRef || !seatSnap?.exists()) throw new Error("seat_not_found");
+      undoFirestoreDocId = String(seatRef.id || "").trim();
       const seatData = seatSnap.data() || {};
+      undoSeatSnapshot = captureSeatShellSnapshot(seat, seatData);
       const prevUid = String(seatData.personUid || "").trim();
       const prevEmail = String(seatData.personEmail || "").trim();
       const prevName = String(seatData.person || "").trim();
@@ -94,6 +104,9 @@ export async function clearSeat(seatId = "") {
       undoEventId = String(seatData.currentEventId || seatData.mappedEventId || "").trim();
       undoBoxId = String(seatData.boxId || "").trim();
 
+      const historyEntry = entryFromSeatOccupant(seatData, now, "clear");
+      const nextHistory = appendSeatHistoryPatch(seatData.seatHistory, historyEntry);
+
       tx.set(
         seatRef,
         {
@@ -103,7 +116,8 @@ export async function clearSeat(seatId = "") {
           seatedAt: null,
           status: "empty",
           updatedAt: now,
-          updatedAtServer: serverTimestamp()
+          updatedAtServer: serverTimestamp(),
+          ...(nextHistory ? { seatHistory: nextHistory } : {})
         },
         { merge: true }
       );
@@ -126,6 +140,7 @@ export async function clearSeat(seatId = "") {
         });
 
         if (!hasOtherSeat) {
+          returnedJoinedAt = now;
           const nextWaiting = rebuildWaitingAfterSeatToWait(waitingArr, GL.tournamentId, {
             uid: prevUid,
             email: prevEmail,
@@ -191,7 +206,10 @@ export async function clearSeat(seatId = "") {
       targetSeatId,
       eventId: ev,
       boxId: bx,
+      firestoreDocId: undoFirestoreDocId,
+      seatSnapshot: undoSeatSnapshot,
       seatBefore: undoSeatBefore,
+      returnedJoinedAt,
       waitingBefore: Array.isArray(undoWaitingBefore) ? undoWaitingBefore : []
     });
   }

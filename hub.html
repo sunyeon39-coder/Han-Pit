@@ -8,122 +8,90 @@
     document.documentElement.style.backgroundColor="#060c17";
     document.documentElement.style.colorScheme="dark";
   }catch(e){}
-  var BUILD="20260619182938";
+  var BUILD="20260621053150";
   var KEY="hanPitAppVersion";
+  var RELOAD_ONCE="hanPitReloadOnce";
   var meta=document.querySelector('meta[name="han-pit-build"]');
-  var pageBuild=meta?String(meta.getAttribute("content")||"").trim():"";
-  var loc=new URL(location.href);
-  var bust=loc.searchParams.get("_hanpit_v")||"";
-
-  function appBase(){
-    var p=location.pathname||"/";
-    var i=p.lastIndexOf("/");
-    return i<0?"/":p.slice(0,i+1);
-  }
-  function appUrl(rel){
-    rel=String(rel||"").replace(/^\.\//,"");
-    return location.origin+appBase()+rel;
-  }
-
-  function isLegacyShell(){
-    var onIndex=document.getElementById("indexRoot")||document.getElementById("dealerOpsMount");
-    return !!onIndex&&!document.getElementById("workSummaryModal");
-  }
-
-  function persist(v){
-    try{localStorage.setItem(KEY,v);}catch(e){}
-  }
-
-  function reload(v){
-    var tag=v||String(Date.now());
-    if(loc.searchParams.get("_hanpit_v")===tag&&pageBuild&&pageBuild===tag)return;
-    var n=0;
-    try{n=Number(sessionStorage.getItem("hanPitReloadAttempt:"+tag)||0);}catch(e){}
-    var cap=isLegacyShell()||!pageBuild?12:4;
-    if(n>=cap)return;
-    try{sessionStorage.setItem("hanPitReloadAttempt:"+tag,String(n+1));}catch(e){}
-    if(v)persist(v);
-    loc.searchParams.set("_hanpit_v",tag);
-    location.replace(loc.toString());
-  }
-
-  function isPlaceholderBust(v){
-    v=String(v||"").trim();
-    return !v||v==="boot"||v==="net";
-  }
-
-  function syncBustInPlace(remote){
-    if(!remote||!pageBuild||pageBuild!==remote)return;
-    if(!isPlaceholderBust(bust)&&bust===remote)return;
-    persist(remote);
-    loc.searchParams.set("_hanpit_v",remote);
-    try{history.replaceState(null,"",loc.toString());}catch(e){}
-  }
-
-  function needsReload(remote){
-    if(isLegacyShell())return true;
-    if(!pageBuild)return true;
-    if(!remote)return false;
-    if(pageBuild===remote)return false;
-    if(bust===remote&&pageBuild===remote)return false;
-    return true;
-  }
+  var pageBuild=meta?String(meta.getAttribute("content")||"").trim():BUILD;
 
   function swScope(){
-    var b=appBase();
+    var p=location.pathname||"/";
+    var i=p.lastIndexOf("/");
+    var b=i<0?"/":p.slice(0,i+1);
     return b.endsWith("/")?b:b+"/";
   }
 
-  function runVersionCheck(){
+  function persist(ver){
+    if(!ver)return;
+    try{localStorage.setItem(KEY,String(ver));}catch(e){}
+  }
+
+  function syncBustParam(ver){
+    if(!ver)return;
+    var loc=new URL(location.href);
+    if(loc.searchParams.get("_hanpit_v")===ver)return;
+    loc.searchParams.set("_hanpit_v",ver);
+    try{history.replaceState(null,"",loc.toString());}catch(e){}
+  }
+
+  function alreadyReloaded(){
+    try{return sessionStorage.getItem(RELOAD_ONCE)==="1";}catch(e){return false;}
+  }
+
+  function markReloaded(){
+    try{sessionStorage.setItem(RELOAD_ONCE,"1");}catch(e){}
+  }
+
+  function reloadOnce(ver){
+    ver=String(ver||"").trim();
+    if(!ver||ver===pageBuild||alreadyReloaded())return;
+    markReloaded();
+    persist(ver);
+    var loc=new URL(location.href);
+    loc.searchParams.set("_hanpit_v",ver);
+    location.replace(loc.toString());
+  }
+
+  if(pageBuild){
+    persist(pageBuild);
+    syncBustParam(pageBuild);
+  }
+
+  function registerSwOnly(){
+    if(!("serviceWorker" in navigator))return;
+    var run=function(){
+      navigator.serviceWorker.register("./firebase-messaging-sw.js",{scope:swScope()}).catch(function(){});
+    };
+    if(typeof requestIdleCallback==="function"){
+      requestIdleCallback(run,{timeout:20000});
+    }else{
+      setTimeout(run,5000);
+    }
+  }
+
+  function checkRemoteVersionOnce(){
+    if(!pageBuild||alreadyReloaded())return;
     fetch("./app-version.json?t="+Date.now(),{cache:"no-store",credentials:"same-origin"})
       .then(function(r){return r.ok?r.json():null;})
       .then(function(d){
         var remote=String((d&&(d.v||d.version))||"").trim();
-        if(needsReload(remote))reload(remote);
-        else syncBustInPlace(remote);
-      })
-      .catch(function(){
-        if(isLegacyShell()||!pageBuild)reload("net");
-      });
-  }
-
-  if(!pageBuild&&!bust){
-    reload("boot");
-    return;
-  }
-
-  if(pageBuild&&bust===pageBuild){
-    try{
-      if(localStorage.getItem(KEY)===pageBuild){
-        setTimeout(runVersionCheck,15000);
-      }else{
-        runVersionCheck();
-      }
-    }catch(e){
-      runVersionCheck();
-    }
-  }else{
-    runVersionCheck();
-  }
-
-  if("serviceWorker" in navigator){
-    navigator.serviceWorker.register("./firebase-messaging-sw.js",{scope:swScope()})
-      .then(function(reg){
-        setTimeout(function(){
-          try{reg.update();}catch(e){}
-        },8000);
+        if(!remote||remote===pageBuild){
+          if(remote)persist(remote);
+          syncBustParam(remote||pageBuild);
+          return;
+        }
+        reloadOnce(remote);
       })
       .catch(function(){});
-    navigator.serviceWorker.addEventListener("message",function(ev){
-      var d=ev&&ev.data;
-      if(d&&d.type==="HAN_PIT_FORCE_RELOAD")reload(String(d.v||"").trim());
-    });
   }
+
+  registerSwOnly();
+  setTimeout(checkRemoteVersionOnce,60000);
 })();
 </script>
   <!-- /han-pit-inline-update -->
   <!-- han-pit-critical-shell -->
-  <style id="han-pit-critical-shell">html{color-scheme:dark;background:#060c17}body{margin:0;min-height:100%;background:#060c17;color:#eef2ff}.page-boot-loading{display:none!important}.layout-canvas-viewport,.canvas.pc-canvas{background:#0a1022}</style>
+  <style id="han-pit-critical-shell">html{color-scheme:dark;background:#060c17}body{margin:0;min-height:100%;background:#060c17;color:#eef2ff}.page-boot-loading,.page-boot-text{display:none!important}.layout-canvas-viewport,.canvas.pc-canvas{background:#0a1022}</style>
   <!-- /han-pit-critical-shell -->
   <!-- han-pit-asset-fix -->
   <script id="han-pit-asset-fix">
@@ -154,7 +122,14 @@
 })();
 </script>
   <!-- /han-pit-asset-fix -->
-  <meta name="han-pit-build" content="20260619182938" />
+  <meta name="han-pit-build" content="20260621053150" />
+  <!-- han-pit-perf-hints -->
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
+  <link rel="preconnect" href="https://firebase.googleapis.com" crossorigin />
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin />
+  <link rel="dns-prefetch" href="https://www.gstatic.com" />
+  <link rel="modulepreload" href="./js/hub.js?v=20260621053150" crossorigin />
+  <!-- /han-pit-perf-hints -->
   <meta charset="UTF-8" />
   <meta
     name="viewport"
@@ -167,16 +142,16 @@
   <meta name="theme-color" content="#111832" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <link rel="stylesheet" href="./css/app-shared.css?v=20260619182938" />
-  <link rel="stylesheet" href="./css/hub.css?v=20260619182938" />
-  <link rel="stylesheet" href="./css/add-to-home-hint.css?v=20260619182938" />
+  <link rel="stylesheet" href="./css/app-shared.css?v=20260621053150" />
+  <link rel="stylesheet" href="./css/hub.css?v=20260621053150" />
+  <link rel="stylesheet" href="./css/add-to-home-hint.css?v=20260621053150" />
 </head>
 <body>
   <!-- han-pit-boot-dismiss -->
 <script id="han-pit-boot-dismiss">
 (function(){
   function dismiss(){
-    var list=document.querySelectorAll(".page-boot-loading");
+    var list=document.querySelectorAll(".page-boot-loading,.page-boot-text");
     for(var i=0;i<list.length;i++)list[i].remove();
     ["indexRoot","eventList","app"].forEach(function(id){
       var el=document.getElementById(id);
@@ -275,7 +250,7 @@
             rows="4"
             required
             maxlength="150"
-            placeholder="관련 경력을 간단히 적어 주세요."
+            placeholder="지원동기 및 경력 을 간단히 적어 주세요."
           ></textarea>
           <div class="han-exp-count muted"><span id="hanExperienceCount">0</span> / 150</div>
         </div>
@@ -421,7 +396,7 @@
 
           <div class="form-group compact">
             <label for="adminSearchInput">유저 검색</label>
-            <input id="adminSearchInput" type="text" placeholder="-" />
+            <input id="adminSearchInput" type="text" placeholder="이름 또는 이메일 검색" autocomplete="off" />
           </div>
 
           <div class="admin-user-bulk-bar">
@@ -447,6 +422,6 @@
 </div>
   </div>
 
-  <script type="module" src="./js/hub.js?v=20260619182938"></script>
+  <script type="module" src="./js/hub.js?v=20260621053150"></script>
 </body>
 </html>

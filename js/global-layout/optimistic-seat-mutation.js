@@ -22,7 +22,7 @@ export function flushOptimisticGlobalLayoutUi() {
   bumpGlobalLayoutDataRevision();
   if (layoutIsMobile()) {
     updateGlobalLayoutMetaCounts(GL.globalSeats);
-    renderGlobalLayoutMobile();
+    renderGlobalLayoutMobile({ sync: true });
     updateGlobalLayoutWaitingMeta();
     maybeShowOptimisticSeatAlertFromSeats(GL.globalSeats, {
       user: GL.currentUser || auth.currentUser,

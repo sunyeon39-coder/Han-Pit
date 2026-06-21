@@ -3,7 +3,6 @@ import {
   hasAnyDirectEventAllow,
   isAdminEmail,
   isSystemAdminEmail,
-  opsAllowedEventsFromProfile,
   resolveStoredUserRole,
   sanitizeAllowedEvents
 } from "../shared/auth-helpers.js";
@@ -67,15 +66,15 @@ export function normalizeTournamentDoc(d) {
 export function normalizeUserDoc(d) {
   const data = d.data() || {};
   const email = String(data.email || "").trim();
-  const opsAllowed = opsAllowedEventsFromProfile(data);
-  const role = resolveStoredUserRole(email, { ...data, allowedEvents: opsAllowed });
+  const persistedAllowed = sanitizeAllowedEvents(data.allowedEvents);
+  const role = resolveStoredUserRole(email, { ...data, allowedEvents: persistedAllowed });
   return {
     uid: d.id,
     nickname: data.nickname || "",
     email,
     role,
     accessCode: data.accessCode || "",
-    allowedEvents: opsAllowed,
+    allowedEvents: persistedAllowed,
     layoutAccentColor: data.layoutAccentColor || "",
     /** Firestore 원본 — 자동 보정용 */
     _rawRole: String(data.role || "").trim() || "user",

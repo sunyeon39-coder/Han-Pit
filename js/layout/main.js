@@ -185,6 +185,28 @@ import {
     updatedAt: Date.now()
   };
 
+  let lastLayoutEventFp = "";
+  let lastLayoutWaitingFp = "";
+  let lastLayoutGlobalSeatsFp = "";
+
+  function layoutEventStateFingerprint() {
+    return (eventState.seats || [])
+      .map(
+        (s) =>
+          `${s.id}|${String(s.person || "").trim()}|${Number(s.seatedAt || 0)}|${String(s.label ?? s.no ?? "")}`
+      )
+      .join(";");
+  }
+
+  function layoutWaitingStateFingerprint() {
+    return (waitingState.waiting || [])
+      .map(
+        (w) =>
+          `${w.id}|${String(w.name || "").trim()}|${w.blockChecked === true ? 1 : 0}|${Number(w.joinedAt || 0)}`
+      )
+      .join(";");
+  }
+
   const ui = {
   activeTab: "wait",
   selectedSeatId: FOCUS_SEAT_ID || null,
@@ -369,6 +391,9 @@ import {
     clearWaitingSelectionIfSeated,
     isLayoutOptimisticMutationInFlight,
     onAfterGlobalSeatsSnapshot: (merged) => {
+      const fp = layoutEventStateFingerprint();
+      if (fp === lastLayoutGlobalSeatsFp) return;
+      lastLayoutGlobalSeatsFp = fp;
       scheduleLayoutRealtimeUi({
         canvas: true,
         panel: true,
@@ -391,9 +416,15 @@ import {
     applyGlobalSeatMapToEventSeats: () => layoutGlobalSeatsMerge.applyGlobalSeatMapToEventSeats(),
     isLayoutOptimisticMutationInFlight,
     onAfterEventRemoteSnapshot: () => {
+      const fp = layoutEventStateFingerprint();
+      if (fp === lastLayoutEventFp) return;
+      lastLayoutEventFp = fp;
       scheduleLayoutRealtimeUi({ canvas: true, heal: "event_snapshot" });
     },
     onAfterWaitingRemoteSnapshot: () => {
+      const fp = layoutWaitingStateFingerprint();
+      if (fp === lastLayoutWaitingFp) return;
+      lastLayoutWaitingFp = fp;
       scheduleLayoutRealtimeUi({ panel: true, heal: "waiting_snapshot" });
     },
     onAfterAttendanceRemoteSnapshot: () => {
@@ -549,8 +580,22 @@ import {
 
   function startTick() {
     if (timerHandle) clearInterval(timerHandle);
-    timerHandle = setInterval(() => layoutTimers.updateTimers(), 1000);
+    timerHandle = setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      layoutTimers.updateTimers();
+    }, 1000);
   }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      if (timerHandle) {
+        clearInterval(timerHandle);
+        timerHandle = null;
+      }
+      return;
+    }
+    if (!timerHandle) startTick();
+  });
 
   ({ scheduleLayoutRealtimeUi } = createLayoutRealtimeUi({
     render,

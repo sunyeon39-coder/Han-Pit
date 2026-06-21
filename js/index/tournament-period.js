@@ -27,9 +27,16 @@ function routeToHub(message) {
 }
 
 function showMissingTournamentOnIndex() {
-  sessionStorage.removeItem("tournamentId");
+  const urlTournamentId = new URLSearchParams(location.search).get("tournamentId");
+  if (!String(urlTournamentId || "").trim()) {
+    sessionStorage.removeItem("tournamentId");
+  }
   if (IX.topbarTournamentName) {
     IX.topbarTournamentName.textContent = "Tournament Events";
+  }
+  if (IX.events.length > 0) {
+    console.warn("[index] tournament doc missing but events are loaded — keeping list");
+    return;
   }
   const hubHref = resolveRelativePage("hub.html");
   if (IX.root) {

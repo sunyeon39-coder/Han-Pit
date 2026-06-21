@@ -150,19 +150,43 @@ export function partitionWaitingForMobileDisplay(list = []) {
 }
 
 export function isPersonSeatedInGlobalSeats(seats, person = {}) {
+  const set = buildSeatedIdentitySet(seats);
+  return isPersonSeatedInIdentitySet(set, person);
+}
+
+function buildSeatedIdentitySet(seats = []) {
+  const set = new Set();
+  for (const s of seats) {
+    if (isEmptyPerson(String(s?.person || "").trim())) continue;
+    const uid = String(s?.personUid || "").trim();
+    const email = String(s?.personEmail || "").trim().toLowerCase();
+    const name = String(s?.person || "").trim();
+    if (uid) set.add(`uid:${uid}`);
+    if (email) set.add(`email:${email}`);
+    if (!uid && !email && name) set.add(`name:${name}`);
+  }
+  return set;
+}
+
+function isPersonSeatedInIdentitySet(set, person = {}) {
   const uid = String(person.uid || "").trim();
   const email = String(person.email || "").trim().toLowerCase();
   const name = String(person.name || person.nickname || "").trim();
-  return seats.some((s) => {
-    if (isEmptyPerson(String(s?.person || "").trim())) return false;
-    const pUid = String(s?.personUid || "").trim();
-    const pEmail = String(s?.personEmail || "").trim().toLowerCase();
-    const pName = String(s?.person || "").trim();
-    if (uid && pUid && uid === pUid) return true;
-    if (email && pEmail && email === pEmail) return true;
-    if (!uid && !email && name && pName === name) return true;
-    return false;
-  });
+  if (uid && set.has(`uid:${uid}`)) return true;
+  if (email && set.has(`email:${email}`)) return true;
+  if (!uid && !email && name && set.has(`name:${name}`)) return true;
+  return false;
+}
+
+function getSeatedIdentitySet() {
+  const rev = GL.dataRevision || 0;
+  if (GL._seatedIdentitySet && GL._seatedIdentitySetRev === rev) {
+    return GL._seatedIdentitySet;
+  }
+  const set = buildSeatedIdentitySet(GL.globalSeats);
+  GL._seatedIdentitySet = set;
+  GL._seatedIdentitySetRev = rev;
+  return set;
 }
 
 export function getCurrentTournamentWaiting() {
@@ -173,17 +197,12 @@ export function getCurrentTournamentWaiting() {
 
   const inactive = GL.attendanceInactiveUids instanceof Set ? GL.attendanceInactiveUids : new Set();
   const filterReady = GL.attendanceFilterReady === true;
+  const seatedSet = getSeatedIdentitySet();
 
   const waitingBase = (filterReady ? GL.globalWaiting : [])
     .filter((w) => String(w?.tournamentId || "").trim() === GL.tournamentId)
     .filter((w) => !isInactiveWaitingEntry(w, inactive))
-    .filter((w) =>
-      !isPersonSeatedInGlobalSeats(GL.globalSeats, {
-        uid: w?.uid,
-        email: w?.email,
-        name: w?.name
-      })
-    );
+    .filter((w) => !isPersonSeatedInIdentitySet(seatedSet, { uid: w?.uid, email: w?.email, name: w?.name }));
 
   const merged = [...waitingBase];
   const hasEntry = (candidate = {}) => {
@@ -204,7 +223,7 @@ export function getCurrentTournamentWaiting() {
   GL.attendanceWaiting.forEach((item) => {
     const uid = String(item?.uid || "").trim();
     if (
-      isPersonSeatedInGlobalSeats(GL.globalSeats, {
+      isPersonSeatedInIdentitySet(seatedSet, {
         uid,
         email: item?.email,
         name: item?.nickname || item?.name

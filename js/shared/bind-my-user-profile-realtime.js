@@ -17,8 +17,9 @@ export function bindMyUserProfileRealtime(uid, { email = "", onProfileChange } =
     doc(db, "users", uid),
     (snap) => {
       if (!snap.exists()) return;
-      const raw = normalizeUserProfile(snap.data() || {}, email);
-      const merged = mergeOpsProfile(lastProfile, raw, snap.metadata || {});
+      const rawData = snap.data() || {};
+      const raw = normalizeUserProfile(rawData, email);
+      const merged = mergeOpsProfile(lastProfile, raw, snap.metadata || {}, rawData);
       lastProfile = merged;
       onProfileChange(merged, snap.metadata || {});
 

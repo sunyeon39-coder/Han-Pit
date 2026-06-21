@@ -130,10 +130,12 @@ export async function joinSharedWaitingOnCheckIn(user) {
       return false;
     }
 
+    const rawData = userSnap.data() || {};
     const userProfile = mergeOpsProfile(
       IX.currentUserProfile,
-      normalizeUserProfile(userSnap.data() || {}, user.email || IX.currentUserProfile?.email || ""),
-      userSnap.metadata || {}
+      normalizeUserProfile(rawData, user.email || IX.currentUserProfile?.email || ""),
+      userSnap.metadata || {},
+      rawData
     );
     if (userProfile) IX.currentUserProfile = userProfile;
 

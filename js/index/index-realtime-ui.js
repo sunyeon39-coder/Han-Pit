@@ -3,9 +3,40 @@ import { render, patchEventCardsLight, refreshCardStatuses } from "./event-cards
 import { populateEventSelect, renderEventAdminList } from "./event-cards-admin-form.js";
 
 let flushScheduled = false;
+let flushTimer = 0;
 let pendingCards = false;
 let pendingLight = false;
 let pendingAdminForm = false;
+
+const INDEX_REALTIME_UI_DEBOUNCE_MS = 64;
+
+function flushIndexCardsRender() {
+  flushScheduled = false;
+  flushTimer = 0;
+  const doCards = pendingCards;
+  const doLight = pendingLight;
+  const doAdmin = pendingAdminForm;
+  pendingCards = false;
+  pendingLight = false;
+  pendingAdminForm = false;
+
+  if (doLight && !doCards) {
+    if (!patchEventCardsLight()) render();
+    refreshCardStatuses();
+  } else if (doCards) {
+    render();
+    refreshCardStatuses();
+  }
+  if (
+    doAdmin &&
+    IX.eventCardSelect &&
+    IX.eventAdminModal?.classList.contains("show")
+  ) {
+    const selectedId = IX.eventCardId?.value?.trim() || IX.eventCardSelect.value || "";
+    populateEventSelect(selectedId);
+    renderEventAdminList();
+  }
+}
 
 export function scheduleIndexCardsRender(opts = {}) {
   if (opts.adminForm) pendingAdminForm = true;
@@ -13,30 +44,8 @@ export function scheduleIndexCardsRender(opts = {}) {
   else pendingCards = true;
   if (flushScheduled) return;
   flushScheduled = true;
-  requestAnimationFrame(() => {
-    flushScheduled = false;
-    const doCards = pendingCards;
-    const doLight = pendingLight;
-    const doAdmin = pendingAdminForm;
-    pendingCards = false;
-    pendingLight = false;
-    pendingAdminForm = false;
-
-    if (doLight && !doCards) {
-      if (!patchEventCardsLight()) render();
-      refreshCardStatuses();
-    } else if (doCards) {
-      render();
-      refreshCardStatuses();
-    }
-    if (
-      doAdmin &&
-      IX.eventCardSelect &&
-      IX.eventAdminModal?.classList.contains("show")
-    ) {
-      const selectedId = IX.eventCardId?.value?.trim() || IX.eventCardSelect.value || "";
-      populateEventSelect(selectedId);
-      renderEventAdminList();
-    }
-  });
+  if (flushTimer) clearTimeout(flushTimer);
+  flushTimer = window.setTimeout(() => {
+    requestAnimationFrame(flushIndexCardsRender);
+  }, INDEX_REALTIME_UI_DEBOUNCE_MS);
 }

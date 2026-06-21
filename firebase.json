@@ -16,6 +16,10 @@
           {
             "key": "Cache-Control",
             "value": "max-age=0, no-cache, no-store, must-revalidate"
+          },
+          {
+            "key": "Link",
+            "value": "<https://www.gstatic.com>; rel=preconnect, <https://firebase.googleapis.com>; rel=preconnect, <https://firestore.googleapis.com>; rel=preconnect"
           }
         ]
       },

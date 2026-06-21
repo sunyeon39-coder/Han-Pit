@@ -13,6 +13,7 @@ import {
   restoreAttendanceSnapshot,
   snapshotAttendanceEntry
 } from "./dealer-attendance-optimistic.js";
+import { resolveCheckedInAtForActiveStatus } from "../shared/attendance-operational-day.js";
 
 function buildMyAttendancePayload(user, nextStatus) {
   const tournamentId = getTournamentId();
@@ -31,10 +32,7 @@ function buildMyAttendancePayload(user, nextStatus) {
     email: String(IX.currentUserProfile.email || user.email || "").trim(),
     tournamentId,
     status: nextStatus,
-    checkedInAt:
-      nextStatus === "checked_in" || nextStatus === "waiting" || nextStatus === "break"
-        ? current?.checkedInAt || now
-        : current?.checkedInAt || null,
+    checkedInAt: resolveCheckedInAtForActiveStatus(current, nextStatus, now),
     checkedOutAt: nextStatus === "checked_out" ? now : null,
     breakStartedAt: nextStatus === "break" ? now : null,
     totalBreakMs:
@@ -61,10 +59,7 @@ function buildAdminAttendancePayload(uid, nextStatus) {
   return {
     ...current,
     status: nextStatus,
-    checkedInAt:
-      nextStatus === "checked_in" || nextStatus === "waiting" || nextStatus === "break"
-        ? current.checkedInAt || now
-        : current.checkedInAt || null,
+    checkedInAt: resolveCheckedInAtForActiveStatus(current, nextStatus, now),
     checkedOutAt: nextStatus === "checked_out" ? now : null,
     breakStartedAt: nextStatus === "break" ? now : null,
     totalBreakMs:

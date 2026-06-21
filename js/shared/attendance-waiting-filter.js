@@ -1,4 +1,5 @@
 import { filterAttendanceDocsForTournament } from "./dealer-attendance-query.js";
+import { isStaleOperationalDayAttendance } from "./attendance-operational-day.js";
 
 const TERMINAL_ATTENDANCE = new Set(["checked_out", "off"]);
 
@@ -10,6 +11,7 @@ export function buildAttendanceInactiveUidSet(docs = [], tournamentId = "") {
     const uid = String(data.uid || "").trim();
     const status = String(data.status || "").trim();
     if (uid && TERMINAL_ATTENDANCE.has(status)) inactive.add(uid);
+    if (uid && isStaleOperationalDayAttendance(data)) inactive.add(uid);
   }
   return inactive;
 }

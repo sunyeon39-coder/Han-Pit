@@ -57,6 +57,24 @@ export function showHubListLoading() {
   /* 즉시 UI — 전체 화면/목록 스피너 대신 빈 상태·캐시 카드를 바로 표시 */
 }
 
+function tournamentsListFingerprint(list = [], userProfile, user) {
+  return list
+    .map((t) => {
+      const enabled = hasEventAccess(userProfile, t, user) ? 1 : 0;
+      const canOps = canShowTournamentOpsUi(
+        user?.email || userProfile?.email,
+        userProfile,
+        t.id,
+        { id: t.id, name: t.name, logoText: t.logoText },
+        user?.uid
+      )
+        ? 1
+        : 0;
+      return `${t.id}|${t.name}|${t.startDate}|${t.endDate}|${enabled}|${canOps}`;
+    })
+    .join(";");
+}
+
 export function renderTournaments(tournaments, userProfile, user) {
   const { eventListEl } = hubRefs;
   if (!eventListEl) return;
@@ -74,9 +92,16 @@ export function renderTournaments(tournaments, userProfile, user) {
     eventListEl.classList.add("event-list--empty");
     const isAdmin = getIsAdminUser(user, userProfile);
     eventListEl.innerHTML = buildHubEmptyStateHtml(isAdmin);
+    hubState._hubTournamentsFp = "";
     wireHubEmptyState();
     return;
   }
+
+  const nextFp = tournamentsListFingerprint(list, userProfile, user);
+  if (nextFp === hubState._hubTournamentsFp && eventListEl.querySelector(".event-card[data-tournament-id]")) {
+    return;
+  }
+  hubState._hubTournamentsFp = nextFp;
 
   eventListEl.classList.remove("event-list--empty");
   eventListEl.innerHTML = "";

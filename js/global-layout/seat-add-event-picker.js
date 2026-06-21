@@ -195,11 +195,18 @@ export async function wireSeatAddEventPicker() {
     else closeList(pick, trigger, list);
   });
 
+  list.addEventListener("mousedown", (e) => {
+    const li = e.target?.closest?.("li[data-event-id]");
+    if (!li) return;
+    e.preventDefault();
+    e.stopPropagation();
+    applyRow(li);
+  });
+
   list.addEventListener("click", (e) => {
     const li = e.target?.closest?.("li[data-event-id]");
     if (!li) return;
     e.stopPropagation();
-    applyRow(li);
   });
 
   boxInput?.addEventListener("input", () => persistSeatAddRow(hidden, boxInput));

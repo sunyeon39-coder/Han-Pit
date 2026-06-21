@@ -5,9 +5,11 @@ import {
   buildInlineAppUpdateSnippet,
   buildAppAssetInlineFixSnippet,
   buildBootDismissSnippet,
+  buildPerformanceHintsSnippet,
   APP_ASSET_FIX_MARKER,
   BOOT_DISMISS_MARKER,
-  CRITICAL_SHELL_STYLE_TAG
+  CRITICAL_SHELL_STYLE_TAG,
+  PERFORMANCE_HINTS_MARKER
 } from "./inline-app-update-snippet.mjs";
 
 const CRITICAL_SHELL_MARKER = "<!-- han-pit-critical-shell -->";
@@ -31,10 +33,30 @@ const nextRev = m ? Number(m[1]) + 1 : 1;
 sw = sw.replace(/const SW_DEPLOY_REVISION = \d+/, `const SW_DEPLOY_REVISION = ${nextRev}`);
 writeFileSync(swPath, sw, "utf8");
 
+const PAGE_MODULE_ENTRY = {
+  "index.html": "index.js",
+  "hub.html": "hub.js",
+  "layout.html": "layout.js",
+  "global-layout.html": "global-layout.js",
+  "login.html": "login.js"
+};
+
 const htmlFiles = readdirSync(root).filter((name) => name.endsWith(".html"));
 for (const name of htmlFiles) {
   const path = join(root, name);
   let html = readFileSync(path, "utf8");
+  const perfHints = buildPerformanceHintsSnippet(v, PAGE_MODULE_ENTRY[name] || "");
+  if (html.includes(PERFORMANCE_HINTS_MARKER)) {
+    html = html.replace(
+      new RegExp(`${PERFORMANCE_HINTS_MARKER}[\\s\\S]*?<!-- /han-pit-perf-hints -->`, "m"),
+      perfHints
+    );
+  } else if (html.includes('name="han-pit-build"')) {
+    html = html.replace(
+      /<meta\s+name="han-pit-build"\s+content="[^"]*"\s*\/?>/,
+      `<meta name="han-pit-build" content="${v}" />\n  ${perfHints}`
+    );
+  }
   if (html.includes(INLINE_MARKER_START)) {
     const re = new RegExp(
       `${INLINE_MARKER_START}[\\s\\S]*?${INLINE_MARKER_END}`,

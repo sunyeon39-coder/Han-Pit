@@ -1,5 +1,7 @@
+import { isAdminEmail } from "../app_config.js";
 import {
   hasAnyDirectEventAllow,
+  hasPersistedDirectOpsAllow,
   mergeAllowedEventsMaps,
   normalizeUserProfile,
   opsAllowedEventsFromProfile,
@@ -99,24 +101,36 @@ export function clearOpsSessionSnapshot() {
   removeFromStores(OPS_LOCAL_KEY);
 }
 
-/** 앱 부트 — login 캐시 프로필 (운영 권한은 Firestore allowedEvents 만 인정) */
+/** 앱 부트 — 표시용 닉네임 등만 캐시, 운영 권한(allowedEvents)은 서버 확인 전 사용하지 않음 */
 export function readBootUserProfile(user, prev = {}) {
   const uid = String(user?.uid || "").trim();
   const cached = uid ? readLoginProfileCache(uid) : null;
   const email = String(user?.email || cached?.email || prev.email || "").trim();
   const base = cached || prev;
-  return normalizeUserProfile(
+  const profile = normalizeUserProfile(
     {
-      ...base,
       email: email || cached?.email || "",
-      allowedEvents:
-        base?.allowedEvents && typeof base.allowedEvents === "object"
-          ? sanitizeAllowedEvents(base.allowedEvents)
-          : {},
-      opsTournamentIds: Array.isArray(base?.opsTournamentIds) ? base.opsTournamentIds : []
+      nickname: String(base?.nickname || user?.displayName || "").trim(),
+      phone: String(base?.phone || "").trim(),
+      gender: String(base?.gender || "none").trim() || "none",
+      photoURL: String(base?.photoURL || user?.photoURL || "").trim(),
+      accessCode: String(base?.accessCode || "").trim(),
+      allowedEvents: {},
+      role: "user"
     },
     email
   );
+  if (isAdminEmail(email)) {
+    return normalizeUserProfile(
+      {
+        ...profile,
+        allowedEvents: sanitizeAllowedEvents(base?.allowedEvents),
+        role: resolveStoredUserRole(email, base || {})
+      },
+      email
+    );
+  }
+  return profile;
 }
 
 export function readLoginProfileCache(uid = "") {
@@ -138,7 +152,19 @@ export function readLoginProfileCache(uid = "") {
 export function writeLoginProfileCache(uid = "", profile = null) {
   const id = String(uid || "").trim();
   if (!id || !profile) return;
-  const normalized = normalizeUserProfile(profile, profile.email || "");
+  let normalized = normalizeUserProfile(profile, profile.email || "");
+  const mail = String(normalized.email || "").trim();
+  if (!isAdminEmail(mail) && !hasPersistedDirectOpsAllow(normalized)) {
+    normalized = normalizeUserProfile(
+      {
+        ...normalized,
+        role: "user",
+        allowedEvents: {},
+        opsTournamentIds: []
+      },
+      mail
+    );
+  }
   const payload = {
     uid: id,
     savedAt: Date.now(),

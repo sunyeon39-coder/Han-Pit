@@ -47,13 +47,11 @@ export function hasPersistedDirectOpsAllow(profile = {}) {
 
 /** 직접 허용 유저 Firestore 동기화용 — role·allowedEvents·opsTournamentIds */
 export function buildDirectOpsPersistPatch(profile = {}, email = "") {
-  const normalized = normalizeUserProfile(profile, email || profile?.email || "");
-  const allowed = opsAllowedEventsFromProfile(normalized);
+  const mail = String(email || profile?.email || "").trim();
+  const allowed = sanitizeAllowedEvents(profile?.allowedEvents);
   if (!hasAnyDirectEventAllow(allowed)) return null;
 
-  const ids = Array.isArray(profile?.opsTournamentIds)
-    ? profile.opsTournamentIds.map((id) => String(id || "").trim()).filter(Boolean)
-    : Object.keys(allowed);
+  const ids = Object.keys(allowed);
 
   return {
     role: "admin",
@@ -129,51 +127,32 @@ export function canManageTournament(email = "", profile = {}, tournamentId = "")
 
 export function normalizeUserProfile(profile = {}, email = "") {
   const next = { ...profile };
-  next.allowedEvents = opsAllowedEventsFromProfile(next);
-  next.role = resolveStoredUserRole(email || profile?.email, next);
+  const persistedAllowed = sanitizeAllowedEvents(next?.allowedEvents);
+  next.allowedEvents = persistedAllowed;
+  next.role = resolveStoredUserRole(email || profile?.email, {
+    ...next,
+    allowedEvents: persistedAllowed
+  });
   return next;
 }
 
-/** PWA·오프라인 캐시 스냅샷이 allowedEvents 를 비우는 것을 막음 (서버 스냅샷은 그대로 적용) */
-export function mergeOpsProfile(prev = null, next = null, meta = {}) {
+/** PWA·오프라인 캐시 — 서버 스냅샷은 그대로, 캐시는 prev 로 ops 를 되살리지 않음 */
+export function mergeOpsProfile(prev = null, next = null, meta = {}, rawNext = null) {
   if (!next || typeof next !== "object") return prev || null;
   const normalized = normalizeUserProfile(next, next.email || prev?.email || "");
-  if (meta.fromCache !== true) return normalized;
-  if (!prev) return normalized;
+  const raw = rawNext && typeof rawNext === "object" ? rawNext : null;
+  const rawRole = String(raw?.role || normalized.role || "user")
+    .trim()
+    .toLowerCase();
+  const rawAllowed = sanitizeAllowedEvents(raw?.allowedEvents);
 
-  const prevAllowed = opsAllowedEventsFromProfile(prev);
-  const nextAllowed = opsAllowedEventsFromProfile(normalized);
-  const mergedAllowed = mergeAllowedEventsMaps(prevAllowed, nextAllowed);
-  let patched = normalized;
-
-  if (Object.keys(prevAllowed).length > 0 && Object.keys(nextAllowed).length === 0) {
-    patched = normalizeUserProfile(
-      { ...normalized, allowedEvents: mergedAllowed },
-      normalized.email || prev.email || ""
-    );
-  } else if (Object.keys(mergedAllowed).length > Object.keys(nextAllowed).length) {
-    patched = normalizeUserProfile(
-      { ...normalized, allowedEvents: mergedAllowed },
-      normalized.email || prev.email || ""
-    );
+  if (raw && rawRole === "user" && !hasAnyDirectEventAllow(rawAllowed)) {
+    return normalized;
   }
-
-  const prevHadOps = hasPersistedDirectOpsAllow(prev);
-  const nextHadOps = hasPersistedDirectOpsAllow(normalized);
-  const mergedHadOps = hasAnyDirectEventAllow(mergedAllowed);
-
-  if ((prevHadOps || mergedHadOps) && !nextHadOps) {
-    patched = normalizeUserProfile(
-      {
-        ...patched,
-        role: "admin",
-        allowedEvents: mergedAllowed
-      },
-      normalized.email || prev?.email || ""
-    );
+  if (meta.fromCache === true) {
+    return normalized;
   }
-
-  return patched;
+  return normalized;
 }
 
 /** layout / global-layout / index 공통 — 해당 대회 운영(배치·통합배치도·블락 등) 권한 */
@@ -181,7 +160,7 @@ export function canManageTournamentOps(email = "", profile = {}, tournamentId = 
   return canUseTournamentOps(email, profile, tournamentId);
 }
 
-/** index·layout 운영 UI — 시스템 admin 또는 Firestore 직접 허용(allowedEvents) */
+/** index·layout 운영 UI — 시스템 admin 또는 Firestore allowedEvents 직접 허용(allowedEvents만) */
 export function canUseTournamentOps(
   email = "",
   profile = {},
@@ -190,9 +169,11 @@ export function canUseTournamentOps(
 ) {
   if (!profile || typeof profile !== "object") profile = {};
   if (isSystemAdminEmail(email || profile?.email)) return true;
-  if (!hasPersistedDirectOpsAllow(profile)) return false;
-  const allowed = sanitizeAllowedEvents(profile?.allowedEvents);
-  return hasDirectEventAllowForTournament(allowed, tournamentId, tournamentMeta);
+
+  const persistedAllowed = sanitizeAllowedEvents(profile?.allowedEvents);
+  if (!hasAnyDirectEventAllow(persistedAllowed)) return false;
+  if (String(profile?.role || "user").trim().toLowerCase() !== "admin") return false;
+  return hasDirectEventAllowForTournament(persistedAllowed, tournamentId, tournamentMeta);
 }
 
 export function getIsAdmin(user, profile) {

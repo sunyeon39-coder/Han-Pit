@@ -2,12 +2,11 @@ importScripts("https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js
 importScripts("https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js");
 
 /** 배포마다 1 올리면 브라우저가 새 SW 로 인식해 controllerchange → 홈 화면 자동 새로고침이 걸립니다. */
-const SW_DEPLOY_REVISION = 133;
+const SW_DEPLOY_REVISION = 185;
 
-/** SW 갱신 시 즉시 활성화 — 클라이언트 강제 reload 는 pwa-update-reload.js 가 처리 */
+/** SW 갱신 — skipWaiting 없음 (controllerchange 연쇄 reload 방지, 다음 방문 시 적용) */
 self.addEventListener("install", (event) => {
   void SW_DEPLOY_REVISION;
-  self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {

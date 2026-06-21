@@ -101,6 +101,7 @@ body.page-global-layout .global-pc-ops-col--wait {
 
 body.page-global-layout .global-pc-ops-col--seat {
   padding-left: 2px;
+  overflow: visible;
 }
 
 body.page-global-layout .global-pc-ops-col__head {
@@ -214,6 +215,14 @@ body.page-global-layout .pc-panel .global-meta-actions {
     opacity: 0 !important;
     pointer-events: none !important;
   }
+
+  body.page-global-layout .pc-panel {
+    transform: translateX(0) !important;
+  }
+
+  body.page-global-layout #app {
+    padding-right: min(calc(48vw + 14px), 654px);
+  }
 }
 
 .pc-panel .global-meta-actions .seat-meta-btn {
@@ -314,6 +323,16 @@ body.page-global-layout .pc-panel .gl-panel-seat-toolbar {
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.018));
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12);
+  overflow: visible;
+}
+
+body.page-global-layout .global-pc-ops-col--seat .global-pc-ops-col__body {
+  overflow: visible;
+}
+
+body.page-global-layout .global-pc-ops-col--seat .global-pc-ops-scroll {
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 body.page-global-layout .pc-panel .gl-panel-seat-toolbar .seat-add-one-row,
@@ -435,7 +454,7 @@ body.page-global-layout .pc-panel .seat-add-one-row,
 }
 
 .pc-panel .global-form-seat-add .seat-add-event-list {
-  z-index: 20;
+  z-index: 40;
 }
 
 .seat-add-input::placeholder {
@@ -1648,3 +1667,66 @@ body.page-global-layout .mobile-wait-row.selected {
 .pc-panel .seat-manage-row.eb-palette-7 { border-color: rgba(72, 196, 186, 0.55); }
 .pc-panel .seat-manage-row.eb-palette-8 { border-color: rgba(255, 138, 102, 0.58); }
 .pc-panel .seat-manage-row.eb-palette-9 { border-color: rgba(178, 228, 96, 0.55); }
+
+.global-seat-history-modal__card {
+  max-width: min(420px, calc(100vw - 32px));
+}
+
+.global-seat-history-empty {
+  margin: 8px 0 0;
+  font-size: 13px;
+  text-align: center;
+}
+
+.global-seat-history-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  max-height: min(52vh, 360px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.global-seat-history-row {
+  position: relative;
+  padding: 10px 12px 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.global-seat-history-row--current {
+  border-color: rgba(118, 214, 138, 0.45);
+  background: rgba(118, 214, 138, 0.08);
+}
+
+.global-seat-history-name {
+  font-weight: 700;
+  font-size: 14px;
+  padding-right: 52px;
+}
+
+.global-seat-history-time {
+  margin-top: 4px;
+  font-size: 12px;
+  opacity: 0.82;
+}
+
+.global-seat-history-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  opacity: 0.9;
+}
+
+.global-seat-history-row--current .global-seat-history-badge {
+  background: rgba(118, 214, 138, 0.18);
+  color: #b8f0c4;
+}

@@ -7,7 +7,8 @@ import { IX } from "./state.js";
 import { getLayoutEventDocByEventAndBox } from "./layout-events.js";
 import { getAttendanceRef } from "./dealer-attendance-refs.js";
 import { joinSharedWaitingOnCheckIn } from "./dealer-attendance-waiting.js";
-import { getDerivedAttendance } from "./dealer-attendance-derived.js";
+import { getBaseAttendance, getDerivedAttendance } from "./dealer-attendance-derived.js";
+import { isStaleOperationalDayAttendance } from "../shared/attendance-operational-day.js";
 import { renderDealerOps } from "./dealer-attendance-render.js";
 import { loadDealerAttendanceOnce } from "./dealer-attendance-load-once.js";
 
@@ -82,6 +83,9 @@ export async function hasRemoteAssignedSeatForUser(attendance = {}, uid = "") {
 export async function ensureMeRecovered(user) {
   const tournamentId = getTournamentId();
   if (!user || !tournamentId) return;
+
+  const raw = getBaseAttendance(user);
+  if (isStaleOperationalDayAttendance(raw)) return;
 
   const me = getDerivedAttendance(user);
   const seatInfo = getMySeatInfo(user.uid);

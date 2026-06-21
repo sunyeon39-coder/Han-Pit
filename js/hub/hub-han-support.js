@@ -66,20 +66,26 @@ function renderAdminApplicationsList(listEl, docs) {
       return `
         <article class="han-app-accordion" data-han-doc="${escapeHtml(d.id)}">
           <button type="button" class="han-app-summary" aria-expanded="false" aria-controls="${escapeHtml(panelId)}">
-            <span class="han-app-summary-name">${escapeHtml(x.name)}</span>
+            <span class="han-app-summary-main">
+              <span class="han-app-summary-name">${escapeHtml(x.name)}</span>
+              <span class="han-app-summary-meta muted">${escapeHtml(x.age)}세 · ${escapeHtml(x.gender)} · ${escapeHtml(x.phone)}</span>
+            </span>
             <span class="han-app-summary-right">
               <span class="han-app-date muted">${escapeHtml(at)}</span>
               <span class="han-app-chevron" aria-hidden="true">▼</span>
             </span>
           </button>
-          <div id="${escapeHtml(panelId)}" class="han-app-panel" role="region">
+          <div id="${escapeHtml(panelId)}" class="han-app-panel" role="region" hidden>
             <dl class="han-app-grid">
               <dt>나이</dt><dd>${escapeHtml(x.age)}</dd>
               <dt>성별</dt><dd>${escapeHtml(x.gender)}</dd>
               <dt>휴대폰</dt><dd>${escapeHtml(x.phone)}</dd>
-              <dt>계정</dt><dd>${escapeHtml(x.applicantEmail || "")}${uidShort ? ` <span class="muted">(${escapeHtml(uidShort)})</span>` : ""}</dd>
-              <dt>경력</dt><dd>${escapeHtml(x.experience)}</dd>
+              <dt>계정</dt><dd class="han-app-account">${escapeHtml(x.applicantEmail || "")}${uidShort ? ` <span class="muted">(${escapeHtml(uidShort)})</span>` : ""}</dd>
             </dl>
+            <div class="han-app-experience">
+              <div class="han-app-experience-label">경력</div>
+              <div class="han-app-experience-body">${escapeHtml(x.experience)}</div>
+            </div>
             <button type="button" class="btn danger han-app-delete-btn" data-han-delete="${escapeHtml(d.id)}">삭제하기</button>
           </div>
         </article>
@@ -228,6 +234,13 @@ export function wireHanSupportHub({ hubRefs, hubState }) {
 
       const open = row.classList.toggle("is-open");
       summary.setAttribute("aria-expanded", open ? "true" : "false");
+      const panel = row.querySelector(".han-app-panel");
+      if (panel) panel.hidden = !open;
+      if (open) {
+        requestAnimationFrame(() => {
+          row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        });
+      }
     });
   }
 
@@ -257,7 +270,7 @@ export function wireHanSupportHub({ hubRefs, hubState }) {
       return;
     }
     if (!experience) {
-      alert("경력을 입력해 주세요. (150자 이내)");
+      alert("지원동기 및 경력 을 입력해 주세요. (150자 이내)");
       return;
     }
     if (experience.length > 150) {

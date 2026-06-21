@@ -75,6 +75,8 @@ export const IX = {
     sort: "name"
   },
 
+  dealerSearchComposing: false,
+
   dealerOpsRenderTimer: null,
 
   events: [],

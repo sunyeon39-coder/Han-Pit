@@ -26,6 +26,7 @@ import {
 import { clearOpsSessionSnapshot } from "../shared/login-profile-cache.js";
 import { getIsAdminUser, isValidDocId } from "./hub-helpers.js";
 import { cleanupUserFromLayoutState } from "./layout-cleanup.js";
+import { clearOperatorPickForUid } from "../global-layout/waiting-picks.js";
 import { hubState } from "./hub-state.js";
 import { hubRefs } from "./hub-dom-refs.js";
 import { scheduleHubTournamentsRender } from "./hub-realtime-ui.js";
@@ -294,6 +295,7 @@ export async function revokeEventDirectly(uid, eventId) {
         const one = await cleanupUserFromLayoutState(user, eventId);
         cleaned.waitingRemoved += one.waitingRemoved;
         cleaned.seatRemoved += one.seatRemoved;
+        await clearOperatorPickForUid(targetUid);
       }
     }
 

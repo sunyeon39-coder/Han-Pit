@@ -13,6 +13,9 @@ import {
   getAttendanceRef,
   getProjectionDocId,
   parseGlobalSeatDocId,
+  parseGlobalSeatDocIdParts,
+  getGlobalSeatRowKey,
+  normalizeGlobalSeatFromFirestore,
   resolveSeatEventBox,
   resolveGlobalSeatFirestoreDoc,
   ensureGlobalSeatFirestoreDoc,
@@ -128,20 +131,52 @@ export async function saveSeatPosition(seatId = "", x = 0, y = 0) {
   }
 }
 
-export async function deleteGlobalSeat(seatId = "") {
-  const targetSeatId = String(seatId || "").trim();
-  if (!targetSeatId) return;
+export async function deleteGlobalSeat(seatKey = "", options = {}) {
+  const firestoreDocId = String(options.firestoreDocId || "").trim();
+  let targetSeatId = String(seatKey || "").trim();
+  if (!targetSeatId && firestoreDocId) {
+    targetSeatId = String(parseGlobalSeatDocIdParts(firestoreDocId)?.seatId || "").trim();
+  }
+  if (!targetSeatId && !firestoreDocId) return;
 
-  const seat = getSeatById(targetSeatId);
+  let idx = -1;
+  if (firestoreDocId) {
+    idx = GL.globalSeats.findIndex(
+      (s) => String(s.__firestoreDocId || "").trim() === firestoreDocId
+    );
+  }
+  if (idx < 0 && targetSeatId) {
+    idx = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === targetSeatId);
+  }
+
+  let seat = idx >= 0 ? GL.globalSeats[idx] : getSeatById(targetSeatId);
+  if (!seat && firestoreDocId) {
+    seat = normalizeGlobalSeatFromFirestore({}, firestoreDocId);
+  }
   if (!seat) {
     alert("삭제할 Seat를 찾을 수 없습니다.");
     return;
   }
 
-  const idx = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === targetSeatId);
+  if (!targetSeatId) {
+    targetSeatId = String(seat.seatId || parseGlobalSeatDocIdParts(firestoreDocId)?.seatId || "").trim();
+  }
+
   const removedSeat = idx >= 0 ? { ...GL.globalSeats[idx] } : { ...seat };
 
+  markGlobalLayoutLocalMutation();
+  markSkipSeatRecovery();
+
   const docsById = new Map();
+  const cachedDocId = String(seat.__firestoreDocId || firestoreDocId || "").trim();
+  if (cachedDocId && GL.tournamentId) {
+    docsById.set(cachedDocId, {
+      ref: doc(db, "tournaments", GL.tournamentId, "global_seats", cachedDocId),
+      data: seat,
+      docId: cachedDocId
+    });
+  }
+
   const resolved = await resolveGlobalSeatFirestoreDoc(seat, GL.tournamentId);
   if (resolved?.ref) {
     docsById.set(resolved.docId, resolved);
@@ -158,45 +193,68 @@ export async function deleteGlobalSeat(seatId = "") {
     }
   }
 
-  if (!docsById.size) {
-    if (idx >= 0) {
-      GL.globalSeats.splice(idx, 1);
-      GL.selectedSeatIds.delete(targetSeatId);
-      flushOptimisticGlobalLayoutUi();
-      return;
+  const projectionKeys = new Set();
+  const collectProjectionKey = (data = {}, docId = "") => {
+    let eventId = String(data.currentEventId || data.mappedEventId || "").trim();
+    let boxId = String(data.boxId || "").trim();
+    if (!eventId || !boxId) {
+      const parsed = parseGlobalSeatDocId(docId, targetSeatId);
+      if (parsed) {
+        eventId = parsed.eventId;
+        boxId = parsed.boxId;
+      }
     }
-    alert("Firestore에서 삭제할 Seat 문서를 찾지 못했습니다.");
-    return;
+    if (!eventId || !boxId) {
+      const fromSeat = resolveSeatEventBox(removedSeat);
+      eventId = eventId || fromSeat.eventId;
+      boxId = boxId || fromSeat.boxId;
+    }
+    if (eventId && boxId) projectionKeys.add(`${eventId}\t${boxId}`);
+  };
+
+  for (const docInfo of docsById.values()) {
+    collectProjectionKey(docInfo.data || {}, docInfo.docId);
+  }
+  if (!projectionKeys.size) {
+    const fromSeat = resolveSeatEventBox(removedSeat);
+    if (fromSeat.eventId && fromSeat.boxId) {
+      projectionKeys.add(`${fromSeat.eventId}\t${fromSeat.boxId}`);
+    }
   }
 
   if (idx >= 0) GL.globalSeats.splice(idx, 1);
   GL.selectedSeatIds.delete(targetSeatId);
-  markGlobalLayoutLocalMutation();
-  markSkipSeatRecovery();
+  if (firestoreDocId) GL.selectedSeatIds.delete(firestoreDocId);
+  const removedKey = getGlobalSeatRowKey(removedSeat);
+  if (removedKey) GL.selectedSeatIds.delete(removedKey);
   GL.seatMutationInFlight = true;
   flushOptimisticGlobalLayoutUi();
 
-  const projectionKeys = new Set();
+  if (!docsById.size) {
+    try {
+      for (const key of projectionKeys) {
+        const [eventId, boxId] = key.split("\t");
+        if (eventId && boxId) await syncLayoutProjection(eventId, boxId);
+      }
+    } catch (err) {
+      console.warn("deleteGlobalSeat projection sync:", err?.code || err);
+    } finally {
+      GL.seatMutationInFlight = false;
+      flushOptimisticGlobalLayoutUi();
+    }
+    return;
+  }
+
   try {
     for (const docInfo of docsById.values()) {
       const data = docInfo.data || {};
-      let eventId = String(data.currentEventId || data.mappedEventId || "").trim();
-      let boxId = String(data.boxId || "").trim();
-      if (!eventId || !boxId) {
-        const parsed = parseGlobalSeatDocId(docInfo.docId, targetSeatId);
-        if (parsed) {
-          eventId = parsed.eventId;
-          boxId = parsed.boxId;
-        }
-      }
-      if (eventId && boxId) projectionKeys.add(`${eventId}\t${boxId}`);
-
       await deleteDoc(docInfo.ref);
       pushGlobalUndo({
         kind: "delete_seat",
         seatId: targetSeatId,
-        eventId,
-        boxId,
+        eventId: String(data.currentEventId || data.mappedEventId || "").trim(),
+        boxId: String(data.boxId || "").trim(),
+        firestoreDocId: String(docInfo.id || "").trim(),
         seatDoc: data
       });
     }
@@ -210,7 +268,11 @@ export async function deleteGlobalSeat(seatId = "") {
     if (idx >= 0) GL.globalSeats.splice(idx, 0, removedSeat);
     else GL.globalSeats.push(removedSeat);
     flushOptimisticGlobalLayoutUi();
-    alert("좌석 삭제에 실패했습니다.");
+    if (String(err?.code || "").includes("permission-denied")) {
+      alert("좌석 삭제 권한이 없습니다. 운영 권한이 해제된 계정이면 허브에서 권한을 확인해 주세요.");
+    } else {
+      alert("좌석 삭제에 실패했습니다.");
+    }
   } finally {
     GL.seatMutationInFlight = false;
     flushOptimisticGlobalLayoutUi();
@@ -773,7 +835,32 @@ async function addGlobalSeatCore({ label = "", eventId = "", boxId = "", clearFo
     await syncLayoutProjection(eid, bid);
     sessionStorage.setItem("eventId", eid);
     sessionStorage.setItem("boxId", bid);
-    pushGlobalUndo({ kind: "add_seat", seatId, eventId: eid, boxId: bid });
+    pushGlobalUndo({
+      kind: "add_seat",
+      seatId,
+      eventId: eid,
+      boxId: bid,
+      firestoreDocId: docId,
+      seatSnapshot: {
+        seatId,
+        label: lid,
+        no: order,
+        order,
+        x: 0,
+        y: 0,
+        person: "비어있음",
+        personUid: "",
+        personEmail: "",
+        seatedAt: null,
+        status: "empty",
+        tournamentId: GL.tournamentId,
+        mappedEventId: eid,
+        currentEventId: eid,
+        boxId: bid,
+        sourceLayoutDocId: `${eid}__${bid}`,
+        __firestoreDocId: docId
+      }
+    });
   } catch (err) {
     const rollbackIdx = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === seatId);
     if (rollbackIdx >= 0) GL.globalSeats.splice(rollbackIdx, 1);

@@ -4,7 +4,7 @@ export function getTournamentId() {
     params.get("tournamentId") ||
     sessionStorage.getItem("tournamentId") ||
     ""
-  );
+  ).trim();
 }
 
 /** GitHub Pages 등 서브 경로에서도 `./hub.html` 이 올바르게 풀리도록 절대 URL 생성 */
