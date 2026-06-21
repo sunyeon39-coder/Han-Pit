@@ -42,7 +42,7 @@ import { getEventCardIdFromRecord } from "../shared/tournament-event-instance.js
 import { resolveSeatEventBox } from "./utils.js";
 import { buildEventBoxPaletteMap, getEventBoxPaletteClass } from "./event-box-palette.js";
 import { syncSeatBoxesInContainer } from "../shared/sync-seat-box-dom.js";
-import { canManageGlobalLayoutOps } from "./ops-access.js";
+import { canManageGlobalLayoutOps, canViewGlobalLayoutSeatHistory } from "./ops-access.js";
 
 function buildGlobalSeatsByIdMap() {
   const map = new Map();
@@ -100,6 +100,14 @@ function buildGlobalSeatBoxState(s, idx, paletteMap) {
     .filter(Boolean)
     .join(" ");
   const canvasLabel = String(s.label ?? s.no ?? "").trim() || "—";
+  const showHistoryBtn = occupied && canViewGlobalLayoutSeatHistory();
+  const historyBtnHtml = showHistoryBtn
+    ? `<button type="button" class="seat-history-btn" data-seat-history="${escapeHtml(seatId)}" aria-label="배치 이력 보기" title="배치 이력">
+          <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" focusable="false">
+            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+          </svg>
+        </button>`
+    : "";
   return {
     seatId,
     idAttr: "data-seat-id",
@@ -107,6 +115,7 @@ function buildGlobalSeatBoxState(s, idx, paletteMap) {
     x,
     y,
     innerHtml: `
+        ${historyBtnHtml}
         <div class="seat-title">SEAT ${escapeHtml(canvasLabel)}</div>
         <div class="${personClass}">${escapeHtml(name)}</div>
       `

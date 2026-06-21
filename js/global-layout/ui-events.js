@@ -33,6 +33,7 @@ import {
 import { initGlobalSeatEditModal, openSeatEditModal } from "./seat-edit-modal.js";
 import {
   initGlobalSeatHistoryModal,
+  openSeatHistoryModal,
   tryOpenSeatHistoryFromPersonClick,
   wireSeatHistoryLongPress
 } from "./seat-history-modal.js";
@@ -116,11 +117,7 @@ export function bindGlobalLayoutEventHandlers() {
   initGlobalSeatHistoryModal();
   initGlobalMobileSeatAddModal();
 
-  if (GL.app) {
-    wireSeatHistoryLongPress(GL.app, {
-      canOpen: () => canViewGlobalLayoutSeatHistory()
-    });
-  }
+  // 캔버스 좌석은 길게 누르기 대신 우측 상단 버튼으로 이력을 연다(드래그 이동과 충돌 방지).
   if (GL.panelContent) {
     wireSeatHistoryLongPress(GL.panelContent, {
       canOpen: () => canViewGlobalLayoutSeatHistory()
@@ -400,6 +397,7 @@ export function bindGlobalLayoutEventHandlers() {
 
   GL.app?.addEventListener("pointerdown", (e) => {
     if (!canManageGlobalLayoutOps()) return;
+    if (e.target.closest(".seat-history-btn")) return;
     const box = e.target.closest(".seat-box[data-seat-id]");
     if (!box) return;
     const seatId = String(box.getAttribute("data-seat-id") || "").trim();
@@ -554,6 +552,19 @@ export function bindGlobalLayoutEventHandlers() {
   });
 
   GL.app?.addEventListener("click", async (e) => {
+    const historyBtn = e.target.closest(".seat-history-btn");
+    if (historyBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!canViewGlobalLayoutSeatHistory()) return;
+      const sid = String(historyBtn.getAttribute("data-seat-history") || "").trim();
+      if (sid) {
+        GL.suppressSeatClickUntil = Date.now() + 300;
+        openSeatHistoryModal(sid);
+      }
+      return;
+    }
+
     const box = e.target.closest(".seat-box[data-seat-id]");
     if (box) {
       const seatId = String(box.getAttribute("data-seat-id") || "").trim();

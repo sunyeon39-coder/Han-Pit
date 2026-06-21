@@ -34,6 +34,41 @@ html, body {
   touch-action: none;
 }
 
+.pc-canvas .seat-box .seat-history-btn {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin: 0;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 6px;
+  background: rgba(8, 14, 28, 0.55);
+  color: rgba(238, 242, 255, 0.82);
+  cursor: pointer;
+  touch-action: manipulation;
+  opacity: 0.62;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.pc-canvas .seat-box .seat-history-btn:hover,
+.pc-canvas .seat-box .seat-history-btn:focus-visible {
+  opacity: 1;
+  background: rgba(59, 130, 246, 0.32);
+  color: #fff;
+  outline: none;
+}
+
+.pc-canvas .seat-box .seat-history-btn svg {
+  display: block;
+  pointer-events: none;
+}
+
 body.page-global-layout .pc-panel .tabs,
 body.page-global-layout .pc-panel .global-pc-ops-tabs {
   display: none !important;
