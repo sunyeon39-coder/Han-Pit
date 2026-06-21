@@ -82,9 +82,12 @@ export function buildInlineAppUpdateSnippet(v) {
   }catch(e){}
   var BUILD="${v}";
   var KEY="hanPitAppVersion";
-  var RELOAD_ONCE="hanPitReloadOnce";
+  var LAST_TARGET="hanPitReloadTarget";
+  var MIN_CHECK_MS=15000;
   var meta=document.querySelector('meta[name="han-pit-build"]');
   var pageBuild=meta?String(meta.getAttribute("content")||"").trim():BUILD;
+  var lastCheckAt=0;
+  var checking=false;
 
   function swScope(){
     var p=location.pathname||"/";
@@ -106,18 +109,20 @@ export function buildInlineAppUpdateSnippet(v) {
     try{history.replaceState(null,"",loc.toString());}catch(e){}
   }
 
-  function alreadyReloaded(){
-    try{return sessionStorage.getItem(RELOAD_ONCE)==="1";}catch(e){return false;}
+  function lastTarget(){
+    try{return sessionStorage.getItem(LAST_TARGET)||"";}catch(e){return "";}
+  }
+  function setLastTarget(ver){
+    try{sessionStorage.setItem(LAST_TARGET,String(ver||""));}catch(e){}
   }
 
-  function markReloaded(){
-    try{sessionStorage.setItem(RELOAD_ONCE,"1");}catch(e){}
-  }
-
-  function reloadOnce(ver){
+  // 새 빌드일 때만 reload. 같은 타겟 버전으로는 세션당 1회만 재시도해
+  // (배포 경합 등으로) 무한 reload 가 도는 것을 막는다.
+  function reloadTo(ver){
     ver=String(ver||"").trim();
-    if(!ver||ver===pageBuild||alreadyReloaded())return;
-    markReloaded();
+    if(!ver||ver===pageBuild)return;
+    if(lastTarget()===ver)return;
+    setLastTarget(ver);
     persist(ver);
     var loc=new URL(location.href);
     loc.searchParams.set("_hanpit_v",ver);
@@ -141,24 +146,47 @@ export function buildInlineAppUpdateSnippet(v) {
     }
   }
 
-  function checkRemoteVersionOnce(){
-    if(!pageBuild||alreadyReloaded())return;
-    fetch("./app-version.json?t="+Date.now(),{cache:"no-store",credentials:"same-origin"})
+  function updateSw(){
+    if(!("serviceWorker" in navigator)||!navigator.serviceWorker.getRegistration)return;
+    navigator.serviceWorker.getRegistration().then(function(reg){
+      if(reg&&typeof reg.update==="function")reg.update();
+    }).catch(function(){});
+  }
+
+  function checkRemoteVersion(force){
+    if(!pageBuild||checking)return;
+    var now=Date.now();
+    if(!force&&now-lastCheckAt<MIN_CHECK_MS)return;
+    lastCheckAt=now;
+    checking=true;
+    fetch("./app-version.json?t="+now,{cache:"no-store",credentials:"same-origin"})
       .then(function(r){return r.ok?r.json():null;})
       .then(function(d){
+        checking=false;
         var remote=String((d&&(d.v||d.version))||"").trim();
         if(!remote||remote===pageBuild){
           if(remote)persist(remote);
           syncBustParam(remote||pageBuild);
           return;
         }
-        reloadOnce(remote);
+        reloadTo(remote);
       })
-      .catch(function(){});
+      .catch(function(){checking=false;});
+  }
+
+  // 포그라운드로 돌아올 때마다(특히 PWA standalone 재진입) 최신 버전 확인 후 즉시 적용
+  function onResume(force){
+    if(document.visibilityState!=="hidden"){
+      updateSw();
+      checkRemoteVersion(force===true);
+    }
   }
 
   registerSwOnly();
-  setTimeout(checkRemoteVersionOnce,60000);
+  setTimeout(function(){checkRemoteVersion(true);},3000);
+  document.addEventListener("visibilitychange",function(){onResume(false);});
+  window.addEventListener("pageshow",function(){onResume(true);});
+  window.addEventListener("focus",function(){onResume(false);});
 })();
 </script>`;
 }
