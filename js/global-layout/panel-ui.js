@@ -100,7 +100,7 @@ function buildGlobalSeatBoxState(s, idx, paletteMap) {
     .filter(Boolean)
     .join(" ");
   const canvasLabel = String(s.label ?? s.no ?? "").trim() || "—";
-  const showHistoryBtn = occupied && canViewGlobalLayoutSeatHistory();
+  const showHistoryBtn = canViewGlobalLayoutSeatHistory();
   const historyBtnHtml = showHistoryBtn
     ? `<button type="button" class="seat-history-btn" data-seat-history="${escapeHtml(seatId)}" aria-label="배치 이력 보기" title="배치 이력">
           <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" focusable="false">
