@@ -224,7 +224,16 @@ export async function openSeatEditModal(seatId = "") {
 
 async function onSaveClick() {
   const els = getEls();
-  if (!els || !currentSeatId) return;
+  if (!els) return;
+  // 모달이 열려 있는데 상태가 비었으면 표시된 Seat ID로 복구(리스너/상태 유실 방어)
+  if (!currentSeatId) {
+    const shownId = String(els.seatIdDisplay?.textContent || "").trim();
+    if (shownId) currentSeatId = shownId;
+  }
+  if (!currentSeatId) {
+    alert("Seat 정보를 찾지 못했습니다. 모달을 닫고 다시 열어 주세요.");
+    return;
+  }
 
   const nextLabel = String(els.label?.value || "").trim();
   const nextEventId = resolveEventIdForSave(els.eventId?.value, seatEditModalEventsCache);
@@ -294,34 +303,36 @@ async function onSaveClick() {
 export function initGlobalSeatEditModal() {
   const els0 = getEls();
   if (!els0) return;
+  if (els0.root.dataset.bound === "1") return;
+  els0.root.dataset.bound = "1";
 
-  els0.root.querySelectorAll("[data-close-seat-edit]").forEach((el) => {
-    el.addEventListener("click", () => closeSeatEditModal());
-  });
-
-  els0.root.querySelector(".global-seat-edit-modal__card")?.addEventListener("click", (e) => {
-    e.stopPropagation();
-  });
-
-  els0.saveBtn?.addEventListener("click", () => {
-    void onSaveClick();
-  });
-
-  els0.eventTrigger?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const els = getEls();
-    if (!els?.eventList) return;
-    if (els.eventList.hidden) openEventPickList();
-    else closeEventPickList();
-  });
-
-  els0.eventList?.addEventListener("click", (e) => {
-    const li = e.target?.closest?.("li[data-event-id]");
-    if (!li) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const els = getEls();
-    if (els) applySelectionFromRow(els, li);
+  // 저장/취소/카드선택은 모달 루트에 위임해 노드 재생성·중복 초기화에도 항상 동작하게 한다.
+  els0.root.addEventListener("click", (e) => {
+    if (e.target.closest("#globalSeatEditSave")) {
+      e.preventDefault();
+      e.stopPropagation();
+      void onSaveClick();
+      return;
+    }
+    if (e.target.closest("[data-close-seat-edit]")) {
+      closeSeatEditModal();
+      return;
+    }
+    if (e.target.closest("#globalSeatEditEventTrigger")) {
+      e.stopPropagation();
+      const els = getEls();
+      if (!els?.eventList) return;
+      if (els.eventList.hidden) openEventPickList();
+      else closeEventPickList();
+      return;
+    }
+    const li = e.target.closest("li[data-event-id]");
+    if (li && els0.eventList?.contains(li)) {
+      e.preventDefault();
+      e.stopPropagation();
+      const els = getEls();
+      if (els) applySelectionFromRow(els, li);
+    }
   });
 
   els0.eventList?.addEventListener("keydown", (e) => {
