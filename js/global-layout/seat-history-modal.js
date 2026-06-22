@@ -2,6 +2,10 @@ import { GL } from "./state.js";
 import { escapeHtml, isEmptyPerson } from "./utils.js";
 import { canViewGlobalLayoutSeatHistory } from "./ops-access.js";
 import {
+  getEventCardIdFromRecord,
+  parseEventInstanceDocId
+} from "../shared/tournament-event-instance.js";
+import {
   SEAT_HISTORY_LONG_PRESS_MS,
   findGlobalSeatByAnyKey,
   formatSeatHistoryRange,
@@ -17,9 +21,18 @@ function getEls() {
   return {
     root,
     title: document.getElementById("globalSeatHistoryTitle"),
+    cardId: document.getElementById("globalSeatHistoryCardId"),
     list: document.getElementById("globalSeatHistoryList"),
     empty: document.getElementById("globalSeatHistoryEmpty")
   };
+}
+
+function resolveSeatCardId(seat) {
+  if (!seat) return "";
+  const eventId = String(seat.currentEventId || seat.mappedEventId || "").trim();
+  if (!eventId) return "";
+  const parsed = parseEventInstanceDocId(eventId);
+  return parsed?.cardId || getEventCardIdFromRecord({ id: eventId }) || eventId;
 }
 
 function renderHistoryList(view) {
@@ -55,6 +68,11 @@ export function openSeatHistoryModal(seatKey = "") {
 
   if (els.title) {
     els.title.textContent = `SEAT ${seatLabel} 배치 이력`;
+  }
+  if (els.cardId) {
+    const cardId = resolveSeatCardId(seat);
+    els.cardId.textContent = cardId ? `카드 ID: ${cardId}` : "";
+    els.cardId.hidden = !cardId;
   }
 
   const hasRows = Boolean(view.current) || view.past.length > 0;
