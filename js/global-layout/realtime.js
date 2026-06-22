@@ -5,6 +5,7 @@ import {
   getDocFromServer,
   getDocsFromServer,
   onSnapshot,
+  runTransaction,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
@@ -39,6 +40,8 @@ import {
   noteFirestoreQuotaExceeded
 } from "../shared/firestore-quota-guard.js";
 import { writeGlobalSeatsCache } from "./global-seats-session-cache.js";
+import { canManageGlobalLayoutOps } from "./ops-access.js";
+import { buildSeatHistoryEntry, appendSeatHistoryPatch } from "./seat-history.js";
 
 /** Firestore 전파 전 캐시 스냅샷이 방금 배치한 좌석을 비우는 것 방지 */
 const RECENT_LOCAL_SEAT_MS = 12000;
@@ -242,6 +245,89 @@ async function recoverRemovedSeatPeopleToWaiting(removedSeats = [], currentSeats
   });
 }
 
+function seatPersonIsSame(prev, next) {
+  const pUid = String(prev?.personUid || "").trim();
+  const nUid = String(next?.personUid || "").trim();
+  if (pUid && nUid) return pUid === nUid;
+  const pEmail = String(prev?.personEmail || "").trim().toLowerCase();
+  const nEmail = String(next?.personEmail || "").trim().toLowerCase();
+  if (pEmail && nEmail) return pEmail === nEmail;
+  const pName = String(prev?.person || "").trim();
+  const nName = String(next?.person || "").trim();
+  return !!pName && pName === nName;
+}
+
+function seatHistoryEntryMatches(a, b) {
+  const aUid = String(a?.personUid || "").trim();
+  const bUid = String(b?.personUid || "").trim();
+  const aName = String(a?.person || "").trim();
+  const bName = String(b?.person || "").trim();
+  const samePerson = aUid && bUid ? aUid === bUid : !!aName && aName === bName;
+  if (!samePerson) return false;
+  const aSeated = Number(a?.seatedAt) || 0;
+  const bSeated = Number(b?.seatedAt) || 0;
+  // 같은 사람의 같은 착석 구간이면(±3s) 동일 항목으로 간주 → 중복 기록 방지
+  return Math.abs(aSeated - bSeated) < 3000;
+}
+
+/**
+ * 좌석 점유자가 바뀌었는데(비우기·교체·이동 등) 어떤 쓰기 경로가 seatHistory 를
+ * 남기지 못한 경우를 스냅샷 비교로 감지해 누락분만 채운다. 이미 기록된 항목은 건너뛴다.
+ */
+function detectSeatHistoryGaps(prevSeats, nextBySeatId, now) {
+  const gaps = [];
+  for (const prev of prevSeats || []) {
+    const sid = String(prev?.seatId || "").trim();
+    if (!sid) continue;
+    const next = nextBySeatId.get(sid);
+    if (!next) continue;
+    const prevName = String(prev.person || "").trim();
+    if (isEmptyPerson(prevName)) continue;
+    if (seatPersonIsSame(prev, next)) continue;
+
+    const nextName = String(next.person || "").trim();
+    const reason = isEmptyPerson(nextName) ? "clear" : "replace";
+    const entry = buildSeatHistoryEntry({
+      person: prevName,
+      personUid: prev.personUid,
+      personEmail: prev.personEmail,
+      seatedAt: getGlobalSeatSeatedAtMs(prev) || Number(prev.seatedAt) || 0,
+      leftAt: now,
+      reason
+    });
+    if (!entry) continue;
+
+    const existing = Array.isArray(next.seatHistory) ? next.seatHistory : [];
+    if (existing.some((h) => seatHistoryEntryMatches(h, entry))) continue;
+
+    const docId = String(next.__firestoreDocId || "").trim();
+    if (!docId) continue;
+    gaps.push({ docId, entry });
+  }
+  return gaps;
+}
+
+async function persistSeatHistoryGaps(gaps) {
+  if (!gaps?.length || !GL.tournamentId) return;
+  for (const gap of gaps) {
+    const ref = doc(db, "tournaments", GL.tournamentId, "global_seats", gap.docId);
+    try {
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists()) return;
+        const data = snap.data() || {};
+        const existing = Array.isArray(data.seatHistory) ? data.seatHistory : [];
+        if (existing.some((h) => seatHistoryEntryMatches(h, gap.entry))) return;
+        const next = appendSeatHistoryPatch(existing, gap.entry);
+        if (!next) return;
+        tx.set(ref, { seatHistory: next }, { merge: true });
+      });
+    } catch (err) {
+      console.warn("persistSeatHistoryGaps:", err?.code || err);
+    }
+  }
+}
+
 function logFirestoreWatchError(label, err) {
   const code = String(err?.code || "").trim();
   if (code === "already-exists") {
@@ -272,6 +358,10 @@ function applyGlobalSeatsFromSnapshot(snap, prevSeatsRef = { value: [] }) {
     return !isEmptyPerson(prevName) && isEmptyPerson(nextName);
   });
 
+  const historyGaps = prevSeatsRef.value.length
+    ? detectSeatHistoryGaps(prevSeatsRef.value, nextBySeatId, Date.now())
+    : [];
+
   GL.globalSeats = mergedSeats;
   bumpGlobalLayoutDataRevision();
   prevSeatsRef.value = mergedSeats;
@@ -297,7 +387,7 @@ function applyGlobalSeatsFromSnapshot(snap, prevSeatsRef = { value: [] }) {
     scheduleGlobalLayoutRealtimeUi({ seats: true, seatPanel: true, waiting: true });
   }
 
-  return { mergedSeats, removedOccupiedSeats, nextSeats };
+  return { mergedSeats, removedOccupiedSeats, nextSeats, historyGaps };
 }
 
 async function refreshGlobalWaitingFromServer() {
@@ -365,11 +455,24 @@ export function bindRealtime() {
       if (snap.empty && snap.metadata?.fromCache && GL.globalSeats.length > 0) {
         return;
       }
-      const { removedOccupiedSeats, nextSeats } = applyGlobalSeatsFromSnapshot(snap, prevSeatsRef);
+      const { removedOccupiedSeats, nextSeats, historyGaps } = applyGlobalSeatsFromSnapshot(
+        snap,
+        prevSeatsRef
+      );
       prevSeats = prevSeatsRef.value;
 
       if (snap?.empty && !GL.globalSeats.length) {
         void refreshGlobalSeatsFromServer();
+      }
+
+      // 어떤 경로든 점유자가 바뀌었는데 이력이 누락된 경우, 권한 있는 클라이언트가 보강한다.
+      if (
+        historyGaps.length &&
+        !snap.metadata?.fromCache &&
+        !snap.metadata?.hasPendingWrites &&
+        canManageGlobalLayoutOps()
+      ) {
+        void persistSeatHistoryGaps(historyGaps);
       }
 
       if (

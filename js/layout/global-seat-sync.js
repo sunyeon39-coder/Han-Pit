@@ -71,10 +71,16 @@ export function mapLayoutSeatToGlobalSeatDoc(seat = {}, ctx, existingData = null
 
   // 직접허용 admin이 layout에서 배치/교체/비우기 하면 여기서 좌석 이력을 누적해
   // 통합배치도(시스템 admin)와 동일한 seatHistory에 영구 저장한다.
-  let seatHistory = Array.isArray(existing.seatHistory) ? existing.seatHistory.filter(Boolean) : [];
+  // 변화가 없을 때는 seatHistory 필드를 아예 쓰지 않는다(merge가 기존 값을 보존 →
+  // 동시 편집으로 늘어난 누적분을 stale 배열로 되돌리는 사고 방지).
+  let appendedHistory = null;
   if (existingOccupied && !samePerson) {
     const reason = incomingOccupied ? "replace" : "clear";
-    seatHistory = appendSeatHistory(seatHistory, buildLeaveHistoryEntry(existing, now, reason));
+    const entry = buildLeaveHistoryEntry(existing, now, reason);
+    if (entry) {
+      const base = Array.isArray(existing.seatHistory) ? existing.seatHistory.filter(Boolean) : [];
+      appendedHistory = appendSeatHistory(base, entry);
+    }
   }
 
   let seatedAt;
@@ -105,7 +111,7 @@ export function mapLayoutSeatToGlobalSeatDoc(seat = {}, ctx, existingData = null
     sourceLayoutDocId: eventDocId,
     managedByLayoutSync: true,
     updatedAt: now,
-    ...(seatHistory.length ? { seatHistory } : {}),
+    ...(appendedHistory && appendedHistory.length ? { seatHistory: appendedHistory } : {}),
     updatedAtServer: serverTimestamp()
   };
 }
