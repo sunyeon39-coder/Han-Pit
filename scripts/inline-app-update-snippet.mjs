@@ -184,6 +184,8 @@ export function buildInlineAppUpdateSnippet(v) {
 
   registerSwOnly();
   setTimeout(function(){checkRemoteVersion(true);},3000);
+  // 앱을 계속 켜둔(포그라운드) 사용자도 새 배포를 바로 받도록 주기적으로 확인
+  setInterval(function(){ if(document.visibilityState!=="hidden") checkRemoteVersion(false); },60000);
   document.addEventListener("visibilitychange",function(){onResume(false);});
   window.addEventListener("pageshow",function(){onResume(true);});
   window.addEventListener("focus",function(){onResume(false);});
