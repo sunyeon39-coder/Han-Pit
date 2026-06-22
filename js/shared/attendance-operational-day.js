@@ -51,6 +51,12 @@ export function resolveCheckedInAtForActiveStatus(current = {}, nextStatus = "",
   if (nextStatus !== "checked_in" && nextStatus !== "waiting" && nextStatus !== "break") {
     return Number(current?.checkedInAt || 0) || null;
   }
+  // 출근하기(off/checked_out → waiting)는 항상 지금부터 새로 시작한다.
+  // 같은 운영일에 퇴근했다가 다시 출근해도 예전 출근 시각(이력)을 이어받지 않는다.
+  // 단, 근무 중(배치/휴식 등 active) 상태에서 대기로 돌아오는 경우는 누적 시간을 유지한다.
+  if (nextStatus === "waiting" && !isActiveAttendanceStatus(current?.status)) {
+    return now;
+  }
   const prev = Number(current?.checkedInAt || 0);
   if (!prev) return now;
   if (isAttendanceFromCurrentOperationalDay({ checkedInAt: prev }, now)) return prev;

@@ -13,7 +13,10 @@ import {
   restoreAttendanceSnapshot,
   snapshotAttendanceEntry
 } from "./dealer-attendance-optimistic.js";
-import { resolveCheckedInAtForActiveStatus } from "../shared/attendance-operational-day.js";
+import {
+  isActiveAttendanceStatus,
+  resolveCheckedInAtForActiveStatus
+} from "../shared/attendance-operational-day.js";
 
 function buildMyAttendancePayload(user, nextStatus) {
   const tournamentId = getTournamentId();
@@ -25,6 +28,8 @@ function buildMyAttendancePayload(user, nextStatus) {
 
   const current = getDerivedAttendance(user);
   const now = getNowMs();
+  // 출근하기(off/checked_out → waiting): 이전 이력을 이어받지 않고 완전히 새로 시작한다.
+  const freshCheckIn = nextStatus === "waiting" && !isActiveAttendanceStatus(current?.status);
 
   return {
     uid: user.uid,
@@ -35,14 +40,15 @@ function buildMyAttendancePayload(user, nextStatus) {
     checkedInAt: resolveCheckedInAtForActiveStatus(current, nextStatus, now),
     checkedOutAt: nextStatus === "checked_out" ? now : null,
     breakStartedAt: nextStatus === "break" ? now : null,
-    totalBreakMs:
-      nextStatus === "waiting" && current?.status === "break" && current?.breakStartedAt
+    totalBreakMs: freshCheckIn
+      ? 0
+      : nextStatus === "waiting" && current?.status === "break" && current?.breakStartedAt
         ? Number(current.totalBreakMs || 0) + Math.max(0, now - Number(current.breakStartedAt || 0))
         : Number(current.totalBreakMs || 0),
-    currentEventId: current?.currentEventId || "",
-    currentBoxId: current?.currentBoxId || "",
-    currentSeatId: current?.currentSeatId || "",
-    currentSeatLabel: current?.currentSeatLabel || "",
+    currentEventId: freshCheckIn ? "" : current?.currentEventId || "",
+    currentBoxId: freshCheckIn ? "" : current?.currentBoxId || "",
+    currentSeatId: freshCheckIn ? "" : current?.currentSeatId || "",
+    currentSeatLabel: freshCheckIn ? "" : current?.currentSeatLabel || "",
     updatedAt: now
   };
 }
@@ -55,6 +61,7 @@ function buildAdminAttendancePayload(uid, nextStatus) {
   if (!current) return null;
 
   const now = getNowMs();
+  const freshCheckIn = nextStatus === "waiting" && !isActiveAttendanceStatus(current?.status);
 
   return {
     ...current,
@@ -62,10 +69,14 @@ function buildAdminAttendancePayload(uid, nextStatus) {
     checkedInAt: resolveCheckedInAtForActiveStatus(current, nextStatus, now),
     checkedOutAt: nextStatus === "checked_out" ? now : null,
     breakStartedAt: nextStatus === "break" ? now : null,
-    totalBreakMs:
-      nextStatus === "waiting" && current.status === "break" && current.breakStartedAt
+    totalBreakMs: freshCheckIn
+      ? 0
+      : nextStatus === "waiting" && current.status === "break" && current.breakStartedAt
         ? Number(current.totalBreakMs || 0) + Math.max(0, now - Number(current.breakStartedAt || 0))
         : Number(current.totalBreakMs || 0),
+    ...(freshCheckIn
+      ? { currentEventId: "", currentBoxId: "", currentSeatId: "", currentSeatLabel: "" }
+      : {}),
     updatedAt: now
   };
 }
