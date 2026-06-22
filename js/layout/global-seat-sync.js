@@ -8,6 +8,11 @@ import {
   writeBatch,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import {
+  seatHistoryArchiveLabelKey,
+  archiveSeatHistory,
+  loadArchivedSeatHistoryByLayoutDoc
+} from "../shared/seat-history-archive.js";
 
 // seat-history.js(MAX_SEAT_HISTORY)와 동일하게 유지
 const MAX_SEAT_HISTORY = 40;
@@ -51,10 +56,11 @@ function appendSeatHistory(existing, entry) {
   return next.slice(next.length - MAX_SEAT_HISTORY);
 }
 
-export function mapLayoutSeatToGlobalSeatDoc(seat = {}, ctx, existingData = null, now = Date.now()) {
+export function mapLayoutSeatToGlobalSeatDoc(seat = {}, ctx, existingData = null, now = Date.now(), restoreHistory = null) {
   const { tournamentId, eventId, boxId, eventDocId, isEmptyPerson } = ctx;
   const safeSeat = seat && typeof seat === "object" ? seat : {};
-  const existing = existingData && typeof existingData === "object" ? existingData : {};
+  const hasExisting = !!existingData && typeof existingData === "object";
+  const existing = hasExisting ? existingData : {};
 
   const incomingName = String(safeSeat.person || "").trim();
   const incomingOccupied = !isEmptyPerson(incomingName) && incomingName !== "";
@@ -82,6 +88,12 @@ export function mapLayoutSeatToGlobalSeatDoc(seat = {}, ctx, existingData = null
       appendedHistory = appendSeatHistory(base, entry);
     }
   }
+
+  // 라이브 문서가 없는(=삭제 후 재생성) 좌석이면 아카이브 이력을 복원해 그대로 이어붙인다.
+  const restoredHistory =
+    !hasExisting && Array.isArray(restoreHistory) && restoreHistory.length
+      ? restoreHistory.filter((h) => h && typeof h === "object")
+      : null;
 
   let seatedAt;
   if (!incomingOccupied) {
@@ -111,7 +123,11 @@ export function mapLayoutSeatToGlobalSeatDoc(seat = {}, ctx, existingData = null
     sourceLayoutDocId: eventDocId,
     managedByLayoutSync: true,
     updatedAt: now,
-    ...(appendedHistory && appendedHistory.length ? { seatHistory: appendedHistory } : {}),
+    ...(appendedHistory && appendedHistory.length
+      ? { seatHistory: appendedHistory }
+      : restoredHistory && restoredHistory.length
+        ? { seatHistory: restoredHistory }
+        : {}),
     updatedAtServer: serverTimestamp()
   };
 }
@@ -166,6 +182,20 @@ export async function syncLayoutGlobalSeatsForCurrentLayout({
       ops.push({ kind: "set", ref: globalSeatRef, seat, existing: existingBySeatId.get(seatId) || null });
     });
 
+    // 라이브 문서가 없는 좌석(삭제 후 재생성 가능성) → 라벨 기준 아카이브 이력 복원
+    const hasRecreateCandidates = ops.some((op) => op.kind === "set" && !op.existing);
+    const archivedByLabel = hasRecreateCandidates
+      ? await loadArchivedSeatHistoryByLayoutDoc(tournamentId, eventDocId)
+      : new Map();
+    if (archivedByLabel.size) {
+      ops.forEach((op) => {
+        if (op.kind !== "set" || op.existing) return;
+        const labelKey = seatHistoryArchiveLabelKey(op.seat?.label ?? op.seat?.no ?? "");
+        const restored = archivedByLabel.get(labelKey);
+        if (restored && restored.length) op.restore = restored;
+      });
+    }
+
     const safeEventUpdatedAt = Number(eventUpdatedAt || 0) || 0;
     // 소스 레이아웃 updatedAt 을 신뢰할 수 없거나(아직 로드 전), 좌석이 비었는데 기존 좌석이 남아 있으면
     // 로드 경합으로 좌석을 통째로 지우는 사고를 막기 위해 삭제 자체를 건너뛴다.
@@ -186,8 +216,21 @@ export async function syncLayoutGlobalSeatsForCurrentLayout({
       const docUpdatedAt = Number(data.updatedAt || 0) || 0;
       // 오래된 layout 탭이 newer global_seats를 지우는 것을 방지한다.
       if (docUpdatedAt > safeEventUpdatedAt) return;
-      ops.push({ kind: "del", ref: d.ref });
+      ops.push({ kind: "del", ref: d.ref, data });
     });
+
+    // 삭제되는 좌석의 seatHistory 는 라벨 기준 아카이브에 보관(재생성 시 복원).
+    const deleteArchives = ops
+      .filter((op) => op.kind === "del" && Array.isArray(op.data?.seatHistory) && op.data.seatHistory.length)
+      .map((op) =>
+        archiveSeatHistory(tournamentId, {
+          eventId,
+          boxId,
+          label: op.data.label ?? op.data.no ?? "",
+          seatId: op.data.seatId,
+          seatHistory: op.data.seatHistory
+        })
+      );
 
     const now = Date.now();
     const MAX_BATCH = 400;
@@ -196,13 +239,19 @@ export async function syncLayoutGlobalSeatsForCurrentLayout({
       const batch = writeBatch(db);
       for (const op of slice) {
         if (op.kind === "set") {
-          batch.set(op.ref, mapLayoutSeatToGlobalSeatDoc(op.seat, ctx, op.existing, now), { merge: true });
+          batch.set(
+            op.ref,
+            mapLayoutSeatToGlobalSeatDoc(op.seat, ctx, op.existing, now, op.restore || null),
+            { merge: true }
+          );
         } else {
           batch.delete(op.ref);
         }
       }
       await batch.commit();
     }
+
+    if (deleteArchives.length) await Promise.all(deleteArchives);
   } catch (err) {
     console.error("syncGlobalSeatsForCurrentLayout error:", err);
   }

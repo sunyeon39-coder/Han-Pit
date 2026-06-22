@@ -27,6 +27,7 @@ import {
   makeUid
 } from "./utils.js";
 import { getCandidateSeatRefsForPerson } from "./seat-candidates.js";
+import { archiveSeatHistory, loadArchivedSeatHistory } from "../shared/seat-history-archive.js";
 import {
   getDefaultEventBoxForNewSeat,
   getSeatById,
@@ -249,6 +250,23 @@ export async function deleteGlobalSeat(seatKey = "", options = {}) {
   try {
     for (const docInfo of docsById.values()) {
       const data = docInfo.data || {};
+      const archiveEventId =
+        String(data.currentEventId || data.mappedEventId || "").trim() ||
+        resolveSeatEventBox(removedSeat).eventId;
+      const archiveBoxId = String(data.boxId || "").trim() || resolveSeatEventBox(removedSeat).boxId;
+      const archiveHistory = Array.isArray(data.seatHistory) && data.seatHistory.length
+        ? data.seatHistory
+        : Array.isArray(removedSeat.seatHistory)
+          ? removedSeat.seatHistory
+          : [];
+      // 삭제 직전 이력을 라벨 기준 아카이브에 보관(같은 카드/라벨로 재생성 시 복원)
+      await archiveSeatHistory(GL.tournamentId, {
+        eventId: archiveEventId,
+        boxId: archiveBoxId,
+        label: data.label ?? removedSeat.label ?? removedSeat.no ?? "",
+        seatId: targetSeatId,
+        seatHistory: archiveHistory
+      });
       await deleteDoc(docInfo.ref);
       pushGlobalUndo({
         kind: "delete_seat",
@@ -808,6 +826,18 @@ async function addGlobalSeatCore({ label = "", eventId = "", boxId = "", clearFo
       return;
     }
 
+    // 같은 카드ID·박스·라벨로 예전에 삭제된 좌석이 있으면 그 배치 이력을 이어받는다.
+    const restoredHistory = await loadArchivedSeatHistory(GL.tournamentId, {
+      eventId: eid,
+      boxId: bid,
+      label: lid
+    });
+    if (restoredHistory.length) {
+      const liveIdx = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === seatId);
+      if (liveIdx >= 0) GL.globalSeats[liveIdx] = { ...GL.globalSeats[liveIdx], seatHistory: restoredHistory };
+      flushOptimisticGlobalLayoutUi();
+    }
+
     await setDoc(
       doc(db, "tournaments", GL.tournamentId, "global_seats", docId),
       {
@@ -828,7 +858,8 @@ async function addGlobalSeatCore({ label = "", eventId = "", boxId = "", clearFo
         boxId: bid,
         sourceLayoutDocId: `${eid}__${bid}`,
         updatedAt: now,
-        updatedAtServer: serverTimestamp()
+        updatedAtServer: serverTimestamp(),
+        ...(restoredHistory.length ? { seatHistory: restoredHistory } : {})
       },
       { merge: true }
     );

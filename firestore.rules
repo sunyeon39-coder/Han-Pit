@@ -88,6 +88,12 @@ service cloud.firestore {
         allow read: if signedIn();
         allow create, update, delete: if isAdmin();
       }
+
+      // 좌석 삭제 후 같은 카드/라벨로 재생성 시 배치 이력을 이어주기 위한 보관소
+      match /global_seats_archive/{archiveDocId} {
+        allow read: if signedIn();
+        allow create, update, delete: if isAdmin();
+      }
     }
 
     match /layout_events/{docId} {
