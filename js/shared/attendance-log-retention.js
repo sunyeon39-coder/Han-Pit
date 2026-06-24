@@ -10,9 +10,9 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 /** 대회당 최신 N건만 유지 (Cloud Function 과 동일) */
-export const ATTENDANCE_LOG_MAX_PER_TOURNAMENT = 400;
+export const ATTENDANCE_LOG_MAX_PER_TOURNAMENT = 30000;
 /** N일 지난 로그 삭제 */
-export const ATTENDANCE_LOG_RETENTION_DAYS = 14;
+export const ATTENDANCE_LOG_RETENTION_DAYS = 45;
 const PRUNE_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const PRUNE_BATCH = 80;
 

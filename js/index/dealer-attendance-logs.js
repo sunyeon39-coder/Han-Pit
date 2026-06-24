@@ -3,11 +3,13 @@ import {
   collection,
   doc,
   deleteDoc,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
   query,
   setDoc,
+  startAfter,
   where
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
@@ -122,11 +124,31 @@ function updateAttendanceLogSummary() {
   const filtered = getFilteredAttendanceLogs();
   const total = filtered.length;
   const selected = filtered.filter((log) => IX.attendanceLogUi.selectedIds.has(log.id)).length;
+  const loaded = IX.attendanceLogs.length;
+  const moreHint = attendanceLogHasMore ? " · 이전 로그 더 불러올 수 있음" : "";
 
   IX.attendanceLogSummary.textContent =
     total === 0
-      ? "최근 로그 0건"
-      : `최근 로그 ${total}건${selected > 0 ? ` · 선택 ${selected}건` : ""}`;
+      ? `불러온 로그 0건${moreHint}`
+      : `불러온 로그 ${loaded}건 · 표시 ${total}건${selected > 0 ? ` · 선택 ${selected}건` : ""}${moreHint}`;
+}
+
+function updateAttendanceLogLoadMoreBtn() {
+  const btn = IX.attendanceLogLoadMoreBtn;
+  if (!btn) return;
+
+  if (!attendanceLogHasMore) {
+    btn.classList.add("hidden");
+    btn.classList.remove("is-loading");
+    btn.disabled = false;
+    btn.textContent = "이전 로그 더 보기";
+    return;
+  }
+
+  btn.classList.remove("hidden");
+  btn.disabled = attendanceLogLoadingMore;
+  btn.classList.toggle("is-loading", attendanceLogLoadingMore);
+  btn.textContent = attendanceLogLoadingMore ? "불러오는 중…" : "이전 로그 더 보기";
 }
 
 let attendanceLogsFlushScheduled = false;
@@ -146,6 +168,7 @@ function renderAttendanceLogs() {
   const filtered = getFilteredAttendanceLogs();
 
   updateAttendanceLogSummary();
+  updateAttendanceLogLoadMoreBtn();
 
   if (!filtered.length) {
     IX.attendanceLogList.innerHTML = `
@@ -228,36 +251,100 @@ export function disposeAttendanceLogsRealtime() {
   }
 }
 
+/** 한 페이지당 조회 건수 */
+const ATTENDANCE_LOG_PAGE_SIZE = 500;
+
+let attendanceLogsFirstPage = [];
+let attendanceLogsOlder = [];
+let attendanceLogOldestDoc = null;
+let attendanceLogHasMore = false;
+let attendanceLogLoadingMore = false;
+
+function mapAttendanceLogDoc(docSnap) {
+  return {
+    id: docSnap.id,
+    ...(docSnap.data() || {})
+  };
+}
+
+function mergeAttendanceLogArrays(...groups) {
+  const byId = new Map();
+  for (const group of groups) {
+    for (const log of group) {
+      byId.set(String(log.id || ""), log);
+    }
+  }
+  return Array.from(byId.values()).sort(
+    (a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)
+  );
+}
+
+function syncAttendanceLogsFromPages() {
+  IX.attendanceLogs = mergeAttendanceLogArrays(attendanceLogsFirstPage, attendanceLogsOlder);
+}
+
+function resetAttendanceLogPagination() {
+  attendanceLogsFirstPage = [];
+  attendanceLogsOlder = [];
+  attendanceLogOldestDoc = null;
+  attendanceLogHasMore = false;
+  attendanceLogLoadingMore = false;
+  IX.attendanceLogs = [];
+}
+
+function buildAttendanceLogsQuery({ tournamentId = "", pageCursor = null } = {}) {
+  const col = collection(db, "dealer_attendance_logs");
+  const constraints = [];
+
+  if (tournamentId) {
+    constraints.push(where("tournamentId", "==", tournamentId));
+  }
+
+  constraints.push(orderBy("createdAt", "desc"));
+
+  if (pageCursor) {
+    constraints.push(startAfter(pageCursor));
+  }
+
+  constraints.push(limit(ATTENDANCE_LOG_PAGE_SIZE));
+  return query(col, ...constraints);
+}
+
+function applyAttendanceLogPage(docs, { append = false } = {}) {
+  const mapped = docs.map(mapAttendanceLogDoc);
+
+  if (append) {
+    attendanceLogsOlder = mergeAttendanceLogArrays(attendanceLogsOlder, mapped);
+    if (docs.length) {
+      attendanceLogOldestDoc = docs[docs.length - 1];
+    }
+    attendanceLogHasMore = docs.length >= ATTENDANCE_LOG_PAGE_SIZE;
+  } else {
+    attendanceLogsFirstPage = mapped;
+    // 이전 페이지를 이미 불러온 경우 커서는 유지 (실시간 1페이지 갱신이 페이지네이션을 깨지 않도록).
+    if (!attendanceLogsOlder.length) {
+      attendanceLogOldestDoc = docs.length ? docs[docs.length - 1] : null;
+      attendanceLogHasMore = docs.length >= ATTENDANCE_LOG_PAGE_SIZE;
+    }
+  }
+
+  syncAttendanceLogsFromPages();
+}
+
 /**
  * 출근 로그 — 모달을 열 때만 구독 (전체 collection 상시 listen 방지)
- * 보존 한도(대회당 최신 400건)를 모두 덮도록 createdAt 내림차순 + 한도 500으로 조회해
- * 해당 대회의 보존된 출퇴근 이력 전체가 최신순으로 빠짐없이 나오게 한다.
+ * 최신 500건은 실시간 구독, 이전 이력은 "더 보기"로 500건씩 페이지네이션.
  */
-const ATTENDANCE_LOG_FETCH_LIMIT = 500;
-
 export function bindAttendanceLogsRealtime() {
   disposeAttendanceLogsRealtime();
 
   const tournamentId = getTournamentId();
-  const col = collection(db, "dealer_attendance_logs");
-  const q = tournamentId
-    ? query(
-        col,
-        where("tournamentId", "==", tournamentId),
-        orderBy("createdAt", "desc"),
-        limit(ATTENDANCE_LOG_FETCH_LIMIT)
-      )
-    : query(col, orderBy("createdAt", "desc"), limit(ATTENDANCE_LOG_FETCH_LIMIT));
+  const q = buildAttendanceLogsQuery({ tournamentId });
 
   IX.stopAttendanceLogsWatch = onSnapshot(
     q,
     (snap) => {
-      IX.attendanceLogs = snap.docs
-        .map((d) => ({
-          id: d.id,
-          ...(d.data() || {})
-        }))
-        .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+      applyAttendanceLogPage(snap.docs, { append: false });
 
       const validIds = new Set(IX.attendanceLogs.map((log) => String(log.id || "")));
       IX.attendanceLogUi.selectedIds.forEach((id) => {
@@ -274,7 +361,30 @@ export function bindAttendanceLogsRealtime() {
   );
 }
 
+async function loadMoreAttendanceLogs() {
+  if (attendanceLogLoadingMore || !attendanceLogHasMore || !attendanceLogOldestDoc) return;
+
+  attendanceLogLoadingMore = true;
+  updateAttendanceLogLoadMoreBtn();
+
+  try {
+    const tournamentId = getTournamentId();
+    const snap = await getDocs(
+      buildAttendanceLogsQuery({ tournamentId, pageCursor: attendanceLogOldestDoc })
+    );
+    applyAttendanceLogPage(snap.docs, { append: true });
+    scheduleAttendanceLogsRender();
+  } catch (err) {
+    console.error("loadMoreAttendanceLogs error:", err);
+    alert("이전 로그를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+  } finally {
+    attendanceLogLoadingMore = false;
+    updateAttendanceLogLoadMoreBtn();
+  }
+}
+
 function openAttendanceLogModal() {
+  resetAttendanceLogPagination();
   bindAttendanceLogsRealtime();
   const tid = getTournamentId();
   void maybePruneAttendanceLogsForTournament(tid, {
@@ -286,6 +396,7 @@ function openAttendanceLogModal() {
 
 function closeAttendanceLogModal() {
   disposeAttendanceLogsRealtime();
+  resetAttendanceLogPagination();
   closeModal(IX.attendanceLogModal);
 }
 
@@ -384,6 +495,9 @@ export function setupAttendanceLogEvents() {
 
   IX.deleteSelectedAttendanceLogsBtn?.addEventListener("click", deleteSelectedAttendanceLogs);
   IX.clearAttendanceLogsBtn?.addEventListener("click", clearAttendanceLogs);
+  IX.attendanceLogLoadMoreBtn?.addEventListener("click", () => {
+    void loadMoreAttendanceLogs();
+  });
 
   IX.attendanceLogEventsBound = true;
 }

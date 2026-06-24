@@ -13,6 +13,7 @@ export const IX = {
   attendanceLogActionFilter: null,
   attendanceLogSummary: null,
   attendanceLogList: null,
+  attendanceLogLoadMoreBtn: null,
   clearAttendanceLogsBtn: null,
   deleteSelectedAttendanceLogsBtn: null,
 
@@ -117,6 +118,7 @@ export function refreshIndexDomRefs() {
   IX.attendanceLogActionFilter = $("attendanceLogActionFilter");
   IX.attendanceLogSummary = $("attendanceLogSummary");
   IX.attendanceLogList = $("attendanceLogList");
+  IX.attendanceLogLoadMoreBtn = $("attendanceLogLoadMoreBtn");
   IX.clearAttendanceLogsBtn = $("clearAttendanceLogsBtn");
   IX.deleteSelectedAttendanceLogsBtn = $("deleteSelectedAttendanceLogsBtn");
 

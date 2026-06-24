@@ -2025,6 +2025,17 @@ label.dealer-time-chip--editable{
   background:rgba(255,255,255,.03);
 }
 
+.attendance-log-load-more{
+  width:100%;
+  margin-top:12px;
+  flex-shrink:0;
+}
+
+.attendance-log-load-more.is-loading{
+  opacity:.6;
+  pointer-events:none;
+}
+
 /* 스크롤바 */
 .attendance-log-list::-webkit-scrollbar{
   width:10px;

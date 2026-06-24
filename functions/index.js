@@ -227,9 +227,9 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten(
 });
 
 const ATTENDANCE_LOGS = "dealer_attendance_logs";
-const LOG_RETENTION_DAYS = 14;
-const LOG_MAX_TOTAL = 2000;
-const LOG_MAX_PER_TOURNAMENT = 400;
+const LOG_RETENTION_DAYS = 45;
+const LOG_MAX_TOTAL = 80000;
+const LOG_MAX_PER_TOURNAMENT = 30000;
 const LOG_DELETE_BATCH = 400;
 
 async function deleteLogQuery(queryRef, batchSize = LOG_DELETE_BATCH) {
@@ -314,7 +314,7 @@ async function prunePerTournamentExcess() {
   return deleted;
 }
 
-/** 매일 새벽 — 14일 초과·대회당 400건·전체 2000건 초과 로그 정리 */
+/** 매일 새벽 — 45일 초과·대회당 30000건·전체 80000건 초과 로그 정리 */
 exports.pruneDealerAttendanceLogs = onSchedule(
   {
     schedule: "0 4 * * *",
