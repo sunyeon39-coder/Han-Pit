@@ -1,4 +1,10 @@
-import { auth } from "../firebase.js";
+import { auth, db } from "../firebase.js";
+import {
+  collection,
+  getDocs,
+  query,
+  where
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 import { escapeHtml, openModal, closeModal } from "../shared/dom-utils.js";
 import { IX, refreshIndexDomRefs } from "./state.js";
@@ -7,6 +13,29 @@ import {
   computeMyTournamentWorkSummary,
   formatWorkSessionRange
 } from "./dealer-attendance-work-summary.js";
+
+/** 근무 누적은 운영 로그로 세션을 복원한다 — 본인 로그를 모달 열 때 항상 로드 */
+async function loadMyAttendanceLogs(uid) {
+  const safeUid = String(uid || "").trim();
+  if (!safeUid) return [];
+  try {
+    const snap = await getDocs(
+      query(collection(db, "dealer_attendance_logs"), where("uid", "==", safeUid))
+    );
+    return snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
+  } catch (err) {
+    console.warn("loadMyAttendanceLogs:", err?.code || err);
+    return [];
+  }
+}
+
+function mergeAttendanceLogs(incoming = []) {
+  const byId = new Map((IX.attendanceLogs || []).map((l) => [String(l.id || ""), l]));
+  for (const log of incoming) byId.set(String(log.id || ""), log);
+  IX.attendanceLogs = Array.from(byId.values()).sort(
+    (a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)
+  );
+}
 
 function renderWorkSummaryModal() {
   refreshIndexDomRefs();
@@ -53,9 +82,20 @@ function renderWorkSummaryModal() {
   `;
 }
 
-function openWorkSummaryModal() {
-  renderWorkSummaryModal();
+async function openWorkSummaryModal() {
+  refreshIndexDomRefs();
   openModal(IX.workSummaryModal);
+
+  const user = auth.currentUser;
+  if (user) {
+    if (IX.workSummaryBody) {
+      IX.workSummaryBody.innerHTML = `<p class="work-summary-empty">근무 기록을 불러오는 중…</p>`;
+    }
+    const logs = await loadMyAttendanceLogs(user.uid);
+    mergeAttendanceLogs(logs);
+  }
+
+  renderWorkSummaryModal();
 }
 
 function closeWorkSummaryModal() {

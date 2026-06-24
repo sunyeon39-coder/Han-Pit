@@ -12,6 +12,7 @@ import {
   restoreAttendanceSnapshot,
   snapshotAttendanceEntry
 } from "./dealer-attendance-optimistic.js";
+import { getOperationalDayKey } from "../shared/attendance-operational-day.js";
 
 /**
  * 본인 출근 시각(checkedInAt) 수정 + 운영 로그 기록
@@ -48,8 +49,25 @@ export async function adjustMyCheckedInAt(newCheckedInAtMs) {
     return false;
   }
 
+  if (getOperationalDayKey(next) !== getOperationalDayKey(getNowMs())) {
+    alert("출근 시각은 오늘 운영일(06:00~익일 05:59) 안에서만 변경할 수 있습니다.\n다른 날짜로는 설정할 수 없습니다.");
+    return false;
+  }
+
   const nickname = String(IX.currentUserProfile.nickname || user.displayName || "").trim();
   const now = getNowMs();
+  const prevSnap = snapshotAttendanceEntry(tournamentId, user.uid);
+  applyOptimisticAttendanceEntry(tournamentId, user.uid, {
+    ...(prevSnap || {
+      uid: user.uid,
+      nickname,
+      email: String(IX.currentUserProfile.email || user.email || "").trim(),
+      tournamentId,
+      status: current?.status || "off"
+    }),
+    checkedInAt: next,
+    updatedAt: now
+  });
 
   try {
     await setDoc(
@@ -116,6 +134,11 @@ export async function adjustMyCheckedOutAt(newCheckedOutAtMs) {
 
   if (next > Date.now() + 60_000) {
     alert("퇴근 시각을 미래로 설정할 수 없습니다.");
+    return false;
+  }
+
+  if (getOperationalDayKey(next) !== getOperationalDayKey(getNowMs())) {
+    alert("퇴근 시각은 오늘 운영일(06:00~익일 05:59) 안에서만 변경할 수 있습니다.\n다른 날짜로는 설정할 수 없습니다.");
     return false;
   }
 

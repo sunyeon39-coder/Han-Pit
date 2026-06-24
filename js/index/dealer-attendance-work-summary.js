@@ -34,15 +34,35 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
 
   const sessions = [];
   let openStart = null;
+  let lastActivity = null;
+
+  // 퇴근을 안 누른 채 운영일이 바뀐 세션은 '마지막 활동 시점'으로 자동 마감해 누적에 포함한다.
+  const closeOpenSession = (endMs) => {
+    if (openStart == null) return;
+    const end = Math.max(Number(openStart), Number(endMs || openStart));
+    sessions.push({ startMs: openStart, endMs: end, open: false });
+    openStart = null;
+    lastActivity = null;
+  };
 
   for (const log of mine) {
     const action = String(log.action || "").trim();
+    const at = Number(log.createdAt || 0) || 0;
+
     if (SESSION_START.has(action)) {
-      openStart = Number(log.createdAt || 0) || openStart;
+      // 이전 세션이 다른 운영일에서 안 닫혔으면(퇴근 누락) 먼저 자동 마감
+      if (openStart != null && localDateKey(openStart) !== localDateKey(at)) {
+        closeOpenSession(lastActivity ?? openStart);
+      }
+      if (openStart == null) openStart = at;
+      lastActivity = at;
+      continue;
     }
     if (action === "adjust_check_in") {
       const next = Number(log.newCheckedInAt || 0);
       if (next > 0) openStart = next;
+      if (at) lastActivity = at;
+      continue;
     }
     if (action === "adjust_check_out") {
       const next = Number(log.newCheckedOutAt || 0);
@@ -50,12 +70,24 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
         const last = sessions[sessions.length - 1];
         if (!last.open) last.endMs = next;
       }
+      continue;
     }
-    if (action === "checked_out" && openStart) {
-      const endMs = Number(log.createdAt || 0) || Date.now();
-      sessions.push({ startMs: openStart, endMs, open: false });
-      openStart = null;
+    if (action === "checked_out") {
+      if (openStart != null) {
+        const endMs = at || Date.now();
+        sessions.push({ startMs: openStart, endMs, open: false });
+        openStart = null;
+        lastActivity = null;
+      }
+      continue;
     }
+    if (action === "operational_day_reset") {
+      // 운영일 전환으로 비워진 세션 → 마지막 활동 시점으로 마감(누적 포함)
+      closeOpenSession(lastActivity ?? openStart);
+      continue;
+    }
+    // assigned/break 등 그 외 활동은 마지막 활동 시각만 갱신
+    if (openStart != null && at) lastActivity = at;
   }
 
   const status = String(derived?.status || "").trim();
@@ -73,11 +105,13 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
     });
     openStart = null;
   } else if (openStart) {
-    sessions.push({
-      startMs: openStart,
-      endMs: Date.now(),
-      open: true
-    });
+    // 로그상 아직 안 닫힌 세션. 이전 운영일이면 마지막 활동 시점으로 마감, 오늘이면 진행 중.
+    if (localDateKey(openStart) !== localDateKey(Date.now())) {
+      const end = Math.max(Number(openStart), Number(lastActivity ?? openStart));
+      sessions.push({ startMs: openStart, endMs: end, open: false });
+    } else {
+      sessions.push({ startMs: openStart, endMs: Date.now(), open: true });
+    }
   } else if (checkedInAt > 0 && checkedOutAt > 0 && status === "checked_out") {
     const dup = sessions.some((s) => Math.abs(Number(s.startMs) - checkedInAt) < 120_000);
     if (!dup) {
