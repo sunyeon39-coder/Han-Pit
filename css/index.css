@@ -1419,7 +1419,8 @@ button.dealer-time-chip--editable{
   display:flex;
   align-items:center;
   gap:8px;
-  width:100%;
+  flex:1 1 auto;
+  min-width:0;
 }
 
 .dealer-time-chip-caret{
@@ -1811,28 +1812,38 @@ button.work-summary-time-chip{
 
   .dealer-self-times{
     width:100%;
-    flex-direction:column;
+    flex-direction:row;
+    flex-wrap:nowrap;
     align-items:stretch;
     gap:8px;
   }
 
   .dealer-time-chip,
-  label.dealer-time-chip--editable{
-    width:100%;
-    min-height:0;
-    padding:7px 12px;
+  label.dealer-time-chip--editable,
+  button.dealer-time-chip,
+  button.dealer-time-chip--editable{
+    flex:1 1 0;
+    min-width:0;
+    width:auto;
+    min-height:40px;
+    padding:6px 10px;
     box-sizing:border-box;
   }
 
   .dealer-time-chip-label{
     flex:0 0 auto;
-    min-width:2.2rem;
+    min-width:2rem;
     line-height:1.25;
   }
 
   .dealer-time-chip-value{
-    font-size:14px;
+    flex:1 1 auto;
+    min-width:0;
+    font-size:12px;
     line-height:1.25;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
   }
 
   .dealer-time-chip-input{
