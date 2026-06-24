@@ -14,6 +14,61 @@ function sessionDurationMs(session) {
   return Math.max(0, Number(session.endMs || 0) - Number(session.startMs || 0));
 }
 
+export function buildWorkSessionKey(session) {
+  const startMs = Number(session?.startMs || 0);
+  if (session?.open) return `${startMs}_open`;
+  const endMs = Number(session?.endMs || 0);
+  return `${startMs}_${endMs}_closed`;
+}
+
+function withSessionKey(session) {
+  return {
+    ...session,
+    sessionKey: buildWorkSessionKey(session)
+  };
+}
+
+function findSessionForAdjustment(sessions, adj = {}) {
+  const key = String(adj.sessionKey || "").trim();
+  if (key) {
+    const byKey = sessions.findIndex((s) => String(s.sessionKey || "") === key);
+    if (byKey >= 0) return byKey;
+  }
+
+  const prevStart = Number(adj.previousSessionStartMs || 0);
+  const prevEnd = Number(adj.previousSessionEndMs || 0);
+  if (!prevStart) return -1;
+
+  return sessions.findIndex((s) => {
+    if (!Number.isFinite(Number(s.startMs))) return false;
+    if (Math.abs(Number(s.startMs) - prevStart) > 120_000) return false;
+    if (s.open) return true;
+    if (!prevEnd) return false;
+    return Math.abs(Number(s.endMs) - prevEnd) <= 120_000;
+  });
+}
+
+function applyWorkSessionAdjustments(sessions, logs = []) {
+  const adjustments = (Array.isArray(logs) ? logs : [])
+    .filter((log) => String(log.action || "").trim() === "adjust_work_session")
+    .sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
+
+  for (const adj of adjustments) {
+    const idx = findSessionForAdjustment(sessions, adj);
+    if (idx < 0) continue;
+
+    const session = sessions[idx];
+    const newStart = Number(adj.newSessionStartMs || 0);
+    const newEnd = Number(adj.newSessionEndMs || 0);
+    if (newStart > 0) session.startMs = newStart;
+    if (newEnd > 0 && !session.open) session.endMs = newEnd;
+    delete session.durationMs;
+    session.sessionKey = buildWorkSessionKey(session);
+  }
+
+  return sessions;
+}
+
 /**
  * 현재 대회·본인 기준 근무 일수·시간 (운영 로그 출근/퇴근 + 현재 출석 문서)
  */
@@ -40,7 +95,7 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
   const closeOpenSession = (endMs) => {
     if (openStart == null) return;
     const end = Math.max(Number(openStart), Number(endMs || openStart));
-    sessions.push({ startMs: openStart, endMs: end, open: false });
+    sessions.push(withSessionKey({ startMs: openStart, endMs: end, open: false }));
     openStart = null;
     lastActivity = null;
   };
@@ -75,7 +130,7 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
     if (action === "checked_out") {
       if (openStart != null) {
         const endMs = at || Date.now();
-        sessions.push({ startMs: openStart, endMs, open: false });
+        sessions.push(withSessionKey({ startMs: openStart, endMs, open: false }));
         openStart = null;
         lastActivity = null;
       }
@@ -97,31 +152,37 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
     checkedInAt > 0 && status !== "checked_out" && status !== "off";
 
   if (isOpen) {
-    sessions.push({
-      startMs: checkedInAt,
-      endMs: Date.now(),
-      durationMs: getWorkingMs(derived),
-      open: true
-    });
+    sessions.push(
+      withSessionKey({
+        startMs: checkedInAt,
+        endMs: Date.now(),
+        durationMs: getWorkingMs(derived),
+        open: true
+      })
+    );
     openStart = null;
   } else if (openStart) {
     // 로그상 아직 안 닫힌 세션. 이전 운영일이면 마지막 활동 시점으로 마감, 오늘이면 진행 중.
     if (localDateKey(openStart) !== localDateKey(Date.now())) {
       const end = Math.max(Number(openStart), Number(lastActivity ?? openStart));
-      sessions.push({ startMs: openStart, endMs: end, open: false });
+      sessions.push(withSessionKey({ startMs: openStart, endMs: end, open: false }));
     } else {
-      sessions.push({ startMs: openStart, endMs: Date.now(), open: true });
+      sessions.push(withSessionKey({ startMs: openStart, endMs: Date.now(), open: true }));
     }
   } else if (checkedInAt > 0 && checkedOutAt > 0 && status === "checked_out") {
     const dup = sessions.some((s) => Math.abs(Number(s.startMs) - checkedInAt) < 120_000);
     if (!dup) {
-      sessions.push({
-        startMs: checkedInAt,
-        endMs: checkedOutAt,
-        open: false
-      });
+      sessions.push(
+        withSessionKey({
+          startMs: checkedInAt,
+          endMs: checkedOutAt,
+          open: false
+        })
+      );
     }
   }
+
+  applyWorkSessionAdjustments(sessions, mine);
 
   const daySet = new Set();
   let totalMs = 0;
@@ -143,6 +204,10 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
     dayLabel: `${dayCount}일`,
     durationLabel: formatDuration(totalMs)
   };
+}
+
+export function formatWorkSessionDuration(session) {
+  return formatDuration(sessionDurationMs(session));
 }
 
 export function formatWorkSessionRange(session) {

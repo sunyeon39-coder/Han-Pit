@@ -1543,9 +1543,71 @@ label.dealer-time-chip--editable{
   font-weight:700;
   color:var(--text-2);
   display:flex;
-  align-items:center;
+  align-items:flex-start;
   justify-content:space-between;
-  gap:8px;
+  gap:10px;
+}
+
+.work-summary-session-edit{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:6px;
+  min-width:0;
+  flex:1;
+}
+
+.work-summary-time-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  padding:4px 6px;
+  border-radius:8px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.04);
+  min-width:0;
+}
+
+.work-summary-time-chip--editable{
+  cursor:pointer;
+}
+
+.work-summary-time-chip-label{
+  font-size:10px;
+  font-weight:800;
+  color:var(--text-3);
+  flex-shrink:0;
+}
+
+.work-summary-time-chip-input{
+  border:0;
+  background:transparent;
+  color:var(--text-1);
+  font:inherit;
+  font-weight:700;
+  padding:0;
+  min-width:0;
+  width:min(132px, 36vw);
+}
+
+.work-summary-time-chip-input:focus{
+  outline:none;
+}
+
+.work-summary-time-sep,
+.work-summary-session-open-label{
+  font-size:12px;
+  color:var(--text-3);
+  flex-shrink:0;
+}
+
+.work-summary-session-dur{
+  font-size:12px;
+  font-weight:800;
+  color:var(--text-1);
+  white-space:nowrap;
+  flex-shrink:0;
+  padding-top:2px;
 }
 
 .work-summary-session.is-open{

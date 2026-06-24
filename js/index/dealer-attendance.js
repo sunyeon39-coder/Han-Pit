@@ -19,6 +19,7 @@ export {
 
 export { updateMyAttendanceStatus, updateAdminAttendanceStatus } from "./dealer-attendance-status-updates.js";
 export { adjustMyCheckedInAt, adjustMyCheckedOutAt } from "./dealer-attendance-adjust-checkin.js";
+export { adjustMyWorkSession } from "./dealer-attendance-adjust-session.js";
 export { scheduleRenderDealerOps, renderDealerOps, renderDealerOpsPartial, updateDealerAdminList } from "./dealer-attendance-render.js";
 export { loadDealerAttendanceOnce } from "./dealer-attendance-load-once.js";
 export { ensureMyState } from "./dealer-attendance-ensure-waiting.js";
