@@ -5,6 +5,7 @@ import {
   deleteDoc,
   limit,
   onSnapshot,
+  orderBy,
   query,
   setDoc,
   where
@@ -227,15 +228,26 @@ export function disposeAttendanceLogsRealtime() {
   }
 }
 
-/** 출근 로그 — 모달을 열 때만 구독 (전체 collection 상시 listen 방지) */
+/**
+ * 출근 로그 — 모달을 열 때만 구독 (전체 collection 상시 listen 방지)
+ * 보존 한도(대회당 최신 400건)를 모두 덮도록 createdAt 내림차순 + 한도 500으로 조회해
+ * 해당 대회의 보존된 출퇴근 이력 전체가 최신순으로 빠짐없이 나오게 한다.
+ */
+const ATTENDANCE_LOG_FETCH_LIMIT = 500;
+
 export function bindAttendanceLogsRealtime() {
   disposeAttendanceLogsRealtime();
 
   const tournamentId = getTournamentId();
   const col = collection(db, "dealer_attendance_logs");
   const q = tournamentId
-    ? query(col, where("tournamentId", "==", tournamentId), limit(250))
-    : query(col, limit(250));
+    ? query(
+        col,
+        where("tournamentId", "==", tournamentId),
+        orderBy("createdAt", "desc"),
+        limit(ATTENDANCE_LOG_FETCH_LIMIT)
+      )
+    : query(col, orderBy("createdAt", "desc"), limit(ATTENDANCE_LOG_FETCH_LIMIT));
 
   IX.stopAttendanceLogsWatch = onSnapshot(
     q,
