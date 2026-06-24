@@ -11,6 +11,7 @@ import { mergeOpsProfile, normalizeUserProfile } from "../shared/auth-helpers.js
 import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
 import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
+import { getOperationalDayKey } from "../shared/attendance-operational-day.js";
 
 function indexTournamentMeta() {
   const t = IX.currentTournament;
@@ -68,8 +69,9 @@ async function appendSelfToGlobalWaiting(user, tournamentId, nickname, email) {
       : { version: 2, waiting: [], updatedAt: Date.now() };
 
     const waitingList = Array.isArray(waitingState.waiting) ? [...waitingState.waiting] : [];
+    const now = Date.now();
 
-    const alreadyInWaiting = waitingList.some((item) => {
+    const existingIdx = waitingList.findIndex((item) => {
       if (!item || typeof item !== "object") return false;
       const itemUid = String(item.uid || "").trim();
       const itemTournamentId = String(item.tournamentId || "").trim();
@@ -78,17 +80,49 @@ async function appendSelfToGlobalWaiting(user, tournamentId, nickname, email) {
       return itemTournamentId === tournamentId;
     });
 
-    if (alreadyInWaiting) return true;
+    if (existingIdx >= 0) {
+      const existing = waitingList[existingIdx] || {};
+      const prevJoin =
+        Number(
+          existing.joinedAt ||
+            existing.createdAt ||
+            existing.joinedAtServer ||
+            existing.addedAt ||
+            existing.carryStartedAt ||
+            0
+        ) || 0;
+      const stale = prevJoin > 0 && getOperationalDayKey(prevJoin) !== getOperationalDayKey(now);
+      // 같은 운영일에 이미 대기 중이면 그대로 둔다(대기 시간 유지).
+      if (!stale) return true;
 
-    waitingList.push({
-      id: `w_${uid}`,
-      uid,
-      email,
-      name: nickname,
-      addedAt: Date.now(),
-      source: "checkin",
-      tournamentId
-    });
+      // 이전 운영일의 대기 항목이 남아 있으면, 출근 시 지금 시각으로 새로 시작한다.
+      const refreshed = {
+        ...existing,
+        id: existing.id || `w_${uid}`,
+        uid,
+        email,
+        name: nickname,
+        addedAt: now,
+        joinedAt: now,
+        createdAt: now,
+        source: "checkin",
+        tournamentId
+      };
+      delete refreshed.joinedAtServer;
+      delete refreshed.carryStartedAt;
+      waitingList[existingIdx] = refreshed;
+    } else {
+      waitingList.push({
+        id: `w_${uid}`,
+        uid,
+        email,
+        name: nickname,
+        addedAt: now,
+        joinedAt: now,
+        source: "checkin",
+        tournamentId
+      });
+    }
 
     await setDoc(
       waitingRef,
@@ -96,7 +130,7 @@ async function appendSelfToGlobalWaiting(user, tournamentId, nickname, email) {
         ...waitingState,
         version: 2,
         waiting: waitingList,
-        updatedAt: Date.now()
+        updatedAt: now
       },
       { merge: true }
     );
