@@ -1407,6 +1407,21 @@ label.dealer-time-chip--editable{
   margin:0;
 }
 
+button.dealer-time-chip{
+  margin:0;
+  text-align:left;
+  font:inherit;
+  color:inherit;
+  -webkit-tap-highlight-color:transparent;
+}
+
+button.dealer-time-chip--editable{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  width:100%;
+}
+
 .dealer-time-chip-caret{
   flex-shrink:0;
   width:0;
@@ -1571,6 +1586,16 @@ label.dealer-time-chip--editable{
 
 .work-summary-time-chip--editable{
   cursor:pointer;
+  border-color:rgba(77,163,255,.22);
+  background:rgba(77,163,255,.06);
+}
+
+button.work-summary-time-chip{
+  margin:0;
+  text-align:left;
+  font:inherit;
+  color:inherit;
+  -webkit-tap-highlight-color:transparent;
 }
 
 .work-summary-time-chip-label{
@@ -1581,25 +1606,14 @@ label.dealer-time-chip--editable{
   min-width:2rem;
 }
 
-.work-summary-time-chip-input{
-  border:0;
-  background:transparent;
-  color:var(--text-1);
-  font:inherit;
-  font-weight:700;
-  padding:0;
+.work-summary-time-chip-value{
   flex:1 1 auto;
   min-width:0;
-  width:100%;
-  min-height:24px;
   font-size:14px;
+  font-weight:700;
   line-height:1.3;
-  -webkit-appearance:none;
-  appearance:none;
-}
-
-.work-summary-time-chip-input:focus{
-  outline:none;
+  color:var(--text-1);
+  word-break:keep-all;
 }
 
 .work-summary-time-sep{
@@ -2242,4 +2256,102 @@ label.dealer-time-chip--editable{
   padding: 0 8px;
   font-size: 11px;
   line-height: 1;
+}
+
+/* 스크롤 날짜·시간 피커 */
+.datetime-scroll-picker-backdrop{
+  z-index:1300;
+  align-items:flex-end;
+}
+
+.datetime-scroll-picker-sheet{
+  width:100%;
+  max-width:480px;
+  margin:0 auto;
+  border-radius:16px 16px 0 0;
+  background:#1a1f2b;
+  border:1px solid rgba(255,255,255,.1);
+  border-bottom:none;
+  overflow:hidden;
+}
+
+.datetime-scroll-picker-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  padding:10px 12px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+
+.datetime-scroll-picker-title{
+  margin:0;
+  font-size:15px;
+  font-weight:800;
+  color:var(--text-1);
+}
+
+.datetime-scroll-picker-columns-wrap{
+  position:relative;
+  padding:8px 0 16px;
+}
+
+.datetime-scroll-picker-highlight{
+  position:absolute;
+  left:8px;
+  right:8px;
+  top:50%;
+  transform:translateY(-50%);
+  height:40px;
+  border-radius:10px;
+  background:rgba(77,163,255,.12);
+  border:1px solid rgba(77,163,255,.25);
+  pointer-events:none;
+  z-index:0;
+}
+
+.datetime-scroll-picker-columns{
+  position:relative;
+  z-index:1;
+  display:flex;
+  gap:4px;
+  padding:0 8px;
+}
+
+.dt-scroll-col{
+  flex:1 1 0;
+  min-width:0;
+  height:200px;
+  overflow-y:auto;
+  scroll-snap-type:y mandatory;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
+}
+
+.dt-scroll-col::-webkit-scrollbar{
+  display:none;
+}
+
+.dt-scroll-item{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:100%;
+  height:40px;
+  margin:0;
+  padding:0 4px;
+  border:0;
+  background:transparent;
+  color:var(--text-2);
+  font-size:14px;
+  font-weight:700;
+  scroll-snap-align:center;
+  cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+
+.dt-scroll-item:active,
+.dt-scroll-item:focus-visible{
+  color:var(--text-1);
+  outline:none;
 }

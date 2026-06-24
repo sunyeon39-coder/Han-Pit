@@ -8,7 +8,7 @@ import {
   getAttendanceStatusLabel,
   formatClockOrDash,
   formatDuration,
-  msToDatetimeLocalValue
+  formatDatetimeKorean
 } from "./dealer-attendance-format.js";
 import { getDerivedAttendance, getWorkingMs } from "./dealer-attendance-derived.js";
 import {
@@ -295,18 +295,17 @@ export function renderDealerOps() {
       <div class="dealer-self-times">
         ${
           canEditCheckIn
-            ? `<label class="dealer-time-chip dealer-time-chip--editable" title="탭하여 출근 시각 수정">
+            ? `<button
+                type="button"
+                class="dealer-time-chip dealer-time-chip--editable"
+                data-edit-check-in
+                title="탭하여 출근 시각 수정"
+                aria-label="출근 시각 수정"
+              >
                 <span class="dealer-time-chip-label">출근</span>
-                <input
-                  type="datetime-local"
-                  class="dealer-time-chip-input"
-                  data-edit-check-in
-                  value="${escapeHtml(msToDatetimeLocalValue(me.checkedInAt))}"
-                  step="60"
-                  aria-label="출근 시각 수정"
-                />
+                <span class="dealer-time-chip-value">${escapeHtml(formatDatetimeKorean(me.checkedInAt))}</span>
                 <span class="dealer-time-chip-caret" aria-hidden="true"></span>
-              </label>`
+              </button>`
             : `<div class="dealer-time-chip">
                 <span class="dealer-time-chip-label">출근</span>
                 <span class="dealer-time-chip-value">${escapeHtml(myCheckInText)}</span>
@@ -315,18 +314,17 @@ export function renderDealerOps() {
 
         ${
           canEditCheckOut
-            ? `<label class="dealer-time-chip dealer-time-chip--editable" title="탭하여 퇴근 시각 수정">
+            ? `<button
+                type="button"
+                class="dealer-time-chip dealer-time-chip--editable"
+                data-edit-check-out
+                title="탭하여 퇴근 시각 수정"
+                aria-label="퇴근 시각 수정"
+              >
                 <span class="dealer-time-chip-label">퇴근</span>
-                <input
-                  type="datetime-local"
-                  class="dealer-time-chip-input"
-                  data-edit-check-out
-                  value="${escapeHtml(msToDatetimeLocalValue(me.checkedOutAt))}"
-                  step="60"
-                  aria-label="퇴근 시각 수정"
-                />
+                <span class="dealer-time-chip-value">${escapeHtml(formatDatetimeKorean(me.checkedOutAt))}</span>
                 <span class="dealer-time-chip-caret" aria-hidden="true"></span>
-              </label>`
+              </button>`
             : `<div class="dealer-time-chip">
                 <span class="dealer-time-chip-label">퇴근</span>
                 <span class="dealer-time-chip-value">${escapeHtml(myCheckOutText)}</span>

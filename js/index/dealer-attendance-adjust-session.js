@@ -7,6 +7,7 @@ import { getAttendanceRef } from "./dealer-attendance-refs.js";
 import { writeAttendanceLog } from "./dealer-attendance-logs.js";
 import { getDerivedAttendance } from "./dealer-attendance-derived.js";
 import { formatClock, getNowMs } from "./dealer-attendance-format.js";
+import { isAttendanceFromCurrentOperationalDay } from "../shared/attendance-operational-day.js";
 import {
   applyOptimisticAttendanceEntry,
   restoreAttendanceSnapshot,
@@ -19,9 +20,14 @@ function timesNear(a, b) {
   return Math.abs(Number(a) - Number(b)) <= MATCH_TOLERANCE_MS;
 }
 
+function fail() {
+  return { ok: false };
+}
+
 /**
  * 근무 요약 세션의 시작·종료 시각 수정 + 운영 로그 기록
- * @returns {boolean} 성공 여부
+ * 과거 구간은 운영 로그만 수정한다 — 출석 문서를 바꾸면 운영일 초기화가 발생할 수 있다.
+ * @returns {Promise<{ok: boolean, attendancePatched?: boolean}>}
  */
 export async function adjustMyWorkSession({
   sessionKey = "",
@@ -33,7 +39,7 @@ export async function adjustMyWorkSession({
 } = {}) {
   const tournamentId = getTournamentId();
   const user = auth.currentUser;
-  if (!user || !tournamentId || !IX.currentUserProfile) return false;
+  if (!user || !tournamentId || !IX.currentUserProfile) return fail();
 
   const prevStart = Number(previousStartMs);
   const prevEnd = Number(previousEndMs);
@@ -42,32 +48,32 @@ export async function adjustMyWorkSession({
 
   if (!Number.isFinite(nextStart) || nextStart <= 0) {
     alert("올바른 시작 시각을 선택해 주세요.");
-    return false;
+    return fail();
   }
 
   if (!isOpen) {
     if (!Number.isFinite(nextEnd) || nextEnd <= 0) {
       alert("올바른 종료 시각을 선택해 주세요.");
-      return false;
+      return fail();
     }
     if (nextEnd <= nextStart) {
       alert("종료 시각은 시작 시각보다 이후여야 합니다.");
-      return false;
+      return fail();
     }
   }
 
   const now = getNowMs();
   if (nextStart > now + 60_000) {
     alert("시작 시각을 미래로 설정할 수 없습니다.");
-    return false;
+    return fail();
   }
   if (!isOpen && nextEnd > now + 60_000) {
     alert("종료 시각을 미래로 설정할 수 없습니다.");
-    return false;
+    return fail();
   }
 
   if (timesNear(nextStart, prevStart) && (isOpen || timesNear(nextEnd, prevEnd))) {
-    return true;
+    return { ok: true, attendancePatched: false };
   }
 
   const current = getDerivedAttendance(user);
@@ -76,17 +82,15 @@ export async function adjustMyWorkSession({
 
   const attendancePatch = {};
   const checkedInAt = Number(current?.checkedInAt || 0);
-  const checkedOutAt = Number(current?.checkedOutAt || 0);
 
-  if (isOpen && checkedInAt > 0 && timesNear(checkedInAt, prevStart)) {
+  // 현재 근무 중 세션의 시작만, 오늘 운영일 안에서 출석 문서와 동기화한다.
+  if (
+    isOpen &&
+    checkedInAt > 0 &&
+    timesNear(checkedInAt, prevStart) &&
+    isAttendanceFromCurrentOperationalDay({ checkedInAt: nextStart }, now)
+  ) {
     attendancePatch.checkedInAt = nextStart;
-  } else if (!isOpen) {
-    if (checkedInAt > 0 && timesNear(checkedInAt, prevStart)) {
-      attendancePatch.checkedInAt = nextStart;
-    }
-    if (checkedOutAt > 0 && timesNear(checkedOutAt, prevEnd)) {
-      attendancePatch.checkedOutAt = nextEnd;
-    }
   }
 
   if (Object.keys(attendancePatch).length) {
@@ -134,13 +138,16 @@ export async function adjustMyWorkSession({
       detail: detailParts.join(" · ")
     });
 
-    return !!log;
+    return {
+      ok: !!log,
+      attendancePatched: Object.keys(attendancePatch).length > 0
+    };
   } catch (err) {
     if (Object.keys(attendancePatch).length) {
       restoreAttendanceSnapshot(tournamentId, user.uid, prevSnap);
     }
     console.error("adjustMyWorkSession error:", err);
     alert("근무 시간 수정에 실패했습니다.");
-    return false;
+    return fail();
   }
 }

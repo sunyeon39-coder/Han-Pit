@@ -47,3 +47,16 @@ export function datetimeLocalValueToMs(value) {
   const ms = new Date(v).getTime();
   return Number.isFinite(ms) ? ms : NaN;
 }
+
+/** 스크롤 피커·버튼 표시용 (년월일 시분) */
+export function formatDatetimeKorean(ms) {
+  const n = Number(ms);
+  if (!Number.isFinite(n) || n <= 0) return "-";
+  return new Date(n).toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}

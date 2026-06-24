@@ -17,6 +17,7 @@ import { normalizeAndPersistUserRole } from "../login/user-sync.js";
 import { isAppDebugEnabled } from "../shared/app-debug.js";
 import { isSameAuthSession } from "../shared/auth-session-guard.js";
 import { openModal, closeModal, escapeHtml } from "../shared/dom-utils.js";
+import { openDatetimeScrollPicker } from "../shared/datetime-scroll-picker.js";
 import { getTournamentId, resolveRelativePage, sleep } from "./core-utils.js";
 import {
   buildEventInstanceDocId,
@@ -67,6 +68,10 @@ import {
   restoreAttendanceSnapshot,
   snapshotAttendanceEntry
 } from "./dealer-attendance-optimistic.js";
+import { getDerivedAttendance } from "./dealer-attendance-derived.js";
+import { getNowMs } from "./dealer-attendance-format.js";
+
+const ATTENDANCE_LOG_RETENTION_MS = 45 * 24 * 60 * 60 * 1000;
 
 import { routeToHub, initTournamentPeriodWatch } from "./tournament-period.js";
 
@@ -387,37 +392,38 @@ function wireIndexPageControls() {
   setupAttendanceLogEvents();
   setupWorkSummaryEvents();
 
-  IX.dealerOpsMount?.addEventListener("click", (e) => {
-    const chip = e.target.closest(".dealer-time-chip--editable");
-    if (!chip || e.target.closest(".dealer-time-chip-input")) return;
-    const input = chip.querySelector("[data-edit-check-in],[data-edit-check-out]");
-    if (!input) return;
-    input.focus();
-    try {
-      if (typeof input.showPicker === "function") input.showPicker();
-    } catch (_) {
-      /* iOS 구버전: focus만으로 네이티브 피커 */
-    }
-  });
+  IX.dealerOpsMount?.addEventListener("click", async (e) => {
+    const checkInBtn = e.target.closest("[data-edit-check-in]");
+    const checkOutBtn = e.target.closest("[data-edit-check-out]");
+    if (!checkInBtn && !checkOutBtn) return;
 
-  IX.dealerOpsMount?.addEventListener("change", async (e) => {
     const user = auth.currentUser;
     if (!user) return;
 
-    const checkInInput = e.target.closest("[data-edit-check-in]");
-    const checkOutInput = e.target.closest("[data-edit-check-out]");
-    if (!checkInInput && !checkOutInput) return;
+    const me = getDerivedAttendance(user);
+    const now = getNowMs();
+    const isCheckIn = !!checkInBtn;
+    const initialMs = isCheckIn ? Number(me?.checkedInAt || 0) : Number(me?.checkedOutAt || 0);
+    if (!initialMs) return;
 
     try {
-      const ok = checkOutInput
-        ? await adjustMyCheckedOutAt(new Date(checkOutInput.value).getTime())
-        : await adjustMyCheckedInAt(new Date(checkInInput.value).getTime());
+      const pickedMs = await openDatetimeScrollPicker({
+        initialMs,
+        minMs: now - ATTENDANCE_LOG_RETENTION_MS,
+        maxMs: now,
+        title: isCheckIn ? "출근 시각" : "퇴근 시각"
+      });
+      if (pickedMs == null) return;
+
+      const ok = isCheckIn
+        ? await adjustMyCheckedInAt(pickedMs)
+        : await adjustMyCheckedOutAt(pickedMs);
       if (ok) {
         await loadDealerAttendanceOnce();
         renderDealerOps();
       }
     } catch (err) {
-      console.error("adjust attendance time change error:", err);
+      console.error("adjust attendance time picker error:", err);
     }
   });
 

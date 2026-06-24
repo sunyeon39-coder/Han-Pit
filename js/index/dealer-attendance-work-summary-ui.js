@@ -7,12 +7,10 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 import { escapeHtml, openModal, closeModal } from "../shared/dom-utils.js";
+import { openDatetimeScrollPicker } from "../shared/datetime-scroll-picker.js";
 import { IX, refreshIndexDomRefs } from "./state.js";
 import { getDerivedAttendance } from "./dealer-attendance-derived.js";
-import {
-  datetimeLocalValueToMs,
-  msToDatetimeLocalValue
-} from "./dealer-attendance-format.js";
+import { formatDatetimeKorean, getNowMs } from "./dealer-attendance-format.js";
 import { adjustMyWorkSession } from "./dealer-attendance-adjust-session.js";
 import { loadDealerAttendanceOnce } from "./dealer-attendance-load-once.js";
 import { scheduleRenderDealerOps } from "./dealer-attendance-render.js";
@@ -20,6 +18,8 @@ import {
   computeMyTournamentWorkSummary,
   formatWorkSessionDuration
 } from "./dealer-attendance-work-summary.js";
+
+const LOG_RETENTION_MS = 45 * 24 * 60 * 60 * 1000;
 
 /** 근무 누적은 운영 로그로 세션을 복원한다 — 본인 로그를 모달 열 때 항상 로드 */
 async function loadMyAttendanceLogs(uid) {
@@ -32,7 +32,7 @@ async function loadMyAttendanceLogs(uid) {
     return snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
   } catch (err) {
     console.warn("loadMyAttendanceLogs:", err?.code || err);
-    return [];
+    return null;
   }
 }
 
@@ -46,22 +46,22 @@ function mergeAttendanceLogs(incoming = []) {
 
 function renderWorkSummarySessionRow(session) {
   const sessionKey = escapeHtml(String(session.sessionKey || ""));
-  const startValue = escapeHtml(msToDatetimeLocalValue(session.startMs));
-  const endValue = escapeHtml(msToDatetimeLocalValue(session.endMs));
+  const startLabel = escapeHtml(formatDatetimeKorean(session.startMs));
+  const endLabel = escapeHtml(formatDatetimeKorean(session.endMs));
   const durationLabel = escapeHtml(formatWorkSessionDuration(session));
   const open = session.open ? "1" : "0";
 
   const endControl = session.open
     ? `<span class="work-summary-session-open-label">진행 중</span>`
-    : `<label class="work-summary-time-chip work-summary-time-chip--editable" title="탭하여 종료 시각 수정">
+    : `<button
+        type="button"
+        class="work-summary-time-chip work-summary-time-chip--editable"
+        data-session-picker="end"
+        title="탭하여 종료 시각 수정"
+      >
         <span class="work-summary-time-chip-label">종료</span>
-        <input
-          type="datetime-local"
-          class="work-summary-time-chip-input"
-          data-session-end
-          value="${endValue}"
-        />
-      </label>`;
+        <span class="work-summary-time-chip-value">${endLabel}</span>
+      </button>`;
 
   return `
     <li
@@ -72,15 +72,15 @@ function renderWorkSummarySessionRow(session) {
       data-open="${open}"
     >
       <div class="work-summary-session-edit">
-        <label class="work-summary-time-chip work-summary-time-chip--editable" title="탭하여 시작 시각 수정">
+        <button
+          type="button"
+          class="work-summary-time-chip work-summary-time-chip--editable"
+          data-session-picker="start"
+          title="탭하여 시작 시각 수정"
+        >
           <span class="work-summary-time-chip-label">시작</span>
-          <input
-            type="datetime-local"
-            class="work-summary-time-chip-input"
-            data-session-start
-            value="${startValue}"
-          />
-        </label>
+          <span class="work-summary-time-chip-value">${startLabel}</span>
+        </button>
         <span class="work-summary-time-sep">~</span>
         ${endControl}
         ${session.open ? `<span class="work-summary-open-badge">근무 중</span>` : ""}
@@ -122,7 +122,7 @@ function renderWorkSummaryModal() {
         <strong class="work-summary-metric-value">${escapeHtml(summary.durationLabel)}</strong>
       </div>
     </div>
-    <p class="work-summary-hint">각 근무 구간의 시작·종료 시각을 탭해 수정할 수 있습니다. 변경 내용은 누적 시간에 반영됩니다.</p>
+    <p class="work-summary-hint">시작·종료를 탭해 스크롤로 시각을 고르고 확인을 누르면 누적에 반영됩니다.</p>
     ${sessionRows}
   `;
 }
@@ -138,13 +138,11 @@ async function openWorkSummaryModal() {
   refreshIndexDomRefs();
   openModal(IX.workSummaryModal);
 
-  // 먼저 현재 가진 데이터로 즉시 렌더(로딩에서 멈추지 않도록).
   renderWorkSummaryModal();
 
   const user = auth.currentUser;
   if (!user) return;
 
-  // 로그는 백그라운드로 불러오고, 응답이 멈춰도 8초 후 현재 화면을 유지한다.
   const logs = await withTimeout(loadMyAttendanceLogs(user.uid), 8000);
   if (Array.isArray(logs) && logs.length) {
     mergeAttendanceLogs(logs);
@@ -154,25 +152,19 @@ async function openWorkSummaryModal() {
   }
 }
 
-async function handleWorkSummarySessionChange(e) {
-  const input = e.target.closest("[data-session-start],[data-session-end]");
-  if (!input) return;
-
-  const row = input.closest("[data-session-key]");
-  if (!row) return;
+async function applyWorkSummarySessionTime(row, field, pickedMs) {
+  if (!row || !Number.isFinite(pickedMs) || pickedMs <= 0) return;
 
   const user = auth.currentUser;
   if (!user) return;
 
-  const startInput = row.querySelector("[data-session-start]");
-  const endInput = row.querySelector("[data-session-end]");
   const isOpen = row.dataset.open === "1";
   const previousStartMs = Number(row.dataset.prevStart || 0);
   const previousEndMs = Number(row.dataset.prevEnd || 0);
-  const newStartMs = datetimeLocalValueToMs(startInput?.value);
-  const newEndMs = isOpen ? previousEndMs : datetimeLocalValueToMs(endInput?.value);
+  const newStartMs = field === "start" ? pickedMs : previousStartMs;
+  const newEndMs = field === "end" ? pickedMs : previousEndMs;
 
-  const ok = await adjustMyWorkSession({
+  const result = await adjustMyWorkSession({
     sessionKey: row.dataset.sessionKey || "",
     previousStartMs,
     previousEndMs,
@@ -181,34 +173,49 @@ async function handleWorkSummarySessionChange(e) {
     isOpen
   });
 
-  if (ok) {
+  if (!result?.ok) return;
+
+  if (result.attendancePatched) {
     await loadDealerAttendanceOnce();
     scheduleRenderDealerOps();
-    const logs = await withTimeout(loadMyAttendanceLogs(user.uid), 8000);
-    if (Array.isArray(logs) && logs.length) {
-      mergeAttendanceLogs(logs);
-    }
-    if (IX.workSummaryModal?.classList.contains("show")) {
-      renderWorkSummaryModal();
-    }
-    return;
   }
 
-  if (startInput) startInput.value = msToDatetimeLocalValue(previousStartMs);
-  if (endInput) endInput.value = msToDatetimeLocalValue(previousEndMs);
+  const logs = await withTimeout(loadMyAttendanceLogs(user.uid), 8000);
+  if (Array.isArray(logs) && logs.length) {
+    mergeAttendanceLogs(logs);
+  }
+
+  if (IX.workSummaryModal?.classList.contains("show")) {
+    renderWorkSummaryModal();
+  }
 }
 
-function handleWorkSummaryTimeChipClick(e) {
-  const chip = e.target.closest(".work-summary-time-chip--editable");
-  if (!chip || e.target.closest(".work-summary-time-chip-input")) return;
-  const input = chip.querySelector("[data-session-start],[data-session-end]");
-  if (!input) return;
-  input.focus();
-  try {
-    if (typeof input.showPicker === "function") input.showPicker();
-  } catch (_) {
-    /* iOS 구버전: focus만으로 네이티브 피커 */
-  }
+async function handleWorkSummarySessionPickerClick(e) {
+  const btn = e.target.closest("[data-session-picker]");
+  if (!btn) return;
+
+  const row = btn.closest("[data-session-key]");
+  if (!row) return;
+
+  const field = String(btn.getAttribute("data-session-picker") || "").trim();
+  if (field !== "start" && field !== "end") return;
+
+  const isOpen = row.dataset.open === "1";
+  const previousStartMs = Number(row.dataset.prevStart || 0);
+  const previousEndMs = Number(row.dataset.prevEnd || 0);
+  const initialMs = field === "start" ? previousStartMs : previousEndMs;
+  const now = getNowMs();
+  const minMs = now - LOG_RETENTION_MS;
+
+  const pickedMs = await openDatetimeScrollPicker({
+    initialMs,
+    minMs,
+    maxMs: now,
+    title: field === "start" ? "시작 시각" : "종료 시각"
+  });
+
+  if (pickedMs == null) return;
+  await applyWorkSummarySessionTime(row, field, pickedMs);
 }
 
 function closeWorkSummaryModal() {
@@ -228,10 +235,7 @@ export function setupWorkSummaryEvents() {
       closeWorkSummaryModal();
       return;
     }
-    handleWorkSummaryTimeChipClick(e);
-  });
-  IX.workSummaryModal?.addEventListener("change", (e) => {
-    void handleWorkSummarySessionChange(e);
+    void handleWorkSummarySessionPickerClick(e);
   });
 }
 
