@@ -26,6 +26,7 @@ import {
   appendSeatHistoryPatch,
   entryFromSeatOccupant
 } from "./seat-history.js";
+import { logGlobalLayoutAttendance } from "./attendance-log.js";
 
 export async function clearSeat(seatId = "") {
   const targetSeatId = String(seatId || "").trim();
@@ -55,6 +56,7 @@ export async function clearSeat(seatId = "") {
   let undoFirestoreDocId = "";
   let undoSeatSnapshot = null;
   let returnedJoinedAt = 0;
+  let clearLogMeta = null;
 
   GL.seatMutationInFlight = true;
   try {
@@ -187,6 +189,15 @@ export async function clearSeat(seatId = "") {
           { merge: true }
         );
       }
+
+      clearLogMeta = {
+        prevUid,
+        prevName,
+        hasOtherSeat,
+        eventId: undoEventId,
+        boxId: undoBoxId,
+        targetSeatId
+      };
     });
   } catch (err) {
     rollbackOptimistic();
@@ -194,6 +205,18 @@ export async function clearSeat(seatId = "") {
     throw err;
   } finally {
     GL.seatMutationInFlight = false;
+  }
+
+  if (clearLogMeta?.prevUid) {
+    logGlobalLayoutAttendance({
+      uid: clearLogMeta.prevUid,
+      nickname: clearLogMeta.prevName,
+      action: clearLogMeta.hasOtherSeat ? "assigned" : "waiting",
+      eventId: clearLogMeta.eventId,
+      boxId: clearLogMeta.boxId,
+      seatId: clearLogMeta.targetSeatId,
+      detail: clearLogMeta.hasOtherSeat ? "좌석 해제 (다른 좌석 유지)" : "좌석 해제"
+    });
   }
 
   const { eventId, boxId } = resolveSeatEventBox(seat);

@@ -39,6 +39,7 @@ import {
   appendSeatHistoryPatch,
   entryFromSeatOccupant
 } from "./seat-history.js";
+import { logGlobalLayoutAttendance } from "./attendance-log.js";
 
 function uniqueDocRefs(refs = []) {
   const seen = new Set();
@@ -152,6 +153,7 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   let canonicalSeatEventId = "";
   let canonicalSeatBoxId = "";
   let assignEventCardLabel = "";
+  let assignLogMeta = null;
 
   GL.seatMutationInFlight = true;
   try {
@@ -464,7 +466,40 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
           );
         }
       }
+
+      assignLogMeta = {
+        waitingUid,
+        waitingName,
+        wasOccupied,
+        prevUid,
+        prevName,
+        bumpedPrevHasOtherSeat,
+        seatLabel: String(seat.label || seat.no || "").trim(),
+        targetSeatId,
+        eventId: canonicalSeatEventId,
+        boxId: canonicalSeatBoxId
+      };
     });
+
+    if (assignLogMeta) {
+      logGlobalLayoutAttendance({
+        uid: assignLogMeta.waitingUid,
+        nickname: assignLogMeta.waitingName,
+        action: "assigned",
+        eventId: assignLogMeta.eventId,
+        boxId: assignLogMeta.boxId,
+        seatId: assignLogMeta.targetSeatId,
+        seatLabel: assignLogMeta.seatLabel
+      });
+      if (assignLogMeta.wasOccupied && assignLogMeta.prevUid && !assignLogMeta.bumpedPrevHasOtherSeat) {
+        logGlobalLayoutAttendance({
+          uid: assignLogMeta.prevUid,
+          nickname: assignLogMeta.prevName,
+          action: "waiting",
+          detail: "좌석 교체로 대기 복귀"
+        });
+      }
+    }
 
     flushOptimisticGlobalLayoutUi();
   } catch (err) {

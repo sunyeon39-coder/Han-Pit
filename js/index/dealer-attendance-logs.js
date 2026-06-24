@@ -4,61 +4,27 @@ import {
   doc,
   deleteDoc,
   getDocs,
+  getDocsFromServer,
   limit,
   onSnapshot,
   orderBy,
   query,
-  setDoc,
   startAfter,
   where
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 import { canUseTournamentOps } from "../shared/auth-helpers.js";
 import { escapeHtml, openModal, closeModal } from "../shared/dom-utils.js";
+import {
+  attendanceLogCreatedAtMs,
+  writeAttendanceLog
+} from "../shared/attendance-log-write.js";
 import { getTournamentId } from "./core-utils.js";
 import { IX, refreshIndexDomRefs } from "./state.js";
 import { formatClock } from "./dealer-attendance-format.js";
 import { maybePruneAttendanceLogsForTournament } from "../shared/attendance-log-retention.js";
 
-export async function writeAttendanceLog({
-  uid = "",
-  nickname = "",
-  action = "",
-  tournamentId = "",
-  eventId = "",
-  boxId = "",
-  seatId = "",
-  seatLabel = "",
-  previousCheckedInAt = null,
-  newCheckedInAt = null,
-  previousCheckedOutAt = null,
-  newCheckedOutAt = null,
-  detail = ""
-}) {
-  try {
-    const logId = `log_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const payload = {
-      uid,
-      nickname,
-      action,
-      tournamentId,
-      eventId,
-      boxId,
-      seatId,
-      seatLabel,
-      createdAt: Date.now()
-    };
-    if (previousCheckedInAt != null) payload.previousCheckedInAt = Number(previousCheckedInAt) || 0;
-    if (newCheckedInAt != null) payload.newCheckedInAt = Number(newCheckedInAt) || 0;
-    if (previousCheckedOutAt != null) payload.previousCheckedOutAt = Number(previousCheckedOutAt) || 0;
-    if (newCheckedOutAt != null) payload.newCheckedOutAt = Number(newCheckedOutAt) || 0;
-    if (String(detail || "").trim()) payload.detail = String(detail).trim();
-
-    await setDoc(doc(db, "dealer_attendance_logs", logId), payload);
-  } catch (err) {
-    console.error("writeAttendanceLog error:", err);
-  }
-}
+export { writeAttendanceLog };
 
 function getAttendanceActionLabel(action) {
   if (action === "checked_in") return "출근";
@@ -81,8 +47,9 @@ function escapeAttr(str) {
 }
 
 function formatLogDateTime(ts) {
-  if (!ts) return "-";
-  const d = new Date(ts);
+  const ms = attendanceLogCreatedAtMs(ts);
+  if (!ms) return "-";
+  const d = new Date(ms);
   return d.toLocaleString("ko-KR", {
     year: "numeric",
     month: "2-digit",
@@ -261,9 +228,11 @@ let attendanceLogHasMore = false;
 let attendanceLogLoadingMore = false;
 
 function mapAttendanceLogDoc(docSnap) {
+  const data = docSnap.data() || {};
   return {
     id: docSnap.id,
-    ...(docSnap.data() || {})
+    ...data,
+    createdAt: attendanceLogCreatedAtMs(data.createdAt) || data.createdAt
   };
 }
 
@@ -275,7 +244,7 @@ function mergeAttendanceLogArrays(...groups) {
     }
   }
   return Array.from(byId.values()).sort(
-    (a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)
+    (a, b) => attendanceLogCreatedAtMs(b.createdAt) - attendanceLogCreatedAtMs(a.createdAt)
   );
 }
 
@@ -333,13 +302,23 @@ function applyAttendanceLogPage(docs, { append = false } = {}) {
 
 /**
  * 출근 로그 — 모달을 열 때만 구독 (전체 collection 상시 listen 방지)
- * 최신 500건은 실시간 구독, 이전 이력은 "더 보기"로 500건씩 페이지네이션.
+ * 최신 500건은 서버 우선 로드 후 실시간 구독, 이전 이력은 "더 보기"로 500건씩 페이지네이션.
  */
 export function bindAttendanceLogsRealtime() {
   disposeAttendanceLogsRealtime();
 
   const tournamentId = getTournamentId();
   const q = buildAttendanceLogsQuery({ tournamentId });
+
+  void (async () => {
+    try {
+      const snap = await getDocsFromServer(q);
+      applyAttendanceLogPage(snap.docs, { append: false });
+      scheduleAttendanceLogsRender();
+    } catch (err) {
+      console.warn("bindAttendanceLogsRealtime server load:", err?.code || err);
+    }
+  })();
 
   IX.stopAttendanceLogsWatch = onSnapshot(
     q,
