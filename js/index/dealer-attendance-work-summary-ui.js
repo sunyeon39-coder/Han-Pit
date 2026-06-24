@@ -10,8 +10,9 @@ import { escapeHtml, openModal, closeModal } from "../shared/dom-utils.js";
 import { openDatetimeScrollPicker } from "../shared/datetime-scroll-picker.js";
 import { IX, refreshIndexDomRefs } from "./state.js";
 import { getDerivedAttendance } from "./dealer-attendance-derived.js";
+import { getAdminAttendanceList } from "./dealer-attendance-admin-list.js";
 import { formatDatetimeKorean, getNowMs } from "./dealer-attendance-format.js";
-import { adjustMyWorkSession } from "./dealer-attendance-adjust-session.js";
+import { adjustMyWorkSession, adjustUserWorkSession } from "./dealer-attendance-adjust-session.js";
 import { loadDealerAttendanceOnce } from "./dealer-attendance-load-once.js";
 import { scheduleRenderDealerOps } from "./dealer-attendance-render.js";
 import {
@@ -21,8 +22,46 @@ import {
 
 const LOG_RETENTION_MS = 45 * 24 * 60 * 60 * 1000;
 
-/** 근무 누적은 운영 로그로 세션을 복원한다 — 본인 로그를 모달 열 때 항상 로드 */
-async function loadMyAttendanceLogs(uid) {
+function getWorkSummaryContext() {
+  const user = auth.currentUser;
+  const target = IX.workSummaryTarget;
+  if (target?.uid) {
+    return {
+      uid: String(target.uid).trim(),
+      nickname: String(target.nickname || "").trim(),
+      isAdminTarget: true
+    };
+  }
+  if (!user) return null;
+  return {
+    uid: user.uid,
+    nickname: String(IX.currentUserProfile?.nickname || user.displayName || "").trim(),
+    isAdminTarget: false
+  };
+}
+
+function getDerivedForWorkSummary(ctx) {
+  if (!ctx?.uid) return null;
+  if (ctx.isAdminTarget) {
+    return (
+      getAdminAttendanceList().find((item) => String(item.uid || "").trim() === ctx.uid) || {
+        uid: ctx.uid,
+        status: "off"
+      }
+    );
+  }
+  const user = auth.currentUser;
+  return user ? getDerivedAttendance(user) : null;
+}
+
+function logsForWorkSummaryUid(uid) {
+  const safeUid = String(uid || "").trim();
+  if (!safeUid) return [];
+  return (IX.attendanceLogs || []).filter((log) => String(log.uid || "").trim() === safeUid);
+}
+
+/** 근무 누적은 운영 로그로 세션을 복원한다 — 모달 열 때 대상 로그를 로드 */
+async function loadAttendanceLogsForUid(uid) {
   const safeUid = String(uid || "").trim();
   if (!safeUid) return [];
   try {
@@ -31,7 +70,7 @@ async function loadMyAttendanceLogs(uid) {
     );
     return snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
   } catch (err) {
-    console.warn("loadMyAttendanceLogs:", err?.code || err);
+    console.warn("loadAttendanceLogsForUid:", err?.code || err);
     return null;
   }
 }
@@ -42,6 +81,17 @@ function mergeAttendanceLogs(incoming = []) {
   IX.attendanceLogs = Array.from(byId.values()).sort(
     (a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)
   );
+}
+
+function syncWorkSummaryModalTitle(ctx) {
+  const titleEl = document.getElementById("workSummaryModalTitle");
+  if (!titleEl) return;
+  if (ctx?.isAdminTarget) {
+    const name = ctx.nickname || "직원";
+    titleEl.textContent = `${name}님 근무 합계`;
+    return;
+  }
+  titleEl.textContent = "대회 근무 합계";
 }
 
 function renderWorkSummarySessionRow(session) {
@@ -95,14 +145,17 @@ function renderWorkSummaryModal() {
   const body = IX.workSummaryBody;
   if (!body) return;
 
-  const user = auth.currentUser;
-  if (!user) {
+  const ctx = getWorkSummaryContext();
+  if (!ctx) {
     body.innerHTML = `<p class="work-summary-empty">로그인이 필요합니다.</p>`;
     return;
   }
 
-  const derived = getDerivedAttendance(user);
-  const summary = computeMyTournamentWorkSummary(user, IX.attendanceLogs, derived);
+  syncWorkSummaryModalTitle(ctx);
+
+  const derived = getDerivedForWorkSummary(ctx);
+  const logs = logsForWorkSummaryUid(ctx.uid);
+  const summary = computeMyTournamentWorkSummary({ uid: ctx.uid }, logs, derived);
 
   const sessionRows =
     summary.sessions.length === 0
@@ -110,6 +163,10 @@ function renderWorkSummaryModal() {
       : `<ul class="work-summary-sessions">
           ${summary.sessions.map((s) => renderWorkSummarySessionRow(s)).join("")}
         </ul>`;
+
+  const hint = ctx.isAdminTarget
+    ? "운영 로그 기준 누적입니다. 시작·종료를 탭해 수정하면 해당 직원의 근무 합계에 반영됩니다."
+    : "시작·종료를 탭해 스크롤로 시각을 고르고 확인을 누르면 누적에 반영됩니다.";
 
   body.innerHTML = `
     <div class="work-summary-metrics">
@@ -122,7 +179,7 @@ function renderWorkSummaryModal() {
         <strong class="work-summary-metric-value">${escapeHtml(summary.durationLabel)}</strong>
       </div>
     </div>
-    <p class="work-summary-hint">시작·종료를 탭해 스크롤로 시각을 고르고 확인을 누르면 누적에 반영됩니다.</p>
+    <p class="work-summary-hint">${escapeHtml(hint)}</p>
     ${sessionRows}
   `;
 }
@@ -140,10 +197,10 @@ async function openWorkSummaryModal() {
 
   renderWorkSummaryModal();
 
-  const user = auth.currentUser;
-  if (!user) return;
+  const ctx = getWorkSummaryContext();
+  if (!ctx?.uid) return;
 
-  const logs = await withTimeout(loadMyAttendanceLogs(user.uid), 8000);
+  const logs = await withTimeout(loadAttendanceLogsForUid(ctx.uid), 8000);
   if (Array.isArray(logs) && logs.length) {
     mergeAttendanceLogs(logs);
   }
@@ -155,8 +212,8 @@ async function openWorkSummaryModal() {
 async function applyWorkSummarySessionTime(row, field, pickedMs) {
   if (!row || !Number.isFinite(pickedMs) || pickedMs <= 0) return;
 
-  const user = auth.currentUser;
-  if (!user) return;
+  const ctx = getWorkSummaryContext();
+  if (!ctx?.uid) return;
 
   const isOpen = row.dataset.open === "1";
   const previousStartMs = Number(row.dataset.prevStart || 0);
@@ -164,14 +221,22 @@ async function applyWorkSummarySessionTime(row, field, pickedMs) {
   const newStartMs = field === "start" ? pickedMs : previousStartMs;
   const newEndMs = field === "end" ? pickedMs : previousEndMs;
 
-  const result = await adjustMyWorkSession({
+  const sessionArgs = {
     sessionKey: row.dataset.sessionKey || "",
     previousStartMs,
     previousEndMs,
     newStartMs,
     newEndMs,
     isOpen
-  });
+  };
+
+  const result = ctx.isAdminTarget
+    ? await adjustUserWorkSession({
+        targetUid: ctx.uid,
+        targetNickname: ctx.nickname,
+        ...sessionArgs
+      })
+    : await adjustMyWorkSession(sessionArgs);
 
   if (!result?.ok) return;
 
@@ -180,7 +245,7 @@ async function applyWorkSummarySessionTime(row, field, pickedMs) {
     scheduleRenderDealerOps();
   }
 
-  const logs = await withTimeout(loadMyAttendanceLogs(user.uid), 8000);
+  const logs = await withTimeout(loadAttendanceLogsForUid(ctx.uid), 8000);
   if (Array.isArray(logs) && logs.length) {
     mergeAttendanceLogs(logs);
   }
@@ -219,6 +284,7 @@ async function handleWorkSummarySessionPickerClick(e) {
 }
 
 function closeWorkSummaryModal() {
+  IX.workSummaryTarget = null;
   closeModal(IX.workSummaryModal);
 }
 
@@ -240,5 +306,14 @@ export function setupWorkSummaryEvents() {
 }
 
 export function handleShowWorkSummaryClick() {
-  openWorkSummaryModal();
+  IX.workSummaryTarget = null;
+  void openWorkSummaryModal();
+}
+
+export async function openAdminWorkSummaryModal(uid, nickname = "") {
+  IX.workSummaryTarget = {
+    uid: String(uid || "").trim(),
+    nickname: String(nickname || "").trim()
+  };
+  await openWorkSummaryModal();
 }

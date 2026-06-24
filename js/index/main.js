@@ -42,6 +42,7 @@ import {
   bindMySeatAssignment
 } from "./event-cards.js";
 import { seedIndexEventsFromSessionCache } from "./event-cards-loaders.js";
+import { loadTournamentDealerRosterOnce } from "./dealer-attendance-roster.js";
 
 import {
   loadDealerAttendanceOnce,
@@ -54,6 +55,7 @@ import {
   setupAttendanceLogEvents,
   setupWorkSummaryEvents,
   handleShowWorkSummaryClick,
+  openAdminWorkSummaryModal,
   bindAttendanceLogsRealtime,
   joinSharedWaitingOnCheckIn,
   removeFromSharedWaitingOnCheckOut,
@@ -351,6 +353,10 @@ async function init() {
 
   sessionStorage.setItem("tournamentId", bootTournamentId);
 
+  window.addEventListener("hanpit-index-tournament-ready", () => {
+    void loadTournamentDealerRosterOnce();
+  });
+
   const paintedFromSession = seedIndexEventsFromSessionCache();
   if (paintedFromSession) {
     render();
@@ -627,6 +633,15 @@ function wireIndexPageControls() {
       );
 
       if (canOps) {
+        const workSummaryAdminBtn = e.target.closest("[data-admin-work-summary]");
+        if (workSummaryAdminBtn) {
+          const uid = String(workSummaryAdminBtn.getAttribute("data-admin-uid") || "").trim();
+          const nickname = String(workSummaryAdminBtn.getAttribute("data-admin-nickname") || "").trim();
+          if (!uid) return;
+          await openAdminWorkSummaryModal(uid, nickname);
+          return;
+        }
+
         const adminBtn = e.target.closest("[data-admin-action]");
         if (adminBtn) {
           const action = String(adminBtn.getAttribute("data-admin-action") || "").trim();

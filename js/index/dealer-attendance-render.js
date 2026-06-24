@@ -34,12 +34,14 @@ function getDealerAdminCounts() {
   const counts = {
     waiting: 0,
     assigned: 0,
-    checked_out: 0
+    checked_out: 0,
+    off: 0
   };
 
   getAdminAttendanceList().forEach((item) => {
     const s = item.status || "off";
     if (counts[s] !== undefined) counts[s] += 1;
+    else counts.off += 1;
   });
 
   return counts;
@@ -58,6 +60,10 @@ function renderDealerAdminSummaryHtml(counts) {
           <div class="dealer-metric">
             <div class="dealer-metric-label">퇴근</div>
             <div class="dealer-metric-value">${counts.checked_out}</div>
+          </div>
+          <div class="dealer-metric">
+            <div class="dealer-metric-label">미출근</div>
+            <div class="dealer-metric-value">${counts.off}</div>
           </div>
         `;
 }
@@ -92,6 +98,14 @@ function renderDealerAdminListHtml() {
   </div>
 
   <div class="dealer-row-actions">
+    <button
+      class="dealer-mini-btn dealer-mini-btn--summary"
+      type="button"
+      data-admin-work-summary
+      data-admin-uid="${escapeHtml(item.uid)}"
+      data-admin-nickname="${escapeHtml(item.nickname || item.email || "")}"
+      title="운영 로그 기준 근무 합계 수정"
+    >근무 합계</button>
     <button class="dealer-mini-btn" data-admin-action="checked_out" data-admin-uid="${escapeHtml(item.uid)}">퇴근</button>
   </div>
 </div>
@@ -263,6 +277,7 @@ export function renderDealerOps() {
     <option value="waiting" ${IX.dealerAdminUi.status === "waiting" ? "selected" : ""}>대기</option>
     <option value="assigned" ${IX.dealerAdminUi.status === "assigned" ? "selected" : ""}>배치중</option>
     <option value="checked_out" ${IX.dealerAdminUi.status === "checked_out" ? "selected" : ""}>퇴근</option>
+    <option value="off" ${IX.dealerAdminUi.status === "off" ? "selected" : ""}>미출근</option>
   </select>
 
   <select class="dealer-admin-sort" data-dealer-sort>

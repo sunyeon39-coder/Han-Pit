@@ -12,6 +12,7 @@ import { getAttendanceRef, parseTournamentIdFromAttendanceDocId } from "./dealer
 import { normalizeAttendanceDoc } from "./dealer-attendance-derived.js";
 import { scheduleRenderDealerOps } from "./dealer-attendance-render.js";
 import { maybeResetMyStaleOperationalDayAttendance } from "./dealer-attendance-operational-day-reset.js";
+import { loadTournamentDealerRosterOnce } from "./dealer-attendance-roster.js";
 
 export async function loadDealerAttendanceOnce() {
   IX.dealerAttendanceMap.clear();
@@ -38,6 +39,7 @@ export async function loadDealerAttendanceOnce() {
           normalizeAttendanceDoc({ ...data, tournamentId: tid, uid: String(data.uid || d.id.split("__").pop() || "").trim() })
         );
       });
+      void loadTournamentDealerRosterOnce();
     } else {
       const snap = await getDoc(getAttendanceRef(tournamentId, user.uid));
 

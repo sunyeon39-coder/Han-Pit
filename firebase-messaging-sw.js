@@ -2,11 +2,12 @@ importScripts("https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js
 importScripts("https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js");
 
 /** 배포마다 1 올리면 브라우저가 새 SW 로 인식해 controllerchange → 홈 화면 자동 새로고침이 걸립니다. */
-const SW_DEPLOY_REVISION = 222;
+const SW_DEPLOY_REVISION = 225;
 
-/** SW 갱신 — skipWaiting 없음 (controllerchange 연쇄 reload 방지, 다음 방문 시 적용) */
+/** SW 갱신 — 새 배포 즉시 활성화 (페이지 reload 루프는 LAST_TARGET 가드로 방지) */
 self.addEventListener("install", (event) => {
   void SW_DEPLOY_REVISION;
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", (event) => {
@@ -52,9 +53,15 @@ function showSeatNotificationFromPayload(data = {}, titleOverride = "") {
   });
 }
 
+
 self.addEventListener("message", (event) => {
   const msg = event?.data;
-  if (!msg || msg.type !== "HAN_PIT_SHOW_NOTIFICATION") return;
+  if (!msg || !msg.type) return;
+  if (msg.type === "HAN_PIT_SKIP_WAITING") {
+    event.waitUntil(self.skipWaiting());
+    return;
+  }
+  if (msg.type !== "HAN_PIT_SHOW_NOTIFICATION") return;
   event.waitUntil(
     showSeatNotificationFromPayload(
       {

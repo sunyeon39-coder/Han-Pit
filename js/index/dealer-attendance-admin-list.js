@@ -7,6 +7,7 @@ import { applyOperationalDayToAttendance } from "../shared/attendance-operationa
 export function getAdminAttendanceList() {
   const tournamentId = getTournamentId();
   const list = [];
+  const seenUids = new Set();
 
   IX.dealerAttendanceMap.forEach((value, docId) => {
     if (!attendanceDocBelongsToTournament(docId, tournamentId)) return;
@@ -25,7 +26,31 @@ export function getAdminAttendanceList() {
           }
         : {})
     });
+    if (derived.uid) seenUids.add(String(derived.uid).trim());
     list.push(derived);
+  });
+
+  IX.tournamentRosterMap.forEach((roster, uid) => {
+    const safeUid = String(uid || "").trim();
+    if (!safeUid || seenUids.has(safeUid)) return;
+    list.push(
+      applyOperationalDayToAttendance({
+        uid: safeUid,
+        nickname: roster.nickname || "",
+        email: roster.email || "",
+        tournamentId,
+        status: "off",
+        checkedInAt: null,
+        checkedOutAt: null,
+        breakStartedAt: null,
+        totalBreakMs: 0,
+        currentEventId: "",
+        currentBoxId: "",
+        currentSeatId: "",
+        currentSeatLabel: "",
+        updatedAt: 0
+      })
+    );
   });
 
   list.sort((a, b) => (a.nickname || "").localeCompare(b.nickname || "", "ko"));

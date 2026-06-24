@@ -20,15 +20,16 @@ import {
 } from "../shared/auth-helpers.js";
 
 async function waitForFirestoreAuth(user) {
-  if (typeof auth.authStateReady === "function") {
-    await auth.authStateReady();
-  }
   if (user?.getIdToken) {
     try {
       await user.getIdToken();
+      return;
     } catch (err) {
-      console.warn("[ensureUserDoc] getIdToken:", err);
+      console.warn("[waitForFirestoreAuth] getIdToken:", err);
     }
+  }
+  if (typeof auth.authStateReady === "function") {
+    await auth.authStateReady();
   }
 }
 
@@ -254,7 +255,14 @@ export async function syncUserProfileFast(user) {
   const email = String(user.email || "").trim().toLowerCase();
 
   try {
-    const snap = await readUserDocSnapFromServer(uid);
+    let snap = await getDoc(userRef);
+    if (!snap.exists()) {
+      try {
+        snap = await getDocFromServer(userRef);
+      } catch (serverErr) {
+        console.warn("[syncUserProfileFast] server read:", serverErr?.code || serverErr);
+      }
+    }
     if (!snap.exists()) {
       return { ok: false, reason: "no-doc", needsFullSync: true };
     }

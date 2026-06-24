@@ -24,9 +24,53 @@ function fail() {
   return { ok: false };
 }
 
+function validateWorkSessionEdit({
+  previousStartMs = 0,
+  previousEndMs = 0,
+  newStartMs = 0,
+  newEndMs = 0,
+  isOpen = false
+} = {}) {
+  const prevStart = Number(previousStartMs);
+  const prevEnd = Number(previousEndMs);
+  const nextStart = Number(newStartMs);
+  const nextEnd = Number(newEndMs);
+
+  if (!Number.isFinite(nextStart) || nextStart <= 0) {
+    alert("올바른 시작 시각을 선택해 주세요.");
+    return null;
+  }
+
+  if (!isOpen) {
+    if (!Number.isFinite(nextEnd) || nextEnd <= 0) {
+      alert("올바른 종료 시각을 선택해 주세요.");
+      return null;
+    }
+    if (nextEnd <= nextStart) {
+      alert("종료 시각은 시작 시각보다 이후여야 합니다.");
+      return null;
+    }
+  }
+
+  const now = getNowMs();
+  if (nextStart > now + 60_000) {
+    alert("시작 시각을 미래로 설정할 수 없습니다.");
+    return null;
+  }
+  if (!isOpen && nextEnd > now + 60_000) {
+    alert("종료 시각을 미래로 설정할 수 없습니다.");
+    return null;
+  }
+
+  if (timesNear(nextStart, prevStart) && (isOpen || timesNear(nextEnd, prevEnd))) {
+    return { noop: true, prevStart, prevEnd, nextStart, nextEnd };
+  }
+
+  return { noop: false, prevStart, prevEnd, nextStart, nextEnd };
+}
+
 /**
  * 근무 요약 세션의 시작·종료 시각 수정 + 운영 로그 기록
- * 과거 구간은 운영 로그만 수정한다 — 출석 문서를 바꾸면 운영일 초기화가 발생할 수 있다.
  * @returns {Promise<{ok: boolean, attendancePatched?: boolean}>}
  */
 export async function adjustMyWorkSession({
@@ -41,41 +85,18 @@ export async function adjustMyWorkSession({
   const user = auth.currentUser;
   if (!user || !tournamentId || !IX.currentUserProfile) return fail();
 
-  const prevStart = Number(previousStartMs);
-  const prevEnd = Number(previousEndMs);
-  const nextStart = Number(newStartMs);
-  const nextEnd = Number(newEndMs);
+  const validated = validateWorkSessionEdit({
+    previousStartMs,
+    previousEndMs,
+    newStartMs,
+    newEndMs,
+    isOpen
+  });
+  if (!validated) return fail();
+  if (validated.noop) return { ok: true, attendancePatched: false };
 
-  if (!Number.isFinite(nextStart) || nextStart <= 0) {
-    alert("올바른 시작 시각을 선택해 주세요.");
-    return fail();
-  }
-
-  if (!isOpen) {
-    if (!Number.isFinite(nextEnd) || nextEnd <= 0) {
-      alert("올바른 종료 시각을 선택해 주세요.");
-      return fail();
-    }
-    if (nextEnd <= nextStart) {
-      alert("종료 시각은 시작 시각보다 이후여야 합니다.");
-      return fail();
-    }
-  }
-
+  const { prevStart, prevEnd, nextStart, nextEnd } = validated;
   const now = getNowMs();
-  if (nextStart > now + 60_000) {
-    alert("시작 시각을 미래로 설정할 수 없습니다.");
-    return fail();
-  }
-  if (!isOpen && nextEnd > now + 60_000) {
-    alert("종료 시각을 미래로 설정할 수 없습니다.");
-    return fail();
-  }
-
-  if (timesNear(nextStart, prevStart) && (isOpen || timesNear(nextEnd, prevEnd))) {
-    return { ok: true, attendancePatched: false };
-  }
-
   const current = getDerivedAttendance(user);
   const nickname = String(IX.currentUserProfile.nickname || user.displayName || "").trim();
   const prevSnap = snapshotAttendanceEntry(tournamentId, user.uid);
@@ -83,7 +104,6 @@ export async function adjustMyWorkSession({
   const attendancePatch = {};
   const checkedInAt = Number(current?.checkedInAt || 0);
 
-  // 현재 근무 중 세션의 시작만, 오늘 운영일 안에서 출석 문서와 동기화한다.
   if (
     isOpen &&
     checkedInAt > 0 &&
@@ -147,6 +167,67 @@ export async function adjustMyWorkSession({
       restoreAttendanceSnapshot(tournamentId, user.uid, prevSnap);
     }
     console.error("adjustMyWorkSession error:", err);
+    alert("근무 시간 수정에 실패했습니다.");
+    return fail();
+  }
+}
+
+/**
+ * admin — 타인 근무 구간 수정 (운영 로그만, 출석 문서는 변경하지 않음)
+ * @returns {Promise<{ok: boolean, attendancePatched?: boolean}>}
+ */
+export async function adjustUserWorkSession({
+  targetUid = "",
+  targetNickname = "",
+  sessionKey = "",
+  previousStartMs = 0,
+  previousEndMs = 0,
+  newStartMs = 0,
+  newEndMs = 0,
+  isOpen = false
+} = {}) {
+  const tournamentId = getTournamentId();
+  const user = auth.currentUser;
+  const safeUid = String(targetUid || "").trim();
+  if (!user || !tournamentId || !safeUid) return fail();
+
+  const validated = validateWorkSessionEdit({
+    previousStartMs,
+    previousEndMs,
+    newStartMs,
+    newEndMs,
+    isOpen
+  });
+  if (!validated) return fail();
+  if (validated.noop) return { ok: true, attendancePatched: false };
+
+  const { prevStart, prevEnd, nextStart, nextEnd } = validated;
+  const adminName = String(IX.currentUserProfile?.nickname || user.displayName || "").trim();
+  const detailParts = [`시작 ${formatClock(prevStart)} → ${formatClock(nextStart)}`];
+  if (!isOpen) {
+    detailParts.push(`종료 ${formatClock(prevEnd)} → ${formatClock(nextEnd)}`);
+  }
+  if (adminName) {
+    detailParts.push(`관리자 ${adminName} 수정`);
+  }
+
+  try {
+    const log = await writeAttendanceLog({
+      uid: safeUid,
+      nickname: String(targetNickname || "").trim(),
+      action: "adjust_work_session",
+      tournamentId,
+      sessionKey: String(sessionKey || "").trim(),
+      previousSessionStartMs: prevStart,
+      newSessionStartMs: nextStart,
+      previousSessionEndMs: isOpen ? 0 : prevEnd,
+      newSessionEndMs: isOpen ? 0 : nextEnd,
+      detail: detailParts.join(" · ")
+    });
+
+    return { ok: !!log, attendancePatched: false };
+  } catch (err) {
+    console.error("adjustUserWorkSession error:", err);
     alert("근무 시간 수정에 실패했습니다.");
     return fail();
   }

@@ -83,11 +83,27 @@ export function buildInlineAppUpdateSnippet(v) {
   var BUILD="${v}";
   var KEY="hanPitAppVersion";
   var LAST_TARGET="hanPitReloadTarget";
-  var MIN_CHECK_MS=15000;
   var meta=document.querySelector('meta[name="han-pit-build"]');
   var pageBuild=meta?String(meta.getAttribute("content")||"").trim():BUILD;
   var lastCheckAt=0;
   var checking=false;
+  var swReloadGuard=false;
+
+  function isPwaStandalone(){
+    try{
+      if(window.navigator.standalone===true)return true;
+      if(window.matchMedia){
+        if(window.matchMedia("(display-mode: standalone)").matches)return true;
+        if(window.matchMedia("(display-mode: fullscreen)").matches)return true;
+      }
+    }catch(e){}
+    return false;
+  }
+
+  var IS_PWA=isPwaStandalone();
+  var MIN_CHECK_MS=IS_PWA?2000:15000;
+  var POLL_MS=IS_PWA?15000:60000;
+  var BOOT_CHECK_MS=IS_PWA?400:3000;
 
   function swScope(){
     var p=location.pathname||"/";
@@ -116,8 +132,6 @@ export function buildInlineAppUpdateSnippet(v) {
     try{sessionStorage.setItem(LAST_TARGET,String(ver||""));}catch(e){}
   }
 
-  // 새 빌드일 때만 reload. 같은 타겟 버전으로는 세션당 1회만 재시도해
-  // (배포 경합 등으로) 무한 reload 가 도는 것을 막는다.
   function reloadTo(ver){
     ver=String(ver||"").trim();
     if(!ver||ver===pageBuild)return;
@@ -134,15 +148,51 @@ export function buildInlineAppUpdateSnippet(v) {
     syncBustParam(pageBuild);
   }
 
+  function activateWaitingWorker(worker){
+    if(!worker)return;
+    try{
+      if(typeof worker.postMessage==="function"){
+        worker.postMessage({type:"HAN_PIT_SKIP_WAITING"});
+      }
+    }catch(e){}
+    try{
+      if(typeof worker.skipWaiting==="function")worker.skipWaiting();
+    }catch(e){}
+  }
+
+  function wireSwRegistration(reg){
+    if(!reg||reg.__hanPitUpdateWired)return;
+    reg.__hanPitUpdateWired=true;
+    if(reg.waiting)activateWaitingWorker(reg.waiting);
+    reg.addEventListener("updatefound",function(){
+      var installing=reg.installing;
+      if(!installing)return;
+      installing.addEventListener("statechange",function(){
+        if(installing.state!=="installed")return;
+        if(reg.waiting)activateWaitingWorker(reg.waiting);
+        if(navigator.serviceWorker.controller)checkRemoteVersion(true);
+      });
+    });
+  }
+
   function registerSwOnly(){
     if(!("serviceWorker" in navigator))return;
     var run=function(){
-      navigator.serviceWorker.register("./firebase-messaging-sw.js",{scope:swScope()}).catch(function(){});
+      navigator.serviceWorker.register("./firebase-messaging-sw.js",{scope:swScope()})
+        .then(function(reg){
+          wireSwRegistration(reg);
+          if(typeof reg.update==="function")reg.update();
+        })
+        .catch(function(){});
     };
+    if(IS_PWA){
+      run();
+      return;
+    }
     if(typeof requestIdleCallback==="function"){
-      requestIdleCallback(run,{timeout:20000});
+      requestIdleCallback(run,{timeout:8000});
     }else{
-      setTimeout(run,5000);
+      setTimeout(run,2000);
     }
   }
 
@@ -150,6 +200,7 @@ export function buildInlineAppUpdateSnippet(v) {
     if(!("serviceWorker" in navigator)||!navigator.serviceWorker.getRegistration)return;
     navigator.serviceWorker.getRegistration().then(function(reg){
       if(reg&&typeof reg.update==="function")reg.update();
+      if(reg)wireSwRegistration(reg);
     }).catch(function(){});
   }
 
@@ -169,26 +220,35 @@ export function buildInlineAppUpdateSnippet(v) {
           syncBustParam(remote||pageBuild);
           return;
         }
+        updateSw();
         reloadTo(remote);
       })
       .catch(function(){checking=false;});
   }
 
-  // 포그라운드로 돌아올 때마다(특히 PWA standalone 재진입) 최신 버전 확인 후 즉시 적용
   function onResume(force){
-    if(document.visibilityState!=="hidden"){
+    if(document.visibilityState==="hidden")return;
+    updateSw();
+    checkRemoteVersion(force===true||IS_PWA);
+  }
+
+  if("serviceWorker" in navigator){
+    navigator.serviceWorker.addEventListener("controllerchange",function(){
+      if(swReloadGuard)return;
+      swReloadGuard=true;
       updateSw();
-      checkRemoteVersion(force===true);
-    }
+      checkRemoteVersion(true);
+    });
   }
 
   registerSwOnly();
-  setTimeout(function(){checkRemoteVersion(true);},3000);
-  // 앱을 계속 켜둔(포그라운드) 사용자도 새 배포를 바로 받도록 주기적으로 확인
-  setInterval(function(){ if(document.visibilityState!=="hidden") checkRemoteVersion(false); },60000);
-  document.addEventListener("visibilitychange",function(){onResume(false);});
+  setTimeout(function(){checkRemoteVersion(true);},BOOT_CHECK_MS);
+  setInterval(function(){
+    if(document.visibilityState!=="hidden")checkRemoteVersion(false);
+  },POLL_MS);
+  document.addEventListener("visibilitychange",function(){onResume(true);});
   window.addEventListener("pageshow",function(){onResume(true);});
-  window.addEventListener("focus",function(){onResume(false);});
+  window.addEventListener("focus",function(){onResume(true);});
 })();
 </script>`;
 }

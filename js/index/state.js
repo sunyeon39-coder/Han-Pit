@@ -58,6 +58,8 @@ export const IX = {
   workSummaryBody: null,
   closeWorkSummaryBtn: null,
   workSummaryEventsBound: false,
+  /** admin이 타인 근무 합계를 열 때 { uid, nickname } — null 이면 본인 */
+  workSummaryTarget: null,
 
   attendanceLogUi: {
     search: "",
@@ -68,6 +70,9 @@ export const IX = {
   attendanceLogs: [],
 
   dealerAttendanceMap: new Map(),
+  /** 대회 accessCode 와 일치하는 등록 근무자(uid → { nickname, email }) */
+  tournamentRosterMap: new Map(),
+  tournamentRosterLoadKey: "",
   dealerSeatMap: new Map(),
 
   dealerAdminUi: {

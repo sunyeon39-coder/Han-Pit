@@ -31,7 +31,7 @@ import {
   readLoginProfileCache,
   writeLoginProfileCache
 } from "../shared/login-profile-cache.js";
-import { loadUserProfileRevalidated } from "../shared/load-user-profile.js";
+import { loadUserProfileFresh, raceFirestoreTimeout } from "../shared/load-user-profile.js";
 import { isSameAuthSession } from "../shared/auth-session-guard.js";
 import { bootstrapAppPush } from "../shared/fcm-web-push.js";
 import { prefetchHubTournamentsCache } from "../hub/hub-loaders-realtime.js";
@@ -74,8 +74,13 @@ function setLoginBusy(active) {
     googleBtn.disabled = loginBusy;
     googleBtn.setAttribute("aria-busy", loginBusy ? "true" : "false");
   }
-  loginBusyOverlay?.classList.add("hidden");
-  loginBusyOverlay?.setAttribute("aria-hidden", "true");
+  if (loginBusy) {
+    loginBusyOverlay?.classList.remove("hidden");
+    loginBusyOverlay?.setAttribute("aria-hidden", "false");
+  } else {
+    loginBusyOverlay?.classList.add("hidden");
+    loginBusyOverlay?.setAttribute("aria-hidden", "true");
+  }
 }
 
 function openSignupModal(profile = null) {
@@ -167,7 +172,10 @@ function scheduleLoginProfileBackgroundSync(user) {
       if (!fast.ok || !hasValidNickname(fast.profile)) {
         await syncUserProfile(user);
       }
-      const fresh = await loadUserProfileRevalidated(user.uid, email);
+      const fresh = await raceFirestoreTimeout(
+        loadUserProfileFresh(user.uid, email, { preferCacheFirst: true }),
+        8000
+      );
       if (fresh) writeLoginProfileCache(user.uid, fresh);
     } catch (err) {
       console.warn("[login] background profile sync:", err);
@@ -197,8 +205,18 @@ function completeLoginWithProfile(user, profile) {
   redirectToHubImmediately();
 }
 
+function profileMatchesAuthUser(user, profile) {
+  const mail = String(user?.email || "").trim().toLowerCase();
+  const cachedMail = String(profile?.email || "").trim().toLowerCase();
+  return !mail || !cachedMail || mail === cachedMail;
+}
+
 async function resolveStoredProfileForLogin(user) {
   const cached = readLoginProfileCache(user.uid);
+
+  if (cached && hasValidNickname(cached) && profileMatchesAuthUser(user, cached)) {
+    return cached;
+  }
 
   const fast = await syncUserProfileFast(user);
   if (fast.ok && hasValidNickname(fast.profile)) return fast.profile;
@@ -208,10 +226,15 @@ async function resolveStoredProfileForLogin(user) {
     if (full.ok && hasValidNickname(full.profile)) return full.profile;
   }
 
-  const fresh = await loadUserProfileRevalidated(user.uid, user.email || "");
+  const fresh = await raceFirestoreTimeout(
+    loadUserProfileFresh(user.uid, user.email || "", { preferCacheFirst: true }),
+    5000
+  );
   if (fresh && hasValidNickname(fresh)) return fresh;
 
-  if (cached && hasValidNickname(cached)) return cached;
+  if (cached && hasValidNickname(cached) && profileMatchesAuthUser(user, cached)) {
+    return cached;
+  }
 
   return buildOptimisticProfileFromAuthUser(
     user,

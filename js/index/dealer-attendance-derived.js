@@ -1,7 +1,7 @@
 import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
 import { getAttendanceDocId } from "./dealer-attendance-refs.js";
-import { applyOperationalDayToAttendance } from "../shared/attendance-operational-day.js";
+import { applyOperationalDayToAttendance, isAttendanceFromCurrentOperationalDay, isActiveAttendanceStatus } from "../shared/attendance-operational-day.js";
 
 export function getBaseAttendance(user) {
   if (!user) return null;
@@ -62,12 +62,45 @@ export function getDerivedAttendance(user) {
   });
 }
 
+export function getSessionStartMs(item) {
+  const status = String(item?.status || "").trim();
+  const checkedInAt = Number(item.checkedInAt || 0);
+  const checkedOutAt = Number(item.checkedOutAt || 0);
+  const statusChangedAt = Number(item.statusChangedAt || 0);
+  const now = Date.now();
+
+  if (!isActiveAttendanceStatus(status) && status !== "checked_out") return 0;
+
+  if (isActiveAttendanceStatus(status)) {
+    if (checkedOutAt > 0) {
+      if (statusChangedAt > checkedOutAt) return statusChangedAt;
+      return 0;
+    }
+    if (checkedInAt && isAttendanceFromCurrentOperationalDay({ checkedInAt }, now)) {
+      return checkedInAt;
+    }
+    if (statusChangedAt && isAttendanceFromCurrentOperationalDay({ checkedInAt: statusChangedAt }, now)) {
+      return statusChangedAt;
+    }
+    return 0;
+  }
+
+  if (!checkedInAt || !isAttendanceFromCurrentOperationalDay({ checkedInAt }, now)) return 0;
+  return checkedInAt;
+}
+
 export function getWorkingMs(item) {
-  if (!item?.checkedInAt) return 0;
-  const end = item.status === "checked_out" && item.checkedOutAt ? item.checkedOutAt : Date.now();
-  const total = Math.max(0, end - Number(item.checkedInAt || 0));
+  const startMs = getSessionStartMs(item);
+  if (!startMs) return 0;
+
+  const status = String(item?.status || "").trim();
+  const end =
+    status === "checked_out" && item.checkedOutAt
+      ? Number(item.checkedOutAt || 0)
+      : Date.now();
+  const total = Math.max(0, end - startMs);
   const currentBreak =
-    item.status === "break" && item.breakStartedAt
+    status === "break" && item.breakStartedAt
       ? Math.max(0, Date.now() - Number(item.breakStartedAt || 0))
       : 0;
   return Math.max(0, total - Number(item.totalBreakMs || 0) - currentBreak);
@@ -88,6 +121,7 @@ export function normalizeAttendanceDoc(data = {}) {
     currentBoxId: String(data.currentBoxId || "").trim(),
     currentSeatId: String(data.currentSeatId || "").trim(),
     currentSeatLabel: String(data.currentSeatLabel || "").trim(),
+    statusChangedAt: Number(data.statusChangedAt || 0) || null,
     updatedAt: Number(data.updatedAt || 0) || 0
   };
 }

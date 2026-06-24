@@ -40,6 +40,7 @@ function buildMyAttendancePayload(user, nextStatus) {
     checkedInAt: resolveCheckedInAtForActiveStatus(current, nextStatus, now),
     checkedOutAt: nextStatus === "checked_out" ? now : null,
     breakStartedAt: nextStatus === "break" ? now : null,
+    statusChangedAt: freshCheckIn ? now : Number(current?.statusChangedAt || 0) || null,
     totalBreakMs: freshCheckIn
       ? 0
       : nextStatus === "waiting" && current?.status === "break" && current?.breakStartedAt
@@ -69,6 +70,7 @@ function buildAdminAttendancePayload(uid, nextStatus) {
     checkedInAt: resolveCheckedInAtForActiveStatus(current, nextStatus, now),
     checkedOutAt: nextStatus === "checked_out" ? now : null,
     breakStartedAt: nextStatus === "break" ? now : null,
+    statusChangedAt: freshCheckIn ? now : Number(current?.statusChangedAt || 0) || null,
     totalBreakMs: freshCheckIn
       ? 0
       : nextStatus === "waiting" && current.status === "break" && current.breakStartedAt

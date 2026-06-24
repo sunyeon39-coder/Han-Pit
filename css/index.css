@@ -1792,6 +1792,12 @@ button.work-summary-time-chip{
   cursor:pointer;
 }
 
+.dealer-mini-btn--summary{
+  border-color:rgba(96,165,250,.35);
+  background:rgba(59,130,246,.12);
+  color:#bfdbfe;
+}
+
 .dealer-empty{
   padding:16px;
   border-radius:14px;

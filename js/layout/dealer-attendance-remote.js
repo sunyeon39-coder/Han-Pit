@@ -1,4 +1,4 @@
-import { db } from "../firebase.js";
+import { enrichDealerAttendancePatch } from "../shared/dealer-attendance-patch.js";
 import {
   doc,
   getDoc,
@@ -22,14 +22,19 @@ export async function setLayoutDealerStatus(tournamentId, uid, patch = {}) {
 
   try {
     const ref = doc(db, "dealer_attendance", `${tournamentId}__${uid}`);
+    const prevSnap = await getDoc(ref);
+    const prev = prevSnap.exists() ? prevSnap.data() || {} : {};
+    const now = Date.now();
+    const enriched = enrichDealerAttendancePatch(prev, patch, now);
+
     await setDoc(
       ref,
       {
         uid,
         tournamentId,
-        updatedAt: Date.now(),
+        updatedAt: now,
         updatedAtServer: serverTimestamp(),
-        ...patch
+        ...enriched
       },
       { merge: true }
     );
@@ -65,7 +70,9 @@ export async function applyLayoutDealerAttendancePatchesBatched(tournamentId, pa
     for (let i = 0; i < chunk.length; i++) {
       const [uid, patch] = chunk[i];
       const prev = snaps[i].exists() ? snaps[i].data() || {} : {};
-      const next = { uid, tournamentId, ...patch };
+      const now = Date.now();
+      const enriched = enrichDealerAttendancePatch(prev, patch, now);
+      const next = { uid, tournamentId, ...enriched };
       const changed = DEALER_STATUS_COMPARE_KEYS.some(
         (key) => String(prev[key] ?? "") !== String(next[key] ?? "")
       );
@@ -76,9 +83,9 @@ export async function applyLayoutDealerAttendancePatchesBatched(tournamentId, pa
         {
           uid,
           tournamentId,
-          updatedAt: Date.now(),
+          updatedAt: now,
           updatedAtServer: serverTimestamp(),
-          ...patch
+          ...enriched
         },
         { merge: true }
       );
