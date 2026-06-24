@@ -82,20 +82,31 @@ function renderWorkSummaryModal() {
   `;
 }
 
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(null), ms))
+  ]);
+}
+
 async function openWorkSummaryModal() {
   refreshIndexDomRefs();
   openModal(IX.workSummaryModal);
 
+  // 먼저 현재 가진 데이터로 즉시 렌더(로딩에서 멈추지 않도록).
+  renderWorkSummaryModal();
+
   const user = auth.currentUser;
-  if (user) {
-    if (IX.workSummaryBody) {
-      IX.workSummaryBody.innerHTML = `<p class="work-summary-empty">근무 기록을 불러오는 중…</p>`;
-    }
-    const logs = await loadMyAttendanceLogs(user.uid);
+  if (!user) return;
+
+  // 로그는 백그라운드로 불러오고, 응답이 멈춰도 8초 후 현재 화면을 유지한다.
+  const logs = await withTimeout(loadMyAttendanceLogs(user.uid), 8000);
+  if (Array.isArray(logs) && logs.length) {
     mergeAttendanceLogs(logs);
   }
-
-  renderWorkSummaryModal();
+  if (IX.workSummaryModal?.classList.contains("show")) {
+    renderWorkSummaryModal();
+  }
 }
 
 function closeWorkSummaryModal() {
