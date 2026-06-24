@@ -2294,13 +2294,16 @@ button.work-summary-time-chip{
 .datetime-scroll-picker-columns-wrap{
   position:relative;
   padding:8px 0 16px;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
 }
 
 .datetime-scroll-picker-highlight{
   position:absolute;
   left:8px;
   right:8px;
-  top:50%;
+  top:calc(8px + 100px);
   transform:translateY(-50%);
   height:40px;
   border-radius:10px;
@@ -2308,6 +2311,12 @@ button.work-summary-time-chip{
   border:1px solid rgba(77,163,255,.25);
   pointer-events:none;
   z-index:0;
+}
+
+.datetime-scroll-picker-highlight--time{
+  top:auto;
+  bottom:calc(16px + 100px);
+  transform:translateY(50%);
 }
 
 .datetime-scroll-picker-columns{
@@ -2318,8 +2327,30 @@ button.work-summary-time-chip{
   padding:0 8px;
 }
 
-.dt-scroll-col{
+.datetime-scroll-picker-columns--date .dt-scroll-col{
   flex:1 1 0;
+}
+
+.datetime-scroll-picker-columns--time .dt-scroll-col{
+  flex:1 1 0;
+}
+
+.datetime-scroll-picker-columns--time .dt-scroll-col[data-part="ampm"]{
+  flex:1.1 1 0;
+  min-width:3.2rem;
+}
+
+.datetime-scroll-picker-columns--time .dt-scroll-col[data-part="hour12"]{
+  flex:0.9 1 0;
+  min-width:2.8rem;
+}
+
+.datetime-scroll-picker-columns--time .dt-scroll-col[data-part="minute"]{
+  flex:0.9 1 0;
+  min-width:2.8rem;
+}
+
+.dt-scroll-col{
   min-width:0;
   height:200px;
   overflow-y:auto;

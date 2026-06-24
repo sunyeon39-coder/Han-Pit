@@ -17,13 +17,23 @@ function clampMs(ms, minMs, maxMs) {
 
 function partsFromMs(ms) {
   const d = new Date(ms);
+  const hour = d.getHours();
   return {
     year: d.getFullYear(),
     month: d.getMonth() + 1,
     day: d.getDate(),
-    hour: d.getHours(),
+    hour,
+    ampm: hour < 12 ? "am" : "pm",
+    hour12: hour % 12 === 0 ? 12 : hour % 12,
     minute: d.getMinutes()
   };
+}
+
+function hour24FromParts(parts) {
+  const hour12 = Number(parts.hour12) || 12;
+  let h = hour12 % 12;
+  if (String(parts.ampm || "am") === "pm") h += 12;
+  return h;
 }
 
 function msFromParts(parts) {
@@ -31,12 +41,17 @@ function msFromParts(parts) {
     Number(parts.year),
     Number(parts.month) - 1,
     Number(parts.day),
-    Number(parts.hour),
+    hour24FromParts(parts),
     Number(parts.minute),
     0,
     0
   );
   return d.getTime();
+}
+
+function isDateTimeInRange(parts, minMs, maxMs) {
+  const ms = msFromParts(parts);
+  return ms >= minMs && ms <= maxMs;
 }
 
 function daysInMonth(year, month) {
@@ -58,7 +73,9 @@ function ensureModal() {
       </div>
       <div class="datetime-scroll-picker-columns-wrap">
         <div class="datetime-scroll-picker-highlight" aria-hidden="true"></div>
-        <div class="datetime-scroll-picker-columns"></div>
+        <div class="datetime-scroll-picker-columns datetime-scroll-picker-columns--date"></div>
+        <div class="datetime-scroll-picker-highlight datetime-scroll-picker-highlight--time" aria-hidden="true"></div>
+        <div class="datetime-scroll-picker-columns datetime-scroll-picker-columns--time"></div>
       </div>
     </div>
   `;
@@ -108,12 +125,13 @@ function scrollItemToCenter(col, item) {
   col.scrollTop = Math.max(0, offset);
 }
 
-function readPickerParts(root) {
+function readPickerParts(sheet) {
   const parts = {};
-  root.querySelectorAll(".dt-scroll-col").forEach((col) => {
+  sheet.querySelectorAll(".dt-scroll-col").forEach((col) => {
     const key = col.dataset.part;
     const item = getCenteredItem(col);
-    parts[key] = Number(item?.dataset.value || 0);
+    const raw = item?.dataset.value ?? "";
+    parts[key] = key === "ampm" ? String(raw) : Number(raw);
   });
   return parts;
 }
@@ -134,9 +152,11 @@ function buildColumn(part, items, selectedValue) {
     btn.className = "dt-scroll-item";
     btn.dataset.value = String(item.value);
     btn.textContent = item.label;
-    if (Number(item.value) === Number(selectedValue)) {
-      btn.dataset.selected = "1";
-    }
+    const selected =
+      part === "ampm"
+        ? String(item.value) === String(selectedValue)
+        : Number(item.value) === Number(selectedValue);
+    if (selected) btn.dataset.selected = "1";
     col.appendChild(btn);
   }
 
@@ -162,8 +182,9 @@ function buildColumn(part, items, selectedValue) {
   return col;
 }
 
-function buildColumns(container, parts, minMs, maxMs) {
-  container.innerHTML = "";
+function buildColumns(dateContainer, timeContainer, parts, minMs, maxMs) {
+  dateContainer.innerHTML = "";
+  timeContainer.innerHTML = "";
   const minP = partsFromMs(minMs);
   const maxP = partsFromMs(maxMs);
 
@@ -191,39 +212,55 @@ function buildColumns(container, parts, minMs, maxMs) {
     days.push({ value: d, label: `${d}일` });
   }
 
-  const hours = [];
-  for (let h = 0; h < 24; h++) {
-    const useHour =
-      parts.year === minP.year &&
-      parts.month === minP.month &&
-      parts.day === minP.day
-        ? h >= minP.hour
-        : true;
-    const useHourMax =
-      parts.year === maxP.year &&
-      parts.month === maxP.month &&
-      parts.day === maxP.day
-        ? h <= maxP.hour
-        : true;
-    if (!useHour || !useHourMax) continue;
-    const ampm = h < 12 ? "오전" : "오후";
-    const h12 = h % 12 === 0 ? 12 : h % 12;
-    hours.push({ value: h, label: `${ampm} ${h12}시` });
+  const ampms = [];
+  for (const entry of [
+    { value: "am", label: "오전" },
+    { value: "pm", label: "오후" }
+  ]) {
+    let valid = false;
+    for (let h12 = 1; h12 <= 12 && !valid; h12++) {
+      for (let min = 0; min <= 59; min++) {
+        if (
+          isDateTimeInRange(
+            { ...parts, ampm: entry.value, hour12: h12, minute: min },
+            minMs,
+            maxMs
+          )
+        ) {
+          valid = true;
+          break;
+        }
+      }
+    }
+    if (valid) ampms.push(entry);
   }
 
+  const hour12s = [];
+  for (let h12 = 1; h12 <= 12; h12++) {
+    let valid = false;
+    for (let min = 0; min <= 59; min++) {
+      if (isDateTimeInRange({ ...parts, hour12: h12, minute: min }, minMs, maxMs)) {
+        valid = true;
+        break;
+      }
+    }
+    if (valid) hour12s.push({ value: h12, label: `${h12}시` });
+  }
+
+  const hour24 = hour24FromParts(parts);
   const minutes = [];
   const minuteStart =
     parts.year === minP.year &&
     parts.month === minP.month &&
     parts.day === minP.day &&
-    parts.hour === minP.hour
+    hour24 === minP.hour
       ? minP.minute
       : 0;
   const minuteEnd =
     parts.year === maxP.year &&
     parts.month === maxP.month &&
     parts.day === maxP.day &&
-    parts.hour === maxP.hour
+    hour24 === maxP.hour
       ? maxP.minute
       : 59;
   for (let m = minuteStart; m <= minuteEnd; m++) {
@@ -234,17 +271,19 @@ function buildColumns(container, parts, minMs, maxMs) {
     ...parts,
     month: Math.min(Math.max(parts.month, monthStart), monthEnd),
     day: Math.min(Math.max(parts.day, dayStart), dayEnd),
-    hour: hours.some((h) => h.value === parts.hour)
-      ? parts.hour
-      : hours[0]?.value ?? parts.hour,
+    ampm: ampms.some((a) => a.value === parts.ampm) ? parts.ampm : ampms[0]?.value || "am",
+    hour12: hour12s.some((h) => h.value === parts.hour12)
+      ? parts.hour12
+      : hour12s[0]?.value ?? parts.hour12,
     minute: Math.min(Math.max(parts.minute, minuteStart), minuteEnd)
   };
 
-  container.appendChild(buildColumn("year", years, safeParts.year));
-  container.appendChild(buildColumn("month", months, safeParts.month));
-  container.appendChild(buildColumn("day", days, safeParts.day));
-  container.appendChild(buildColumn("hour", hours, safeParts.hour));
-  container.appendChild(buildColumn("minute", minutes, safeParts.minute));
+  dateContainer.appendChild(buildColumn("year", years, safeParts.year));
+  dateContainer.appendChild(buildColumn("month", months, safeParts.month));
+  dateContainer.appendChild(buildColumn("day", days, safeParts.day));
+  timeContainer.appendChild(buildColumn("ampm", ampms, safeParts.ampm));
+  timeContainer.appendChild(buildColumn("hour12", hour12s, safeParts.hour12));
+  timeContainer.appendChild(buildColumn("minute", minutes, safeParts.minute));
 }
 
 let pickerState = null;
@@ -254,8 +293,8 @@ function confirmPick() {
     finishPick(null);
     return;
   }
-  const cols = modalEl.querySelector(".datetime-scroll-picker-columns");
-  let parts = readPickerParts(cols);
+  const sheet = modalEl.querySelector(".datetime-scroll-picker-sheet");
+  let parts = readPickerParts(sheet);
   let ms = msFromParts(parts);
   ms = clampMs(ms, pickerState.minMs, pickerState.maxMs);
   finishPick(ms);
@@ -280,8 +319,9 @@ export function openDatetimeScrollPicker({
   const titleEl = modalEl.querySelector(".datetime-scroll-picker-title");
   if (titleEl) titleEl.textContent = title;
 
-  const cols = modalEl.querySelector(".datetime-scroll-picker-columns");
-  buildColumns(cols, partsFromMs(initial), safeMin, safeMax);
+  const dateCols = modalEl.querySelector(".datetime-scroll-picker-columns--date");
+  const timeCols = modalEl.querySelector(".datetime-scroll-picker-columns--time");
+  buildColumns(dateCols, timeCols, partsFromMs(initial), safeMin, safeMax);
 
   return new Promise((resolve) => {
     pendingResolve = resolve;
