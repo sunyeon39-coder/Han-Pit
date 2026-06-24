@@ -382,6 +382,11 @@ async function init() {
 function wireIndexPageControls() {
   refreshIndexDomRefs();
 
+  // 모달 닫기/이벤트 바인딩은 boot의 await(loadEvents 등)에 의존하지 않도록
+  // 동기 와이어링 시점에 먼저 걸어 둔다. (Firestore 정체로 boot가 멈춰도 닫기 동작 보장)
+  setupAttendanceLogEvents();
+  setupWorkSummaryEvents();
+
   IX.dealerOpsMount?.addEventListener("click", (e) => {
     const chip = e.target.closest(".dealer-time-chip--editable");
     if (!chip || e.target.closest(".dealer-time-chip-input")) return;
