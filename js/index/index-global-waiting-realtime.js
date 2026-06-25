@@ -4,7 +4,7 @@ import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
 import { scheduleRenderDealerOps } from "./dealer-attendance-render.js";
 import { writeIndexGlobalWaitingCache } from "./index-ops-session-cache.js";
-import { refreshIndexOpsDataFromServer } from "./index-ops-bootstrap.js";
+import { bootstrapIndexDealerOps } from "./index-ops-bootstrap.js";
 
 function shouldKeepCachedGlobalWaiting(snap, nextWaiting = []) {
   if (!snap?.metadata?.fromCache) return false;
@@ -36,7 +36,7 @@ export function bindIndexGlobalWaitingRealtime() {
       const nextWaiting = Array.isArray(data.waiting) ? data.waiting : [];
       if (shouldKeepCachedGlobalWaiting(snap, nextWaiting)) {
         if (shouldRefreshWaitingFromServer(snap, nextWaiting)) {
-          void refreshIndexOpsDataFromServer();
+          void bootstrapIndexDealerOps();
         }
         return;
       }
@@ -45,12 +45,12 @@ export function bindIndexGlobalWaitingRealtime() {
       scheduleRenderDealerOps();
 
       if (shouldRefreshWaitingFromServer(snap, nextWaiting)) {
-        void refreshIndexOpsDataFromServer();
+        void bootstrapIndexDealerOps();
       }
     },
     (err) => {
       console.error("bindIndexGlobalWaitingRealtime error:", err);
-      void refreshIndexOpsDataFromServer();
+      void bootstrapIndexDealerOps();
     }
   );
 }

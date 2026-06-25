@@ -2,7 +2,9 @@ import { db } from "../firebase.js";
 import {
   collection,
   doc,
+  getDoc,
   getDocFromServer,
+  getDocs,
   getDocsFromServer
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
@@ -17,6 +19,8 @@ import {
   applyIndexOpsSeatsFromGlRows
 } from "./dealer-attendance-realtime.js";
 import { scheduleRenderDealerOps } from "./dealer-attendance-render.js";
+import { loadDealerAttendanceOnce } from "./dealer-attendance-load-once.js";
+import { loadTournamentDealerRosterOnce } from "./dealer-attendance-roster.js";
 import {
   readGlobalSeatsCache,
   readGlobalSeatsLegacyCache,
@@ -24,6 +28,8 @@ import {
   writeIndexGlobalWaitingCache,
   writeGlobalSeatsCache
 } from "./index-ops-session-cache.js";
+
+let bootstrapInflight = null;
 
 function globalSeatsRowsFromSnapshot(snap) {
   const rows = [];
@@ -66,6 +72,37 @@ export function seedIndexOpsFromSessionCache() {
   return seeded;
 }
 
+async function prefetchIndexOpsFromFirestoreCache() {
+  const tournamentId = getTournamentId();
+  if (!tournamentId) return;
+
+  try {
+    const snap = await getDoc(doc(db, "layout_shared", "global_waiting"));
+    if (!snap.exists()) return;
+    const data = snap.data() || {};
+    const nextWaiting = Array.isArray(data.waiting) ? data.waiting : [];
+    if (!nextWaiting.length && IX.globalWaiting.length) return;
+    IX.globalWaiting = nextWaiting;
+    writeIndexGlobalWaitingCache(tournamentId, nextWaiting);
+    scheduleRenderDealerOps();
+  } catch (err) {
+    console.warn("prefetchIndexOps waiting:", err?.code || err);
+  }
+
+  try {
+    const snap = await getDocs(collection(db, "tournaments", tournamentId, "global_seats"));
+    if (snap.empty && IX.dealerGlobalSeats.length) return;
+    if (!snap.empty) {
+      applyIndexGlobalSeatsSnapshot(snap);
+      if (!snap.metadata?.fromCache) {
+        writeGlobalSeatsCache(tournamentId, globalSeatsRowsFromSnapshot(snap));
+      }
+    }
+  } catch (err) {
+    console.warn("prefetchIndexOps seats:", err?.code || err);
+  }
+}
+
 /** IndexedDB 캐시가 비었을 때 서버에서 대기·좌석을 한 번 더 읽습니다. */
 export async function refreshIndexOpsDataFromServer() {
   const tournamentId = getTournamentId();
@@ -93,4 +130,32 @@ export async function refreshIndexOpsDataFromServer() {
     noteFirestoreQuotaExceeded(err);
     console.warn("refreshIndexOpsDataFromServer seats:", err?.code || err);
   }
+}
+
+/** 딜러 운영 현황 — 캐시 시드 → Firestore → 출석·명단 일괄 로드 */
+export function bootstrapIndexDealerOps(options = {}) {
+  const force = options.force === true;
+  if (bootstrapInflight) {
+    if (!force) return bootstrapInflight;
+    return bootstrapInflight.finally(() => bootstrapIndexDealerOps({ force: true }));
+  }
+
+  bootstrapInflight = (async () => {
+    seedIndexOpsFromSessionCache();
+    await prefetchIndexOpsFromFirestoreCache();
+    await Promise.all([
+      refreshIndexOpsDataFromServer(),
+      loadDealerAttendanceOnce(),
+      loadTournamentDealerRosterOnce()
+    ]);
+    scheduleRenderDealerOps();
+  })()
+    .catch((err) => {
+      console.warn("bootstrapIndexDealerOps:", err?.code || err);
+    })
+    .finally(() => {
+      bootstrapInflight = null;
+    });
+
+  return bootstrapInflight;
 }

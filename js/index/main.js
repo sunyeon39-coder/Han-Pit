@@ -79,8 +79,13 @@ const ATTENDANCE_LOG_RETENTION_MS = 45 * 24 * 60 * 60 * 1000;
 import { routeToHub, initTournamentPeriodWatch } from "./tournament-period.js";
 import {
   seedIndexOpsFromSessionCache,
-  refreshIndexOpsDataFromServer
+  bootstrapIndexDealerOps
 } from "./index-ops-bootstrap.js";
+import {
+  syncIndexOpsToolbar,
+  resetIndexOpsChromeState,
+  getIndexHadOps
+} from "./index-ops-chrome.js";
 
 import { wireSeatMapListeners } from "./seat-map.js";
 import {
@@ -172,9 +177,6 @@ function buildGlobalLayoutHref() {
   return `./global-layout.html?${q.toString()}`;
 }
 
-let indexHadOps = false;
-let indexOpsVerified = false;
-/** onAuthStateChanged·모바일 토큰 갱신 시 이전 init 이 리스너를 중복 등록하지 않도록 */
 let indexAuthFlowGen = 0;
 let indexSessionUid = "";
 let indexOpsResyncTimer = 0;
@@ -292,28 +294,8 @@ function applyIndexOpsPermissions(user = auth.currentUser, meta = {}) {
     user.uid
   );
 
-  indexHadOps = canOps;
+  syncIndexOpsToolbar(canOps);
   renderDealerOps();
-
-  if (canOps) {
-    indexOpsVerified = true;
-    IX.globalLayoutBtn?.classList.remove("hidden");
-    IX.seatMapOpenEditorBtn?.classList.remove("hidden");
-    IX.eventAdminBtn?.classList.remove("hidden");
-    IX.attendanceLogBtn?.classList.remove("hidden");
-    if (IX.seatMapOpenEditorBtn) IX.seatMapOpenEditorBtn.dataset.canEdit = "1";
-    return;
-  }
-
-  if (indexOpsVerified) {
-    return;
-  }
-
-  IX.globalLayoutBtn?.classList.add("hidden");
-  IX.seatMapOpenEditorBtn?.classList.add("hidden");
-  IX.eventAdminBtn?.classList.add("hidden");
-  IX.attendanceLogBtn?.classList.add("hidden");
-  if (IX.seatMapOpenEditorBtn) IX.seatMapOpenEditorBtn.dataset.canEdit = "0";
 }
 
 async function refreshIndexOpsFromServer(user = auth.currentUser) {
@@ -324,9 +306,9 @@ async function refreshIndexOpsFromServer(user = auth.currentUser) {
       IX.currentUserProfile = profile;
       seedMyUserProfileCache(profile);
     }
-    const hadOps = indexHadOps;
+    const hadOps = getIndexHadOps();
     applyIndexOpsPermissions(user);
-    if (getTournamentId() && hadOps !== indexHadOps) {
+    if (getTournamentId() && hadOps !== getIndexHadOps()) {
       bindDealerAttendanceRealtime();
       await loadDealerAttendanceOnce();
     }
@@ -372,7 +354,7 @@ async function init() {
   bindDealerAttendanceRealtime();
   bindDealerSeatRealtime();
 
-  void refreshIndexOpsDataFromServer();
+  void bootstrapIndexDealerOps();
 
   await loadEvents(bootTournamentId, { forceServer: true });
 
@@ -705,8 +687,7 @@ onAuthStateChanged(auth, async (user) => {
   if (!user) {
     indexSessionUid = "";
     indexAuthFlowGen += 1;
-    indexHadOps = false;
-  indexOpsVerified = false;
+    resetIndexOpsChromeState();
     disposeIndexRealtimeWatches();
     location.replace("./login.html");
     return;
@@ -801,8 +782,7 @@ onAuthStateChanged(auth, async (user) => {
     await init();
     if (flow !== indexAuthFlowGen) return;
     await initTournamentPeriodWatch();
-    void loadTournamentDealerRosterOnce();
-    void loadDealerAttendanceOnce();
+    void bootstrapIndexDealerOps();
     void profilePromise
       .then(() => ensureIndexOpsChrome(user))
       .catch(() => null);
@@ -817,9 +797,7 @@ window.addEventListener("hanpit-index-tournament-ready", () => {
   bindIndexGlobalWaitingRealtime();
   bindDealerAttendanceRealtime();
   applyIndexOpsPermissions(auth.currentUser);
-  void refreshIndexOpsDataFromServer();
-  void loadTournamentDealerRosterOnce();
-  void loadDealerAttendanceOnce();
+  void bootstrapIndexDealerOps();
   if (IX.events.length) {
     render();
     refreshCardStatuses();

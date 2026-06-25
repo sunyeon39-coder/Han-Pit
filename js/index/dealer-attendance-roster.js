@@ -19,10 +19,20 @@ function normalizeRosterUser(docSnap) {
   };
 }
 
+function resolveTournamentRequiredCode(tournamentId = "") {
+  const tid = String(tournamentId || getTournamentId() || "").trim();
+  if (!tid) return "";
+  return String(
+    IX.currentTournament?.requiredCode ||
+      sessionStorage.getItem(`tournamentRequiredCode:${tid}`) ||
+      ""
+  ).trim();
+}
+
 /** 대회 접근 코드와 일치하는 등록 근무자(미출근 포함) */
 export async function loadTournamentDealerRosterOnce() {
   const tournamentId = getTournamentId();
-  const requiredCode = String(IX.currentTournament?.requiredCode || "").trim();
+  const requiredCode = resolveTournamentRequiredCode(tournamentId);
   if (!tournamentId || !requiredCode) {
     return;
   }

@@ -17,6 +17,8 @@ import {
   formatDatetimeKorean
 } from "./dealer-attendance-format.js";
 import { getDerivedAttendance, getWorkingMs } from "./dealer-attendance-derived.js";
+import { syncIndexOpsToolbar } from "./index-ops-chrome.js";
+import { bootstrapIndexDealerOps } from "./index-ops-bootstrap.js";
 import {
   getAdminAttendanceList,
   getFilteredAdminAttendanceList
@@ -186,6 +188,17 @@ export function renderDealerOpsPartial() {
     selfInlineEl.innerHTML = renderDealerSelfInlineHtml(myStatus);
   }
 
+  const isAdmin = canShowTournamentOpsUi(
+    user?.email,
+    IX.currentUserProfile,
+    getTournamentId(),
+    IX.currentTournament
+      ? { id: IX.currentTournament.id, name: IX.currentTournament.name, logoText: IX.currentTournament.logoText }
+      : null,
+    user?.uid
+  );
+  syncIndexOpsToolbar(isAdmin);
+
   const summaryEl = IX.dealerOpsMount.querySelector(".dealer-admin-summary");
   if (summaryEl) summaryEl.innerHTML = renderDealerAdminSummaryHtml(getDealerAdminCounts());
 
@@ -234,6 +247,8 @@ export function renderDealerOps() {
     tournamentMeta,
     user?.uid
   );
+  syncIndexOpsToolbar(isAdmin);
+
   const me = user ? getDerivedAttendance(user) : null;
 
   const myStatus = me?.status || "off";
@@ -392,6 +407,10 @@ export function renderDealerOps() {
         /* type=search 등 selectionRange 미지원 입력 무시 */
       }
     }
+  }
+
+  if (isAdmin && !getAdminAttendanceList().length) {
+    void bootstrapIndexDealerOps();
   }
 }
 

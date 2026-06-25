@@ -17,7 +17,7 @@ import {
   writeIndexEventsSessionCache
 } from "./index-events-session-cache.js";
 import { applyIndexGlobalSeatsSnapshot } from "./dealer-attendance-realtime.js";
-import { refreshIndexOpsDataFromServer } from "./index-ops-bootstrap.js";
+import { bootstrapIndexDealerOps } from "./index-ops-bootstrap.js";
 import {
   isFirestoreQuotaCoolingDown,
   noteFirestoreQuotaExceeded
@@ -257,12 +257,12 @@ export function bindLayoutSeatSummaryRealtime(tournamentId = "") {
         applyIndexGlobalSeatsSnapshot(snap);
         scheduleIndexCardsRender({ light: true });
         if (snap.empty && snap.metadata?.fromCache && !IX.dealerGlobalSeats.length) {
-          void refreshIndexOpsDataFromServer();
+          void bootstrapIndexDealerOps();
         }
       },
       (err) => {
         console.error("bindLayoutSeatSummaryRealtime(global) error:", err);
-        void refreshIndexOpsDataFromServer();
+        void bootstrapIndexDealerOps();
       }
     );
     return;

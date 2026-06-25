@@ -79,6 +79,10 @@ function applyTournamentDoc(docSnap) {
     String(prev.startAt || "") !== String(next.startAt || "");
 
   IX.currentTournament = next;
+  const code = String(next.requiredCode || "").trim();
+  if (code && next.id) {
+    sessionStorage.setItem(`tournamentRequiredCode:${next.id}`, code);
+  }
   if (materiallyChanged) {
     window.dispatchEvent(new CustomEvent("hanpit-index-tournament-ready"));
   }
