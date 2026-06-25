@@ -3,6 +3,7 @@ import {
   collection,
   doc,
   getDocFromServer,
+  getDocs,
   getDocsFromServer,
   onSnapshot,
   runTransaction,
@@ -39,6 +40,9 @@ import {
   isFirestoreQuotaCoolingDown,
   noteFirestoreQuotaExceeded
 } from "../shared/firestore-quota-guard.js";
+import { runFirestoreReadWithRetry } from "../shared/firestore-read-retry.js";
+import { raceFirestoreTimeout } from "../shared/load-user-profile.js";
+import { showFirestoreStallBanner } from "../shared/firestore-stall-recovery.js";
 import { writeGlobalSeatsCache } from "./global-seats-session-cache.js";
 import { canManageGlobalLayoutOps } from "./ops-access.js";
 import { buildSeatHistoryEntry, appendSeatHistoryPatch } from "./seat-history.js";
@@ -419,18 +423,64 @@ async function refreshGlobalWaitingFromServer() {
   }
 }
 
+const GLOBAL_SEATS_SERVER_FETCH_MS = 10000;
+
+function globalSeatsCollectionRef() {
+  return collection(db, "tournaments", GL.tournamentId, "global_seats");
+}
+
+async function fetchGlobalSeatsSnapFromServer() {
+  return runFirestoreReadWithRetry(
+    () => getDocsFromServer(globalSeatsCollectionRef()),
+    { maxAttempts: 2, baseDelayMs: 400 }
+  );
+}
+
+async function fetchGlobalSeatsSnapFromCache() {
+  return getDocs(globalSeatsCollectionRef());
+}
+
 async function refreshGlobalSeatsFromServer() {
-  if (!GL.tournamentId || isFirestoreQuotaCoolingDown()) return;
-  try {
-    const snap = await getDocsFromServer(
-      collection(db, "tournaments", GL.tournamentId, "global_seats")
-    );
+  if (!GL.tournamentId) return;
+
+  const applySnap = (snap, { fromServer = false } = {}) => {
+    if (!snap) return false;
     applyGlobalSeatsFromSnapshot(snap, { value: GL.globalSeats });
-    globalSeatsServerSynced = true;
+    if (fromServer || !snap.metadata?.fromCache) {
+      globalSeatsServerSynced = true;
+    }
     scheduleGlobalLayoutRealtimeUi({ seats: true, seatPanel: true, waiting: true });
+    return true;
+  };
+
+  if (!isFirestoreQuotaCoolingDown()) {
+    try {
+      const snap = await raceFirestoreTimeout(fetchGlobalSeatsSnapFromServer(), GLOBAL_SEATS_SERVER_FETCH_MS);
+      if (snap) {
+        applySnap(snap, { fromServer: true });
+        return;
+      }
+      console.warn("refreshGlobalSeatsFromServer: server fetch timed out");
+    } catch (err) {
+      noteFirestoreQuotaExceeded(err);
+      console.warn("refreshGlobalSeatsFromServer:", err?.code || err);
+    }
+  }
+
+  try {
+    const cacheSnap = await raceFirestoreTimeout(fetchGlobalSeatsSnapFromCache(), 4000);
+    if (cacheSnap && !cacheSnap.empty) {
+      applySnap(cacheSnap);
+      return;
+    }
   } catch (err) {
-    noteFirestoreQuotaExceeded(err);
-    console.warn("refreshGlobalSeatsFromServer:", err?.code || err);
+    console.warn("refreshGlobalSeatsFromServer cache:", err?.code || err);
+  }
+
+  if (!globalSeatsServerSynced && !GL.globalSeats.length) {
+    showFirestoreStallBanner(
+      "좌석 데이터를 불러오지 못했습니다(연결 지연). 연결 새로고침을 눌러 주세요."
+    );
   }
 }
 

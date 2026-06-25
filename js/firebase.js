@@ -59,7 +59,9 @@ export function isSafariLikeFirestoreClient() {
 const firestoreSettings = {
   localCache: persistentLocalCache({
     tabManager: persistentMultipleTabManager()
-  })
+  }),
+  // WebChannel 스트림이 끊기면 읽기가 영원히 pending — 자동 long-polling 전환
+  experimentalAutoDetectLongPolling: true
 };
 if (isSafariLikeFirestoreClient()) {
   Object.assign(firestoreSettings, {

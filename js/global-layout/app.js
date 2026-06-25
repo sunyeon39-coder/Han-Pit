@@ -36,7 +36,7 @@ import {
   hasGlobalSeatsServerSynced
 } from "./realtime.js";
 import { armFirestoreStallWatchdog, showFirestoreStallBanner } from "../shared/firestore-stall-recovery.js";
-import { readGlobalSeatsCache } from "./global-seats-session-cache.js";
+import { readGlobalSeatsCache, readGlobalSeatsLegacyCache } from "./global-seats-session-cache.js";
 import { bindGlobalLayoutEventHandlers, syncGlobalLayoutMobileChrome } from "./ui-events.js";
 import {
   initGlobalLayoutZoomBarDom,
@@ -132,7 +132,8 @@ export function startGlobalLayoutApp() {
   instantDismissAllBootLoaders();
   markPageBootLoaded(GL.app);
   // 진입 즉시 마지막으로 본 좌석을 캔버스에 그려 반응성을 높인다(이후 realtime 이 최신값으로 교체).
-  const cachedSeats = readGlobalSeatsCache(GL.tournamentId);
+  const cachedSeats =
+    readGlobalSeatsCache(GL.tournamentId) || readGlobalSeatsLegacyCache(GL.tournamentId);
   if (cachedSeats?.length) {
     GL.globalSeats = cachedSeats;
     renderSeats(cachedSeats);
@@ -339,8 +340,8 @@ export function startGlobalLayoutApp() {
     setPanelOpen(!layoutIsMobile());
     bindRealtime();
     armFirestoreStallWatchdog({
-      timeoutMs: 12000,
-      dataReady: () => hasGlobalSeatsServerSynced() || GL.globalSeats.length > 0,
+      timeoutMs: 8000,
+      dataReady: () => hasGlobalSeatsServerSynced(),
       onStall: () =>
         showFirestoreStallBanner(
           "좌석 데이터를 불러오지 못했습니다(연결 지연). 연결 새로고침을 눌러 주세요."

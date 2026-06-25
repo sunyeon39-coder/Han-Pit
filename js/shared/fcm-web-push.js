@@ -88,6 +88,7 @@ export async function showSeatAssignedOsNotification({
 
   try {
     const reg = await getOrRegisterFcmServiceWorker();
+    if (!reg) throw new Error("sw_unavailable");
     if (reg.active) {
       reg.active.postMessage({
         type: "HAN_PIT_SHOW_NOTIFICATION",
@@ -255,14 +256,19 @@ export async function saveUserFcmToken(uid, token) {
  * 권한이 이미 granted 인 경우 토큰만 갱신해 Firestore에 저장 (무음).
  */
 export async function getOrRegisterFcmServiceWorker() {
-  let registration = await navigator.serviceWorker.getRegistration();
-  if (!registration) {
-    registration = await navigator.serviceWorker.register("./firebase-messaging-sw.js", {
-      scope: "./"
-    });
+  try {
+    let registration = await navigator.serviceWorker.getRegistration();
+    if (!registration) {
+      registration = await navigator.serviceWorker.register("./firebase-messaging-sw.js", {
+        scope: "./"
+      });
+    }
+    await navigator.serviceWorker.ready;
+    return registration;
+  } catch (err) {
+    console.debug("[fcm-web-push] getOrRegisterFcmServiceWorker:", err);
+    return null;
   }
-  await navigator.serviceWorker.ready;
-  return registration;
 }
 
 export async function refreshFcmTokenIfGranted(uid) {
@@ -274,6 +280,7 @@ export async function refreshFcmTokenIfGranted(uid) {
     if (!messaging) return;
 
     const registration = await getOrRegisterFcmServiceWorker();
+    if (!registration) return;
 
     const token = await getToken(messaging, {
       vapidKey: FCM_VAPID_KEY,
@@ -332,6 +339,7 @@ export async function registerFcmWebPushAndSave(uid, vapidKey = FCM_VAPID_KEY) {
     if (!messaging) return { ok: false, reason: "no_messaging" };
 
     const registration = await getOrRegisterFcmServiceWorker();
+    if (!registration) return { ok: false, reason: "no_sw" };
 
     const token = await getToken(messaging, {
       vapidKey,

@@ -199,7 +199,10 @@ export function buildInlineAppUpdateSnippet(v) {
   function updateSw(){
     if(!("serviceWorker" in navigator)||!navigator.serviceWorker.getRegistration)return;
     navigator.serviceWorker.getRegistration().then(function(reg){
-      if(reg&&typeof reg.update==="function")reg.update();
+      if(reg&&typeof reg.update==="function"){
+        var p=reg.update();
+        if(p&&typeof p.catch==="function")p.catch(function(){});
+      }
       if(reg)wireSwRegistration(reg);
     }).catch(function(){});
   }
