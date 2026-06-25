@@ -1,5 +1,5 @@
 import { GL } from "./state.js";
-import { resolveAttendanceWaitingJoinMs } from "../shared/attendance-operational-day.js";
+import { resolveAttendanceWaitingJoinMs, resolveAttendanceWaitingStatusChangedMs } from "../shared/attendance-operational-day.js";
 import { isInactiveWaitingEntry } from "../shared/attendance-waiting-filter.js";
 import { fmtElapsed, isEmptyPerson, makeUid, timerClass, toMillis } from "./utils.js";
 import { bumpGlobalLayoutDataRevision } from "./realtime-ui.js";
@@ -116,7 +116,7 @@ export function getWaitingJoinMs(raw = {}) {
     const ms = toPositiveMs(raw?.[key]);
     if (ms > 0) return ms;
   }
-  return Date.now();
+  return 0;
 }
 
 export function isWaitingBlocked(raw = {}) {
@@ -223,7 +223,7 @@ export function applyOptimisticWaitingBlockRow(row, checked) {
 }
 
 export function getWaitingDisplayStartMs(raw = {}) {
-  const joinAnchor = getWaitingJoinMs(raw);
+  const joinAnchor = getWaitingJoinMs(raw) || Date.now();
   const blockedAccumulatedMs = toPositiveMs(raw?.blockAccumulatedMs);
   if (isWaitingBlocked(raw)) {
     const checkedAt = toPositiveMs(raw?.blockCheckedAt);
@@ -330,10 +330,18 @@ export function getCurrentTournamentWaiting() {
       if (!uid) return w;
       const att = (GL.attendanceWaiting || []).find((row) => String(row?.uid || "").trim() === uid);
       if (!att) return w;
-      const attJoin = resolveAttendanceWaitingJoinMs(att);
       const rowJoin = getWaitingJoinMs(w);
-      if (attJoin > rowJoin + 3000) {
-        return { ...w, joinedAt: attJoin };
+      const attWaitChanged = resolveAttendanceWaitingStatusChangedMs(att);
+      let healJoin = 0;
+      if (attWaitChanged > rowJoin + 3000) {
+        healJoin = attWaitChanged;
+      } else if (!attWaitChanged) {
+        const attJoin = resolveAttendanceWaitingJoinMs(att);
+        // statusChangedAt 없을 때만 폴백 — 출석 시각이 더 최근일 때만 줄이고, 늘리지는 않음
+        if (attJoin > rowJoin + 3000) healJoin = attJoin;
+      }
+      if (healJoin) {
+        return { ...w, joinedAt: healJoin };
       }
       return w;
     });

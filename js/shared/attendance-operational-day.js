@@ -46,21 +46,43 @@ export function applyOperationalDayToAttendance(attendance = {}, nowMs = Date.no
   };
 }
 
-/** 출석 문서 → 통합배치도 대기 타이머 앵커 (운영일 내 가장 최근 시각) */
+/** 출석 문서 → 통합배치도 대기 타이머 앵커 (대기 시작 시각만, 출근 시각과 분리) */
 export function resolveAttendanceWaitingJoinMs(attendance = {}, nowMs = Date.now()) {
   const now = Number(nowMs) || Date.now();
+  const status = String(attendance?.status || "").trim();
   const checkedInAt = Number(attendance?.checkedInAt || 0);
   const statusChangedAt = Number(attendance?.statusChangedAt || 0);
-  const candidates = [];
 
-  for (const ms of [statusChangedAt, checkedInAt]) {
-    if (ms > 0 && isAttendanceFromCurrentOperationalDay({ checkedInAt: ms }, now)) {
-      candidates.push(ms);
-    }
+  const pickIfValid = (ms) =>
+    ms > 0 && isAttendanceFromCurrentOperationalDay({ checkedInAt: ms }, now) ? ms : 0;
+
+  const waitAt = pickIfValid(statusChangedAt);
+  const checkAt = pickIfValid(checkedInAt);
+
+  // 대기열: 마지막으로 '대기' 상태가 된 시각. 없을 때만 출근 시각 폴백.
+  if (status === "waiting") {
+    return waitAt || checkAt || now;
   }
 
-  if (!candidates.length) return now;
-  return Math.max(...candidates);
+  // 출근 완료(배치 전): 출근 시각 우선.
+  if (status === "checked_in") {
+    return checkAt || waitAt || now;
+  }
+
+  return waitAt || checkAt || now;
+}
+
+/** 출석 문서의 대기 전환 시각만 (heal·비교용 — checkedInAt 제외) */
+export function resolveAttendanceWaitingStatusChangedMs(attendance = {}, nowMs = Date.now()) {
+  const now = Number(nowMs) || Date.now();
+  const statusChangedAt = Number(attendance?.statusChangedAt || 0);
+  if (
+    statusChangedAt > 0 &&
+    isAttendanceFromCurrentOperationalDay({ checkedInAt: statusChangedAt }, now)
+  ) {
+    return statusChangedAt;
+  }
+  return 0;
 }
 
 export function resolveCheckedInAtForActiveStatus(current = {}, nextStatus = "", nowMs = Date.now()) {
