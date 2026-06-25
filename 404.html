@@ -8,7 +8,7 @@
     document.documentElement.style.backgroundColor="#060c17";
     document.documentElement.style.colorScheme="dark";
   }catch(e){}
-  var BUILD="20260625071921";
+  var BUILD="20260625073246";
   var KEY="hanPitAppVersion";
   var LAST_TARGET="hanPitReloadTarget";
   var meta=document.querySelector('meta[name="han-pit-build"]');
@@ -127,7 +127,10 @@
   function updateSw(){
     if(!("serviceWorker" in navigator)||!navigator.serviceWorker.getRegistration)return;
     navigator.serviceWorker.getRegistration().then(function(reg){
-      if(reg&&typeof reg.update==="function")reg.update();
+      if(reg&&typeof reg.update==="function"){
+        var p=reg.update();
+        if(p&&typeof p.catch==="function")p.catch(function(){});
+      }
       if(reg)wireSwRegistration(reg);
     }).catch(function(){});
   }
@@ -212,7 +215,7 @@
 })();
 </script>
   <!-- /han-pit-asset-fix -->
-  <meta name="han-pit-build" content="20260625071921" />
+  <meta name="han-pit-build" content="20260625073246" />
   <!-- han-pit-perf-hints -->
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
   <link rel="preconnect" href="https://firebase.googleapis.com" crossorigin />
