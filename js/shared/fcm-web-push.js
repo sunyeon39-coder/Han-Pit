@@ -16,6 +16,65 @@ export const FCM_VAPID_KEY =
   "BAZXsr3GQtq_nPLrF7C89mr3ejM7DbS-cBBfWNZzHfcHggNier7C2fbIG0uex3DZl8ykVxbqrli54cCdLkena94";
 
 let foregroundBadgeListenerBound = false;
+let messagingIdbRepairAttempted = false;
+
+function isMessagingIdbNotFoundError(err) {
+  const name = String(err?.name || "");
+  const msg = String(err?.message || "");
+  return name === "NotFoundError" && /object stores? was not found/i.test(msg);
+}
+
+function deleteIndexedDb(name = "") {
+  const dbName = String(name || "").trim();
+  if (!dbName || typeof indexedDB === "undefined") {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.deleteDatabase(dbName);
+      req.onsuccess = req.onerror = req.onblocked = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
+/** FCM SDK 가 기대하는 object store 가 없을 때 — 손상된 messaging IDB 삭제 */
+async function clearFirebaseMessagingIndexedDb() {
+  const names = new Set([
+    "firebase-messaging-database",
+    "fcm_token_details_db",
+    "firebase-installations-database"
+  ]);
+  if (typeof indexedDB?.databases === "function") {
+    try {
+      const list = await indexedDB.databases();
+      for (const row of list || []) {
+        const n = String(row?.name || "").trim();
+        if (/firebase-messaging|fcm_token|firebase-installations/i.test(n)) {
+          names.add(n);
+        }
+      }
+    } catch (_) {
+      /* ignore */
+    }
+  }
+  await Promise.all([...names].map((name) => deleteIndexedDb(name)));
+}
+
+async function getFcmTokenWithIdbRepair(messaging, registration, vapidKey = FCM_VAPID_KEY) {
+  const opts = { vapidKey, serviceWorkerRegistration: registration };
+  try {
+    return await getToken(messaging, opts);
+  } catch (err) {
+    if (!messagingIdbRepairAttempted && isMessagingIdbNotFoundError(err)) {
+      messagingIdbRepairAttempted = true;
+      await clearFirebaseMessagingIndexedDb();
+      return await getToken(messaging, opts);
+    }
+    throw err;
+  }
+}
 
 function resolveSeatNotifyTag(data = {}) {
   const explicit = String(data.notifyTag || "").trim();
@@ -282,10 +341,7 @@ export async function refreshFcmTokenIfGranted(uid) {
     const registration = await getOrRegisterFcmServiceWorker();
     if (!registration) return;
 
-    const token = await getToken(messaging, {
-      vapidKey: FCM_VAPID_KEY,
-      serviceWorkerRegistration: registration
-    });
+    const token = await getFcmTokenWithIdbRepair(messaging, registration);
     if (token) {
       await saveUserFcmToken(uid, token);
       void ensureForegroundFcmBadgeListener();
@@ -341,10 +397,7 @@ export async function registerFcmWebPushAndSave(uid, vapidKey = FCM_VAPID_KEY) {
     const registration = await getOrRegisterFcmServiceWorker();
     if (!registration) return { ok: false, reason: "no_sw" };
 
-    const token = await getToken(messaging, {
-      vapidKey,
-      serviceWorkerRegistration: registration
-    });
+    const token = await getFcmTokenWithIdbRepair(messaging, registration, vapidKey);
     if (!token) return { ok: false, reason: "no_token" };
 
     await saveUserFcmToken(uid, token);
