@@ -50,7 +50,10 @@ import {
   loadUserProfile,
   resyncHubAccessFromServer,
   healNonAdminUsersToBasic,
-  seedHubTournamentsFromSessionCache
+  seedHubTournamentsFromSessionCache,
+  seedHubUsersFromSessionCache,
+  prefetchHubUsersCache,
+  refreshHubUsersFromServer
 } from "./hub-loaders-realtime.js";
 import { scheduleHubTournamentsRender } from "./hub-realtime-ui.js";
 import { saveNickname } from "./hub-profile.js";
@@ -86,6 +89,7 @@ instantDismissAllBootLoaders();
 markPageBootLoaded(hubRefs.eventListEl);
 
 const hubSeededFromSession = seedHubTournamentsFromSessionCache();
+seedHubUsersFromSessionCache();
 hubState.tournamentsListReady = hubSeededFromSession;
 hubState.tournamentsBootstrapping = !hubSeededFromSession;
 if (hubSeededFromSession) scheduleHubTournamentsRender();
@@ -178,6 +182,7 @@ adminBtn?.addEventListener("click", () => {
 
   if (adminSearchInput) adminSearchInput.value = "";
   clearAdminBulkSelection();
+  seedHubUsersFromSessionCache();
   openModal(adminModal);
   populateTournamentSelect();
   bindUsersRealtime();
@@ -185,11 +190,15 @@ adminBtn?.addEventListener("click", () => {
 
   void Promise.all([
     hubState.tournamentsCache.length ? Promise.resolve() : loadTournaments(),
-    loadAllUsers({ forceServer: true })
+    hubState.usersCache.length
+      ? prefetchHubUsersCache()
+      : loadAllUsers({ forceServer: false })
   ]).then(() => {
     populateTournamentSelect();
     renderAdminUserList();
   });
+
+  void refreshHubUsersFromServer();
 
   // 캐시 멈춤(hang)으로 유저 목록이 영영 안 뜨면 복구 배너 안내
   armFirestoreStallWatchdog({
@@ -365,7 +374,15 @@ function applyHubAccessChromeEarly(user) {
   if (!user) return;
   applyHubOpsChrome(user);
   if (!isSystemAdminEmail(user.email || "")) return;
-  // 부트 프리로드는 캐시 우선 — 서버 강제 읽기는 관리 모달 열 때(bindUsersRealtime/forceServer)로 미뤄 Firestore 읽기량을 아낀다.
+  seedHubUsersFromSessionCache();
+  void prefetchHubUsersCache()
+    .then(() => {
+      if (hubState.currentUser?.uid !== user.uid) return;
+      if (hubRefs.adminModal?.classList.contains("show")) renderAdminUserList();
+    })
+    .catch((err) => {
+      console.warn("prefetchHubUsersCache:", err);
+    });
   void loadAllUsers()
     .then(() => {
       if (hubState.currentUser?.uid !== user.uid) return;

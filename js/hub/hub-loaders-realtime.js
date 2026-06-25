@@ -403,7 +403,46 @@ function restoreUsersFromPersistedCache() {
   const cached = readHubUsersPersistedCache();
   if (!cached?.length) return false;
   hubState.usersCache = cached;
+  hubState._hubAdminUsersFp = "";
   return true;
+}
+
+/** 허브 부트·관리 모달 직전 — session/localStorage 유저 목록 즉시 반영 */
+export function seedHubUsersFromSessionCache() {
+  return restoreUsersFromPersistedCache();
+}
+
+export function prefetchHubUsersCache() {
+  if (hubState.usersCache.length) return Promise.resolve(hubState.usersCache);
+
+  seedHubUsersFromSessionCache();
+  if (hubState.usersCache.length) scheduleHubAdminRender();
+
+  return getDocs(collection(db, "users"))
+    .then((snap) => {
+      if (shouldSkipEmptyCacheSnapshot(snap, hubState.usersCache.length)) {
+        return hubState.usersCache;
+      }
+      if (!snap.empty) {
+        applyUsersCacheFromSnap(snap);
+        scheduleUsersRoleHealOnServer();
+        scheduleHubAdminRender();
+        if (snap.metadata?.fromCache && !isFirestoreQuotaCoolingDown()) {
+          void refreshUsersFromServer();
+        }
+        return hubState.usersCache;
+      }
+      if (!hubState.usersCache.length) restoreUsersFromPersistedCache();
+      if (hubState.usersCache.length) scheduleHubAdminRender();
+      if (!isFirestoreQuotaCoolingDown()) void refreshUsersFromServer();
+      return hubState.usersCache;
+    })
+    .catch((err) => {
+      console.warn("prefetchHubUsersCache:", err?.code || err);
+      restoreUsersFromPersistedCache();
+      if (hubState.usersCache.length) scheduleHubAdminRender();
+      return hubState.usersCache;
+    });
 }
 
 function applyUsersCacheFromSnap(snap) {
@@ -414,6 +453,7 @@ function applyUsersCacheFromSnap(snap) {
     return hubState.usersCache;
   }
   hubState.usersCache = snap.docs.map(normalizeUserDoc);
+  hubState._hubAdminUsersFp = "";
   healStaleUserRolesFromCache(hubState.usersCache);
   healStaleAllowedEventsFromCache(hubState.usersCache);
   writeHubUsersSessionCache(hubState.usersCache);
@@ -481,8 +521,16 @@ export async function loadAllUsers(options = {}) {
 
 async function loadAllUsersImpl(options = {}) {
   const forceServer = options.forceServer === true;
-  hubState.usersLoading = true;
-  scheduleHubAdminRender();
+
+  if (!hubState.usersCache.length) {
+    seedHubUsersFromSessionCache();
+  }
+
+  const showLoading = !hubState.usersCache.length;
+  if (showLoading) {
+    hubState.usersLoading = true;
+    scheduleHubAdminRender();
+  }
   try {
     const col = collection(db, "users");
 
@@ -532,6 +580,10 @@ async function loadAllUsersImpl(options = {}) {
     hubState.usersLoading = false;
     scheduleHubAdminRender();
   }
+}
+
+export async function refreshHubUsersFromServer() {
+  return refreshUsersFromServer();
 }
 
 async function readUserProfileSnap(uid) {
