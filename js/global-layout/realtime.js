@@ -49,10 +49,16 @@ let seatRecoverDebounceTimer = null;
 let lastSeatsUiFingerprint = "";
 let lastWaitingUiFingerprint = "";
 let seatSnapshotReceived = false;
+/** 서버 기준 좌석 동기화 완료(또는 서버에 좌석 0건 확인) */
+let globalSeatsServerSynced = false;
 
 /** 좌석 onSnapshot 이 한 번이라도 콜백을 받았는지 — 캐시 멈춤(hang) 감지용 */
 export function hasReceivedGlobalSeatsSnapshot() {
   return seatSnapshotReceived;
+}
+
+export function hasGlobalSeatsServerSynced() {
+  return globalSeatsServerSynced;
 }
 
 function globalSeatsUiFingerprint(seats = []) {
@@ -362,11 +368,16 @@ function applyGlobalSeatsFromSnapshot(snap, prevSeatsRef = { value: [] }) {
     ? detectSeatHistoryGaps(prevSeatsRef.value, nextBySeatId, Date.now())
     : [];
 
+  const prevCount = prevSeatsRef.value?.length || 0;
+
   GL.globalSeats = mergedSeats;
   bumpGlobalLayoutDataRevision();
   prevSeatsRef.value = mergedSeats;
   if (!snap?.metadata?.fromCache || mergedSeats.length) {
     writeGlobalSeatsCache(GL.tournamentId, mergedSeats);
+  }
+  if (!snap?.metadata?.fromCache) {
+    globalSeatsServerSynced = true;
   }
 
   const seatsFp = globalSeatsUiFingerprint(mergedSeats);
@@ -383,7 +394,7 @@ function applyGlobalSeatsFromSnapshot(snap, prevSeatsRef = { value: [] }) {
     });
   }
 
-  if (seatsUiChanged) {
+  if (seatsUiChanged || (mergedSeats.length > 0 && prevCount === 0)) {
     scheduleGlobalLayoutRealtimeUi({ seats: true, seatPanel: true, waiting: true });
   }
 
@@ -415,6 +426,7 @@ async function refreshGlobalSeatsFromServer() {
       collection(db, "tournaments", GL.tournamentId, "global_seats")
     );
     applyGlobalSeatsFromSnapshot(snap, { value: GL.globalSeats });
+    globalSeatsServerSynced = true;
     scheduleGlobalLayoutRealtimeUi({ seats: true, seatPanel: true, waiting: true });
   } catch (err) {
     noteFirestoreQuotaExceeded(err);
@@ -433,12 +445,16 @@ export function bindRealtime() {
 
   sessionStorage.setItem("tournamentId", GL.tournamentId);
   disposeGlobalLayoutRealtime();
+  GL.seatMutationInFlight = false;
+  GL.waitingMutationInFlight = false;
+  GL.localMutationUntil = 0;
   GL.attendanceFilterReady = false;
   GL.attendanceInactiveUids = new Set();
   GL.attendanceWaiting = [];
   lastSeatsUiFingerprint = "";
   lastWaitingUiFingerprint = "";
   seatSnapshotReceived = false;
+  globalSeatsServerSynced = false;
 
   let prevSeats = [];
   const prevSeatsRef = { value: prevSeats };
@@ -450,7 +466,7 @@ export function bindRealtime() {
     collection(db, "tournaments", GL.tournamentId, "global_seats"),
     (snap) => {
       seatSnapshotReceived = true;
-      if (GL.seatMutationInFlight) return;
+      if (GL.seatMutationInFlight && snap.metadata?.fromCache) return;
       if (shouldIgnoreStaleGlobalLayoutSnapshot(snap)) return;
       if (snap.empty && snap.metadata?.fromCache && GL.globalSeats.length > 0) {
         return;
@@ -537,4 +553,6 @@ export function bindRealtime() {
       scheduleGlobalLayoutRealtimeUi({ waiting: true, metaOnly: true });
     }
   );
+
+  void refreshGlobalSeatsFromServer();
 }

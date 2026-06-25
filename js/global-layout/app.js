@@ -33,7 +33,7 @@ import { updateGlobalMetaToolbar } from "./toolbar.js";
 import {
   bindRealtime,
   disposeGlobalLayoutRealtime,
-  hasReceivedGlobalSeatsSnapshot
+  hasGlobalSeatsServerSynced
 } from "./realtime.js";
 import { armFirestoreStallWatchdog, showFirestoreStallBanner } from "../shared/firestore-stall-recovery.js";
 import { readGlobalSeatsCache } from "./global-seats-session-cache.js";
@@ -340,7 +340,7 @@ export function startGlobalLayoutApp() {
     bindRealtime();
     armFirestoreStallWatchdog({
       timeoutMs: 12000,
-      dataReady: () => hasReceivedGlobalSeatsSnapshot(),
+      dataReady: () => hasGlobalSeatsServerSynced() || GL.globalSeats.length > 0,
       onStall: () =>
         showFirestoreStallBanner(
           "좌석 데이터를 불러오지 못했습니다(연결 지연). 연결 새로고침을 눌러 주세요."
