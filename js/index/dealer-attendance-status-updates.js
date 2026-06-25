@@ -30,6 +30,7 @@ function buildMyAttendancePayload(user, nextStatus) {
   const now = getNowMs();
   // 출근하기(off/checked_out → waiting): 이전 이력을 이어받지 않고 완전히 새로 시작한다.
   const freshCheckIn = nextStatus === "waiting" && !isActiveAttendanceStatus(current?.status);
+  const enteringWaiting = nextStatus === "waiting" && String(current?.status || "").trim() !== "waiting";
 
   return {
     uid: user.uid,
@@ -40,7 +41,8 @@ function buildMyAttendancePayload(user, nextStatus) {
     checkedInAt: resolveCheckedInAtForActiveStatus(current, nextStatus, now),
     checkedOutAt: nextStatus === "checked_out" ? now : null,
     breakStartedAt: nextStatus === "break" ? now : null,
-    statusChangedAt: freshCheckIn ? now : Number(current?.statusChangedAt || 0) || null,
+    statusChangedAt:
+      freshCheckIn || enteringWaiting ? now : Number(current?.statusChangedAt || 0) || null,
     totalBreakMs: freshCheckIn
       ? 0
       : nextStatus === "waiting" && current?.status === "break" && current?.breakStartedAt
@@ -63,6 +65,7 @@ function buildAdminAttendancePayload(uid, nextStatus) {
 
   const now = getNowMs();
   const freshCheckIn = nextStatus === "waiting" && !isActiveAttendanceStatus(current?.status);
+  const enteringWaiting = nextStatus === "waiting" && String(current?.status || "").trim() !== "waiting";
 
   return {
     ...current,
@@ -70,7 +73,8 @@ function buildAdminAttendancePayload(uid, nextStatus) {
     checkedInAt: resolveCheckedInAtForActiveStatus(current, nextStatus, now),
     checkedOutAt: nextStatus === "checked_out" ? now : null,
     breakStartedAt: nextStatus === "break" ? now : null,
-    statusChangedAt: freshCheckIn ? now : Number(current?.statusChangedAt || 0) || null,
+    statusChangedAt:
+      freshCheckIn || enteringWaiting ? now : Number(current?.statusChangedAt || 0) || null,
     totalBreakMs: freshCheckIn
       ? 0
       : nextStatus === "waiting" && current.status === "break" && current.breakStartedAt

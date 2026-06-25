@@ -46,6 +46,23 @@ export function applyOperationalDayToAttendance(attendance = {}, nowMs = Date.no
   };
 }
 
+/** 출석 문서 → 통합배치도 대기 타이머 앵커 (운영일 내 가장 최근 시각) */
+export function resolveAttendanceWaitingJoinMs(attendance = {}, nowMs = Date.now()) {
+  const now = Number(nowMs) || Date.now();
+  const checkedInAt = Number(attendance?.checkedInAt || 0);
+  const statusChangedAt = Number(attendance?.statusChangedAt || 0);
+  const candidates = [];
+
+  for (const ms of [statusChangedAt, checkedInAt]) {
+    if (ms > 0 && isAttendanceFromCurrentOperationalDay({ checkedInAt: ms }, now)) {
+      candidates.push(ms);
+    }
+  }
+
+  if (!candidates.length) return now;
+  return Math.max(...candidates);
+}
+
 export function resolveCheckedInAtForActiveStatus(current = {}, nextStatus = "", nowMs = Date.now()) {
   const now = Number(nowMs) || Date.now();
   if (nextStatus !== "checked_in" && nextStatus !== "waiting" && nextStatus !== "break") {

@@ -132,12 +132,15 @@ export async function ensureMeRecovered(user) {
     );
 
     if (!inWaiting) {
+      const recoverNow = Date.now();
       waitingList.push({
         id: `w_${user.uid}`,
         uid: user.uid,
         email: String(IX.currentUserProfile?.email || user.email || "").trim(),
         name: nickname,
-        addedAt: Date.now(),
+        addedAt: recoverNow,
+        joinedAt: recoverNow,
+        createdAt: recoverNow,
         source: "auto_recover_assigned",
         tournamentId
       });

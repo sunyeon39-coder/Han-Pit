@@ -29,7 +29,7 @@ export function enrichDealerAttendancePatch(prev = {}, patch = {}, nowMs = Date.
     out.checkedOutAt = null;
     out.breakStartedAt = null;
     out.totalBreakMs = 0;
-    out.statusChangedAt = out.statusChangedAt ?? now;
+    out.statusChangedAt = now;
     return out;
   }
 
@@ -40,6 +40,9 @@ export function enrichDealerAttendancePatch(prev = {}, patch = {}, nowMs = Date.
     out.checkedInAt = resolveCheckedInAtForActiveStatus(prev, nextStatus, now);
     if (nextStatus !== "checked_out") {
       out.checkedOutAt = null;
+    }
+    if (nextStatus === "waiting" && prevStatus !== "waiting") {
+      out.statusChangedAt = now;
     }
   }
 

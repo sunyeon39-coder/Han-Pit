@@ -11,7 +11,6 @@ import { mergeOpsProfile, normalizeUserProfile } from "../shared/auth-helpers.js
 import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
 import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
-import { getOperationalDayKey } from "../shared/attendance-operational-day.js";
 
 function indexTournamentMeta() {
   const t = IX.currentTournament;
@@ -82,20 +81,7 @@ async function appendSelfToGlobalWaiting(user, tournamentId, nickname, email) {
 
     if (existingIdx >= 0) {
       const existing = waitingList[existingIdx] || {};
-      const prevJoin =
-        Number(
-          existing.joinedAt ||
-            existing.createdAt ||
-            existing.joinedAtServer ||
-            existing.addedAt ||
-            existing.carryStartedAt ||
-            0
-        ) || 0;
-      const stale = prevJoin > 0 && getOperationalDayKey(prevJoin) !== getOperationalDayKey(now);
-      // 같은 운영일에 이미 대기 중이면 그대로 둔다(대기 시간 유지).
-      if (!stale) return true;
-
-      // 이전 운영일의 대기 항목이 남아 있으면, 출근 시 지금 시각으로 새로 시작한다.
+      // 출근하기는 항상 지금부터 대기 시간을 새로 시작한다(퇴근 후 잔여 행·이전 joinedAt 방지).
       const refreshed = {
         ...existing,
         id: existing.id || `w_${uid}`,
@@ -106,7 +92,10 @@ async function appendSelfToGlobalWaiting(user, tournamentId, nickname, email) {
         joinedAt: now,
         createdAt: now,
         source: "checkin",
-        tournamentId
+        tournamentId,
+        blockChecked: false,
+        blockCheckedAt: null,
+        blockAccumulatedMs: 0
       };
       delete refreshed.joinedAtServer;
       delete refreshed.carryStartedAt;

@@ -1,4 +1,5 @@
 import { GL } from "./state.js";
+import { resolveAttendanceWaitingJoinMs } from "../shared/attendance-operational-day.js";
 import { isInactiveWaitingEntry } from "../shared/attendance-waiting-filter.js";
 import { fmtElapsed, isEmptyPerson, makeUid, timerClass, toMillis } from "./utils.js";
 import { bumpGlobalLayoutDataRevision } from "./realtime-ui.js";
@@ -78,7 +79,7 @@ function buildAttendanceFallbackWaitingRow(item = {}, attId = "") {
     email: String(item.email || "").trim(),
     name: String(item.name || item.nickname || "").trim() || uid || "-",
     tournamentId: GL.tournamentId,
-    joinedAt: Number(item.statusChangedAt || item.checkedInAt || Date.now()) || Date.now(),
+    joinedAt: resolveAttendanceWaitingJoinMs(item, Date.now()),
     source: "attendance_fallback"
   };
   return copyWaitingBlockFields(row, findGlobalWaitingForPerson({ ...row, id }, GL.tournamentId));
@@ -323,7 +324,19 @@ export function getCurrentTournamentWaiting() {
   const waitingBase = (GL.globalWaiting || [])
     .filter((w) => waitingRowBelongsToTournament(w, GL.tournamentId))
     .filter((w) => !filterReady || !isInactiveWaitingEntry(w, inactive))
-    .filter((w) => !isPersonSeatedInIdentitySet(seatedSet, { uid: w?.uid, email: w?.email, name: w?.name }));
+    .filter((w) => !isPersonSeatedInIdentitySet(seatedSet, { uid: w?.uid, email: w?.email, name: w?.name }))
+    .map((w) => {
+      const uid = String(w?.uid || "").trim();
+      if (!uid) return w;
+      const att = (GL.attendanceWaiting || []).find((row) => String(row?.uid || "").trim() === uid);
+      if (!att) return w;
+      const attJoin = resolveAttendanceWaitingJoinMs(att);
+      const rowJoin = getWaitingJoinMs(w);
+      if (attJoin > rowJoin + 3000) {
+        return { ...w, joinedAt: attJoin };
+      }
+      return w;
+    });
 
   const merged = [...waitingBase];
   const hasEntry = (candidate = {}) => {
