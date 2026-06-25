@@ -356,6 +356,7 @@ async function init() {
 
   window.addEventListener("hanpit-index-tournament-ready", () => {
     void loadTournamentDealerRosterOnce();
+    void loadDealerAttendanceOnce();
   });
 
   const paintedFromSession = seedIndexEventsFromSessionCache();
@@ -798,6 +799,8 @@ onAuthStateChanged(auth, async (user) => {
     await init();
     if (flow !== indexAuthFlowGen) return;
     await initTournamentPeriodWatch();
+    void loadTournamentDealerRosterOnce();
+    void loadDealerAttendanceOnce();
     void profilePromise
       .then(() => ensureIndexOpsChrome(user))
       .catch(() => null);
@@ -810,6 +813,8 @@ onAuthStateChanged(auth, async (user) => {
 
 window.addEventListener("hanpit-index-tournament-ready", () => {
   applyIndexOpsPermissions(auth.currentUser);
+  void loadTournamentDealerRosterOnce();
+  void loadDealerAttendanceOnce();
   if (IX.events.length) {
     render();
     refreshCardStatuses();

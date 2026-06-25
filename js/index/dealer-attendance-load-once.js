@@ -15,8 +15,6 @@ import { maybeResetMyStaleOperationalDayAttendance } from "./dealer-attendance-o
 import { loadTournamentDealerRosterOnce } from "./dealer-attendance-roster.js";
 
 export async function loadDealerAttendanceOnce() {
-  IX.dealerAttendanceMap.clear();
-
   const tournamentId = getTournamentId();
   const user = auth.currentUser;
   if (!tournamentId || !user) return;
@@ -30,6 +28,7 @@ export async function loadDealerAttendanceOnce() {
       }
 
       const snap = await getDocs(dealerAttendanceQueryForTournament(adminTournamentId));
+      IX.dealerAttendanceMap.clear();
       filterAttendanceDocsForTournament(snap.docs, adminTournamentId).forEach((d) => {
         const data = d.data() || {};
         const tid =
@@ -43,6 +42,7 @@ export async function loadDealerAttendanceOnce() {
     } else {
       const snap = await getDoc(getAttendanceRef(tournamentId, user.uid));
 
+      IX.dealerAttendanceMap.clear();
       if (snap.exists()) {
         IX.dealerAttendanceMap.set(snap.id, normalizeAttendanceDoc(snap.data() || {}));
       }

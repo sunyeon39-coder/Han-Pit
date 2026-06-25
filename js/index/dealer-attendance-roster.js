@@ -24,7 +24,6 @@ export async function loadTournamentDealerRosterOnce() {
   const tournamentId = getTournamentId();
   const requiredCode = String(IX.currentTournament?.requiredCode || "").trim();
   if (!tournamentId || !requiredCode) {
-    IX.tournamentRosterMap.clear();
     return;
   }
 

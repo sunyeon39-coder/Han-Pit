@@ -16,6 +16,10 @@ export function disposeIndexRealtimeWatches() {
     IX.stopLayoutEventsWatch();
     IX.stopLayoutEventsWatch = null;
   }
+  if (IX.stopGlobalWaitingWatch) {
+    IX.stopGlobalWaitingWatch();
+    IX.stopGlobalWaitingWatch = null;
+  }
   if (IX.stopDealerAttendanceWatch) {
     IX.stopDealerAttendanceWatch();
     IX.stopDealerAttendanceWatch = null;

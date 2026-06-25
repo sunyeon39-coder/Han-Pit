@@ -132,8 +132,98 @@ export function getAdminAttendanceList() {
     );
   });
 
-  list.sort((a, b) => (a.nickname || "").localeCompare(b.nickname || "", "ko"));
+  mergeQueueAndSeatRowsIntoAdminList(list, seenUids, opsIndex, tournamentId);
   return list;
+}
+
+function mergeQueueAndSeatRowsIntoAdminList(list, seenUids, opsIndex, tournamentId) {
+  const waitingList = buildTournamentWaitingDisplayList({
+    globalWaiting: IX.globalWaiting,
+    tournamentId,
+    attendanceInactiveUids: buildIndexAttendanceInactiveUids(IX.dealerAttendanceMap, tournamentId),
+    globalSeats: IX.dealerGlobalSeats,
+    attendanceFilterReady: IX.dealerAttendanceMap.size > 0,
+    attendanceWaitingRows: buildIndexAttendanceWaitingRows(IX.dealerAttendanceMap, tournamentId)
+  });
+
+  for (const w of waitingList) {
+    const uid = String(w?.uid || "").trim();
+    const email = String(w?.email || "").trim().toLowerCase();
+    const name = String(w?.name || w?.nickname || "").trim();
+    const already = list.some((row) => {
+      const rUid = String(row?.uid || "").trim();
+      const rEmail = String(row?.email || "").trim().toLowerCase();
+      const rName = String(row?.nickname || row?.name || "").trim();
+      if (uid && rUid && uid === rUid) return true;
+      if (email && rEmail && email === rEmail) return true;
+      if (name && rName && name === rName) return true;
+      return false;
+    });
+    if (already) continue;
+
+    const row = deriveAdminAttendanceRow(
+      {
+        uid: uid || `wait_${name || email || "row"}`,
+        nickname: name || uid || "-",
+        email: String(w?.email || "").trim(),
+        tournamentId,
+        status: "waiting",
+        checkedInAt: Number(w.joinedAt || w.createdAt || 0) || null,
+        checkedOutAt: null,
+        breakStartedAt: null,
+        totalBreakMs: 0,
+        currentEventId: "",
+        currentBoxId: "",
+        currentSeatId: "",
+        currentSeatLabel: "",
+        updatedAt: Number(w.joinedAt || w.createdAt || 0) || 0
+      },
+      opsIndex
+    );
+    if (uid) seenUids.add(uid);
+    list.push(row);
+  }
+
+  for (const seat of IX.dealerGlobalSeats || []) {
+    const uid = String(seat?.personUid || "").trim();
+    const name = String(seat?.person || "").trim();
+    if (!name || name === "비어있음") continue;
+    if (uid && seenUids.has(uid)) continue;
+    const already = list.some((row) => {
+      const rUid = String(row?.uid || "").trim();
+      const rName = String(row?.nickname || row?.name || "").trim();
+      if (uid && rUid && uid === rUid) return true;
+      if (!uid && rName && rName === name) return true;
+      return false;
+    });
+    if (already) continue;
+
+    const seatInfo = uid ? IX.dealerSeatMap.get(uid) : null;
+    list.push(
+      deriveAdminAttendanceRow(
+        {
+          uid: uid || `seat_${name}`,
+          nickname: name,
+          email: String(seat?.personEmail || "").trim(),
+          tournamentId,
+          status: "assigned",
+          checkedInAt: seatInfo?.seatedAt || null,
+          checkedOutAt: null,
+          breakStartedAt: null,
+          totalBreakMs: 0,
+          currentEventId: seatInfo?.eventId || "",
+          currentBoxId: seatInfo?.boxId || "",
+          currentSeatId: seatInfo?.seatId || "",
+          currentSeatLabel: seatInfo?.seatLabel || "",
+          updatedAt: Number(seatInfo?.seatedAt || 0) || 0
+        },
+        opsIndex
+      )
+    );
+    if (uid) seenUids.add(uid);
+  }
+
+  list.sort((a, b) => (a.nickname || "").localeCompare(b.nickname || "", "ko"));
 }
 
 function normalizeDealerAdminKeyword(raw) {

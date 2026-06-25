@@ -24,6 +24,7 @@ import {
 } from "./dealer-attendance-refs.js";
 import { normalizeAttendanceDoc } from "./dealer-attendance-derived.js";
 import { scheduleRenderDealerOps } from "./dealer-attendance-render.js";
+import { loadDealerAttendanceOnce } from "./dealer-attendance-load-once.js";
 import { ensureMeRecovered } from "./dealer-attendance-recovery.js";
 import { maybeResetMyStaleOperationalDayAttendance } from "./dealer-attendance-operational-day-reset.js";
 
@@ -113,6 +114,9 @@ export function bindDealerAttendanceRealtime() {
       dealerAttendanceQueryForTournament(tournamentId),
       (snap) => {
         const tournamentId = getTournamentId();
+        if (snap.empty && snap.metadata?.fromCache && IX.dealerAttendanceMap.size > 0) {
+          return;
+        }
         IX.dealerAttendanceMap.clear();
         if (!tournamentId) {
           scheduleRenderDealerOps();
@@ -131,6 +135,7 @@ export function bindDealerAttendanceRealtime() {
       },
       (err) => {
         console.error("bindDealerAttendanceRealtime(admin) error:", err);
+        void loadDealerAttendanceOnce();
       }
     );
     return;
@@ -158,6 +163,9 @@ export function bindDealerAttendanceRealtime() {
 }
 
 export function applyIndexGlobalSeatsSnapshot(snap) {
+  if (snap.empty && snap.metadata?.fromCache && IX.dealerGlobalSeats.length > 0) {
+    return;
+  }
   IX.dealerSeatMap.clear();
   IX.dealerGlobalSeats = [];
 
