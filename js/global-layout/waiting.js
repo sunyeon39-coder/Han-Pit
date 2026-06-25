@@ -1,3 +1,4 @@
+import { waitingRowMatchesPerson } from "./fs-waiting-merge.js";
 import { GL } from "./state.js";
 import { resolveAttendanceWaitingJoinMs, resolveAttendanceWaitingStatusChangedMs } from "../shared/attendance-operational-day.js";
 import { isInactiveWaitingEntry } from "../shared/attendance-waiting-filter.js";
@@ -68,6 +69,14 @@ function copyWaitingBlockFields(row = {}, source = null) {
     blockCheckedAt: source.blockCheckedAt ?? null,
     blockAccumulatedMs: Number(source.blockAccumulatedMs || 0) || 0
   };
+}
+
+function personInGlobalWaiting(person = {}, tournamentId = GL.tournamentId) {
+  const tid = String(tournamentId || "").trim();
+  if (!tid) return false;
+  return (GL.globalWaiting || []).some(
+    (w) => waitingRowBelongsToTournament(w, tid) && waitingRowMatchesPerson(w, tid, person)
+  );
 }
 
 function buildAttendanceFallbackWaitingRow(item = {}, attId = "") {
@@ -374,6 +383,17 @@ export function getCurrentTournamentWaiting() {
       return;
     }
     if (hasEntry(item)) return;
+    // 출석 문서(waiting)만 남은 유령 행 — global_waiting(출근·수동추가·좌석해제) 없으면 표시 안 함
+    if (
+      uid &&
+      !personInGlobalWaiting({
+        uid,
+        email: item?.email,
+        name: item?.nickname || item?.name
+      })
+    ) {
+      return;
+    }
     merged.push(
       buildAttendanceFallbackWaitingRow(item, String(item.id || `att_${uid || makeUid("att")}`))
     );
@@ -408,6 +428,16 @@ export function resolveWaitingEntryById(waitingId = "") {
     const attId = String(item.id || `att_${uid || makeUid("att")}`).trim();
     if (attId !== wid && wid !== uid && `att_${uid}` !== wid) continue;
     if (uid && inactive.has(uid)) return null;
+    if (
+      uid &&
+      !personInGlobalWaiting({
+        uid,
+        email: item?.email,
+        name: item?.nickname || item?.name
+      })
+    ) {
+      return null;
+    }
     return buildAttendanceFallbackWaitingRow(item, attId);
   }
 

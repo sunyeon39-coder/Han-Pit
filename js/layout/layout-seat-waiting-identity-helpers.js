@@ -99,6 +99,14 @@ export function createSeatWaitingIdentityHelpers(ctx) {
       };
       if (isIdentitySeatedAnywhereInTournament(getWaitingIdentity(personForSeat))) return;
       if (hasEntry(item)) return;
+      // 출석 문서만 있는 유령 행 — 이 이벤트 대기열에 없으면 표시 안 함
+      const inEventWaiting = waitingState.waiting.some((w) => {
+        if (!matchesCurrentTournamentRow(w)) return false;
+        const wUid = String(w?.uid || "").trim();
+        if (uid && wUid && wUid === uid) return true;
+        return getWaitingIdentity(w) === getWaitingIdentity(personForSeat);
+      });
+      if (uid && !inEventWaiting) return;
       merged.push({
         id: String(item.id || `att_${uid || makeUid("att")}`),
         uid,
