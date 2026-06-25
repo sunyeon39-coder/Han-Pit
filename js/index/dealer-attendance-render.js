@@ -2,9 +2,10 @@ import { auth } from "../firebase.js";
 
 import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
 import {
-  countTournamentWaitingQueue,
+  countTournamentWaitingDisplay,
   countTournamentOccupiedFromGlobalSeats,
-  buildIndexAttendanceInactiveUids
+  buildIndexAttendanceInactiveUids,
+  buildIndexAttendanceWaitingRows
 } from "../shared/tournament-waiting-queue.js";
 import { getTournamentId } from "./core-utils.js";
 import { escapeHtml } from "../shared/dom-utils.js";
@@ -52,13 +53,14 @@ function getDealerAdminCounts() {
     else if (s === "off") counts.off += 1;
   });
 
-  // 통합배치도 대기 목록과 동일 (BLOCK 포함, 좌석·퇴근 제외)
-  counts.waiting = countTournamentWaitingQueue({
+  // 통합배치도 대기 패널 목록과 동일
+  counts.waiting = countTournamentWaitingDisplay({
     globalWaiting: IX.globalWaiting,
     tournamentId,
     attendanceInactiveUids: inactive,
     globalSeats: IX.dealerGlobalSeats,
     attendanceFilterReady: IX.dealerAttendanceMap.size > 0,
+    attendanceWaitingRows: buildIndexAttendanceWaitingRows(IX.dealerAttendanceMap, tournamentId),
     excludeBlocked: false
   });
   counts.assigned = countTournamentOccupiedFromGlobalSeats(IX.dealerGlobalSeats);

@@ -48,15 +48,18 @@ function resetAttendanceToOff(attendance = {}) {
 export function applyOperationalDayToAttendance(attendance = {}, nowMs = Date.now()) {
   const status = String(attendance?.status || "").trim();
 
-  // 퇴근: 당일(운영일) 퇴근이면 유지. 이전 운영일 퇴근만 미출근으로 정리.
+  // 퇴근: 당일(운영일) 퇴근이면 유지. 이전 운영일만 미출근으로 정리.
   if (status === "checked_out") {
     const checkedOutAt = Number(attendance?.checkedOutAt || 0);
     const checkedInAt = Number(attendance?.checkedInAt || 0);
-    const anchor = checkedOutAt || checkedInAt;
-    if (anchor && !isAttendanceFromCurrentOperationalDay({ checkedInAt: anchor }, nowMs)) {
-      return resetAttendanceToOff(attendance);
+    if (checkedOutAt && isAttendanceFromCurrentOperationalDay({ checkedInAt: checkedOutAt }, nowMs)) {
+      return attendance;
     }
-    return attendance;
+    if (checkedInAt && isAttendanceFromCurrentOperationalDay({ checkedInAt }, nowMs)) {
+      return attendance;
+    }
+    if (!checkedOutAt && !checkedInAt) return attendance;
+    return resetAttendanceToOff(attendance);
   }
 
   if (status === "off") return attendance;

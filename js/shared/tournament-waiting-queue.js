@@ -9,7 +9,7 @@ function isEmptySeatPerson(name = "") {
   return !v || v === "비어있음";
 }
 
-/** global_seats 점유자 식별 — uid·email·이름(무 uid) */
+/** global_seats 점유자 식별 — uid·email·이름(표시명) */
 export function buildSeatedIdentitySet(seats = []) {
   const set = new Set();
   for (const s of seats || []) {
@@ -19,7 +19,7 @@ export function buildSeatedIdentitySet(seats = []) {
     const name = String(s?.person || "").trim();
     if (uid) set.add(`uid:${uid}`);
     if (email) set.add(`email:${email}`);
-    if (!uid && !email && name) set.add(`name:${name}`);
+    if (name) set.add(`name:${name}`);
   }
   return set;
 }
@@ -31,8 +31,111 @@ export function isPersonSeatedInIdentitySet(set, person = {}) {
   const name = String(person.name || person.nickname || "").trim();
   if (uid && seated.has(`uid:${uid}`)) return true;
   if (email && seated.has(`email:${email}`)) return true;
-  if (!uid && !email && name && seated.has(`name:${name}`)) return true;
+  if (name && seated.has(`name:${name}`)) return true;
   return false;
+}
+
+export function personExistsInGlobalWaiting(globalWaiting = [], tournamentId = "", person = {}) {
+  const tid = String(tournamentId || "").trim();
+  if (!tid) return false;
+  const uid = String(person?.uid || "").trim();
+  const email = String(person?.email || "").trim();
+  const name = String(person?.name || person?.nickname || "").trim();
+  for (const w of globalWaiting || []) {
+    if (!waitingRowBelongsToTournament(w, tid)) continue;
+    const wUid = String(w?.uid || "").trim();
+    const wEmail = String(w?.email || "").trim();
+    const wName = String(w?.name || "").trim();
+    if (uid && wUid && uid === wUid) return true;
+    if (email && wEmail && email === wEmail) return true;
+    if (name && wName && name === wName) return true;
+  }
+  return false;
+}
+
+function waitingDisplayHasEntry(merged = [], candidate = {}) {
+  const cUid = String(candidate.uid || "").trim();
+  const cEmail = String(candidate.email || "").trim();
+  const cName = String(candidate.name || candidate.nickname || "").trim();
+  return merged.some((w) => {
+    const wUid = String(w?.uid || "").trim();
+    const wEmail = String(w?.email || "").trim();
+    const wName = String(w?.name || "").trim();
+    if (cUid && wUid && cUid === wUid) return true;
+    if (cEmail && wEmail && cEmail === wEmail) return true;
+    if (cName && wName && cName === wName) return true;
+    return false;
+  });
+}
+
+/**
+ * 통합배치도 대기 패널·딜러 운영 현황 공통 — 화면에 보이는 대기 목록
+ */
+export function buildTournamentWaitingDisplayList({
+  globalWaiting = [],
+  tournamentId = "",
+  attendanceInactiveUids = null,
+  globalSeats = [],
+  attendanceFilterReady = false,
+  attendanceWaitingRows = []
+} = {}) {
+  const tid = String(tournamentId || "").trim();
+  if (!tid) return [];
+  const inactive = attendanceInactiveUids instanceof Set ? attendanceInactiveUids : new Set();
+  const filterReady = attendanceFilterReady === true;
+  const seatedSet = buildSeatedIdentitySet(globalSeats);
+
+  const waitingBase = (globalWaiting || [])
+    .filter((w) => waitingRowBelongsToTournament(w, tid))
+    .filter((w) => !filterReady || !isInactiveWaitingEntry(w, inactive))
+    .filter((w) =>
+      !isPersonSeatedInIdentitySet(seatedSet, {
+        uid: w?.uid,
+        email: w?.email,
+        name: w?.name
+      })
+    );
+
+  const merged = [...waitingBase];
+
+  for (const item of attendanceWaitingRows || []) {
+    const uid = String(item?.uid || "").trim();
+    if (filterReady && uid && inactive.has(uid)) continue;
+    if (
+      isPersonSeatedInIdentitySet(seatedSet, {
+        uid,
+        email: item?.email,
+        name: item?.nickname || item?.name
+      })
+    ) {
+      continue;
+    }
+    if (waitingDisplayHasEntry(merged, item)) continue;
+    if (
+      uid &&
+      !personExistsInGlobalWaiting(globalWaiting, tid, {
+        uid,
+        email: item?.email,
+        name: item?.nickname || item?.name
+      })
+    ) {
+      continue;
+    }
+    merged.push({
+      ...item,
+      id: String(item.id || `att_${uid || "row"}`).trim(),
+      name: String(item.name || item.nickname || "").trim() || uid || "-"
+    });
+  }
+
+  return merged;
+}
+
+export function countTournamentWaitingDisplay(options = {}) {
+  const { excludeBlocked = false } = options;
+  const list = buildTournamentWaitingDisplayList(options);
+  if (!excludeBlocked) return list.length;
+  return list.filter((w) => !isWaitingBlockedRow(w)).length;
 }
 
 /** global_waiting 행 — tournamentId 없는 레거시 데이터도 현재 대회에 포함 */
@@ -49,8 +152,7 @@ export function isWaitingBlockedRow(raw = {}) {
 }
 
 /**
- * 통합배치도·딜러 운영 현황 공통 — 현재 대회 대기열 인원 수
- * (통합배치도 대기 목록과 동일 필터: 퇴근·좌석 제외, BLOCK 포함 여부 선택)
+ * 통합배치도·딜러 운영 현황 공통 — WAIT 메타(배치 가능, BLOCK 제외)
  */
 export function countTournamentWaitingQueue({
   globalWaiting = [],
@@ -59,31 +161,18 @@ export function countTournamentWaitingQueue({
   seatedUids = null,
   globalSeats = null,
   attendanceFilterReady = false,
+  attendanceWaitingRows = [],
   excludeBlocked = true
 } = {}) {
-  const tid = String(tournamentId || "").trim();
-  if (!tid) return 0;
-  const inactive = attendanceInactiveUids instanceof Set ? attendanceInactiveUids : new Set();
-  const seatedSet =
-    Array.isArray(globalSeats) && globalSeats.length
-      ? buildSeatedIdentitySet(globalSeats)
-      : null;
-
-  let n = 0;
-  for (const w of globalWaiting || []) {
-    if (!waitingRowBelongsToTournament(w, tid)) continue;
-    if (attendanceFilterReady && isInactiveWaitingEntry(w, inactive)) continue;
-    const person = { uid: w?.uid, email: w?.email, name: w?.name };
-    if (seatedSet) {
-      if (isPersonSeatedInIdentitySet(seatedSet, person)) continue;
-    } else {
-      const uid = String(w?.uid || "").trim();
-      if (uid && seatedUids instanceof Set && seatedUids.has(uid)) continue;
-    }
-    if (excludeBlocked && isWaitingBlockedRow(w)) continue;
-    n += 1;
-  }
-  return n;
+  return countTournamentWaitingDisplay({
+    globalWaiting,
+    tournamentId,
+    attendanceInactiveUids,
+    globalSeats: Array.isArray(globalSeats) ? globalSeats : [],
+    attendanceFilterReady,
+    attendanceWaitingRows,
+    excludeBlocked
+  });
 }
 
 /** tournaments/{tid}/global_seats 점유 좌석 수 */

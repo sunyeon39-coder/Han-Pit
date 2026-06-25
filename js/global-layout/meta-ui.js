@@ -12,6 +12,7 @@ export function updateGlobalLayoutWaitingMeta() {
     attendanceInactiveUids: GL.attendanceInactiveUids,
     globalSeats: GL.globalSeats,
     attendanceFilterReady: GL.attendanceFilterReady === true,
+    attendanceWaitingRows: GL.attendanceWaiting,
     excludeBlocked: true
   });
   if (GL.waitingCountEl) {

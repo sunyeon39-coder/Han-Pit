@@ -14,7 +14,7 @@ export function waitingRowMatchesPerson(w, tournamentId, person) {
   const wName = String(w?.name || "").trim();
   if (prevUid && wUid && wUid === prevUid) return true;
   if (prevEmail && wEmail && wEmail === prevEmail) return true;
-  if (!prevUid && !prevEmail && prevName && wName === prevName) return true;
+  if (prevName && wName && wName === prevName) return true;
   return false;
 }
 

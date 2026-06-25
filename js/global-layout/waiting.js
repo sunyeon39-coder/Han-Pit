@@ -1,8 +1,12 @@
 import { waitingRowMatchesPerson } from "./fs-waiting-merge.js";
 import { GL } from "./state.js";
 import { resolveAttendanceWaitingJoinMs, resolveAttendanceWaitingStatusChangedMs } from "../shared/attendance-operational-day.js";
-import { isInactiveWaitingEntry } from "../shared/attendance-waiting-filter.js";
-import { waitingRowBelongsToTournament as sharedWaitingRowBelongsToTournament } from "../shared/tournament-waiting-queue.js";
+import {
+  waitingRowBelongsToTournament as sharedWaitingRowBelongsToTournament,
+  buildTournamentWaitingDisplayList,
+  isPersonSeatedInIdentitySet,
+  buildSeatedIdentitySet
+} from "../shared/tournament-waiting-queue.js";
 import { fmtElapsed, isEmptyPerson, makeUid, timerClass, toMillis } from "./utils.js";
 import { bumpGlobalLayoutDataRevision } from "./realtime-ui.js";
 
@@ -282,119 +286,37 @@ export function isPersonSeatedInGlobalSeats(seats, person = {}) {
   return isPersonSeatedInIdentitySet(set, person);
 }
 
-function buildSeatedIdentitySet(seats = []) {
-  const set = new Set();
-  for (const s of seats) {
-    if (isEmptyPerson(String(s?.person || "").trim())) continue;
-    const uid = String(s?.personUid || "").trim();
-    const email = String(s?.personEmail || "").trim().toLowerCase();
-    const name = String(s?.person || "").trim();
-    if (uid) set.add(`uid:${uid}`);
-    if (email) set.add(`email:${email}`);
-    if (!uid && !email && name) set.add(`name:${name}`);
-  }
-  return set;
-}
-
-function isPersonSeatedInIdentitySet(set, person = {}) {
-  const uid = String(person.uid || "").trim();
-  const email = String(person.email || "").trim().toLowerCase();
-  const name = String(person.name || person.nickname || "").trim();
-  if (uid && set.has(`uid:${uid}`)) return true;
-  if (email && set.has(`email:${email}`)) return true;
-  if (!uid && !email && name && set.has(`name:${name}`)) return true;
-  return false;
-}
-
-function getSeatedIdentitySet() {
-  const rev = GL.dataRevision || 0;
-  if (GL._seatedIdentitySet && GL._seatedIdentitySetRev === rev) {
-    return GL._seatedIdentitySet;
-  }
-  const set = buildSeatedIdentitySet(GL.globalSeats);
-  GL._seatedIdentitySet = set;
-  GL._seatedIdentitySetRev = rev;
-  return set;
-}
-
 export function getCurrentTournamentWaiting() {
   const rev = GL.dataRevision || 0;
   if (GL._waitingListCache && GL._waitingListCacheRev === rev) {
     return GL._waitingListCache;
   }
 
-  const inactive = GL.attendanceInactiveUids instanceof Set ? GL.attendanceInactiveUids : new Set();
-  const filterReady = GL.attendanceFilterReady === true;
-  const seatedSet = getSeatedIdentitySet();
-
-  const waitingBase = (GL.globalWaiting || [])
-    .filter((w) => waitingRowBelongsToTournament(w, GL.tournamentId))
-    .filter((w) => !filterReady || !isInactiveWaitingEntry(w, inactive))
-    .filter((w) => !isPersonSeatedInIdentitySet(seatedSet, { uid: w?.uid, email: w?.email, name: w?.name }))
-    .map((w) => {
-      const uid = String(w?.uid || "").trim();
-      if (!uid) return w;
-      const att = (GL.attendanceWaiting || []).find((row) => String(row?.uid || "").trim() === uid);
-      if (!att) return w;
-      const rowJoin = getWaitingJoinMs(w);
-      const attWaitChanged = resolveAttendanceWaitingStatusChangedMs(att);
-      let healJoin = 0;
-      if (attWaitChanged > rowJoin + 3000) {
-        healJoin = attWaitChanged;
-      } else if (!attWaitChanged) {
-        const attJoin = resolveAttendanceWaitingJoinMs(att);
-        // statusChangedAt 없을 때만 폴백 — 출석 시각이 더 최근일 때만 줄이고, 늘리지는 않음
-        if (attJoin > rowJoin + 3000) healJoin = attJoin;
-      }
-      if (healJoin) {
-        return { ...w, joinedAt: healJoin };
-      }
-      return w;
-    });
-
-  const merged = [...waitingBase];
-  const hasEntry = (candidate = {}) => {
-    const cUid = String(candidate.uid || "").trim();
-    const cEmail = String(candidate.email || "").trim();
-    const cName = String(candidate.name || "").trim();
-    return merged.some((w) => {
-      const wUid = String(w?.uid || "").trim();
-      const wEmail = String(w?.email || "").trim();
-      const wName = String(w?.name || "").trim();
-      if (cUid && wUid && cUid === wUid) return true;
-      if (cEmail && wEmail && cEmail === wEmail) return true;
-      if (!cUid && !cEmail && cName && wName === cName) return true;
-      return false;
-    });
-  };
-
-  GL.attendanceWaiting.forEach((item) => {
-    const uid = String(item?.uid || "").trim();
-    if (filterReady && uid && inactive.has(uid)) return;
-    if (
-      isPersonSeatedInIdentitySet(seatedSet, {
-        uid,
-        email: item?.email,
-        name: item?.nickname || item?.name
-      })
-    ) {
-      return;
+  const merged = buildTournamentWaitingDisplayList({
+    globalWaiting: GL.globalWaiting,
+    tournamentId: GL.tournamentId,
+    attendanceInactiveUids: GL.attendanceInactiveUids,
+    globalSeats: GL.globalSeats,
+    attendanceFilterReady: GL.attendanceFilterReady === true,
+    attendanceWaitingRows: GL.attendanceWaiting
+  }).map((w) => {
+    const uid = String(w?.uid || "").trim();
+    if (!uid) return w;
+    const att = (GL.attendanceWaiting || []).find((row) => String(row?.uid || "").trim() === uid);
+    if (!att) return w;
+    const rowJoin = getWaitingJoinMs(w);
+    const attWaitChanged = resolveAttendanceWaitingStatusChangedMs(att);
+    let healJoin = 0;
+    if (attWaitChanged > rowJoin + 3000) {
+      healJoin = attWaitChanged;
+    } else if (!attWaitChanged) {
+      const attJoin = resolveAttendanceWaitingJoinMs(att);
+      if (attJoin > rowJoin + 3000) healJoin = attJoin;
     }
-    if (hasEntry(item)) return;
-    // 출석 문서(waiting)만 남은 유령 행 — global_waiting(출근·수동추가·좌석해제) 없으면 표시 안 함
-    if (
-      uid &&
-      !personInGlobalWaiting({
-        uid,
-        email: item?.email,
-        name: item?.nickname || item?.name
-      })
-    ) {
-      return;
+    if (healJoin) {
+      return { ...w, joinedAt: healJoin };
     }
-    merged.push(
-      buildAttendanceFallbackWaitingRow(item, String(item.id || `att_${uid || makeUid("att")}`))
-    );
+    return w;
   });
 
   GL._waitingListCache = merged;

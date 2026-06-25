@@ -474,6 +474,7 @@ export function updateWaitingTimersInPanel() {
 
 export function renderSeatPanel() {
   if (layoutIsMobile()) return;
+  updateGlobalLayoutMetaCounts(GL.globalSeats);
   const seatCol = getPcSeatColEl();
   if (!seatCol) return;
   capturePanelScroll();

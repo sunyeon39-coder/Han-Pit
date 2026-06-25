@@ -1,6 +1,6 @@
 import { GL } from "./state.js";
 import { layoutIsMobile } from "../layout/layout-main-route-env.js";
-import { updateGlobalLayoutWaitingMeta } from "./meta-ui.js";
+import { updateGlobalLayoutMetaCounts, updateGlobalLayoutWaitingMeta } from "./meta-ui.js";
 import { renderSeats, renderSeatPanel, renderWaiting } from "./panel-ui.js";
 import { renderGlobalLayoutMobile } from "./mobile-panel-render.js";
 import { getCurrentTournamentWaiting } from "./waiting.js";
@@ -38,6 +38,9 @@ function flushGlobalLayoutRealtimeUi() {
   if (f.seatPanel) renderSeatPanel();
   if (f.waiting) renderWaiting(getCurrentTournamentWaiting());
   if (f.metaOnly) updateGlobalLayoutWaitingMeta();
+  if (f.seats || f.seatPanel || f.waiting || f.metaOnly) {
+    updateGlobalLayoutMetaCounts(GL.globalSeats);
+  }
 }
 
 export function scheduleGlobalLayoutRealtimeUi(flags = {}) {
