@@ -231,9 +231,22 @@ export function applyOptimisticMyWaitingPick(waitingId = "") {
   };
 }
 
-/** 대기 행 선택 — 토글 해제 없이 한 번에 선택 + 운영자 pick 동기화 */
+/** 대기 행 선택 — 같은 행을 다시 누르면 선택 해제 */
 export function setWaitingRowSelection(waitingId = "") {
   const wid = String(waitingId || "").trim();
+  const cur = String(GL.selectedWaitingId || "").trim();
+  const myUid = String(GL.currentUser?.uid || auth.currentUser?.uid || "").trim();
+  const myPickWid = String(GL.operatorPicks?.[myUid]?.waitingId || "").trim();
+  const alreadySelected = wid && (cur === wid || myPickWid === wid);
+
+  if (alreadySelected) {
+    GL.selectedWaitingId = "";
+    applyOptimisticMyWaitingPick("");
+    flushOptimisticGlobalLayoutUi();
+    void syncMyWaitingPick("");
+    return;
+  }
+
   GL.selectedWaitingId = wid;
   if (wid && GL.selectedSeatIds?.clear) GL.selectedSeatIds.clear();
   applyOptimisticMyWaitingPick(wid);
