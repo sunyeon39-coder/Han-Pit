@@ -74,6 +74,8 @@ export const IX = {
   tournamentRosterMap: new Map(),
   tournamentRosterLoadKey: "",
   dealerSeatMap: new Map(),
+  /** tournaments/{tid}/global_seats 스냅샷 — 점유 카운트·대기열 좌석 제외용 */
+  dealerGlobalSeats: [],
   /** layout_shared/global_waiting — 통합배치도와 동일 대기열 */
   globalWaiting: [],
   stopGlobalWaitingWatch: null,

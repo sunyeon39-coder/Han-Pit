@@ -370,6 +370,7 @@ export function getCurrentTournamentWaiting() {
 
   GL.attendanceWaiting.forEach((item) => {
     const uid = String(item?.uid || "").trim();
+    if (filterReady && uid && inactive.has(uid)) return;
     if (
       isPersonSeatedInIdentitySet(seatedSet, {
         uid,

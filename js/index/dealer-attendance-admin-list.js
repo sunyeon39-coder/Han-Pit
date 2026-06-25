@@ -1,7 +1,7 @@
 import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
 import { attendanceDocBelongsToTournament } from "./dealer-attendance-refs.js";
-import { isAttendanceTerminal, seatStillMatchesActiveEventCard } from "./dealer-attendance-derived.js";
+import { isAttendanceTerminal } from "./dealer-attendance-derived.js";
 import { applyOperationalDayToAttendance } from "../shared/attendance-operational-day.js";
 
 export function getAdminAttendanceList() {
@@ -12,8 +12,7 @@ export function getAdminAttendanceList() {
   IX.dealerAttendanceMap.forEach((value, docId) => {
     if (!attendanceDocBelongsToTournament(docId, tournamentId)) return;
     const seat = IX.dealerSeatMap.get(value.uid);
-    const useSeat =
-      Boolean(seat) && !isAttendanceTerminal(value.status) && seatStillMatchesActiveEventCard(seat);
+    const useSeat = Boolean(seat) && !isAttendanceTerminal(value.status);
     const derived = applyOperationalDayToAttendance({
       ...value,
       ...(useSeat

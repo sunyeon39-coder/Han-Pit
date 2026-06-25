@@ -6,16 +6,11 @@ import { getCurrentTournamentWaiting, isWaitingBlocked } from "./waiting.js";
 export function updateGlobalLayoutWaitingMeta() {
   const waiting = getCurrentTournamentWaiting();
   const blocked = waiting.filter((w) => isWaitingBlocked(w)).length;
-  const seatedUids = new Set(
-    (GL.globalSeats || [])
-      .map((s) => String(s?.personUid || "").trim())
-      .filter(Boolean)
-  );
   const waitAssignable = countTournamentWaitingQueue({
     globalWaiting: GL.globalWaiting,
     tournamentId: GL.tournamentId,
     attendanceInactiveUids: GL.attendanceInactiveUids,
-    seatedUids,
+    globalSeats: GL.globalSeats,
     attendanceFilterReady: GL.attendanceFilterReady === true,
     excludeBlocked: true
   });

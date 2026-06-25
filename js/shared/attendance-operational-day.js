@@ -30,8 +30,7 @@ export function isStaleOperationalDayAttendance(attendance = {}, nowMs = Date.no
   return hasStaleOperationalDayCheckIn(attendance, nowMs);
 }
 
-export function applyOperationalDayToAttendance(attendance = {}, nowMs = Date.now()) {
-  if (!hasStaleOperationalDayCheckIn(attendance, nowMs)) return attendance;
+function resetAttendanceToOff(attendance = {}) {
   return {
     ...attendance,
     status: "off",
@@ -44,6 +43,26 @@ export function applyOperationalDayToAttendance(attendance = {}, nowMs = Date.no
     currentSeatId: "",
     currentSeatLabel: ""
   };
+}
+
+export function applyOperationalDayToAttendance(attendance = {}, nowMs = Date.now()) {
+  const status = String(attendance?.status || "").trim();
+
+  // 퇴근: 당일(운영일) 퇴근이면 유지. 이전 운영일 퇴근만 미출근으로 정리.
+  if (status === "checked_out") {
+    const checkedOutAt = Number(attendance?.checkedOutAt || 0);
+    const checkedInAt = Number(attendance?.checkedInAt || 0);
+    const anchor = checkedOutAt || checkedInAt;
+    if (anchor && !isAttendanceFromCurrentOperationalDay({ checkedInAt: anchor }, nowMs)) {
+      return resetAttendanceToOff(attendance);
+    }
+    return attendance;
+  }
+
+  if (status === "off") return attendance;
+
+  if (!hasStaleOperationalDayCheckIn(attendance, nowMs)) return attendance;
+  return resetAttendanceToOff(attendance);
 }
 
 /** 출석 문서 → 통합배치도 대기 타이머 앵커 (대기 시작 시각만, 출근 시각과 분리) */

@@ -159,12 +159,21 @@ export function bindDealerAttendanceRealtime() {
 
 export function applyIndexGlobalSeatsSnapshot(snap) {
   IX.dealerSeatMap.clear();
+  IX.dealerGlobalSeats = [];
 
   snap.docs.forEach((d) => {
     const data = d.data() || {};
-    const uid = String(data.personUid || "").trim();
     const person = String(data.person || "").trim();
-    if (!uid || !person || person === "비어있음") return;
+    if (!person || person === "비어있음") return;
+
+    IX.dealerGlobalSeats.push({
+      person,
+      personUid: String(data.personUid || "").trim(),
+      personEmail: String(data.personEmail || "").trim()
+    });
+
+    const uid = String(data.personUid || "").trim();
+    if (!uid) return;
     IX.dealerSeatMap.set(uid, {
       eventId: String(data.currentEventId || data.mappedEventId || "").trim(),
       boxId: String(data.boxId || "").trim(),

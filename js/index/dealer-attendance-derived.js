@@ -28,14 +28,11 @@ export function getDerivedAttendance(user) {
 
   const base = getBaseAttendance(user);
   const seatInfo = IX.dealerSeatMap.get(user.uid);
-  /** 퇴근·미출근이면 좌석 무시 + 삭제된 카드·빈 eventId 좌석은 배치로 치지 않음 */
-  const useSeat =
-    Boolean(seatInfo) &&
-    !(base && isAttendanceTerminal(base.status)) &&
-    seatStillMatchesActiveEventCard(seatInfo);
+  /** 퇴근·미출근이면 좌석 무시 */
+  const useSeat = Boolean(seatInfo) && !(base && isAttendanceTerminal(base.status));
 
   if (!base) {
-    const seatOnly = seatInfo && seatStillMatchesActiveEventCard(seatInfo);
+    const seatOnly = Boolean(seatInfo);
     return applyOperationalDayToAttendance({
       uid: user.uid,
       nickname: IX.currentUserProfile?.nickname || user.displayName || "Unknown",

@@ -3,7 +3,7 @@ import { auth } from "../firebase.js";
 import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
 import {
   countTournamentWaitingQueue,
-  countTournamentOccupiedFromSeatMap,
+  countTournamentOccupiedFromGlobalSeats,
   buildIndexAttendanceInactiveUids
 } from "../shared/tournament-waiting-queue.js";
 import { getTournamentId } from "./core-utils.js";
@@ -45,7 +45,6 @@ function getDealerAdminCounts() {
 
   const tournamentId = getTournamentId();
   const inactive = buildIndexAttendanceInactiveUids(IX.dealerAttendanceMap, tournamentId);
-  const seatedUids = new Set(IX.dealerSeatMap.keys());
 
   getAdminAttendanceList().forEach((item) => {
     const s = item.status || "off";
@@ -53,16 +52,16 @@ function getDealerAdminCounts() {
     else if (s === "off") counts.off += 1;
   });
 
-  // 통합배치도와 동일: global_waiting + 좌석 점유(global_seats)
+  // 통합배치도 대기 목록과 동일 (BLOCK 포함, 좌석·퇴근 제외)
   counts.waiting = countTournamentWaitingQueue({
     globalWaiting: IX.globalWaiting,
     tournamentId,
     attendanceInactiveUids: inactive,
-    seatedUids,
+    globalSeats: IX.dealerGlobalSeats,
     attendanceFilterReady: IX.dealerAttendanceMap.size > 0,
-    excludeBlocked: true
+    excludeBlocked: false
   });
-  counts.assigned = countTournamentOccupiedFromSeatMap(IX.dealerSeatMap);
+  counts.assigned = countTournamentOccupiedFromGlobalSeats(IX.dealerGlobalSeats);
 
   return counts;
 }
@@ -126,7 +125,7 @@ function renderDealerAdminListHtml() {
       data-admin-nickname="${escapeHtml(item.nickname || item.email || "")}"
       title="운영 로그 기준 근무 합계 수정"
     >근무 합계</button>
-    <button class="dealer-mini-btn" data-admin-action="checked_out" data-admin-uid="${escapeHtml(item.uid)}">퇴근</button>
+    <button class="dealer-mini-btn" data-admin-action="checked_out" data-admin-uid="${escapeHtml(item.uid)}" ${item.status === "off" ? "disabled" : ""}>퇴근</button>
   </div>
 </div>
               `).join("");
