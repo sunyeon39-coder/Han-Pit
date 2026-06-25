@@ -28,8 +28,11 @@ import {
   writeIndexGlobalWaitingCache,
   writeGlobalSeatsCache
 } from "./index-ops-session-cache.js";
+import { readHubTournamentsPersistedCache } from "../hub/hub-tournaments-session-cache.js";
+import { isAppDebugEnabled } from "../shared/app-debug.js";
 
 let bootstrapInflight = null;
+let bootstrapSeq = 0;
 
 function globalSeatsRowsFromSnapshot(snap) {
   const rows = [];
@@ -72,7 +75,45 @@ export function seedIndexOpsFromSessionCache() {
   return seeded;
 }
 
-async function prefetchIndexOpsFromFirestoreCache() {
+/** 허브·sessionStorage — 대회 문서 도착 전 requiredCode 로 명단 조회 가능하게 */
+export function seedIndexTournamentMetaFromHubCache() {
+  const tournamentId = getTournamentId();
+  if (!tournamentId) return false;
+
+  const cachedCode = String(
+    sessionStorage.getItem(`tournamentRequiredCode:${tournamentId}`) || ""
+  ).trim();
+  if (cachedCode && !String(IX.currentTournament?.requiredCode || "").trim()) {
+    IX.currentTournament = {
+      ...(IX.currentTournament || {}),
+      id: tournamentId,
+      requiredCode: cachedCode
+    };
+  }
+
+  const list = readHubTournamentsPersistedCache();
+  const row = Array.isArray(list)
+    ? list.find((t) => String(t?.id || "").trim() === tournamentId)
+    : null;
+  if (!row) return Boolean(cachedCode);
+
+  const requiredCode = String(row.requiredCode || cachedCode || "").trim();
+  IX.currentTournament = {
+    ...(IX.currentTournament || {}),
+    id: tournamentId,
+    name: String(row.name || IX.currentTournament?.name || tournamentId).trim(),
+    logoText: String(row.logoText || IX.currentTournament?.logoText || "").trim(),
+    requiredCode,
+    startDate: row.startDate || IX.currentTournament?.startDate || "",
+    endDate: row.endDate || IX.currentTournament?.endDate || ""
+  };
+  if (requiredCode) {
+    sessionStorage.setItem(`tournamentRequiredCode:${tournamentId}`, requiredCode);
+  }
+  return true;
+}
+
+export async function prefetchIndexOpsFromFirestoreCache() {
   const tournamentId = getTournamentId();
   if (!tournamentId) return;
 
@@ -137,24 +178,43 @@ export function bootstrapIndexDealerOps(options = {}) {
   const force = options.force === true;
   if (bootstrapInflight) {
     if (!force) return bootstrapInflight;
-    return bootstrapInflight.finally(() => bootstrapIndexDealerOps({ force: true }));
+    return bootstrapInflight.finally(() => {
+      bootstrapInflight = null;
+      return bootstrapIndexDealerOps();
+    });
   }
 
+  const seq = ++bootstrapSeq;
   bootstrapInflight = (async () => {
+    seedIndexTournamentMetaFromHubCache();
     seedIndexOpsFromSessionCache();
     await prefetchIndexOpsFromFirestoreCache();
+    if (seq !== bootstrapSeq) return;
     await Promise.all([
       refreshIndexOpsDataFromServer(),
       loadDealerAttendanceOnce(),
       loadTournamentDealerRosterOnce()
     ]);
+    if (isAppDebugEnabled()) {
+      console.info("[index-ops-bootstrap]", {
+        tournamentId: getTournamentId(),
+        requiredCode: String(IX.currentTournament?.requiredCode || "").trim(),
+        waiting: IX.globalWaiting.length,
+        seats: IX.dealerGlobalSeats.length,
+        attendance: IX.dealerAttendanceMap.size,
+        roster: IX.tournamentRosterMap.size,
+        adminRows: 0
+      });
+    }
     scheduleRenderDealerOps();
   })()
     .catch((err) => {
       console.warn("bootstrapIndexDealerOps:", err?.code || err);
     })
     .finally(() => {
-      bootstrapInflight = null;
+      if (bootstrapInflight && seq === bootstrapSeq) {
+        bootstrapInflight = null;
+      }
     });
 
   return bootstrapInflight;

@@ -34,6 +34,7 @@ export async function loadTournamentDealerRosterOnce() {
   const tournamentId = getTournamentId();
   const requiredCode = resolveTournamentRequiredCode(tournamentId);
   if (!tournamentId || !requiredCode) {
+    IX.tournamentRosterLoadKey = "";
     return;
   }
 

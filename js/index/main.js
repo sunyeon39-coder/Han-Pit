@@ -79,6 +79,8 @@ const ATTENDANCE_LOG_RETENTION_MS = 45 * 24 * 60 * 60 * 1000;
 import { routeToHub, initTournamentPeriodWatch } from "./tournament-period.js";
 import {
   seedIndexOpsFromSessionCache,
+  seedIndexTournamentMetaFromHubCache,
+  prefetchIndexOpsFromFirestoreCache,
   bootstrapIndexDealerOps
 } from "./index-ops-bootstrap.js";
 import {
@@ -278,6 +280,10 @@ function tryEarlyIndexChromePaint() {
   const user = auth.currentUser;
   if (!user) return;
   refreshIndexDomRefs();
+  if (getTournamentId()) {
+    seedIndexTournamentMetaFromHubCache();
+    seedIndexOpsFromSessionCache();
+  }
   applyIndexBootProfile(user);
 }
 
@@ -345,6 +351,7 @@ async function init() {
     render();
   }
 
+  seedIndexTournamentMetaFromHubCache();
   seedIndexOpsFromSessionCache();
   renderDealerOps();
 
@@ -354,7 +361,7 @@ async function init() {
   bindDealerAttendanceRealtime();
   bindDealerSeatRealtime();
 
-  void bootstrapIndexDealerOps();
+  void prefetchIndexOpsFromFirestoreCache();
 
   await loadEvents(bootTournamentId, { forceServer: true });
 
@@ -782,7 +789,7 @@ onAuthStateChanged(auth, async (user) => {
     await init();
     if (flow !== indexAuthFlowGen) return;
     await initTournamentPeriodWatch();
-    void bootstrapIndexDealerOps();
+    void bootstrapIndexDealerOps({ force: true });
     void profilePromise
       .then(() => ensureIndexOpsChrome(user))
       .catch(() => null);
@@ -797,7 +804,7 @@ window.addEventListener("hanpit-index-tournament-ready", () => {
   bindIndexGlobalWaitingRealtime();
   bindDealerAttendanceRealtime();
   applyIndexOpsPermissions(auth.currentUser);
-  void bootstrapIndexDealerOps();
+  void bootstrapIndexDealerOps({ force: true });
   if (IX.events.length) {
     render();
     refreshCardStatuses();

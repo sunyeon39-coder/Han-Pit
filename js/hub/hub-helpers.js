@@ -94,6 +94,11 @@ export function sortTournaments(list) {
 export function routeToTournament(tournamentId) {
   if (!tournamentId) return;
   sessionStorage.setItem("tournamentId", tournamentId);
+  const tournament = hubState.tournamentsCache.find((t) => t.id === tournamentId);
+  const requiredCode = String(tournament?.requiredCode || "").trim();
+  if (requiredCode) {
+    sessionStorage.setItem(`tournamentRequiredCode:${tournamentId}`, requiredCode);
+  }
   const uid = hubState.currentUser?.uid;
   const email = hubState.currentUser?.email || "";
   if (uid) {

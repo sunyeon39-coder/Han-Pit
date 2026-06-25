@@ -410,7 +410,7 @@ export function renderDealerOps() {
   }
 
   if (isAdmin && !getAdminAttendanceList().length) {
-    void bootstrapIndexDealerOps();
+    void bootstrapIndexDealerOps({ force: true });
   }
 }
 
