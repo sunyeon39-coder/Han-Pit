@@ -2,6 +2,7 @@ import { waitingRowMatchesPerson } from "./fs-waiting-merge.js";
 import { GL } from "./state.js";
 import { resolveAttendanceWaitingJoinMs, resolveAttendanceWaitingStatusChangedMs } from "../shared/attendance-operational-day.js";
 import { isInactiveWaitingEntry } from "../shared/attendance-waiting-filter.js";
+import { waitingRowBelongsToTournament as sharedWaitingRowBelongsToTournament } from "../shared/tournament-waiting-queue.js";
 import { fmtElapsed, isEmptyPerson, makeUid, timerClass, toMillis } from "./utils.js";
 import { bumpGlobalLayoutDataRevision } from "./realtime-ui.js";
 
@@ -134,11 +135,7 @@ export function isWaitingBlocked(raw = {}) {
 
 /** global_waiting 행 — tournamentId 없는 레거시 데이터도 현재 대회에 포함 */
 export function waitingRowBelongsToTournament(row = {}, tournamentId = "") {
-  const tid = String(tournamentId || GL.tournamentId || "").trim();
-  if (!tid) return false;
-  const wTid = String(row?.tournamentId || "").trim();
-  if (!wTid) return true;
-  return wTid === tid;
+  return sharedWaitingRowBelongsToTournament(row, tournamentId || GL.tournamentId);
 }
 
 /** BLOCK 체크 직후 상단 카운트용 — Firestore 스냅샷 전 로컬 대기 목록 반영 */

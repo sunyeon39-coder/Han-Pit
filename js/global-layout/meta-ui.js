@@ -1,11 +1,24 @@
 import { GL } from "./state.js";
 import { isEmptyPerson } from "./utils.js";
+import { countTournamentWaitingQueue } from "../shared/tournament-waiting-queue.js";
 import { getCurrentTournamentWaiting, isWaitingBlocked } from "./waiting.js";
 
 export function updateGlobalLayoutWaitingMeta() {
   const waiting = getCurrentTournamentWaiting();
   const blocked = waiting.filter((w) => isWaitingBlocked(w)).length;
-  const waitAssignable = Math.max(0, waiting.length - blocked);
+  const seatedUids = new Set(
+    (GL.globalSeats || [])
+      .map((s) => String(s?.personUid || "").trim())
+      .filter(Boolean)
+  );
+  const waitAssignable = countTournamentWaitingQueue({
+    globalWaiting: GL.globalWaiting,
+    tournamentId: GL.tournamentId,
+    attendanceInactiveUids: GL.attendanceInactiveUids,
+    seatedUids,
+    attendanceFilterReady: GL.attendanceFilterReady === true,
+    excludeBlocked: true
+  });
   if (GL.waitingCountEl) {
     GL.waitingCountEl.textContent = `WAIT: ${waitAssignable}`;
   }

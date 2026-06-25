@@ -182,6 +182,7 @@ export function applyIndexGlobalSeatsSnapshot(snap) {
 
   void ensureMeRecovered(auth.currentUser);
   scheduleDealerOpsIfChanged(dealerSeatMapFingerprint(), "seat");
+  scheduleRenderDealerOps();
 }
 
 export function bindDealerSeatRealtime() {

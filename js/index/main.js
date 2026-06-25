@@ -30,6 +30,7 @@ import {
   loadEvents,
   bindEventsRealtime,
   bindLayoutSeatSummaryRealtime,
+  bindIndexGlobalWaitingRealtime,
   render,
   refreshCardStatuses,
   populateEventSelect,
@@ -366,6 +367,7 @@ async function init() {
 
   bindEventsRealtime(bootTournamentId);
   bindLayoutSeatSummaryRealtime(bootTournamentId);
+  bindIndexGlobalWaitingRealtime();
   bindDealerAttendanceRealtime();
   bindDealerSeatRealtime();
 

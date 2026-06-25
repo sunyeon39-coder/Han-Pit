@@ -23,4 +23,5 @@ export {
 } from "./event-cards-admin-form.js";
 export { ensureLayoutEventShellAfterCardSave } from "./event-cards-layout-shell.js";
 export { loadEvents, bindEventsRealtime, bindLayoutSeatSummaryRealtime } from "./event-cards-loaders.js";
+export { bindIndexGlobalWaitingRealtime } from "./index-global-waiting-realtime.js";
 export { saveEventCard, deleteEventCardCurrent } from "./event-cards-actions.js";

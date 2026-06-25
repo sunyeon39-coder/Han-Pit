@@ -1,6 +1,11 @@
 import { auth } from "../firebase.js";
 
 import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
+import {
+  countTournamentWaitingQueue,
+  countTournamentOccupiedFromSeatMap,
+  buildIndexAttendanceInactiveUids
+} from "../shared/tournament-waiting-queue.js";
 import { getTournamentId } from "./core-utils.js";
 import { escapeHtml } from "../shared/dom-utils.js";
 import { IX, refreshIndexDomRefs } from "./state.js";
@@ -38,11 +43,26 @@ function getDealerAdminCounts() {
     off: 0
   };
 
+  const tournamentId = getTournamentId();
+  const inactive = buildIndexAttendanceInactiveUids(IX.dealerAttendanceMap, tournamentId);
+  const seatedUids = new Set(IX.dealerSeatMap.keys());
+
   getAdminAttendanceList().forEach((item) => {
     const s = item.status || "off";
-    if (counts[s] !== undefined) counts[s] += 1;
-    else counts.off += 1;
+    if (s === "checked_out") counts.checked_out += 1;
+    else if (s === "off") counts.off += 1;
   });
+
+  // 통합배치도와 동일: global_waiting + 좌석 점유(global_seats)
+  counts.waiting = countTournamentWaitingQueue({
+    globalWaiting: IX.globalWaiting,
+    tournamentId,
+    attendanceInactiveUids: inactive,
+    seatedUids,
+    attendanceFilterReady: IX.dealerAttendanceMap.size > 0,
+    excludeBlocked: true
+  });
+  counts.assigned = countTournamentOccupiedFromSeatMap(IX.dealerSeatMap);
 
   return counts;
 }

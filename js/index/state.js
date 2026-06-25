@@ -74,6 +74,9 @@ export const IX = {
   tournamentRosterMap: new Map(),
   tournamentRosterLoadKey: "",
   dealerSeatMap: new Map(),
+  /** layout_shared/global_waiting — 통합배치도와 동일 대기열 */
+  globalWaiting: [],
+  stopGlobalWaitingWatch: null,
 
   dealerAdminUi: {
     search: "",
