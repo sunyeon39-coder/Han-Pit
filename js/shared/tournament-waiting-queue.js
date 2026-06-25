@@ -1,8 +1,8 @@
 import {
   buildAttendanceInactiveUidSet,
-  filterAttendanceRowsForWaitingMerge,
-  isInactiveWaitingEntry
+  filterAttendanceRowsForWaitingMerge
 } from "./attendance-waiting-filter.js";
+import { isAttendanceFromCurrentOperationalDay } from "./attendance-operational-day.js";
 
 function isEmptySeatPerson(name = "") {
   const v = String(name || "").trim();
@@ -22,6 +22,63 @@ export function buildSeatedIdentitySet(seats = []) {
     if (name) set.add(`name:${name}`);
   }
   return set;
+}
+
+export function getWaitingRowJoinMs(row = {}) {
+  const keys = ["joinedAt", "createdAt", "joinedAtServer", "addedAt", "carryStartedAt"];
+  for (const key of keys) {
+    const ms = Number(row?.[key] || 0);
+    if (ms > 0) return ms;
+  }
+  return 0;
+}
+
+export function findGlobalWaitingRowForUid(globalWaiting = [], tournamentId = "", uid = "") {
+  const safeUid = String(uid || "").trim();
+  const tid = String(tournamentId || "").trim();
+  if (!safeUid || !tid) return null;
+  for (const w of globalWaiting || []) {
+    if (String(w?.uid || "").trim() !== safeUid) continue;
+    if (!waitingRowBelongsToTournament(w, tid)) continue;
+    return w;
+  }
+  return null;
+}
+
+/** global_waiting 에 당일(운영일) 대기 행이 있으면 출석 stale 리셋 대상 아님 */
+export function hasFreshGlobalWaitingForUid(
+  globalWaiting = [],
+  tournamentId = "",
+  uid = "",
+  nowMs = Date.now()
+) {
+  const row = findGlobalWaitingRowForUid(globalWaiting, tournamentId, uid);
+  if (!row) return false;
+  const joinMs = getWaitingRowJoinMs(row);
+  if (!joinMs) return true;
+  return isAttendanceFromCurrentOperationalDay({ checkedInAt: joinMs }, nowMs);
+}
+
+/** 좌석 점유 판정 — uid 불일치 시 이름만으로 다른 사람과 매칭하지 않음 */
+export function isPersonSeatedInGlobalSeats(seats = [], person = {}) {
+  const pUid = String(person.uid || "").trim();
+  const pEmail = String(person.email || "").trim().toLowerCase();
+  const pName = String(person.name || person.nickname || "").trim();
+
+  for (const s of seats || []) {
+    if (isEmptySeatPerson(s?.person)) continue;
+    const sUid = String(s?.personUid || "").trim();
+    const sEmail = String(s?.personEmail || "").trim().toLowerCase();
+    const sName = String(s?.person || "").trim();
+
+    if (pUid && sUid) {
+      if (pUid === sUid) return true;
+      continue;
+    }
+    if (pEmail && sEmail && pEmail === sEmail) return true;
+    if (pName && sName && pName === sName) return true;
+  }
+  return false;
 }
 
 export function isPersonSeatedInIdentitySet(set, person = {}) {
@@ -83,17 +140,17 @@ export function buildTournamentWaitingDisplayList({
   if (!tid) return [];
   const inactive = attendanceInactiveUids instanceof Set ? attendanceInactiveUids : new Set();
   const filterReady = attendanceFilterReady === true;
-  const seatedSet = buildSeatedIdentitySet(globalSeats);
 
+  // global_waiting 행은 대기열 원본 — 출석 문서(off/퇴근)와 달라도 표시 (퇴근 시 별도 제거)
   const waitingBase = (globalWaiting || [])
     .filter((w) => waitingRowBelongsToTournament(w, tid))
-    .filter((w) => !filterReady || !isInactiveWaitingEntry(w, inactive))
-    .filter((w) =>
-      !isPersonSeatedInIdentitySet(seatedSet, {
-        uid: w?.uid,
-        email: w?.email,
-        name: w?.name
-      })
+    .filter(
+      (w) =>
+        !isPersonSeatedInGlobalSeats(globalSeats, {
+          uid: w?.uid,
+          email: w?.email,
+          name: w?.name
+        })
     );
 
   const merged = [...waitingBase];
@@ -102,7 +159,7 @@ export function buildTournamentWaitingDisplayList({
     const uid = String(item?.uid || "").trim();
     if (filterReady && uid && inactive.has(uid)) continue;
     if (
-      isPersonSeatedInIdentitySet(seatedSet, {
+      isPersonSeatedInGlobalSeats(globalSeats, {
         uid,
         email: item?.email,
         name: item?.nickname || item?.name

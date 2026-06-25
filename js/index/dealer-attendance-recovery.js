@@ -9,6 +9,7 @@ import { getAttendanceRef } from "./dealer-attendance-refs.js";
 import { joinSharedWaitingOnCheckIn } from "./dealer-attendance-waiting.js";
 import { getBaseAttendance, getDerivedAttendance } from "./dealer-attendance-derived.js";
 import { isStaleOperationalDayAttendance } from "../shared/attendance-operational-day.js";
+import { getWaitingRowJoinMs } from "../shared/tournament-waiting-queue.js";
 import { renderDealerOps } from "./dealer-attendance-render.js";
 import { loadDealerAttendanceOnce } from "./dealer-attendance-load-once.js";
 
@@ -85,9 +86,6 @@ export async function ensureMeRecovered(user) {
   if (!user || !tournamentId) return;
 
   const raw = getBaseAttendance(user);
-  if (isStaleOperationalDayAttendance(raw)) return;
-
-  const me = getDerivedAttendance(user);
   const seatInfo = getMySeatInfo(user.uid);
 
   const { ref: waitingRef, state: waitingStateDoc } = await getSharedWaitingState();
@@ -95,8 +93,48 @@ export async function ensureMeRecovered(user) {
 
   const inWaiting = waitingList.some((item) => {
     if (!item || typeof item !== "object") return false;
-    return String(item.uid || "").trim() === String(user.uid).trim();
+    const itemUid = String(item.uid || "").trim();
+    const itemTournamentId = String(item.tournamentId || "").trim();
+    if (itemUid !== String(user.uid).trim()) return false;
+    if (itemTournamentId && itemTournamentId !== tournamentId) return false;
+    return true;
   });
+
+  if (isStaleOperationalDayAttendance(raw) && inWaiting) {
+    const waitRow =
+      waitingList.find((item) => String(item?.uid || "").trim() === String(user.uid).trim()) || {};
+    const joinMs = getWaitingRowJoinMs(waitRow) || Date.now();
+    const nickname =
+      String(IX.currentUserProfile?.nickname || raw?.nickname || user.displayName || "").trim() ||
+      String(user.email || "").trim();
+
+    await setDoc(
+      getAttendanceRef(tournamentId, user.uid),
+      {
+        uid: user.uid,
+        tournamentId,
+        email: String(IX.currentUserProfile?.email || raw?.email || user.email || "").trim(),
+        nickname,
+        status: "waiting",
+        checkedInAt: joinMs,
+        checkedOutAt: null,
+        statusChangedAt: joinMs,
+        currentEventId: "",
+        currentBoxId: "",
+        currentSeatId: "",
+        currentSeatLabel: "",
+        updatedAt: Date.now()
+      },
+      { merge: true }
+    );
+    await loadDealerAttendanceOnce();
+    renderDealerOps();
+    return;
+  }
+
+  if (isStaleOperationalDayAttendance(raw)) return;
+
+  const me = getDerivedAttendance(user);
 
   if (me?.status === "assigned" && !seatInfo) {
     const remoteAssigned = await hasRemoteAssignedSeatForUser(me, user.uid);

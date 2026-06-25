@@ -4,8 +4,7 @@ import { resolveAttendanceWaitingJoinMs, resolveAttendanceWaitingStatusChangedMs
 import {
   waitingRowBelongsToTournament as sharedWaitingRowBelongsToTournament,
   buildTournamentWaitingDisplayList,
-  isPersonSeatedInIdentitySet,
-  buildSeatedIdentitySet
+  isPersonSeatedInGlobalSeats as sharedIsPersonSeatedInGlobalSeats
 } from "../shared/tournament-waiting-queue.js";
 import { fmtElapsed, isEmptyPerson, makeUid, timerClass, toMillis } from "./utils.js";
 import { bumpGlobalLayoutDataRevision } from "./realtime-ui.js";
@@ -282,8 +281,7 @@ export function partitionWaitingForMobileDisplay(list = []) {
 }
 
 export function isPersonSeatedInGlobalSeats(seats, person = {}) {
-  const set = buildSeatedIdentitySet(seats);
-  return isPersonSeatedInIdentitySet(set, person);
+  return sharedIsPersonSeatedInGlobalSeats(seats, person);
 }
 
 export function getCurrentTournamentWaiting() {
