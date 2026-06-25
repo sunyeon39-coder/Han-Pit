@@ -127,7 +127,7 @@ function renderDealerAdminListHtml() {
       data-admin-nickname="${escapeHtml(item.nickname || item.email || "")}"
       title="운영 로그 기준 근무 합계 수정"
     >근무 합계</button>
-    <button class="dealer-mini-btn" data-admin-action="checked_out" data-admin-uid="${escapeHtml(item.uid)}" ${item.status === "off" ? "disabled" : ""}>퇴근</button>
+    <button class="dealer-mini-btn" data-admin-action="checked_out" data-admin-uid="${escapeHtml(item.uid)}" ${item.status === "off" || item.status === "checked_out" ? "disabled" : ""}>퇴근</button>
   </div>
 </div>
               `).join("");
