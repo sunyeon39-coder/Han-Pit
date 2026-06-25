@@ -77,6 +77,10 @@ import { getNowMs } from "./dealer-attendance-format.js";
 const ATTENDANCE_LOG_RETENTION_MS = 45 * 24 * 60 * 60 * 1000;
 
 import { routeToHub, initTournamentPeriodWatch } from "./tournament-period.js";
+import {
+  seedIndexOpsFromSessionCache,
+  refreshIndexOpsDataFromServer
+} from "./index-ops-bootstrap.js";
 
 import { wireSeatMapListeners } from "./seat-map.js";
 import {
@@ -354,16 +358,12 @@ async function init() {
 
   sessionStorage.setItem("tournamentId", bootTournamentId);
 
-  window.addEventListener("hanpit-index-tournament-ready", () => {
-    void loadTournamentDealerRosterOnce();
-    void loadDealerAttendanceOnce();
-  });
-
   const paintedFromSession = seedIndexEventsFromSessionCache();
   if (paintedFromSession) {
     render();
   }
 
+  seedIndexOpsFromSessionCache();
   renderDealerOps();
 
   bindEventsRealtime(bootTournamentId);
@@ -371,6 +371,8 @@ async function init() {
   bindIndexGlobalWaitingRealtime();
   bindDealerAttendanceRealtime();
   bindDealerSeatRealtime();
+
+  void refreshIndexOpsDataFromServer();
 
   await loadEvents(bootTournamentId, { forceServer: true });
 
@@ -812,7 +814,10 @@ onAuthStateChanged(auth, async (user) => {
 });
 
 window.addEventListener("hanpit-index-tournament-ready", () => {
+  bindIndexGlobalWaitingRealtime();
+  bindDealerAttendanceRealtime();
   applyIndexOpsPermissions(auth.currentUser);
+  void refreshIndexOpsDataFromServer();
   void loadTournamentDealerRosterOnce();
   void loadDealerAttendanceOnce();
   if (IX.events.length) {

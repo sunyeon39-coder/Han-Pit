@@ -3,6 +3,20 @@ import { doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/fire
 import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
 import { scheduleRenderDealerOps } from "./dealer-attendance-render.js";
+import { writeIndexGlobalWaitingCache } from "./index-ops-session-cache.js";
+import { refreshIndexOpsDataFromServer } from "./index-ops-bootstrap.js";
+
+function shouldKeepCachedGlobalWaiting(snap, nextWaiting = []) {
+  if (!snap?.metadata?.fromCache) return false;
+  if (!IX.globalWaiting.length) return false;
+  if (!snap.exists()) return true;
+  return nextWaiting.length === 0;
+}
+
+function shouldRefreshWaitingFromServer(snap, nextWaiting = []) {
+  if (!snap?.metadata?.fromCache) return false;
+  return !snap.exists() || nextWaiting.length === 0;
+}
 
 export function bindIndexGlobalWaitingRealtime() {
   if (IX.stopGlobalWaitingWatch) {
@@ -12,7 +26,6 @@ export function bindIndexGlobalWaitingRealtime() {
 
   const tournamentId = getTournamentId();
   if (!tournamentId) {
-    IX.globalWaiting = [];
     return;
   }
 
@@ -20,11 +33,24 @@ export function bindIndexGlobalWaitingRealtime() {
     doc(db, "layout_shared", "global_waiting"),
     (snap) => {
       const data = snap.exists() ? snap.data() || {} : {};
-      IX.globalWaiting = Array.isArray(data.waiting) ? data.waiting : [];
+      const nextWaiting = Array.isArray(data.waiting) ? data.waiting : [];
+      if (shouldKeepCachedGlobalWaiting(snap, nextWaiting)) {
+        if (shouldRefreshWaitingFromServer(snap, nextWaiting)) {
+          void refreshIndexOpsDataFromServer();
+        }
+        return;
+      }
+      IX.globalWaiting = nextWaiting;
+      writeIndexGlobalWaitingCache(tournamentId, nextWaiting);
       scheduleRenderDealerOps();
+
+      if (shouldRefreshWaitingFromServer(snap, nextWaiting)) {
+        void refreshIndexOpsDataFromServer();
+      }
     },
     (err) => {
       console.error("bindIndexGlobalWaitingRealtime error:", err);
+      void refreshIndexOpsDataFromServer();
     }
   );
 }

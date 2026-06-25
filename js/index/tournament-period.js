@@ -65,11 +65,23 @@ function showMissingTournamentOnIndex() {
 function applyTournamentDoc(docSnap) {
   if (!docSnap?.exists()) return false;
 
-  IX.currentTournament = {
+  const next = {
     id: docSnap.id,
     ...(docSnap.data() || {})
   };
-  window.dispatchEvent(new CustomEvent("hanpit-index-tournament-ready"));
+  const prev = IX.currentTournament;
+  const materiallyChanged =
+    !prev ||
+    prev.id !== next.id ||
+    String(prev.requiredCode || "").trim() !== String(next.requiredCode || "").trim() ||
+    String(prev.name || "") !== String(next.name || "") ||
+    String(prev.endAt || "") !== String(next.endAt || "") ||
+    String(prev.startAt || "") !== String(next.startAt || "");
+
+  IX.currentTournament = next;
+  if (materiallyChanged) {
+    window.dispatchEvent(new CustomEvent("hanpit-index-tournament-ready"));
+  }
 
   const tournamentId = getTournamentId();
   if (IX.topbarTournamentName) {

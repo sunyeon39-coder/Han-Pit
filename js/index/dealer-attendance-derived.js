@@ -2,6 +2,10 @@ import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
 import { getAttendanceDocId } from "./dealer-attendance-refs.js";
 import { applyOperationalDayToAttendance, isAttendanceFromCurrentOperationalDay, isActiveAttendanceStatus } from "../shared/attendance-operational-day.js";
+import {
+  findGlobalWaitingRowForUid,
+  getWaitingRowJoinMs
+} from "../shared/tournament-waiting-queue.js";
 
 export function getBaseAttendance(user) {
   if (!user) return null;
@@ -12,6 +16,28 @@ export function getBaseAttendance(user) {
 export function isAttendanceTerminal(status) {
   const s = String(status || "").trim();
   return s === "checked_out" || s === "off";
+}
+
+function overlayWaitingQueueStatus(user, row = {}) {
+  if (!user?.uid || isAttendanceTerminal(row.status)) return row;
+  if (String(row.status || "").trim() === "assigned") return row;
+
+  const tournamentId = getTournamentId();
+  const waitRow = findGlobalWaitingRowForUid(IX.globalWaiting, tournamentId, user.uid);
+  if (!waitRow) return row;
+
+  const joinMs = getWaitingRowJoinMs(waitRow) || null;
+  return applyOperationalDayToAttendance({
+    ...row,
+    status: "waiting",
+    checkedInAt: row.checkedInAt || joinMs,
+    checkedOutAt: null,
+    statusChangedAt: row.statusChangedAt || joinMs,
+    currentEventId: "",
+    currentBoxId: "",
+    currentSeatId: "",
+    currentSeatLabel: ""
+  });
 }
 
 /** index 이벤트 카드에 없는 eventId 의 좌석은 과거 배치 잔상으로 보고 배치중 판정에서 제외 */
@@ -33,30 +59,36 @@ export function getDerivedAttendance(user) {
 
   if (!base) {
     const seatOnly = Boolean(seatInfo);
-    return applyOperationalDayToAttendance({
-      uid: user.uid,
-      nickname: IX.currentUserProfile?.nickname || user.displayName || "Unknown",
-      status: seatOnly ? "assigned" : "off",
-      checkedInAt: null,
-      checkedOutAt: null,
-      breakStartedAt: null,
-      totalBreakMs: 0,
-      currentEventId: seatOnly ? (seatInfo.eventId || "") : "",
-      currentBoxId: seatOnly ? (seatInfo.boxId || "") : "",
-      currentSeatId: seatOnly ? (seatInfo.seatId || "") : "",
-      currentSeatLabel: seatOnly ? (seatInfo.seatLabel || "") : "",
-      updatedAt: 0
-    });
+    return overlayWaitingQueueStatus(
+      user,
+      applyOperationalDayToAttendance({
+        uid: user.uid,
+        nickname: IX.currentUserProfile?.nickname || user.displayName || "Unknown",
+        status: seatOnly ? "assigned" : "off",
+        checkedInAt: null,
+        checkedOutAt: null,
+        breakStartedAt: null,
+        totalBreakMs: 0,
+        currentEventId: seatOnly ? (seatInfo.eventId || "") : "",
+        currentBoxId: seatOnly ? (seatInfo.boxId || "") : "",
+        currentSeatId: seatOnly ? (seatInfo.seatId || "") : "",
+        currentSeatLabel: seatOnly ? (seatInfo.seatLabel || "") : "",
+        updatedAt: 0
+      })
+    );
   }
 
-  return applyOperationalDayToAttendance({
-    ...base,
-    status: useSeat ? "assigned" : base.status,
-    currentEventId: useSeat ? (seatInfo.eventId || base.currentEventId || "") : base.currentEventId || "",
-    currentBoxId: useSeat ? (seatInfo.boxId || base.currentBoxId || "") : base.currentBoxId || "",
-    currentSeatId: useSeat ? (seatInfo.seatId || base.currentSeatId || "") : base.currentSeatId || "",
-    currentSeatLabel: useSeat ? (seatInfo.seatLabel || base.currentSeatLabel || "") : base.currentSeatLabel || ""
-  });
+  return overlayWaitingQueueStatus(
+    user,
+    applyOperationalDayToAttendance({
+      ...base,
+      status: useSeat ? "assigned" : base.status,
+      currentEventId: useSeat ? (seatInfo.eventId || base.currentEventId || "") : base.currentEventId || "",
+      currentBoxId: useSeat ? (seatInfo.boxId || base.currentBoxId || "") : base.currentBoxId || "",
+      currentSeatId: useSeat ? (seatInfo.seatId || base.currentSeatId || "") : base.currentSeatId || "",
+      currentSeatLabel: useSeat ? (seatInfo.seatLabel || base.currentSeatLabel || "") : base.currentSeatLabel || ""
+    })
+  );
 }
 
 export function getSessionStartMs(item) {

@@ -14,7 +14,12 @@ import { scheduleRenderDealerOps } from "./dealer-attendance-render.js";
 import { maybeResetMyStaleOperationalDayAttendance } from "./dealer-attendance-operational-day-reset.js";
 import { loadTournamentDealerRosterOnce } from "./dealer-attendance-roster.js";
 
+let loadDealerAttendanceInflight = null;
+
 export async function loadDealerAttendanceOnce() {
+  if (loadDealerAttendanceInflight) return loadDealerAttendanceInflight;
+
+  loadDealerAttendanceInflight = (async () => {
   const tournamentId = getTournamentId();
   const user = auth.currentUser;
   if (!tournamentId || !user) return;
@@ -53,4 +58,9 @@ export async function loadDealerAttendanceOnce() {
   } catch (err) {
     console.error("loadDealerAttendanceOnce error:", err);
   }
+  })().finally(() => {
+    loadDealerAttendanceInflight = null;
+  });
+
+  return loadDealerAttendanceInflight;
 }

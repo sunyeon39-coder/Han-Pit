@@ -27,6 +27,7 @@ import { scheduleRenderDealerOps } from "./dealer-attendance-render.js";
 import { loadDealerAttendanceOnce } from "./dealer-attendance-load-once.js";
 import { ensureMeRecovered } from "./dealer-attendance-recovery.js";
 import { maybeResetMyStaleOperationalDayAttendance } from "./dealer-attendance-operational-day-reset.js";
+import { writeGlobalSeatsCache } from "./index-ops-session-cache.js";
 
 let lastDealerAttendanceFp = "";
 let lastDealerSeatMapFp = "";
@@ -99,6 +100,35 @@ function maybeTriggerOptimisticSeatAlertFromDealerSeatMap(user, previousSeatKey 
   return nextKey;
 }
 
+/** global-layout 좌석 캐시·세션 시드 — IX.dealerGlobalSeats / dealerSeatMap 반영 */
+export function applyIndexOpsSeatsFromGlRows(rows = [], { scheduleRender = true } = {}) {
+  IX.dealerSeatMap.clear();
+  IX.dealerGlobalSeats = [];
+
+  for (const data of rows || []) {
+    const person = String(data?.person || "").trim();
+    if (!person || person === "비어있음") continue;
+
+    IX.dealerGlobalSeats.push({
+      person,
+      personUid: String(data?.personUid || "").trim(),
+      personEmail: String(data?.personEmail || "").trim()
+    });
+
+    const uid = String(data?.personUid || "").trim();
+    if (!uid) continue;
+    IX.dealerSeatMap.set(uid, {
+      eventId: String(data?.currentEventId || data?.mappedEventId || "").trim(),
+      boxId: String(data?.boxId || "").trim(),
+      seatId: String(data?.seatId || "").trim(),
+      seatLabel: String(data?.label || data?.no || "").trim(),
+      seatedAt: Number(data?.seatedAt || 0) || 0
+    });
+  }
+
+  if (scheduleRender) scheduleRenderDealerOps();
+}
+
 export function bindDealerAttendanceRealtime() {
   const user = auth.currentUser;
   if (!user) return;
@@ -114,15 +144,15 @@ export function bindDealerAttendanceRealtime() {
       dealerAttendanceQueryForTournament(tournamentId),
       (snap) => {
         const tournamentId = getTournamentId();
-        if (snap.empty && snap.metadata?.fromCache && IX.dealerAttendanceMap.size > 0) {
-          return;
-        }
-        IX.dealerAttendanceMap.clear();
         if (!tournamentId) {
           scheduleRenderDealerOps();
           return;
         }
+        if (snap.empty && snap.metadata?.fromCache && IX.dealerAttendanceMap.size > 0) {
+          return;
+        }
 
+        IX.dealerAttendanceMap.clear();
         filterAttendanceDocsForTournament(snap.docs, tournamentId).forEach((d) => {
           const raw = d.data() || {};
           const forcedTid = parseTournamentIdFromAttendanceDocId(d.id) || tournamentId;
@@ -158,6 +188,7 @@ export function bindDealerAttendanceRealtime() {
     },
     (err) => {
       console.error("bindDealerAttendanceRealtime(user) error:", err);
+      void loadDealerAttendanceOnce();
     }
   );
 }
@@ -199,7 +230,25 @@ export function applyIndexGlobalSeatsSnapshot(snap) {
 
   void ensureMeRecovered(auth.currentUser);
   scheduleDealerOpsIfChanged(dealerSeatMapFingerprint(), "seat");
-  scheduleRenderDealerOps();
+
+  const tid = getTournamentId();
+  if (tid && !snap.metadata?.fromCache) {
+    const cacheRows = [];
+    snap.docs.forEach((d) => {
+      const data = d.data() || {};
+      cacheRows.push({
+        seatId: String(data.seatId || d.id || "").trim(),
+        person: String(data.person || "").trim(),
+        personUid: String(data.personUid || "").trim(),
+        personEmail: String(data.personEmail || "").trim(),
+        currentEventId: String(data.currentEventId || data.mappedEventId || "").trim(),
+        boxId: String(data.boxId || "").trim(),
+        label: String(data.label || data.no || "").trim(),
+        seatedAt: Number(data.seatedAt || 0) || 0
+      });
+    });
+    writeGlobalSeatsCache(tid, cacheRows);
+  }
 }
 
 export function bindDealerSeatRealtime() {
