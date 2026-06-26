@@ -3,7 +3,6 @@ import { layoutIsMobile } from "../layout/layout-main-route-env.js";
 import { updateGlobalLayoutMetaCounts, updateGlobalLayoutWaitingMeta } from "./meta-ui.js";
 import { renderSeats, renderSeatPanel, renderWaiting } from "./panel-ui.js";
 import { renderGlobalLayoutMobile } from "./mobile-panel-render.js";
-import { getCurrentTournamentWaiting } from "./waiting.js";
 
 let flushScheduled = false;
 let flushTimer = 0;
@@ -14,6 +13,9 @@ const REALTIME_UI_DEBOUNCE_MS = 64;
 
 export function bumpGlobalLayoutDataRevision() {
   GL.dataRevision = (GL.dataRevision || 0) + 1;
+  GL._waitingListCache = null;
+  GL._waitingListCacheRev = -1;
+  GL._waitingPanelFp = "";
 }
 
 function flushGlobalLayoutRealtimeUi() {
@@ -26,18 +28,17 @@ function flushGlobalLayoutRealtimeUi() {
   pending.metaOnly = false;
 
   if (layoutIsMobile()) {
-    if (f.seats || f.waiting || f.seatPanel) {
+    if (f.seats || f.waiting || f.seatPanel || f.metaOnly) {
       renderGlobalLayoutMobile({ sync: true });
-    } else if (f.metaOnly) {
-      updateGlobalLayoutWaitingMeta();
     }
     return;
   }
 
   if (f.seats) renderSeats(GL.globalSeats);
   if (f.seatPanel) renderSeatPanel();
-  if (f.waiting) renderWaiting(getCurrentTournamentWaiting());
-  if (f.metaOnly) updateGlobalLayoutWaitingMeta();
+  if (f.waiting || f.metaOnly || f.seatPanel) {
+    renderWaiting();
+  }
   if (f.seats || f.seatPanel || f.waiting || f.metaOnly) {
     updateGlobalLayoutMetaCounts(GL.globalSeats);
   }

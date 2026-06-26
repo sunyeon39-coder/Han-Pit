@@ -331,7 +331,8 @@ export function renderSeats(seats = []) {
   refreshGlobalLayoutAlignButtonState();
 }
 
-export function renderWaiting(waiting = []) {
+export function renderWaiting(_waiting) {
+  const waiting = getCurrentTournamentWaiting();
   updateGlobalLayoutWaitingMeta();
   if (layoutIsMobile()) {
     updateGlobalLayoutMetaCounts(GL.globalSeats);

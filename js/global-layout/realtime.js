@@ -144,6 +144,9 @@ function rebuildGlobalLayoutAttendanceInactiveUids() {
     GL.tournamentId,
     GL.globalWaiting
   );
+  GL._waitingListCache = null;
+  GL._waitingListCacheRev = -1;
+  GL._waitingPanelFp = "";
 }
 
 function applyDealerAttendanceSnap(snap) {
