@@ -56,7 +56,6 @@ import {
 } from "../shared/tournament-waiting-queue.js";
 import { resolveAttendanceWaitingJoinMs } from "../shared/attendance-operational-day.js";
 import { replaceGlobalWaitingLocal } from "./waiting.js";
-import { restoreWaitingSnapshotForCurrentTournament } from "./fs-restore-waiting-snapshot.js";
 
 /** Firestore 전파 전 캐시 스냅샷이 방금 배치한 좌석을 비우는 것 방지 */
 const RECENT_LOCAL_SEAT_MS = 12000;
@@ -303,8 +302,6 @@ async function healMissingWaitingFromAttendance() {
         scheduleGlobalLayoutRealtimeUi({ waiting: true });
       }
     }
-
-    await restoreWaitingSnapshotForCurrentTournament();
   } catch (err) {
     console.warn("healMissingWaitingFromAttendance:", err?.code || err);
   } finally {

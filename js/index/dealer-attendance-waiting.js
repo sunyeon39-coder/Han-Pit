@@ -194,6 +194,14 @@ export async function removeFromSharedWaitingOnCheckOut(user) {
   const tournamentId = getTournamentId();
   if (!user || !tournamentId) return false;
 
+  const uid = String(user.uid || "").trim();
+  const email = String(user.email || "").trim().toLowerCase();
+  const names = new Set(
+    [user.displayName, user.nickname, user.name]
+      .map((v) => String(v || "").trim())
+      .filter(Boolean)
+  );
+
   try {
     const waitingRef = doc(db, "layout_shared", "global_waiting");
     const waitingSnap = await getDoc(waitingRef);
@@ -203,16 +211,25 @@ export async function removeFromSharedWaitingOnCheckOut(user) {
     const waitingList = Array.isArray(waitingState.waiting) ? waitingState.waiting : [];
 
     const nextWaiting = waitingList.filter((item) => {
-      if (!item || typeof item !== "object") return false;
+      if (!item || typeof item !== "object") return true;
 
       const itemUid = String(item.uid || "").trim();
       const itemTournamentId = String(item.tournamentId || "").trim();
+      const sameTournament = !itemTournamentId || itemTournamentId === tournamentId;
+      if (!sameTournament) return true;
 
-      if (itemUid !== String(user.uid || "").trim()) return true;
-      if (itemTournamentId && itemTournamentId !== tournamentId) return true;
+      if (uid && itemUid && itemUid === uid) return false;
 
-      return false;
+      const itemEmail = String(item.email || "").trim().toLowerCase();
+      if (email && itemEmail && email === itemEmail) return false;
+
+      const itemName = String(item.name || "").trim();
+      if (itemName && names.has(itemName)) return false;
+
+      return true;
     });
+
+    if (nextWaiting.length === waitingList.length) return true;
 
     await setDoc(
       waitingRef,

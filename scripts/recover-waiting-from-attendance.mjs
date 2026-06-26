@@ -183,6 +183,11 @@ for (const rawName of SNAPSHOT_NAMES_BY_TOURNAMENT[tournamentId] || []) {
   const name = String(rawName || "").trim();
   if (!name) continue;
   const user = usersByNick.get(normName(name));
+  const uid = String(user?.uid || "").trim();
+  if (uid) {
+    const att = attendanceByUid.get(uid);
+    if (att && String(att.status || "").trim() === "checked_out") continue;
+  }
   addMissing(
     {
       uid: String(user?.uid || "").trim(),
@@ -215,6 +220,8 @@ const now = Date.now();
 for (const person of missingList) {
   waitingArr = rebuildWaiting(waitingArr, tournamentId, person, person.joinedAt || now);
   if (!person.uid) continue;
+  const att = attendanceByUid.get(person.uid);
+  if (att && String(att.status || "").trim() === "checked_out") continue;
   await db
     .collection("dealer_attendance")
     .doc(`${tournamentId}__${person.uid}`)
