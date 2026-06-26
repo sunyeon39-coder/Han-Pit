@@ -127,7 +127,11 @@ function scheduleRecoverRemovedSeatPeople(removedSeats, currentSeats) {
 
 function applyDealerAttendanceSnap(snap) {
   const docs = filterAttendanceDocsForTournament(snap.docs, GL.tournamentId);
-  GL.attendanceInactiveUids = buildAttendanceInactiveUidSet(docs, GL.tournamentId);
+  GL.attendanceInactiveUids = buildAttendanceInactiveUidSet(
+    docs,
+    GL.tournamentId,
+    GL.globalWaiting
+  );
   GL.attendanceFilterReady = true;
 
   GL.attendanceWaiting = filterAttendanceRowsForWaitingMerge(

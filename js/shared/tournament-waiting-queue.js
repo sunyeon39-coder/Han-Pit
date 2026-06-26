@@ -2,7 +2,6 @@ import {
   buildAttendanceInactiveUidSet,
   filterAttendanceRowsForWaitingMerge
 } from "./attendance-waiting-filter.js";
-import { isAttendanceFromCurrentOperationalDay } from "./attendance-operational-day.js";
 
 function isEmptySeatPerson(name = "") {
   const v = String(name || "").trim();
@@ -45,18 +44,14 @@ export function findGlobalWaitingRowForUid(globalWaiting = [], tournamentId = ""
   return null;
 }
 
-/** global_waiting 에 당일(운영일) 대기 행이 있으면 출석 stale 리셋 대상 아님 */
+/** global_waiting 에 대기 행이 있으면 출석 stale 리셋·대기열 제거 대상 아님 (joinedAt 운영일과 무관) */
 export function hasFreshGlobalWaitingForUid(
   globalWaiting = [],
   tournamentId = "",
   uid = "",
-  nowMs = Date.now()
+  _nowMs = Date.now()
 ) {
-  const row = findGlobalWaitingRowForUid(globalWaiting, tournamentId, uid);
-  if (!row) return false;
-  const joinMs = getWaitingRowJoinMs(row);
-  if (!joinMs) return true;
-  return isAttendanceFromCurrentOperationalDay({ checkedInAt: joinMs }, nowMs);
+  return !!findGlobalWaitingRowForUid(globalWaiting, tournamentId, uid);
 }
 
 /** 좌석 점유 판정 — uid 불일치 시 이름만으로 다른 사람과 매칭하지 않음 */
@@ -254,14 +249,18 @@ export function countTournamentOccupiedFromGlobalSeats(seats = []) {
   return countTournamentOccupiedSeats(seats);
 }
 
-export function buildIndexAttendanceInactiveUids(dealerAttendanceMap = null, tournamentId = "") {
+export function buildIndexAttendanceInactiveUids(
+  dealerAttendanceMap = null,
+  tournamentId = "",
+  globalWaiting = []
+) {
   const tid = String(tournamentId || "").trim();
   if (!tid || !(dealerAttendanceMap instanceof Map)) return new Set();
   const docs = [];
   dealerAttendanceMap.forEach((data, id) => {
     docs.push({ id, data: () => data || {} });
   });
-  return buildAttendanceInactiveUidSet(docs, tid);
+  return buildAttendanceInactiveUidSet(docs, tid, globalWaiting);
 }
 
 export function buildIndexAttendanceWaitingRows(dealerAttendanceMap = null, tournamentId = "") {

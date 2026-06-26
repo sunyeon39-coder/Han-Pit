@@ -38,7 +38,11 @@ export function createLayoutRealtimeBind(deps) {
       const q = dealerAttendanceQueryForTournament(tid);
       const snap = await getDocs(q);
       const docs = filterAttendanceDocsForTournament(snap.docs, tid);
-      attendanceWaitingState.inactiveUids = buildAttendanceInactiveUidSet(docs, tid);
+      attendanceWaitingState.inactiveUids = buildAttendanceInactiveUidSet(
+        docs,
+        tid,
+        waitingState?.waiting || []
+      );
       attendanceWaitingState.items = filterAttendanceRowsForWaitingMerge(
         docs.map((d) => {
           const data = d.data() || {};
@@ -117,7 +121,11 @@ export function createLayoutRealtimeBind(deps) {
         dealerAttendanceQueryForTournament(tid),
         (snap) => {
           const docs = filterAttendanceDocsForTournament(snap.docs, tid);
-          attendanceWaitingState.inactiveUids = buildAttendanceInactiveUidSet(docs, tid);
+          attendanceWaitingState.inactiveUids = buildAttendanceInactiveUidSet(
+            docs,
+            tid,
+            waitingState?.waiting || []
+          );
           attendanceWaitingState.items = filterAttendanceRowsForWaitingMerge(
             docs.map((d) => {
               const data = d.data() || {};

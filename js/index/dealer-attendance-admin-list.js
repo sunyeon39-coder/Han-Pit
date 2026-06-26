@@ -13,7 +13,11 @@ function buildOpsWaitingIndex(tournamentId = "") {
   const waitingList = buildTournamentWaitingDisplayList({
     globalWaiting: IX.globalWaiting,
     tournamentId: tid,
-    attendanceInactiveUids: buildIndexAttendanceInactiveUids(IX.dealerAttendanceMap, tid),
+    attendanceInactiveUids: buildIndexAttendanceInactiveUids(
+      IX.dealerAttendanceMap,
+      tid,
+      IX.globalWaiting
+    ),
     globalSeats: IX.dealerGlobalSeats,
     attendanceFilterReady: IX.dealerAttendanceMap.size > 0,
     attendanceWaitingRows: buildIndexAttendanceWaitingRows(IX.dealerAttendanceMap, tid)
@@ -140,7 +144,11 @@ function mergeQueueAndSeatRowsIntoAdminList(list, seenUids, opsIndex, tournament
   const waitingList = buildTournamentWaitingDisplayList({
     globalWaiting: IX.globalWaiting,
     tournamentId,
-    attendanceInactiveUids: buildIndexAttendanceInactiveUids(IX.dealerAttendanceMap, tournamentId),
+    attendanceInactiveUids: buildIndexAttendanceInactiveUids(
+      IX.dealerAttendanceMap,
+      tournamentId,
+      IX.globalWaiting
+    ),
     globalSeats: IX.dealerGlobalSeats,
     attendanceFilterReady: IX.dealerAttendanceMap.size > 0,
     attendanceWaitingRows: buildIndexAttendanceWaitingRows(IX.dealerAttendanceMap, tournamentId)

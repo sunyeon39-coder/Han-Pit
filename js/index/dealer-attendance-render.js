@@ -47,7 +47,11 @@ function getDealerAdminCounts() {
   };
 
   const tournamentId = getTournamentId();
-  const inactive = buildIndexAttendanceInactiveUids(IX.dealerAttendanceMap, tournamentId);
+  const inactive = buildIndexAttendanceInactiveUids(
+    IX.dealerAttendanceMap,
+    tournamentId,
+    IX.globalWaiting
+  );
 
   getAdminAttendanceList().forEach((item) => {
     const s = item.status || "off";

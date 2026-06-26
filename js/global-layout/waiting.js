@@ -334,10 +334,7 @@ export function resolveWaitingEntryById(waitingId = "") {
 
   const fromGlobal = (GL.globalWaiting || []).find((w) => {
     if (!waitingRowBelongsToTournament(w, GL.tournamentId)) return false;
-    if (String(w?.id || "").trim() !== wid) return false;
-    const uid = String(w?.uid || "").trim();
-    if (uid && inactive.has(uid)) return false;
-    return true;
+    return String(w?.id || "").trim() === wid;
   });
   if (fromGlobal) return fromGlobal;
 

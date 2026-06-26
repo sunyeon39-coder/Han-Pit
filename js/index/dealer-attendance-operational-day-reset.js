@@ -108,6 +108,14 @@ export async function persistOperationalDayResetForUid(uid = "", prevRow = null)
 
   resetInflight.add(safeUid);
   try {
+    const stillQueued = findGlobalWaitingRowForUid(globalWaiting, tournamentId, safeUid);
+    if (stillQueued) {
+      const payload = buildWaitingHealPayload(current, stillQueued, tournamentId);
+      await setDoc(getAttendanceRef(tournamentId, safeUid), payload, { merge: true });
+      IX.dealerAttendanceMap.set(docId, payload);
+      return true;
+    }
+
     const payload = buildOperationalDayResetPayload(current);
     await setDoc(getAttendanceRef(tournamentId, safeUid), payload, { merge: true });
     IX.dealerAttendanceMap.set(docId, payload);

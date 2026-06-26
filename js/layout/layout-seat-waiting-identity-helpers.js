@@ -1,5 +1,3 @@
-import { isInactiveWaitingEntry } from "../shared/attendance-waiting-filter.js";
-
 /**
  * 좌석 정체성·전역 병합 기준으로 "이미 앉았는지" 판별하고 표시용 대기 목록을 만든다.
  */
@@ -59,14 +57,9 @@ export function createSeatWaitingIdentityHelpers(ctx) {
    * 현재 대회 global_waiting 행만 + 앉지 않은 사람 + dealer_attendance waiting/checked_in 병합.
    */
   function getWaitingListForDisplay() {
-    const inactive =
-      typeof getAttendanceInactiveUids === "function"
-        ? getAttendanceInactiveUids()
-        : new Set();
-
+    // global_waiting 행은 대기열 원본 — 출석 stale 여부와 무관하게 표시 (통합배치도와 동일)
     const waitingBase = waitingState.waiting
       .filter(matchesCurrentTournamentRow)
-      .filter((w) => !isInactiveWaitingEntry(w, inactive))
       .filter((w) => !isIdentitySeatedAnywhereInTournament(getWaitingIdentity(w)));
 
     const merged = [...waitingBase];

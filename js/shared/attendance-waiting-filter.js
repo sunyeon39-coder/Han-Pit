@@ -3,15 +3,34 @@ import { isStaleOperationalDayAttendance } from "./attendance-operational-day.js
 
 const TERMINAL_ATTENDANCE = new Set(["checked_out", "off"]);
 
+function isUidQueuedInGlobalWaiting(globalWaiting = [], tournamentId = "", uid = "") {
+  const safeUid = String(uid || "").trim();
+  const tid = String(tournamentId || "").trim();
+  if (!safeUid || !tid) return false;
+  for (const w of globalWaiting || []) {
+    if (String(w?.uid || "").trim() !== safeUid) continue;
+    const wTid = String(w?.tournamentId || "").trim();
+    if (wTid && wTid !== tid) continue;
+    return true;
+  }
+  return false;
+}
+
 /** dealer_attendance 문서에서 퇴근·미출근 uid 집합 */
-export function buildAttendanceInactiveUidSet(docs = [], tournamentId = "") {
+export function buildAttendanceInactiveUidSet(docs = [], tournamentId = "", globalWaiting = []) {
   const inactive = new Set();
   for (const d of filterAttendanceDocsForTournament(docs, tournamentId)) {
     const data = typeof d.data === "function" ? d.data() || {} : d;
     const uid = String(data.uid || "").trim();
     const status = String(data.status || "").trim();
     if (uid && TERMINAL_ATTENDANCE.has(status)) inactive.add(uid);
-    if (uid && isStaleOperationalDayAttendance(data)) inactive.add(uid);
+    if (
+      uid &&
+      isStaleOperationalDayAttendance(data) &&
+      !isUidQueuedInGlobalWaiting(globalWaiting, tournamentId, uid)
+    ) {
+      inactive.add(uid);
+    }
   }
   return inactive;
 }
