@@ -280,3 +280,50 @@ export function buildIndexAttendanceWaitingRows(dealerAttendanceMap = null, tour
   });
   return filterAttendanceRowsForWaitingMerge(rows);
 }
+
+/**
+ * global_waiting 에 없지만 출석이 waiting/checked_in 이고 좌석도 없는 사람 — 복구 후보
+ */
+export function buildMissingGlobalWaitingRestoreList({
+  tournamentId = "",
+  globalWaiting = [],
+  globalSeats = [],
+  attendanceWaitingRows = [],
+  terminalUids = null,
+  resolveJoinedAt = null
+} = {}) {
+  const tid = String(tournamentId || "").trim();
+  if (!tid) return [];
+  const terminal = terminalUids instanceof Set ? terminalUids : new Set();
+  const resolveJoin =
+    typeof resolveJoinedAt === "function"
+      ? resolveJoinedAt
+      : (row) => getWaitingRowJoinMs(row) || Date.now();
+  const missing = [];
+
+  for (const item of attendanceWaitingRows || []) {
+    const uid = String(item?.uid || "").trim();
+    if (uid && terminal.has(uid)) continue;
+    const person = {
+      uid,
+      email: String(item?.email || "").trim(),
+      name: String(item?.nickname || item?.name || "").trim()
+    };
+    if (!person.uid && !person.email && !person.name) continue;
+    if (
+      isPersonSeatedInGlobalSeats(globalSeats, {
+        uid: person.uid,
+        email: person.email,
+        name: person.name
+      })
+    ) {
+      continue;
+    }
+    if (personExistsInGlobalWaiting(globalWaiting, tid, person)) continue;
+    missing.push({
+      ...person,
+      joinedAt: resolveJoin(item)
+    });
+  }
+  return missing;
+}
