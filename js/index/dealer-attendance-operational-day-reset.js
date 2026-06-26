@@ -87,6 +87,8 @@ export async function persistOperationalDayResetForUid(uid = "", prevRow = null)
 
   const docId = getAttendanceDocId(tournamentId, safeUid);
   const current = prevRow || IX.dealerAttendanceMap.get(docId);
+  if (!current) return false;
+  if (String(current.status || "").trim() === "checked_out") return false;
   if (!isStaleOperationalDayAttendance(current)) return false;
 
   const globalWaiting = await loadGlobalWaitingRows();

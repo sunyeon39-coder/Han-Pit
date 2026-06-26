@@ -154,6 +154,10 @@ function rebuildGlobalLayoutAttendanceInactiveUids() {
     GL.tournamentId,
     GL.globalWaiting
   );
+  GL.attendanceCheckedOutUids = buildCheckedOutAttendanceUidSet(
+    attendanceInactiveSourceDocs,
+    GL.tournamentId
+  );
   GL._waitingListCache = null;
   GL._waitingListCacheRev = -1;
   GL._waitingPanelFp = "";
@@ -266,6 +270,8 @@ async function healMissingWaitingFromAttendance() {
         let changed = false;
 
         for (const person of missing) {
+          const uid = String(person?.uid || "").trim();
+          if (uid && checkedOut.has(uid)) continue;
           if (personExistsInGlobalWaiting(waitingArr, GL.tournamentId, person)) continue;
           const joinMs = Number(person.joinedAt || 0) || now;
           waitingArr = rebuildWaitingAfterSeatToWait(waitingArr, GL.tournamentId, person, joinMs, {

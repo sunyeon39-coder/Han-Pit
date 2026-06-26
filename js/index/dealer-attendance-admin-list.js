@@ -1,12 +1,25 @@
 import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
 import { attendanceDocBelongsToTournament } from "./dealer-attendance-refs.js";
-import { applyOperationalDayToAttendance } from "../shared/attendance-operational-day.js";
+import { applyOperationalDayToAttendance, isAttendanceFromCurrentOperationalDay } from "../shared/attendance-operational-day.js";
 import {
   buildTournamentWaitingDisplayList,
   buildIndexAttendanceInactiveUids,
   buildIndexAttendanceWaitingRows
 } from "../shared/tournament-waiting-queue.js";
+import { buildCheckedOutAttendanceUidSet } from "../shared/attendance-waiting-filter.js";
+
+function attendanceDocsFromIndexMap() {
+  const docs = [];
+  IX.dealerAttendanceMap.forEach((data, id) => {
+    docs.push({ id, data: () => data || {} });
+  });
+  return docs;
+}
+
+function buildIndexAttendanceCheckedOutUids(tournamentId = "") {
+  return buildCheckedOutAttendanceUidSet(attendanceDocsFromIndexMap(), tournamentId);
+}
 
 function buildOpsWaitingIndex(tournamentId = "") {
   const tid = String(tournamentId || "").trim();
@@ -18,6 +31,7 @@ function buildOpsWaitingIndex(tournamentId = "") {
       tid,
       IX.globalWaiting
     ),
+    attendanceCheckedOutUids: buildIndexAttendanceCheckedOutUids(tid),
     globalSeats: IX.dealerGlobalSeats,
     attendanceFilterReady: IX.dealerAttendanceMap.size > 0,
     attendanceWaitingRows: buildIndexAttendanceWaitingRows(IX.dealerAttendanceMap, tid)
@@ -51,8 +65,12 @@ function findOpsWaitingRow(item = {}, opsIndex = null) {
 /** 출석 문서 + 통합배치도(대기·좌석) 기준 — Admin 목록에 보이는 실제 운영 상태 */
 function applyOpsStatusOverlay(item = {}, opsIndex = null) {
   const uid = String(item?.uid || "").trim();
-  const status = String(item?.status || "off").trim();
+  const status = String(item?.status || "").trim();
   if (status === "checked_out") return item;
+  const checkedOutAt = Number(item?.checkedOutAt || 0);
+  if (checkedOutAt > 0 && isAttendanceFromCurrentOperationalDay({ checkedInAt: checkedOutAt })) {
+    return item;
+  }
 
   const seat = uid ? IX.dealerSeatMap.get(uid) : null;
   if (seat) {
@@ -149,6 +167,7 @@ function mergeQueueAndSeatRowsIntoAdminList(list, seenUids, opsIndex, tournament
       tournamentId,
       IX.globalWaiting
     ),
+    attendanceCheckedOutUids: buildIndexAttendanceCheckedOutUids(tournamentId),
     globalSeats: IX.dealerGlobalSeats,
     attendanceFilterReady: IX.dealerAttendanceMap.size > 0,
     attendanceWaitingRows: buildIndexAttendanceWaitingRows(IX.dealerAttendanceMap, tournamentId)

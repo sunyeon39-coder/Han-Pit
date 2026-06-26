@@ -128,6 +128,7 @@ export function buildTournamentWaitingDisplayList({
   globalWaiting = [],
   tournamentId = "",
   attendanceInactiveUids = null,
+  attendanceCheckedOutUids = null,
   globalSeats = [],
   attendanceFilterReady = false,
   attendanceWaitingRows = []
@@ -135,11 +136,17 @@ export function buildTournamentWaitingDisplayList({
   const tid = String(tournamentId || "").trim();
   if (!tid) return [];
   const inactive = attendanceInactiveUids instanceof Set ? attendanceInactiveUids : new Set();
+  const checkedOut = attendanceCheckedOutUids instanceof Set ? attendanceCheckedOutUids : new Set();
   const filterReady = attendanceFilterReady === true;
 
-  // global_waiting — Firestore 대기열이 우선(미출근·수동 +대기 포함). 좌석 점유만 제외.
+  // global_waiting — 퇴근자는 제외. 미출근·수동 +대기는 유지.
   const waitingBase = (globalWaiting || [])
     .filter((w) => waitingRowBelongsToTournament(w, tid))
+    .filter((w) => {
+      if (!filterReady) return true;
+      const uid = String(w?.uid || "").trim();
+      return !(uid && checkedOut.has(uid));
+    })
     .filter(
       (w) =>
         !isPersonSeatedInGlobalSeats(globalSeats, {

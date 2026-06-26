@@ -294,6 +294,7 @@ export function getCurrentTournamentWaiting() {
     globalWaiting: GL.globalWaiting,
     tournamentId: GL.tournamentId,
     attendanceInactiveUids: GL.attendanceInactiveUids,
+    attendanceCheckedOutUids: GL.attendanceCheckedOutUids,
     globalSeats: GL.globalSeats,
     attendanceFilterReady: GL.attendanceFilterReady === true,
     attendanceWaitingRows: GL.attendanceWaiting

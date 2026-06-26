@@ -20,6 +20,8 @@ export function isAttendanceTerminal(status) {
 
 function overlayWaitingQueueStatus(user, row = {}) {
   if (!user?.uid || isAttendanceTerminal(row.status)) return row;
+  const checkedOutAt = Number(row?.checkedOutAt || 0);
+  if (checkedOutAt > 0) return row;
   if (String(row.status || "").trim() === "assigned") return row;
 
   const tournamentId = getTournamentId();

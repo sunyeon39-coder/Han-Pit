@@ -12,11 +12,7 @@ import {
   updateMyAttendanceStatus,
   updateAdminAttendanceStatus
 } from "./dealer-attendance-status-updates.js";
-import {
-  applyOptimisticAttendanceEntry,
-  restoreAttendanceSnapshot,
-  snapshotAttendanceEntry
-} from "./dealer-attendance-optimistic.js";
+import { applyOptimisticAttendanceEntry } from "./dealer-attendance-optimistic.js";
 
 function applyCheckedOutSeatClear(tournamentId, uid) {
   const docId = getAttendanceDocId(tournamentId, uid);
@@ -32,48 +28,47 @@ function applyCheckedOutSeatClear(tournamentId, uid) {
   });
 }
 
+async function runCheckedOutCleanup(target) {
+  const tournamentId = getTournamentId();
+  if (!target?.uid || !tournamentId) return;
+
+  await Promise.all([
+    removeUserFromAllSeatsGlobal({ uid: target.uid }),
+    removeFromSharedWaitingOnCheckOut({
+      uid: target.uid,
+      email: target.email || "",
+      displayName: target.nickname || target.name || "",
+      nickname: target.nickname || target.name || "",
+      name: target.nickname || target.name || ""
+    }),
+    setDoc(
+      getAttendanceRef(tournamentId, target.uid),
+      {
+        currentEventId: "",
+        currentBoxId: "",
+        currentSeatId: "",
+        currentSeatLabel: "",
+        updatedAt: Date.now()
+      },
+      { merge: true }
+    ),
+    clearUserSeatNotification(target.uid)
+  ]);
+}
+
 export async function forceAdminCheckedOut(target) {
   if (!target?.uid) return;
 
   const tournamentId = getTournamentId();
-  const prevSnap = snapshotAttendanceEntry(tournamentId, target.uid);
+
+  await updateAdminAttendanceStatus(target.uid, "checked_out", { optimistic: true });
+  applyCheckedOutSeatClear(tournamentId, target.uid);
 
   try {
-    await updateAdminAttendanceStatus(target.uid, "checked_out", { optimistic: true });
-    applyCheckedOutSeatClear(tournamentId, target.uid);
+    await runCheckedOutCleanup(target);
   } catch (err) {
-    console.error("forceAdminCheckedOut status:", err);
-    throw err;
+    console.error("forceAdminCheckedOut cleanup:", err);
   }
-
-  void (async () => {
-    try {
-      await Promise.all([
-        removeUserFromAllSeatsGlobal({ uid: target.uid }),
-        removeFromSharedWaitingOnCheckOut({
-          uid: target.uid,
-          email: target.email || "",
-          displayName: target.nickname || "",
-          nickname: target.nickname || ""
-        }),
-        setDoc(
-          getAttendanceRef(tournamentId, target.uid),
-          {
-            currentEventId: "",
-            currentBoxId: "",
-            currentSeatId: "",
-            currentSeatLabel: "",
-            updatedAt: Date.now()
-          },
-          { merge: true }
-        ),
-        clearUserSeatNotification(target.uid)
-      ]);
-    } catch (err) {
-      console.error("forceAdminCheckedOut cleanup:", err);
-      restoreAttendanceSnapshot(tournamentId, target.uid, prevSnap);
-    }
-  })();
 }
 
 export async function forceSelfCheckedOut(user) {
@@ -81,42 +76,18 @@ export async function forceSelfCheckedOut(user) {
 
   const tournamentId = getTournamentId();
   const targetProfile = IX.currentUserProfile || {};
-  const prevSnap = snapshotAttendanceEntry(tournamentId, user.uid);
+
+  await updateMyAttendanceStatus("checked_out", { optimistic: true });
+  applyCheckedOutSeatClear(tournamentId, user.uid);
 
   try {
-    await updateMyAttendanceStatus("checked_out", { optimistic: true });
-    applyCheckedOutSeatClear(tournamentId, user.uid);
+    await runCheckedOutCleanup({
+      uid: user.uid,
+      email: String(targetProfile.email || user.email || "").trim(),
+      nickname: String(targetProfile.nickname || user.displayName || "").trim(),
+      name: String(targetProfile.nickname || user.displayName || "").trim()
+    });
   } catch (err) {
-    console.error("forceSelfCheckedOut status:", err);
-    throw err;
+    console.error("forceSelfCheckedOut cleanup:", err);
   }
-
-  void (async () => {
-    try {
-      await Promise.all([
-        removeUserFromAllSeatsGlobal({ uid: user.uid }),
-        removeFromSharedWaitingOnCheckOut({
-          uid: user.uid,
-          email: String(targetProfile.email || user.email || "").trim(),
-          displayName: String(targetProfile.nickname || user.displayName || "").trim(),
-          nickname: String(targetProfile.nickname || user.displayName || "").trim()
-        }),
-        setDoc(
-          getAttendanceRef(tournamentId, user.uid),
-          {
-            currentEventId: "",
-            currentBoxId: "",
-            currentSeatId: "",
-            currentSeatLabel: "",
-            updatedAt: Date.now()
-          },
-          { merge: true }
-        ),
-        clearUserSeatNotification(user.uid)
-      ]);
-    } catch (err) {
-      console.error("forceSelfCheckedOut cleanup:", err);
-      restoreAttendanceSnapshot(tournamentId, user.uid, prevSnap);
-    }
-  })();
 }
