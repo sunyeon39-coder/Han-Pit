@@ -1,6 +1,7 @@
 import {
   buildAttendanceInactiveUidSet,
-  filterAttendanceRowsForWaitingMerge
+  filterAttendanceRowsForWaitingMerge,
+  isInactiveWaitingEntry
 } from "./attendance-waiting-filter.js";
 
 function isEmptySeatPerson(name = "") {
@@ -136,9 +137,10 @@ export function buildTournamentWaitingDisplayList({
   const inactive = attendanceInactiveUids instanceof Set ? attendanceInactiveUids : new Set();
   const filterReady = attendanceFilterReady === true;
 
-  // global_waiting 행은 대기열 원본 — 출석 문서(off/퇴근)와 달라도 표시 (퇴근 시 별도 제거)
+  // global_waiting — 퇴근·미출근은 숨김. 운영일 stale 는 대기열에 있으면 inactive 에 안 들어감
   const waitingBase = (globalWaiting || [])
     .filter((w) => waitingRowBelongsToTournament(w, tid))
+    .filter((w) => !filterReady || !isInactiveWaitingEntry(w, inactive))
     .filter(
       (w) =>
         !isPersonSeatedInGlobalSeats(globalSeats, {
@@ -181,6 +183,21 @@ export function buildTournamentWaitingDisplayList({
   }
 
   return merged;
+}
+
+/** 퇴근·미출근(uid inactive) — Firestore 대기열 정리용 */
+export function purgeInactiveFromGlobalWaitingRows(
+  globalWaiting = [],
+  inactiveUids = null,
+  tournamentId = ""
+) {
+  const tid = String(tournamentId || "").trim();
+  const inactive = inactiveUids instanceof Set ? inactiveUids : new Set();
+  if (!inactive.size) return globalWaiting || [];
+  return (globalWaiting || []).filter((w) => {
+    if (tid && !waitingRowBelongsToTournament(w, tid)) return true;
+    return !isInactiveWaitingEntry(w, inactive);
+  });
 }
 
 export function countTournamentWaitingDisplay(options = {}) {

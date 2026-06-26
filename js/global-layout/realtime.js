@@ -2,12 +2,14 @@ import { db, auth } from "../firebase.js";
 import {
   collection,
   doc,
+  getDoc,
   getDocFromServer,
   getDocs,
   getDocsFromServer,
   onSnapshot,
   runTransaction,
-  serverTimestamp
+  serverTimestamp,
+  setDoc
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
   buildAttendanceInactiveUidSet,
@@ -46,10 +48,13 @@ import { showFirestoreStallBanner } from "../shared/firestore-stall-recovery.js"
 import { writeGlobalSeatsCache } from "./global-seats-session-cache.js";
 import { canManageGlobalLayoutOps } from "./ops-access.js";
 import { buildSeatHistoryEntry, appendSeatHistoryPatch } from "./seat-history.js";
+import { purgeInactiveFromGlobalWaitingRows } from "../shared/tournament-waiting-queue.js";
+import { replaceGlobalWaitingLocal } from "./waiting.js";
 
 /** Firestore 전파 전 캐시 스냅샷이 방금 배치한 좌석을 비우는 것 방지 */
 const RECENT_LOCAL_SEAT_MS = 12000;
 let seatRecoverDebounceTimer = null;
+let purgeInactiveWaitingTimer = null;
 let lastSeatsUiFingerprint = "";
 let lastWaitingUiFingerprint = "";
 let seatSnapshotReceived = false;
@@ -113,6 +118,10 @@ function disposeGlobalLayoutRealtime() {
     clearTimeout(seatRecoverDebounceTimer);
     seatRecoverDebounceTimer = null;
   }
+  if (purgeInactiveWaitingTimer) {
+    clearTimeout(purgeInactiveWaitingTimer);
+    purgeInactiveWaitingTimer = null;
+  }
 }
 
 function scheduleRecoverRemovedSeatPeople(removedSeats, currentSeats) {
@@ -140,6 +149,59 @@ function applyDealerAttendanceSnap(snap) {
 
   bumpGlobalLayoutDataRevision();
   scheduleGlobalLayoutRealtimeUi({ waiting: true });
+  scheduleHealInactiveOutOfGlobalWaiting();
+}
+
+function scheduleHealInactiveOutOfGlobalWaiting() {
+  if (!GL.tournamentId || !GL.attendanceFilterReady) return;
+  if (!canManageGlobalLayoutOps()) return;
+  if (purgeInactiveWaitingTimer) clearTimeout(purgeInactiveWaitingTimer);
+  purgeInactiveWaitingTimer = setTimeout(() => {
+    purgeInactiveWaitingTimer = null;
+    void healInactiveRowsOutOfGlobalWaiting();
+  }, 600);
+}
+
+async function healInactiveRowsOutOfGlobalWaiting() {
+  if (!GL.tournamentId || GL.waitingMutationInFlight) return;
+  const inactive = GL.attendanceInactiveUids instanceof Set ? GL.attendanceInactiveUids : new Set();
+  if (!inactive.size) return;
+
+  const localNext = purgeInactiveFromGlobalWaitingRows(
+    GL.globalWaiting,
+    inactive,
+    GL.tournamentId
+  );
+  if (localNext.length === (GL.globalWaiting || []).length) return;
+
+  try {
+    const waitingRef = doc(db, "layout_shared", "global_waiting");
+    const snap = await getDoc(waitingRef);
+    if (!snap.exists()) return;
+    const state = snap.data() || {};
+    const list = Array.isArray(state.waiting) ? state.waiting : [];
+    const healed = purgeInactiveFromGlobalWaitingRows(list, inactive, GL.tournamentId);
+    if (healed.length === list.length) return;
+
+    GL.waitingMutationInFlight = true;
+    await setDoc(
+      waitingRef,
+      {
+        ...state,
+        version: 2,
+        waiting: healed,
+        updatedAt: Date.now()
+      },
+      { merge: true }
+    );
+    replaceGlobalWaitingLocal(healed);
+    bumpGlobalLayoutDataRevision();
+    scheduleGlobalLayoutRealtimeUi({ waiting: true });
+  } catch (err) {
+    console.warn("healInactiveRowsOutOfGlobalWaiting:", err?.code || err);
+  } finally {
+    GL.waitingMutationInFlight = false;
+  }
 }
 
 function shouldKeepLocalSeatOverRemoteEmpty(prevSeat, nextSeat) {
