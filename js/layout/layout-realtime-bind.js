@@ -32,17 +32,24 @@ export function createLayoutRealtimeBind(deps) {
     onAfterAttendanceRemoteSnapshot
   } = deps;
 
+  function rebuildLayoutAttendanceInactiveUids(tid) {
+    if (!tid || !attendanceWaitingState) return;
+    const docs = attendanceWaitingState.sourceDocs || [];
+    attendanceWaitingState.inactiveUids = buildAttendanceInactiveUidSet(
+      docs,
+      tid,
+      waitingState?.waiting || []
+    );
+  }
+
   async function primeAttendanceSnapshot(tid) {
     if (!tid || !attendanceWaitingState) return;
     try {
       const q = dealerAttendanceQueryForTournament(tid);
       const snap = await getDocs(q);
       const docs = filterAttendanceDocsForTournament(snap.docs, tid);
-      attendanceWaitingState.inactiveUids = buildAttendanceInactiveUidSet(
-        docs,
-        tid,
-        waitingState?.waiting || []
-      );
+      attendanceWaitingState.sourceDocs = docs;
+      rebuildLayoutAttendanceInactiveUids(tid);
       attendanceWaitingState.items = filterAttendanceRowsForWaitingMerge(
         docs.map((d) => {
           const data = d.data() || {};
@@ -109,6 +116,7 @@ export function createLayoutRealtimeBind(deps) {
           : [];
         waitingState.updatedAt = nextUpdatedAt || Date.now();
 
+        rebuildLayoutAttendanceInactiveUids(tid);
         onAfterWaitingRemoteSnapshot();
       },
       (err) => {
@@ -121,11 +129,8 @@ export function createLayoutRealtimeBind(deps) {
         dealerAttendanceQueryForTournament(tid),
         (snap) => {
           const docs = filterAttendanceDocsForTournament(snap.docs, tid);
-          attendanceWaitingState.inactiveUids = buildAttendanceInactiveUidSet(
-            docs,
-            tid,
-            waitingState?.waiting || []
-          );
+          attendanceWaitingState.sourceDocs = docs;
+          rebuildLayoutAttendanceInactiveUids(tid);
           attendanceWaitingState.items = filterAttendanceRowsForWaitingMerge(
             docs.map((d) => {
               const data = d.data() || {};

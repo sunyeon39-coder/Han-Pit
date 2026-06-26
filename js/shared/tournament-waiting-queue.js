@@ -165,16 +165,6 @@ export function buildTournamentWaitingDisplayList({
       continue;
     }
     if (waitingDisplayHasEntry(merged, item)) continue;
-    if (
-      uid &&
-      !personExistsInGlobalWaiting(globalWaiting, tid, {
-        uid,
-        email: item?.email,
-        name: item?.nickname || item?.name
-      })
-    ) {
-      continue;
-    }
     merged.push({
       ...item,
       id: String(item.id || `att_${uid || "row"}`).trim(),

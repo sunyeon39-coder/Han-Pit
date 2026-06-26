@@ -35,6 +35,18 @@ export function buildAttendanceInactiveUidSet(docs = [], tournamentId = "", glob
   return inactive;
 }
 
+/** Firestore 대기열 정리 — 퇴근·미출근만 (운영일 stale 은 대기열에 있으면 유지) */
+export function buildTerminalAttendanceUidSet(docs = [], tournamentId = "") {
+  const terminal = new Set();
+  for (const d of filterAttendanceDocsForTournament(docs, tournamentId)) {
+    const data = typeof d.data === "function" ? d.data() || {} : d;
+    const uid = String(data.uid || "").trim();
+    const status = String(data.status || "").trim();
+    if (uid && TERMINAL_ATTENDANCE.has(status)) terminal.add(uid);
+  }
+  return terminal;
+}
+
 export function filterAttendanceRowsForWaitingMerge(rows = []) {
   return rows.filter((row) => {
     const status = String(row?.status || "").trim();

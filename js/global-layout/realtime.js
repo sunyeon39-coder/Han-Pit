@@ -13,6 +13,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
   buildAttendanceInactiveUidSet,
+  buildTerminalAttendanceUidSet,
   filterAttendanceRowsForWaitingMerge
 } from "../shared/attendance-waiting-filter.js";
 import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
@@ -55,6 +56,8 @@ import { replaceGlobalWaitingLocal } from "./waiting.js";
 const RECENT_LOCAL_SEAT_MS = 12000;
 let seatRecoverDebounceTimer = null;
 let purgeInactiveWaitingTimer = null;
+/** 출석 스냅샷 보관 — global_waiting 도착 후 inactive 재계산용 */
+let attendanceInactiveSourceDocs = [];
 let lastSeatsUiFingerprint = "";
 let lastWaitingUiFingerprint = "";
 let seatSnapshotReceived = false;
@@ -134,14 +137,20 @@ function scheduleRecoverRemovedSeatPeople(removedSeats, currentSeats) {
   }, 600);
 }
 
-function applyDealerAttendanceSnap(snap) {
-  const docs = filterAttendanceDocsForTournament(snap.docs, GL.tournamentId);
+function rebuildGlobalLayoutAttendanceInactiveUids() {
+  if (!GL.tournamentId) return;
   GL.attendanceInactiveUids = buildAttendanceInactiveUidSet(
-    docs,
+    attendanceInactiveSourceDocs,
     GL.tournamentId,
     GL.globalWaiting
   );
+}
+
+function applyDealerAttendanceSnap(snap) {
+  const docs = filterAttendanceDocsForTournament(snap.docs, GL.tournamentId);
+  attendanceInactiveSourceDocs = docs;
   GL.attendanceFilterReady = true;
+  rebuildGlobalLayoutAttendanceInactiveUids();
 
   GL.attendanceWaiting = filterAttendanceRowsForWaitingMerge(
     docs.map((d) => ({ id: d.id, ...(d.data() || {}) }))
@@ -164,12 +173,12 @@ function scheduleHealInactiveOutOfGlobalWaiting() {
 
 async function healInactiveRowsOutOfGlobalWaiting() {
   if (!GL.tournamentId || GL.waitingMutationInFlight) return;
-  const inactive = GL.attendanceInactiveUids instanceof Set ? GL.attendanceInactiveUids : new Set();
-  if (!inactive.size) return;
+  const terminal = buildTerminalAttendanceUidSet(attendanceInactiveSourceDocs, GL.tournamentId);
+  if (!terminal.size) return;
 
   const localNext = purgeInactiveFromGlobalWaitingRows(
     GL.globalWaiting,
-    inactive,
+    terminal,
     GL.tournamentId
   );
   if (localNext.length === (GL.globalWaiting || []).length) return;
@@ -180,7 +189,7 @@ async function healInactiveRowsOutOfGlobalWaiting() {
     if (!snap.exists()) return;
     const state = snap.data() || {};
     const list = Array.isArray(state.waiting) ? state.waiting : [];
-    const healed = purgeInactiveFromGlobalWaitingRows(list, inactive, GL.tournamentId);
+    const healed = purgeInactiveFromGlobalWaitingRows(list, terminal, GL.tournamentId);
     if (healed.length === list.length) return;
 
     GL.waitingMutationInFlight = true;
@@ -572,6 +581,7 @@ export function bindRealtime() {
   GL.attendanceFilterReady = false;
   GL.attendanceInactiveUids = new Set();
   GL.attendanceWaiting = [];
+  attendanceInactiveSourceDocs = [];
   lastSeatsUiFingerprint = "";
   lastWaitingUiFingerprint = "";
   seatSnapshotReceived = false;
@@ -638,17 +648,14 @@ export function bindRealtime() {
       if (shouldIgnoreStaleGlobalLayoutSnapshot(snap)) return;
       const data = snap.exists() ? snap.data() || {} : {};
       const nextWaiting = Array.isArray(data.waiting) ? data.waiting : [];
-      const waitingFp = globalWaitingUiFingerprint(nextWaiting);
-      const waitingUiChanged = waitingFp !== lastWaitingUiFingerprint;
-      lastWaitingUiFingerprint = waitingFp;
+      lastWaitingUiFingerprint = globalWaitingUiFingerprint(nextWaiting);
 
       GL.globalWaiting = nextWaiting;
       applyOperatorPicksFromDoc(data, snap.metadata || {});
+      rebuildGlobalLayoutAttendanceInactiveUids();
       bumpGlobalLayoutDataRevision();
       updateGlobalLayoutWaitingMeta();
-      if (waitingUiChanged) {
-        scheduleGlobalLayoutRealtimeUi({ waiting: true, seatPanel: true });
-      }
+      scheduleGlobalLayoutRealtimeUi({ waiting: true, seatPanel: true });
 
       if (
         snap.metadata?.fromCache &&
