@@ -2,10 +2,7 @@ import { auth } from "../firebase.js";
 
 import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
 import {
-  countTournamentWaitingDisplay,
-  countTournamentOccupiedFromGlobalSeats,
-  buildIndexAttendanceInactiveUids,
-  buildIndexAttendanceWaitingRows
+  countTournamentOccupiedFromGlobalSeats
 } from "../shared/tournament-waiting-queue.js";
 import { getTournamentId } from "./core-utils.js";
 import { escapeHtml } from "../shared/dom-utils.js";
@@ -21,7 +18,8 @@ import { syncIndexOpsToolbar } from "./index-ops-chrome.js";
 import { bootstrapIndexDealerOps } from "./index-ops-bootstrap.js";
 import {
   getAdminAttendanceList,
-  getFilteredAdminAttendanceList
+  getFilteredAdminAttendanceList,
+  getAdminAttendanceStatusCounts
 } from "./dealer-attendance-admin-list.js";
 
 function syncDealerAdminUiFromDom() {
@@ -39,39 +37,10 @@ function syncDealerAdminUiFromDom() {
 }
 
 function getDealerAdminCounts() {
-  const counts = {
-    waiting: 0,
-    assigned: 0,
-    checked_out: 0,
-    off: 0
-  };
-
-  const tournamentId = getTournamentId();
-  const inactive = buildIndexAttendanceInactiveUids(
-    IX.dealerAttendanceMap,
-    tournamentId,
-    IX.globalWaiting
-  );
-
-  getAdminAttendanceList().forEach((item) => {
-    const s = item.status || "off";
-    if (s === "checked_out") counts.checked_out += 1;
-    else if (s === "off") counts.off += 1;
+  return getAdminAttendanceStatusCounts({
+    // 배치중은 통합배치도 좌석 점유 수와 동일 (목록 assigned 행 수와 다를 수 있음)
+    assignedSeatCount: countTournamentOccupiedFromGlobalSeats(IX.dealerGlobalSeats)
   });
-
-  // 통합배치도 대기 패널 목록과 동일
-  counts.waiting = countTournamentWaitingDisplay({
-    globalWaiting: IX.globalWaiting,
-    tournamentId,
-    attendanceInactiveUids: inactive,
-    globalSeats: IX.dealerGlobalSeats,
-    attendanceFilterReady: IX.dealerAttendanceMap.size > 0,
-    attendanceWaitingRows: buildIndexAttendanceWaitingRows(IX.dealerAttendanceMap, tournamentId),
-    excludeBlocked: false
-  });
-  counts.assigned = countTournamentOccupiedFromGlobalSeats(IX.dealerGlobalSeats);
-
-  return counts;
 }
 
 function renderDealerAdminSummaryHtml(counts) {

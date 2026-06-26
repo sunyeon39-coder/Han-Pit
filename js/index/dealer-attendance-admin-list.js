@@ -234,6 +234,30 @@ function mergeQueueAndSeatRowsIntoAdminList(list, seenUids, opsIndex, tournament
   list.sort((a, b) => (a.nickname || "").localeCompare(b.nickname || "", "ko"));
 }
 
+/** Admin 패널 요약 카드 — 목록(`getAdminAttendanceList`)과 동일한 status 기준 */
+export function getAdminAttendanceStatusCounts({ assignedSeatCount = null } = {}) {
+  const counts = {
+    waiting: 0,
+    assigned: 0,
+    checked_out: 0,
+    off: 0
+  };
+
+  for (const item of getAdminAttendanceList()) {
+    const s = String(item.status || "off").trim();
+    if (s === "waiting") counts.waiting += 1;
+    else if (s === "assigned") counts.assigned += 1;
+    else if (s === "checked_out") counts.checked_out += 1;
+    else if (s === "off") counts.off += 1;
+  }
+
+  if (Number.isFinite(assignedSeatCount)) {
+    counts.assigned = assignedSeatCount;
+  }
+
+  return counts;
+}
+
 function normalizeDealerAdminKeyword(raw) {
   const s = String(raw || "").trim().toLowerCase();
   if (!s || /^[\s\-._]+$/.test(s)) return "";
