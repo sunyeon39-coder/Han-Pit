@@ -490,6 +490,11 @@ async function refreshGlobalSeatsFromServer() {
 
 export { disposeGlobalLayoutRealtime };
 
+/** 세션 시작·캐시 공백 시 서버에서 대기·좌석을 한 번 더 읽음 */
+export async function refreshGlobalLayoutOpsDataFromServer() {
+  await Promise.all([refreshGlobalWaitingFromServer(), refreshGlobalSeatsFromServer()]);
+}
+
 export function bindRealtime() {
   if (!GL.tournamentId) {
     alert("대회 정보가 없습니다.");

@@ -316,7 +316,7 @@ async function refreshIndexOpsFromServer(user = auth.currentUser) {
     applyIndexOpsPermissions(user);
     if (getTournamentId() && hadOps !== getIndexHadOps()) {
       bindDealerAttendanceRealtime();
-      await loadDealerAttendanceOnce();
+      await loadDealerAttendanceOnce({ forceServer: true });
     }
   } catch (err) {
     console.warn("refreshIndexOpsFromServer:", err);
@@ -789,11 +789,18 @@ onAuthStateChanged(auth, async (user) => {
     await init();
     if (flow !== indexAuthFlowGen) return;
     await initTournamentPeriodWatch();
-    void bootstrapIndexDealerOps({ force: true });
+    if (flow !== indexAuthFlowGen) return;
+    try {
+      await raceFirestoreTimeout(profilePromise, 12_000);
+    } catch {
+      /* 프로필 지연 시에도 bootstrap 은 서버에서 ops 데이터를 읽음 */
+    }
+    if (flow !== indexAuthFlowGen) return;
+    await bootstrapIndexDealerOps({ force: true });
+    void refreshIndexOpsFromServer(user);
     void profilePromise
       .then(() => ensureIndexOpsChrome(user))
       .catch(() => null);
-    void refreshIndexOpsFromServer(user);
   } catch (err) {
     console.error("index auth init error:", err);
     alert("인덱스 데이터를 불러오지 못했습니다.");
@@ -805,6 +812,7 @@ window.addEventListener("hanpit-index-tournament-ready", () => {
   bindDealerAttendanceRealtime();
   applyIndexOpsPermissions(auth.currentUser);
   void bootstrapIndexDealerOps({ force: true });
+  void loadDealerAttendanceOnce({ forceServer: true });
   if (IX.events.length) {
     render();
     refreshCardStatuses();

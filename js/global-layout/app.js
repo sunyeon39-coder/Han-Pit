@@ -33,10 +33,12 @@ import { updateGlobalMetaToolbar } from "./toolbar.js";
 import {
   bindRealtime,
   disposeGlobalLayoutRealtime,
-  hasGlobalSeatsServerSynced
+  hasGlobalSeatsServerSynced,
+  refreshGlobalLayoutOpsDataFromServer
 } from "./realtime.js";
 import { armFirestoreStallWatchdog, showFirestoreStallBanner } from "../shared/firestore-stall-recovery.js";
 import { readGlobalSeatsCache, readGlobalSeatsLegacyCache } from "./global-seats-session-cache.js";
+import { readIndexGlobalWaitingCache } from "../index/index-ops-session-cache.js";
 import { bindGlobalLayoutEventHandlers, syncGlobalLayoutMobileChrome } from "./ui-events.js";
 import {
   initGlobalLayoutZoomBarDom,
@@ -139,6 +141,10 @@ export function startGlobalLayoutApp() {
     renderSeats(cachedSeats);
   } else {
     renderSeats([]);
+  }
+  const cachedWaiting = readIndexGlobalWaitingCache(GL.tournamentId);
+  if (cachedWaiting?.length) {
+    GL.globalWaiting = cachedWaiting;
   }
   initGlobalLayoutZoomBarDom();
   wireGlobalLayoutZoomBarOnce();
@@ -339,6 +345,7 @@ export function startGlobalLayoutApp() {
 
     setPanelOpen(!layoutIsMobile());
     bindRealtime();
+    void refreshGlobalLayoutOpsDataFromServer().then(() => refreshGlobalLayoutAdminUi());
     armFirestoreStallWatchdog({
       timeoutMs: 8000,
       dataReady: () => hasGlobalSeatsServerSynced(),

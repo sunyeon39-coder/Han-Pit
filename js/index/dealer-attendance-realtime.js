@@ -8,8 +8,8 @@ import {
   filterAttendanceDocsForTournament
 } from "../shared/dealer-attendance-query.js";
 
-import { canUseTournamentOps } from "../shared/auth-helpers.js";
 import { layoutIsMobile } from "../layout/layout-main-route-env.js";
+import { indexCanUseTournamentOps } from "./index-ops-tournament-meta.js";
 import {
   buildSeatAssignmentStableKey,
   triggerOptimisticMobileSeatAssignedAlert,
@@ -139,7 +139,7 @@ export function bindDealerAttendanceRealtime() {
   }
 
   const tournamentId = getTournamentId();
-  if (canUseTournamentOps(user?.email, IX.currentUserProfile, tournamentId)) {
+  if (indexCanUseTournamentOps(user)) {
     IX.stopDealerAttendanceWatch = onSnapshot(
       dealerAttendanceQueryForTournament(tournamentId),
       (snap) => {

@@ -192,7 +192,7 @@ export function bootstrapIndexDealerOps(options = {}) {
     if (seq !== bootstrapSeq) return;
     await Promise.all([
       refreshIndexOpsDataFromServer(),
-      loadDealerAttendanceOnce(),
+      loadDealerAttendanceOnce({ forceServer: true }),
       loadTournamentDealerRosterOnce()
     ]);
     if (isAppDebugEnabled()) {
