@@ -209,6 +209,8 @@ export function buildInlineAppUpdateSnippet(v) {
 
   function checkRemoteVersion(force){
     if(!pageBuild||checking)return;
+    var host=String(location.hostname||"").toLowerCase();
+    if(host==="localhost"||host==="127.0.0.1"||host==="0.0.0.0")return;
     var now=Date.now();
     if(!force&&now-lastCheckAt<MIN_CHECK_MS)return;
     lastCheckAt=now;

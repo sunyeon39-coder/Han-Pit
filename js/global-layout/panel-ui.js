@@ -347,7 +347,7 @@ export function renderWaiting(_waiting) {
   const existingManual = waitCol.querySelector("#manualWaitingNameInput");
   const sortedWaiting = sortWaitingForDisplay(waiting);
   const nextFp = waitingPanelFingerprint(sortedWaiting);
-  if (nextFp === GL._waitingPanelFp && existingList && existingManual) {
+  if (nextFp === GL._waitingPanelFp && existingList && existingManual && waitCol.contains(existingList)) {
     restorePanelScroll();
     updateGlobalMetaToolbar();
     return;

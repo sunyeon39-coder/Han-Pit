@@ -34,7 +34,8 @@ import {
   bindRealtime,
   disposeGlobalLayoutRealtime,
   hasGlobalSeatsServerSynced,
-  refreshGlobalLayoutOpsDataFromServer
+  refreshGlobalLayoutOpsDataFromServer,
+  scheduleHealMissingWaitingFromAttendance
 } from "./realtime.js";
 import { armFirestoreStallWatchdog, showFirestoreStallBanner } from "../shared/firestore-stall-recovery.js";
 import { readGlobalSeatsCache, readGlobalSeatsLegacyCache } from "./global-seats-session-cache.js";
@@ -160,6 +161,7 @@ export function startGlobalLayoutApp() {
     renderSeatPanel();
     updateGlobalMetaToolbar();
     checkGlobalLayoutOptimisticSeatAlert();
+    scheduleHealMissingWaitingFromAttendance();
   }
 
   function syncGlobalLayoutOpsFromProfile(user = GL.currentUser, meta = {}) {

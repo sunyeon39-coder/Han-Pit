@@ -229,7 +229,6 @@ async function healInactiveRowsOutOfGlobalWaiting() {
 
 function scheduleHealMissingWaitingFromAttendance() {
   if (!GL.tournamentId || !GL.attendanceFilterReady) return;
-  if (!canManageGlobalLayoutOps()) return;
   if (restoreMissingWaitingTimer) clearTimeout(restoreMissingWaitingTimer);
   restoreMissingWaitingTimer = setTimeout(() => {
     restoreMissingWaitingTimer = null;
@@ -237,9 +236,10 @@ function scheduleHealMissingWaitingFromAttendance() {
   }, 900);
 }
 
+export { scheduleHealMissingWaitingFromAttendance };
+
 async function healMissingWaitingFromAttendance() {
   if (!GL.tournamentId || GL.waitingMutationInFlight || !GL.attendanceFilterReady) return;
-  if (!canManageGlobalLayoutOps()) return;
 
   const terminal = buildTerminalAttendanceUidSet(attendanceInactiveSourceDocs, GL.tournamentId);
   const missing = buildMissingGlobalWaitingRestoreList({

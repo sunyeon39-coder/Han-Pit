@@ -35,8 +35,8 @@ function flushGlobalLayoutRealtimeUi() {
   }
 
   if (f.seats) renderSeats(GL.globalSeats);
-  if (f.seatPanel) renderSeatPanel();
-  if (f.waiting || f.metaOnly || f.seatPanel) {
+  if (f.seats || f.seatPanel || f.waiting || f.metaOnly) {
+    renderSeatPanel();
     renderWaiting();
   }
   if (f.seats || f.seatPanel || f.waiting || f.metaOnly) {
