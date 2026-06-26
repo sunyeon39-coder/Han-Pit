@@ -13,7 +13,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
   buildAttendanceInactiveUidSet,
-  buildTerminalAttendanceUidSet,
+  buildCheckedOutAttendanceUidSet,
   filterAttendanceRowsForWaitingMerge
 } from "../shared/attendance-waiting-filter.js";
 import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
@@ -56,6 +56,7 @@ import {
 } from "../shared/tournament-waiting-queue.js";
 import { resolveAttendanceWaitingJoinMs } from "../shared/attendance-operational-day.js";
 import { replaceGlobalWaitingLocal } from "./waiting.js";
+import { restoreWaitingSnapshotForCurrentTournament } from "./fs-restore-waiting-snapshot.js";
 
 /** Firestore 전파 전 캐시 스냅샷이 방금 배치한 좌석을 비우는 것 방지 */
 const RECENT_LOCAL_SEAT_MS = 12000;
@@ -187,12 +188,12 @@ function scheduleHealInactiveOutOfGlobalWaiting() {
 
 async function healInactiveRowsOutOfGlobalWaiting() {
   if (!GL.tournamentId || GL.waitingMutationInFlight) return;
-  const terminal = buildTerminalAttendanceUidSet(attendanceInactiveSourceDocs, GL.tournamentId);
-  if (!terminal.size) return;
+  const checkedOut = buildCheckedOutAttendanceUidSet(attendanceInactiveSourceDocs, GL.tournamentId);
+  if (!checkedOut.size) return;
 
   const localNext = purgeInactiveFromGlobalWaitingRows(
     GL.globalWaiting,
-    terminal,
+    checkedOut,
     GL.tournamentId
   );
   if (localNext.length === (GL.globalWaiting || []).length) return;
@@ -203,7 +204,7 @@ async function healInactiveRowsOutOfGlobalWaiting() {
     if (!snap.exists()) return;
     const state = snap.data() || {};
     const list = Array.isArray(state.waiting) ? state.waiting : [];
-    const healed = purgeInactiveFromGlobalWaitingRows(list, terminal, GL.tournamentId);
+    const healed = purgeInactiveFromGlobalWaitingRows(list, checkedOut, GL.tournamentId);
     if (healed.length === list.length) return;
 
     GL.waitingMutationInFlight = true;
@@ -241,65 +242,69 @@ export { scheduleHealMissingWaitingFromAttendance };
 async function healMissingWaitingFromAttendance() {
   if (!GL.tournamentId || GL.waitingMutationInFlight || !GL.attendanceFilterReady) return;
 
-  const terminal = buildTerminalAttendanceUidSet(attendanceInactiveSourceDocs, GL.tournamentId);
+  const checkedOut = buildCheckedOutAttendanceUidSet(attendanceInactiveSourceDocs, GL.tournamentId);
   const missing = buildMissingGlobalWaitingRestoreList({
     tournamentId: GL.tournamentId,
     globalWaiting: GL.globalWaiting,
     globalSeats: GL.globalSeats,
     attendanceWaitingRows: GL.attendanceWaiting,
-    terminalUids: terminal,
+    terminalUids: checkedOut,
     resolveJoinedAt: (row) => resolveAttendanceWaitingJoinMs(row, Date.now())
   });
-  if (!missing.length) return;
 
   const waitingRef = doc(db, "layout_shared", "global_waiting");
   try {
     GL.waitingMutationInFlight = true;
-    let healed = null;
-    await runFirestoreTransactionWithRetry(db, async (tx) => {
-      const waitingSnap = await tx.get(waitingRef);
-      const waitingData = waitingSnap.exists()
-        ? waitingSnap.data() || {}
-        : { version: 2, waiting: [], updatedAt: Date.now() };
-      let waitingArr = Array.isArray(waitingData.waiting) ? [...waitingData.waiting] : [];
-      const now = Date.now();
-      let changed = false;
+    if (missing.length) {
+      let healed = null;
+      await runFirestoreTransactionWithRetry(db, async (tx) => {
+        const waitingSnap = await tx.get(waitingRef);
+        const waitingData = waitingSnap.exists()
+          ? waitingSnap.data() || {}
+          : { version: 2, waiting: [], updatedAt: Date.now() };
+        let waitingArr = Array.isArray(waitingData.waiting) ? [...waitingData.waiting] : [];
+        const now = Date.now();
+        let changed = false;
 
-      for (const person of missing) {
-        if (personExistsInGlobalWaiting(waitingArr, GL.tournamentId, person)) continue;
-        const joinMs = Number(person.joinedAt || 0) || now;
-        waitingArr = rebuildWaitingAfterSeatToWait(waitingArr, GL.tournamentId, person, joinMs, {
-          source: "attendance_restore",
-          ...(person.uid ? { id: `w_${person.uid}` } : {})
-        });
-        changed = true;
+        for (const person of missing) {
+          if (personExistsInGlobalWaiting(waitingArr, GL.tournamentId, person)) continue;
+          const joinMs = Number(person.joinedAt || 0) || now;
+          waitingArr = rebuildWaitingAfterSeatToWait(waitingArr, GL.tournamentId, person, joinMs, {
+            source: "attendance_restore",
+            ...(person.uid ? { id: `w_${person.uid}` } : {})
+          });
+          changed = true;
+        }
+        if (!changed) return;
+
+        healed = waitingArr;
+        tx.set(
+          waitingRef,
+          {
+            ...waitingData,
+            version: 2,
+            waiting: waitingArr,
+            updatedAt: now,
+            updatedAtServer: serverTimestamp()
+          },
+          { merge: true }
+        );
+      });
+
+      if (healed) {
+        console.info(
+          "[healMissingWaitingFromAttendance] restored",
+          missing.length,
+          "row(s) for",
+          GL.tournamentId
+        );
+        replaceGlobalWaitingLocal(healed);
+        bumpGlobalLayoutDataRevision();
+        scheduleGlobalLayoutRealtimeUi({ waiting: true });
       }
-      if (!changed) return;
+    }
 
-      healed = waitingArr;
-      tx.set(
-        waitingRef,
-        {
-          ...waitingData,
-          version: 2,
-          waiting: waitingArr,
-          updatedAt: now,
-          updatedAtServer: serverTimestamp()
-        },
-        { merge: true }
-      );
-    });
-
-    if (!healed) return;
-    console.info(
-      "[healMissingWaitingFromAttendance] restored",
-      missing.length,
-      "row(s) for",
-      GL.tournamentId
-    );
-    replaceGlobalWaitingLocal(healed);
-    bumpGlobalLayoutDataRevision();
-    scheduleGlobalLayoutRealtimeUi({ waiting: true });
+    await restoreWaitingSnapshotForCurrentTournament();
   } catch (err) {
     console.warn("healMissingWaitingFromAttendance:", err?.code || err);
   } finally {

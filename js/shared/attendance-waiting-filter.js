@@ -47,6 +47,18 @@ export function buildTerminalAttendanceUidSet(docs = [], tournamentId = "") {
   return terminal;
 }
 
+/** global_waiting 행 제거·숨김 — 퇴근만 (+대기·미출근은 운영자가 넣은 대기열 유지) */
+export function buildCheckedOutAttendanceUidSet(docs = [], tournamentId = "") {
+  const checkedOut = new Set();
+  for (const d of filterAttendanceDocsForTournament(docs, tournamentId)) {
+    const data = typeof d.data === "function" ? d.data() || {} : d;
+    const uid = String(data.uid || "").trim();
+    const status = String(data.status || "").trim();
+    if (uid && status === "checked_out") checkedOut.add(uid);
+  }
+  return checkedOut;
+}
+
 export function filterAttendanceRowsForWaitingMerge(rows = []) {
   return rows.filter((row) => {
     const status = String(row?.status || "").trim();

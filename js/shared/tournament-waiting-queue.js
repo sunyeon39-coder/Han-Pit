@@ -137,10 +137,9 @@ export function buildTournamentWaitingDisplayList({
   const inactive = attendanceInactiveUids instanceof Set ? attendanceInactiveUids : new Set();
   const filterReady = attendanceFilterReady === true;
 
-  // global_waiting — 퇴근·미출근은 숨김. 운영일 stale 는 대기열에 있으면 inactive 에 안 들어감
+  // global_waiting — Firestore 대기열이 우선(미출근·수동 +대기 포함). 좌석 점유만 제외.
   const waitingBase = (globalWaiting || [])
     .filter((w) => waitingRowBelongsToTournament(w, tid))
-    .filter((w) => !filterReady || !isInactiveWaitingEntry(w, inactive))
     .filter(
       (w) =>
         !isPersonSeatedInGlobalSeats(globalSeats, {

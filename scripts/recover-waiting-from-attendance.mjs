@@ -1,10 +1,8 @@
 /**
- * 출석(dealer_attendance)에는 waiting/checked_in 인데 global_waiting 에 없는 사람을 복구합니다.
+ * 출석 + 운영 스냅샷 기준 global_waiting 복구
  *
- * 실행:
  *   export GOOGLE_APPLICATION_CREDENTIALS=/path/serviceAccount.json
- *   node scripts/recover-waiting-from-attendance.mjs "APL JEJU"          # dry-run
- *   node scripts/recover-waiting-from-attendance.mjs "APL JEJU" --apply   # Firestore 반영
+ *   node scripts/recover-waiting-from-attendance.mjs "APL JEJU" --apply
  */
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -16,11 +14,31 @@ const admin = require(
 );
 
 const PROJECT_ID = "hanagency-c2c0e";
-const TERMINAL = new Set(["checked_out", "off"]);
 const EMPTY_PERSON = new Set(["", "비어있음", "빈자리", "empty"]);
+
+const SNAPSHOT_NAMES_BY_TOURNAMENT = {
+  "APL JEJU": [
+    "지렁이",
+    "김태중",
+    "sia",
+    "명환",
+    "SIRI",
+    "김진현",
+    "황인엽",
+    "김해진",
+    "작준.",
+    "SKY",
+    "오시우",
+    "윤인규"
+  ]
+};
 
 function isEmptyPerson(name = "") {
   return EMPTY_PERSON.has(String(name || "").trim());
+}
+
+function normName(name = "") {
+  return String(name || "").trim().toLowerCase();
 }
 
 function waitingRowBelongsToTournament(row = {}, tournamentId = "") {
@@ -95,7 +113,7 @@ const args = process.argv.slice(2).filter((a) => a !== "--apply");
 const apply = process.argv.includes("--apply");
 const tournamentId = String(args[0] || "APL JEJU").trim();
 if (!tournamentId) {
-  console.error("tournamentId 필요. 예: node scripts/recover-waiting-from-attendance.mjs \"APL JEJU\"");
+  console.error('tournamentId 필요. 예: node scripts/recover-waiting-from-attendance.mjs "APL JEJU"');
   process.exit(1);
 }
 
@@ -106,57 +124,115 @@ console.log(`\n=== 대기열 복구 (${apply ? "APPLY" : "DRY-RUN"}) tournamentI
 
 const waitingSnap = await db.collection("layout_shared").doc("global_waiting").get();
 const waitingState = waitingSnap.exists ? waitingSnap.data() || {} : { version: 2, waiting: [] };
-const waitingArr = Array.isArray(waitingState.waiting) ? [...waitingState.waiting] : [];
+let waitingArr = Array.isArray(waitingState.waiting) ? [...waitingState.waiting] : [];
 const tidWaiting = waitingArr.filter((w) => waitingRowBelongsToTournament(w, tournamentId));
 
 const seatsSnap = await db.collection("tournaments").doc(tournamentId).collection("global_seats").get();
 const seats = seatsSnap.docs.map((d) => ({ seatId: d.id, ...(d.data() || {}) }));
 
+const usersSnap = await db.collection("users").get();
+const usersByNick = new Map();
+for (const d of usersSnap.docs) {
+  const data = d.data() || {};
+  const nick = String(data.nickname || data.name || "").trim();
+  if (!nick) continue;
+  usersByNick.set(normName(nick), {
+    uid: d.id,
+    email: String(data.email || "").trim(),
+    name: nick
+  });
+}
+
 const attSnap = await db.collection("dealer_attendance").get();
 const prefix = `${tournamentId}__`;
-const attendanceRows = [];
+const attendanceByUid = new Map();
+for (const d of attSnap.docs) {
+  if (!String(d.id).startsWith(prefix)) continue;
+  const data = d.data() || {};
+  const uid = String(data.uid || "").trim();
+  if (uid) attendanceByUid.set(uid, { id: d.id, ...data });
+}
+
+const missing = new Map();
+const addMissing = (person, joinMs, source) => {
+  const key = person.uid || normName(person.name) || person.email;
+  if (!key || missing.has(key)) return;
+  if (isPersonSeated(seats, person)) return;
+  if (personInWaiting(waitingArr, tournamentId, person)) return;
+  missing.set(key, { ...person, joinedAt: joinMs, source });
+};
+
 for (const d of attSnap.docs) {
   if (!String(d.id).startsWith(prefix)) continue;
   const data = d.data() || {};
   const status = String(data.status || "").trim();
   if (status !== "waiting" && status !== "checked_in") continue;
-  if (TERMINAL.has(status)) continue;
-  attendanceRows.push({ id: d.id, ...data });
+  const uid = String(data.uid || "").trim();
+  addMissing(
+    {
+      uid,
+      email: String(data.email || "").trim(),
+      name: String(data.nickname || data.name || "").trim()
+    },
+    resolveJoinMs(data),
+    "attendance"
+  );
 }
 
-const missing = [];
-for (const row of attendanceRows) {
-  const uid = String(row.uid || "").trim();
-  const person = {
-    uid,
-    email: String(row.email || "").trim(),
-    name: String(row.nickname || row.name || "").trim()
-  };
-  if (!person.uid && !person.email && !person.name) continue;
-  if (isPersonSeated(seats, person)) continue;
-  if (personInWaiting(waitingArr, tournamentId, person)) continue;
-  missing.push({ ...person, joinedAt: resolveJoinMs(row), attendanceId: row.id });
+for (const rawName of SNAPSHOT_NAMES_BY_TOURNAMENT[tournamentId] || []) {
+  const name = String(rawName || "").trim();
+  if (!name) continue;
+  const user = usersByNick.get(normName(name));
+  addMissing(
+    {
+      uid: String(user?.uid || "").trim(),
+      email: String(user?.email || "").trim(),
+      name: user?.name || name
+    },
+    Date.now(),
+    "snapshot"
+  );
 }
 
-console.log(`[현재] global_waiting(대회)=${tidWaiting.length}명, 출석 waiting/checked_in=${attendanceRows.length}명`);
-console.log(`[복구 대상] ${missing.length}명`);
-for (const m of missing) {
-  console.log(`  - ${m.name || m.uid || m.email} (uid=${m.uid || "-"}, join=${new Date(m.joinedAt).toISOString()})`);
+const missingList = [...missing.values()];
+console.log(`[현재] global_waiting(대회)=${tidWaiting.length}명`);
+console.log(`[복구 대상] ${missingList.length}명`);
+for (const m of missingList) {
+  console.log(`  - ${m.name || m.uid || m.email} (${m.source}, uid=${m.uid || "-"})`);
 }
 
-if (!missing.length) {
+if (!missingList.length) {
   console.log("\n복구할 대상이 없습니다.\n");
   process.exit(0);
 }
 
 if (!apply) {
-  console.log('\n반영하려면: node scripts/recover-waiting-from-attendance.mjs "' + tournamentId + '" --apply\n');
+  console.log('\n반영: node scripts/recover-waiting-from-attendance.mjs "' + tournamentId + '" --apply\n');
   process.exit(0);
 }
 
-let nextWaiting = waitingArr;
-for (const person of missing) {
-  nextWaiting = rebuildWaiting(nextWaiting, tournamentId, person, person.joinedAt);
+const now = Date.now();
+for (const person of missingList) {
+  waitingArr = rebuildWaiting(waitingArr, tournamentId, person, person.joinedAt || now);
+  if (!person.uid) continue;
+  await db
+    .collection("dealer_attendance")
+    .doc(`${tournamentId}__${person.uid}`)
+    .set(
+      {
+        uid: person.uid,
+        email: person.email,
+        name: person.name,
+        nickname: person.name,
+        tournamentId,
+        status: "waiting",
+        statusChangedAt: person.joinedAt || now,
+        checkedInAt: person.joinedAt || now,
+        checkedOutAt: null,
+        updatedAt: now
+      },
+      { merge: true }
+    );
 }
 
 await db
@@ -166,11 +242,12 @@ await db
     {
       ...waitingState,
       version: 2,
-      waiting: nextWaiting,
-      updatedAt: Date.now()
+      waiting: waitingArr,
+      updatedAt: now
     },
     { merge: true }
   );
 
-console.log(`\n✅ global_waiting 에 ${missing.length}명 복구 완료 (총 ${nextWaiting.filter((w) => waitingRowBelongsToTournament(w, tournamentId)).length}명)\n`);
+const after = waitingArr.filter((w) => waitingRowBelongsToTournament(w, tournamentId)).length;
+console.log(`\n✅ global_waiting 복구 완료 — 대회 대기 ${after}명\n`);
 process.exit(0);
