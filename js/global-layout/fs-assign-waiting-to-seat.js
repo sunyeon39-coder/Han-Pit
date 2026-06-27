@@ -28,13 +28,13 @@ import { buildSeatAssignedNotifyMessage } from "../shared/seat-notification-labe
 import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
 import { pushGlobalUndo } from "./undo-stack.js";
 import { captureSeatShellSnapshot } from "./utils.js";
-import { clearMyWaitingPick } from "./waiting-picks.js";
+import { clearMyWaitingPick, applyOptimisticMyWaitingPick } from "./waiting-picks.js";
 import {
   applyOptimisticAssign,
   flushOptimisticGlobalLayoutUi
 } from "./optimistic-seat-mutation.js";
 import { triggerOptimisticMobileSeatAssignedAlert } from "../shared/optimistic-seat-assigned-notify.js";
-import { markGlobalLayoutLocalMutation } from "./layout-mutation-guard.js";
+import { markGlobalLayoutLocalMutation, releaseStuckGlobalLayoutMutationFlags } from "./layout-mutation-guard.js";
 import {
   appendSeatHistoryPatch,
   entryFromSeatOccupant
@@ -119,6 +119,8 @@ function notifyOptimisticSeatAssignedForWaiting(waiting, seat, targetSeatId) {
 }
 
 export async function assignSelectedWaitingToSeat(seatId = "") {
+  releaseStuckGlobalLayoutMutationFlags();
+
   const targetSeatId = String(seatId || "").trim();
   if (!targetSeatId || GL.seatMutationInFlight) return;
 
@@ -128,6 +130,7 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   const waiting = resolveSelectedWaitingForAssign();
   if (!waiting) {
     GL.selectedWaitingId = "";
+    applyOptimisticMyWaitingPick("");
     flushOptimisticGlobalLayoutUi();
     throw new Error("waiting_not_found");
   }
@@ -136,6 +139,7 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   }
 
   const rollbackOptimistic = applyOptimisticAssign({ targetSeatId, waiting, seat });
+  applyOptimisticMyWaitingPick("");
   flushOptimisticGlobalLayoutUi();
   notifyOptimisticSeatAssignedForWaiting(waiting, seat, targetSeatId);
   void clearMyWaitingPick();
@@ -513,6 +517,7 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   GL.selectedWaitingId = "";
   GL.selectedSeatIds.clear();
   GL.selectedSeatIds.add(targetSeatId);
+  flushOptimisticGlobalLayoutUi();
   const ev = String(canonicalSeatEventId || "").trim();
   const bx = String(canonicalSeatBoxId || "").trim();
   pushGlobalUndo({

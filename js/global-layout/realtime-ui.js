@@ -16,6 +16,7 @@ export function bumpGlobalLayoutDataRevision() {
   GL._waitingListCache = null;
   GL._waitingListCacheRev = -1;
   GL._waitingPanelFp = "";
+  GL._seatPanelFp = "";
 }
 
 function flushGlobalLayoutRealtimeUi() {

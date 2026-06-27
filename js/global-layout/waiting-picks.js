@@ -12,6 +12,7 @@ import { GL } from "./state.js";
 import { escapeHtml } from "./utils.js";
 import { flushOptimisticGlobalLayoutUi } from "./optimistic-seat-mutation.js";
 import { canManageGlobalLayoutOps } from "./ops-access.js";
+import { releaseStuckGlobalLayoutMutationFlags } from "./layout-mutation-guard.js";
 
 const WAITING_REF = () => doc(db, "layout_shared", "global_waiting");
 
@@ -233,13 +234,12 @@ export function applyOptimisticMyWaitingPick(waitingId = "") {
 
 /** 대기 행 선택 — 같은 행을 다시 누르면 선택 해제 */
 export function setWaitingRowSelection(waitingId = "") {
+  releaseStuckGlobalLayoutMutationFlags();
+
   const wid = String(waitingId || "").trim();
   const cur = String(GL.selectedWaitingId || "").trim();
-  const myUid = String(GL.currentUser?.uid || auth.currentUser?.uid || "").trim();
-  const myPickWid = String(GL.operatorPicks?.[myUid]?.waitingId || "").trim();
-  const alreadySelected = wid && (cur === wid || myPickWid === wid);
 
-  if (alreadySelected) {
+  if (!wid || cur === wid) {
     GL.selectedWaitingId = "";
     applyOptimisticMyWaitingPick("");
     flushOptimisticGlobalLayoutUi();
@@ -248,7 +248,7 @@ export function setWaitingRowSelection(waitingId = "") {
   }
 
   GL.selectedWaitingId = wid;
-  if (wid && GL.selectedSeatIds?.clear) GL.selectedSeatIds.clear();
+  if (GL.selectedSeatIds?.clear) GL.selectedSeatIds.clear();
   applyOptimisticMyWaitingPick(wid);
   flushOptimisticGlobalLayoutUi();
   void syncMyWaitingPick(wid);
@@ -337,6 +337,7 @@ export async function syncMyWaitingPick(waitingId = "") {
   if (!uid || !canManageGlobalLayoutOps()) return;
 
   const wid = String(waitingId || "").trim();
+  applyOptimisticMyWaitingPick(wid);
   try {
     if (!wid) {
       await updateDoc(WAITING_REF(), { [`operatorPicks.${uid}`]: deleteField() });

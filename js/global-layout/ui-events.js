@@ -41,7 +41,7 @@ import {
   initGlobalMobileSeatAddModal,
   openGlobalMobileSeatAddModal
 } from "./mobile-seat-add-modal.js";
-import { setWaitingRowSelection } from "./waiting-picks.js";
+import { setWaitingRowSelection, syncSelectedWaitingFromMyOperatorPick } from "./waiting-picks.js";
 import { refreshGlobalLayoutAlignButtonState } from "./canvas-viewport.js";
 import { fmtElapsed, isEmptyPerson, timerClass } from "./utils.js";
 import { getGlobalRedoCount, getGlobalUndoCount } from "./undo-stack.js";
@@ -226,6 +226,7 @@ export function bindGlobalLayoutEventHandlers() {
 
     const assignBtn = e.target.closest("[data-assign-seat]");
     if (assignBtn) {
+      syncSelectedWaitingFromMyOperatorPick();
       if (!String(GL.selectedWaitingId || "").trim()) return;
       const sid = String(assignBtn.getAttribute("data-assign-seat") || "");
       try {
@@ -464,6 +465,8 @@ export function bindGlobalLayoutEventHandlers() {
     GL.lastSeatTapId = sid;
 
     if (String(GL.selectedWaitingId || "").trim() && !isMultiSelectPointer(e)) {
+      syncSelectedWaitingFromMyOperatorPick();
+      if (!String(GL.selectedWaitingId || "").trim()) return;
       try {
         await assignSelectedWaitingToSeat(sid);
       } catch (err) {
