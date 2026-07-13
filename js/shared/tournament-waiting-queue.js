@@ -55,24 +55,30 @@ export function hasFreshGlobalWaitingForUid(
   return !!findGlobalWaitingRowForUid(globalWaiting, tournamentId, uid);
 }
 
-/** 좌석 점유 판정 — uid 불일치 시 이름만으로 다른 사람과 매칭하지 않음 */
-export function isPersonSeatedInGlobalSeats(seats = [], person = {}) {
-  const pUid = String(person.uid || "").trim();
-  const pEmail = String(person.email || "").trim().toLowerCase();
-  const pName = String(person.name || person.nickname || "").trim();
+/** 대기·좌석·출석 간 동일 인물 판정 — 양쪽 uid 가 있으면 uid 만, 없으면 email·이름 순 */
+export function personIdentityMatches(left = {}, right = {}) {
+  const lUid = String(left.uid || left.personUid || "").trim();
+  const rUid = String(right.uid || right.personUid || "").trim();
+  const lEmail = String(left.email || left.personEmail || "")
+    .trim()
+    .toLowerCase();
+  const rEmail = String(right.email || right.personEmail || "")
+    .trim()
+    .toLowerCase();
+  const lName = String(left.name || left.nickname || left.person || "").trim();
+  const rName = String(right.name || right.nickname || right.person || "").trim();
 
+  if (lUid && rUid) return lUid === rUid;
+  if (lEmail && rEmail) return lEmail === rEmail;
+  if (lName && rName) return lName === rName;
+  return false;
+}
+
+/** 좌석 점유 판정 */
+export function isPersonSeatedInGlobalSeats(seats = [], person = {}) {
   for (const s of seats || []) {
     if (isEmptySeatPerson(s?.person)) continue;
-    const sUid = String(s?.personUid || "").trim();
-    const sEmail = String(s?.personEmail || "").trim().toLowerCase();
-    const sName = String(s?.person || "").trim();
-
-    if (pUid && sUid) {
-      if (pUid === sUid) return true;
-      continue;
-    }
-    if (pEmail && sEmail && pEmail === sEmail) return true;
-    if (pName && sName && pName === sName) return true;
+    if (personIdentityMatches(person, s)) return true;
   }
   return false;
 }

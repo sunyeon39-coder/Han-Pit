@@ -18,6 +18,7 @@ import {
   getSeatById
 } from "./utils.js";
 import { renderGlobalLayoutMobile } from "./mobile-panel-render.js";
+import { buildSeatedIdentitySet } from "../shared/tournament-waiting-queue.js";
 import {
   getPcSeatColEl,
   getPcSeatScrollEl,
@@ -54,7 +55,8 @@ function buildGlobalSeatsByIdMap() {
 }
 
 function waitingPanelFingerprint(waiting = []) {
-  return waiting
+  const seatedKey = [...buildSeatedIdentitySet(GL.globalSeats)].sort().join(",");
+  const waitingKey = waiting
     .map((w, index) => {
       const wid = String(w.id || "").trim();
       const blocked = isWaitingBlocked(w) ? 1 : 0;
@@ -62,10 +64,11 @@ function waitingPanelFingerprint(waiting = []) {
       return `${index}:${wid}|${String(w.name || w.uid || "").trim()}|${blocked}|${pickUi.isSelected ? 1 : 0}|${Number(w.blockAccumulatedMs || 0)}|${Number(w.blockCheckedAt || 0)}`;
     })
     .join(";");
+  return `S:${seatedKey}|W:${waitingKey}`;
 }
 
 export function invalidateWaitingPanelFingerprint() {
-  GL._waitingPanelFp = "";
+  GL._waitingPanelFp = null;
 }
 
 function seatPanelFingerprint(seats = []) {
@@ -347,7 +350,13 @@ export function renderWaiting(_waiting) {
   const existingManual = waitCol.querySelector("#manualWaitingNameInput");
   const sortedWaiting = sortWaitingForDisplay(waiting);
   const nextFp = waitingPanelFingerprint(sortedWaiting);
-  if (nextFp === GL._waitingPanelFp && existingList && existingManual && waitCol.contains(existingList)) {
+  if (
+    GL._waitingPanelFp != null &&
+    nextFp === GL._waitingPanelFp &&
+    existingList &&
+    existingManual &&
+    waitCol.contains(existingList)
+  ) {
     restorePanelScroll();
     updateGlobalMetaToolbar();
     return;

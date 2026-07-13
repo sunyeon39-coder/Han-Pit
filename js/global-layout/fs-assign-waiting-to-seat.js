@@ -40,6 +40,7 @@ import {
   entryFromSeatOccupant
 } from "./seat-history.js";
 import { logGlobalLayoutAttendance } from "./attendance-log.js";
+import { personIdentityMatches } from "../shared/tournament-waiting-queue.js";
 
 function uniqueDocRefs(refs = []) {
   const seen = new Set();
@@ -54,21 +55,7 @@ function uniqueDocRefs(refs = []) {
 }
 
 function personMatchesSeatData(data = {}, person = {}) {
-  const pUid = String(person.uid || "").trim();
-  const pEmailLc = String(person.email || "")
-    .trim()
-    .toLowerCase();
-  const pName = String(person.name || "").trim();
-  const dUid = String(data.personUid || "").trim();
-  const dEmail = String(data.personEmail || "")
-    .trim()
-    .toLowerCase();
-  const dName = String(data.person || "").trim();
-  return (
-    (pUid && dUid && pUid === dUid) ||
-    (pEmailLc && dEmail && pEmailLc === dEmail) ||
-    (!pUid && !pEmailLc && pName && dName === pName)
-  );
+  return personIdentityMatches(person, data);
 }
 
 function clearDupSeatsInTransaction(tx, dupRefs, dupSnaps, person, targetSeatId, now, touchedProjectionKeys) {

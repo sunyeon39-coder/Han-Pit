@@ -3,12 +3,13 @@ import { auth } from "../firebase.js";
 import { bumpGlobalLayoutDataRevision } from "./realtime-ui.js";
 import { updateGlobalLayoutWaitingMeta, updateGlobalLayoutMetaCounts } from "./meta-ui.js";
 import { layoutIsMobile } from "../layout/layout-main-route-env.js";
-import { renderSeats, refreshGlobalLayoutPcOpsPanel } from "./panel-ui.js";
+import { renderSeats, refreshGlobalLayoutPcOpsPanel, invalidateWaitingPanelFingerprint } from "./panel-ui.js";
 import { renderGlobalLayoutMobile } from "./mobile-panel-render.js";
 import { getCurrentTournamentWaiting } from "./waiting.js";
 import { isEmptyPerson } from "./utils.js";
 import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
 import { isPersonSeatedInGlobalSeats } from "./waiting.js";
+import { personIdentityMatches } from "../shared/tournament-waiting-queue.js";
 import {
   maybeShowOptimisticSeatAlertFromSeats,
   triggerOptimisticMobileSeatAssignedAlert
@@ -50,17 +51,9 @@ function clearPersonOnSeatInMemory(seat = {}) {
 }
 
 function matchesPersonOnSeat(seat = {}, person = {}) {
-  const pUid = String(person.uid || "").trim();
-  const pEmail = String(person.email || "").trim().toLowerCase();
-  const pName = String(person.name || "").trim();
-  const sUid = String(seat?.personUid || "").trim();
-  const sEmail = String(seat?.personEmail || "").trim().toLowerCase();
   const sName = String(seat?.person || "").trim();
   if (isEmptyPerson(sName)) return false;
-  if (pUid && sUid && pUid === sUid) return true;
-  if (pEmail && sEmail && pEmail === sEmail) return true;
-  if (!pUid && !pEmail && pName && sName === pName) return true;
-  return false;
+  return personIdentityMatches(person, seat);
 }
 
 /** 배치 클릭 직후 화면 반영 — Firestore 완료 전 */
@@ -153,6 +146,7 @@ export function applyOptimisticAssign({ targetSeatId, waiting, seat }) {
   GL.selectedWaitingId = "";
   GL.selectedSeatIds.clear();
   GL.selectedSeatIds.add(sid);
+  invalidateWaitingPanelFingerprint();
 
   return () => {
     GL.globalSeats = snapshot.globalSeats;

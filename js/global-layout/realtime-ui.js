@@ -15,7 +15,7 @@ export function bumpGlobalLayoutDataRevision() {
   GL.dataRevision = (GL.dataRevision || 0) + 1;
   GL._waitingListCache = null;
   GL._waitingListCacheRev = -1;
-  GL._waitingPanelFp = "";
+  GL._waitingPanelFp = null;
   GL._seatPanelFp = "";
 }
 

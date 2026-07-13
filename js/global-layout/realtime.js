@@ -52,8 +52,10 @@ import { buildSeatHistoryEntry, appendSeatHistoryPatch } from "./seat-history.js
 import {
   purgeInactiveFromGlobalWaitingRows,
   buildMissingGlobalWaitingRestoreList,
-  personExistsInGlobalWaiting
+  personExistsInGlobalWaiting,
+  isPersonSeatedInGlobalSeats
 } from "../shared/tournament-waiting-queue.js";
+import { invalidateWaitingPanelFingerprint } from "./panel-ui.js";
 import { resolveAttendanceWaitingJoinMs } from "../shared/attendance-operational-day.js";
 import { replaceGlobalWaitingLocal } from "./waiting.js";
 
@@ -160,7 +162,25 @@ function rebuildGlobalLayoutAttendanceInactiveUids() {
   );
   GL._waitingListCache = null;
   GL._waitingListCacheRev = -1;
-  GL._waitingPanelFp = "";
+  GL._waitingPanelFp = null;
+}
+
+function purgeSeatedPeopleFromGlobalWaitingLocal() {
+  if (!Array.isArray(GL.globalWaiting) || !GL.globalWaiting.length) return false;
+  const next = GL.globalWaiting.filter(
+    (w) =>
+      !isPersonSeatedInGlobalSeats(GL.globalSeats, {
+        uid: w?.uid,
+        email: w?.email,
+        name: w?.name
+      })
+  );
+  if (next.length === GL.globalWaiting.length) return false;
+  GL.globalWaiting = next;
+  GL._waitingListCache = null;
+  GL._waitingListCacheRev = -1;
+  invalidateWaitingPanelFingerprint();
+  return true;
 }
 
 function applyDealerAttendanceSnap(snap) {
@@ -561,6 +581,7 @@ function applyGlobalSeatsFromSnapshot(snap, prevSeatsRef = { value: [] }) {
   const prevCount = prevSeatsRef.value?.length || 0;
 
   GL.globalSeats = mergedSeats;
+  const purgedSeatedWaiting = purgeSeatedPeopleFromGlobalWaitingLocal();
   bumpGlobalLayoutDataRevision();
   prevSeatsRef.value = mergedSeats;
   if (!snap?.metadata?.fromCache || mergedSeats.length) {
@@ -584,7 +605,7 @@ function applyGlobalSeatsFromSnapshot(snap, prevSeatsRef = { value: [] }) {
     });
   }
 
-  if (seatsUiChanged || (mergedSeats.length > 0 && prevCount === 0)) {
+  if (seatsUiChanged || purgedSeatedWaiting || (mergedSeats.length > 0 && prevCount === 0)) {
     scheduleGlobalLayoutRealtimeUi({ seats: true, seatPanel: true, waiting: true });
   }
 
@@ -598,6 +619,7 @@ async function refreshGlobalWaitingFromServer() {
     const data = snap.exists() ? snap.data() || {} : {};
     const nextWaiting = Array.isArray(data.waiting) ? data.waiting : [];
     GL.globalWaiting = nextWaiting;
+    purgeSeatedPeopleFromGlobalWaitingLocal();
     applyOperatorPicksFromDoc(data, snap.metadata || {});
     bumpGlobalLayoutDataRevision();
     lastWaitingUiFingerprint = globalWaitingUiFingerprint(nextWaiting);
@@ -768,6 +790,7 @@ export function bindRealtime() {
       lastWaitingUiFingerprint = globalWaitingUiFingerprint(nextWaiting);
 
       GL.globalWaiting = nextWaiting;
+      purgeSeatedPeopleFromGlobalWaitingLocal();
       applyOperatorPicksFromDoc(data, snap.metadata || {});
       rebuildGlobalLayoutAttendanceInactiveUids();
       bumpGlobalLayoutDataRevision();
