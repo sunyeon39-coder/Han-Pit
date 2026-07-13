@@ -7,6 +7,7 @@ import { writeIndexGlobalWaitingCache } from "./index-ops-session-cache.js";
 import { bootstrapIndexDealerOps } from "./index-ops-bootstrap.js";
 
 function shouldKeepCachedGlobalWaiting(snap, nextWaiting = []) {
+  if (snap?.metadata?.hasPendingWrites) return false;
   if (!snap?.metadata?.fromCache) return false;
   if (!IX.globalWaiting.length) return false;
   if (!snap.exists()) return true;

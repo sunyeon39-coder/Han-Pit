@@ -164,6 +164,14 @@ function rebuildGlobalLayoutAttendanceInactiveUids() {
 }
 
 function applyDealerAttendanceSnap(snap) {
+  if (
+    snap.empty &&
+    snap.metadata?.fromCache &&
+    (attendanceInactiveSourceDocs.length > 0 || GL.attendanceWaiting.length > 0)
+  ) {
+    return;
+  }
+
   const docs = filterAttendanceDocsForTournament(snap.docs, GL.tournamentId);
   attendanceInactiveSourceDocs = docs;
   GL.attendanceFilterReady = true;
@@ -237,11 +245,12 @@ function scheduleHealMissingWaitingFromAttendance() {
   restoreMissingWaitingTimer = setTimeout(() => {
     restoreMissingWaitingTimer = null;
     void healMissingWaitingFromAttendance();
-  }, 900);
+  }, 300);
 }
 
 export { scheduleHealMissingWaitingFromAttendance };
 
+/** 출석 문서에 waiting 이 있는데 global_waiting 에 없으면 복구 (운영자·일반 유저 공통) */
 async function healMissingWaitingFromAttendance() {
   if (!GL.tournamentId || GL.waitingMutationInFlight || !GL.attendanceFilterReady) return;
 
@@ -746,8 +755,14 @@ export function bindRealtime() {
   GL.stopWaitingWatch = onSnapshot(
     doc(db, "layout_shared", "global_waiting"),
     (snap) => {
-      if (GL.seatMutationInFlight || GL.waitingMutationInFlight) return;
       if (shouldIgnoreStaleGlobalLayoutSnapshot(snap)) return;
+      if (
+        GL.waitingMutationInFlight &&
+        snap.metadata?.fromCache &&
+        !snap.metadata?.hasPendingWrites
+      ) {
+        return;
+      }
       const data = snap.exists() ? snap.data() || {} : {};
       const nextWaiting = Array.isArray(data.waiting) ? data.waiting : [];
       lastWaitingUiFingerprint = globalWaitingUiFingerprint(nextWaiting);
@@ -780,8 +795,9 @@ export function bindRealtime() {
     applyDealerAttendanceSnap,
     (err) => {
       logFirestoreWatchError("dealer attendance watch error", err);
-      GL.attendanceWaiting = [];
-      GL.attendanceFilterReady = true;
+      if (!GL.attendanceWaiting.length) {
+        GL.attendanceFilterReady = true;
+      }
       bumpGlobalLayoutDataRevision();
       scheduleGlobalLayoutRealtimeUi({ waiting: true, metaOnly: true });
     }

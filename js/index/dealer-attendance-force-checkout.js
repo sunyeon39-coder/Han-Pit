@@ -57,11 +57,12 @@ async function runCheckedOutCleanup(target) {
 }
 
 export async function forceAdminCheckedOut(target) {
-  if (!target?.uid) return;
+  if (!target?.uid) return false;
 
   const tournamentId = getTournamentId();
 
-  await updateAdminAttendanceStatus(target.uid, "checked_out", { optimistic: true });
+  const saved = await updateAdminAttendanceStatus(target.uid, "checked_out", { optimistic: true });
+  if (!saved) return false;
   applyCheckedOutSeatClear(tournamentId, target.uid);
 
   try {
@@ -69,6 +70,7 @@ export async function forceAdminCheckedOut(target) {
   } catch (err) {
     console.error("forceAdminCheckedOut cleanup:", err);
   }
+  return true;
 }
 
 export async function forceSelfCheckedOut(user) {

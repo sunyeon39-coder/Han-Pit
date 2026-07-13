@@ -588,16 +588,14 @@ function wireIndexPageControls() {
             return;
           }
 
-          void (async () => {
-            const joinResult = await joinSharedWaitingOnCheckIn(user);
-            const ok = joinResult === true || joinResult?.ok === true;
-            if (!ok) {
-              restoreAttendanceSnapshot(tid, user.uid, prevSnap);
-              void loadDealerAttendanceOnce();
-              return;
-            }
+          const joinResult = await joinSharedWaitingOnCheckIn(user);
+          const ok = joinResult === true || joinResult?.ok === true;
+          if (!ok) {
+            restoreAttendanceSnapshot(tid, user.uid, prevSnap);
             void loadDealerAttendanceOnce();
-          })();
+            return;
+          }
+          void loadDealerAttendanceOnce();
           return;
         }
 
@@ -645,10 +643,19 @@ function wireIndexPageControls() {
 
           if (action === "checked_out") {
             const target = getAdminAttendanceList().find((item) => String(item.uid || "").trim() === uid);
-            if (!target) return;
+            if (!target) {
+              alert("해당 딜러를 찾을 수 없습니다.");
+              return;
+            }
 
-            await forceAdminCheckedOut(target);
-            void loadDealerAttendanceOnce();
+            try {
+              const ok = await forceAdminCheckedOut(target);
+              if (!ok) return;
+              void loadDealerAttendanceOnce();
+            } catch (err) {
+              console.error("forceAdminCheckedOut:", err);
+              alert("퇴근 처리에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+            }
           }
         }
       }

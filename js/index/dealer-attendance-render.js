@@ -13,6 +13,7 @@ import {
   formatDuration,
   formatDatetimeKorean
 } from "./dealer-attendance-format.js";
+import { isActiveAttendanceStatus } from "../shared/attendance-operational-day.js";
 import { getDerivedAttendance, getWorkingMs } from "./dealer-attendance-derived.js";
 import { syncIndexOpsToolbar } from "./index-ops-chrome.js";
 import { bootstrapIndexDealerOps } from "./index-ops-bootstrap.js";
@@ -118,7 +119,7 @@ function canPartialRenderDealerAdmin() {
 
 function renderDealerSelfInlineHtml(myStatus) {
   const adminCanCheckIn = myStatus === "off" || myStatus === "checked_out";
-  const adminCanCheckOut = myStatus === "waiting";
+  const adminCanCheckOut = isActiveAttendanceStatus(myStatus);
 
   return `
           <span class="dealer-status-pill ${escapeHtml(myStatus)}">${escapeHtml(getAttendanceStatusLabel(myStatus))}</span>
@@ -226,7 +227,7 @@ export function renderDealerOps() {
 
   const myStatus = me?.status || "off";
   const canCheckIn = myStatus === "off" || myStatus === "checked_out";
-  const canCheckOut = myStatus === "waiting";
+  const canCheckOut = isActiveAttendanceStatus(myStatus);
 
   const myCheckInText = formatClockOrDash(me?.checkedInAt);
   const myCheckOutText = formatClockOrDash(me?.checkedOutAt);

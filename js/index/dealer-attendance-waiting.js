@@ -9,8 +9,14 @@ import {
 
 import { mergeOpsProfile, normalizeUserProfile } from "../shared/auth-helpers.js";
 import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
+import {
+  mergeCheckInRowIntoLocalWaiting,
+  upsertCheckInIntoGlobalWaiting
+} from "../shared/global-waiting-checkin.js";
 import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
+import { writeIndexGlobalWaitingCache } from "./index-ops-session-cache.js";
+import { scheduleRenderDealerOps } from "./dealer-attendance-render.js";
 
 function indexTournamentMeta() {
   const t = IX.currentTournament;
@@ -57,76 +63,31 @@ async function isUserAlreadySeated(userUid) {
   }
 }
 
+function applyOptimisticIndexGlobalWaitingRow(row, tournamentId) {
+  if (!row) return;
+  IX.globalWaiting = mergeCheckInRowIntoLocalWaiting(IX.globalWaiting, row, tournamentId);
+  writeIndexGlobalWaitingCache(tournamentId, IX.globalWaiting);
+  scheduleRenderDealerOps();
+}
+
 async function appendSelfToGlobalWaiting(user, tournamentId, nickname, email) {
-  const waitingRef = doc(db, "layout_shared", "global_waiting");
-  const uid = String(user.uid || "").trim();
+  const uid = String(user?.uid || "").trim();
+  const tid = String(tournamentId || "").trim();
+  if (!uid || !tid) return false;
 
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const waitingSnap = await getDoc(waitingRef);
-    const waitingState = waitingSnap.exists()
-      ? waitingSnap.data() || {}
-      : { version: 2, waiting: [], updatedAt: Date.now() };
-
-    const waitingList = Array.isArray(waitingState.waiting) ? [...waitingState.waiting] : [];
-    const now = Date.now();
-
-    const existingIdx = waitingList.findIndex((item) => {
-      if (!item || typeof item !== "object") return false;
-      const itemUid = String(item.uid || "").trim();
-      const itemTournamentId = String(item.tournamentId || "").trim();
-      if (itemUid !== uid) return false;
-      if (!itemTournamentId) return true;
-      return itemTournamentId === tournamentId;
+  try {
+    const { ok, row } = await upsertCheckInIntoGlobalWaiting({
+      uid,
+      email,
+      nickname,
+      tournamentId: tid
     });
-
-    if (existingIdx >= 0) {
-      const existing = waitingList[existingIdx] || {};
-      // 출근하기는 항상 지금부터 대기 시간을 새로 시작한다(퇴근 후 잔여 행·이전 joinedAt 방지).
-      const refreshed = {
-        ...existing,
-        id: existing.id || `w_${uid}`,
-        uid,
-        email,
-        name: nickname,
-        addedAt: now,
-        joinedAt: now,
-        createdAt: now,
-        source: "checkin",
-        tournamentId,
-        blockChecked: false,
-        blockCheckedAt: null,
-        blockAccumulatedMs: 0
-      };
-      delete refreshed.joinedAtServer;
-      delete refreshed.carryStartedAt;
-      waitingList[existingIdx] = refreshed;
-    } else {
-      waitingList.push({
-        id: `w_${uid}`,
-        uid,
-        email,
-        name: nickname,
-        addedAt: now,
-        joinedAt: now,
-        source: "checkin",
-        tournamentId
-      });
-    }
-
-    await setDoc(
-      waitingRef,
-      {
-        ...waitingState,
-        version: 2,
-        waiting: waitingList,
-        updatedAt: now
-      },
-      { merge: true }
-    );
-    return true;
+    if (ok && row) applyOptimisticIndexGlobalWaitingRow(row, tid);
+    return ok;
+  } catch (err) {
+    console.error("appendSelfToGlobalWaiting:", err);
+    return false;
   }
-
-  return false;
 }
 
 /**

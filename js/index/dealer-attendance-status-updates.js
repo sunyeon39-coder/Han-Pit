@@ -17,6 +17,8 @@ import {
   isActiveAttendanceStatus,
   resolveCheckedInAtForActiveStatus
 } from "../shared/attendance-operational-day.js";
+import { getAdminAttendanceList } from "./dealer-attendance-admin-list.js";
+import { normalizeAttendanceDoc } from "./dealer-attendance-derived.js";
 
 function buildMyAttendancePayload(user, nextStatus) {
   const tournamentId = getTournamentId();
@@ -56,11 +58,44 @@ function buildMyAttendancePayload(user, nextStatus) {
   };
 }
 
+function resolveAttendanceSeedForAdmin(uid, tournamentId) {
+  const safeUid = String(uid || "").trim();
+  const tid = String(tournamentId || "").trim();
+  if (!safeUid || !tid) return null;
+
+  const stored = IX.dealerAttendanceMap.get(getAttendanceDocId(tid, safeUid));
+  if (stored) return { ...stored };
+
+  const row = getAdminAttendanceList().find(
+    (item) => String(item?.uid || "").trim() === safeUid
+  );
+  if (row) {
+    return normalizeAttendanceDoc({
+      ...row,
+      uid: safeUid,
+      tournamentId: tid
+    });
+  }
+
+  const roster = IX.tournamentRosterMap.get(safeUid);
+  if (roster) {
+    return normalizeAttendanceDoc({
+      uid: safeUid,
+      nickname: roster.nickname || "",
+      email: roster.email || "",
+      tournamentId: tid,
+      status: "off"
+    });
+  }
+
+  return null;
+}
+
 function buildAdminAttendancePayload(uid, nextStatus) {
   const tournamentId = ensureTournamentContextOrAlert();
   if (!uid || !tournamentId) return null;
 
-  const current = IX.dealerAttendanceMap.get(getAttendanceDocId(tournamentId, uid));
+  const current = resolveAttendanceSeedForAdmin(uid, tournamentId);
   if (!current) return null;
 
   const now = getNowMs();
@@ -122,10 +157,15 @@ export async function updateMyAttendanceStatus(nextStatus, options = {}) {
 
 export async function updateAdminAttendanceStatus(uid, nextStatus, options = {}) {
   const tournamentId = ensureTournamentContextOrAlert();
-  if (!uid || !tournamentId) return;
+  if (!uid || !tournamentId) return false;
 
   const payload = buildAdminAttendancePayload(uid, nextStatus);
-  if (!payload) return;
+  if (!payload) {
+    if (options.silent !== true) {
+      alert("출석 기록을 찾을 수 없어 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    }
+    return false;
+  }
 
   const optimistic = options.optimistic !== false;
   const prevSnap = optimistic ? snapshotAttendanceEntry(tournamentId, uid) : null;
@@ -146,6 +186,7 @@ export async function updateAdminAttendanceStatus(uid, nextStatus, options = {})
       seatId: payload.currentSeatId || "",
       seatLabel: payload.currentSeatLabel || ""
     }).catch((err) => console.warn("writeAttendanceLog:", err));
+    return true;
   } catch (err) {
     if (optimistic) restoreAttendanceSnapshot(tournamentId, uid, prevSnap);
     throw err;
