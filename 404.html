@@ -8,7 +8,7 @@
     document.documentElement.style.backgroundColor="#060c17";
     document.documentElement.style.colorScheme="dark";
   }catch(e){}
-  var BUILD="20260627095617";
+  var BUILD="20260713174501";
   var KEY="hanPitAppVersion";
   var LAST_TARGET="hanPitReloadTarget";
   var meta=document.querySelector('meta[name="han-pit-build"]');
@@ -217,7 +217,7 @@
 })();
 </script>
   <!-- /han-pit-asset-fix -->
-  <meta name="han-pit-build" content="20260627095617" />
+  <meta name="han-pit-build" content="20260713174501" />
   <!-- han-pit-perf-hints -->
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
   <link rel="preconnect" href="https://firebase.googleapis.com" crossorigin />
@@ -236,11 +236,28 @@
         return !!p;
       });
       var gh = /\.github\.io$/i.test(l.hostname || "");
+      var search = l.search || "";
+      var knownPages = {
+        index: 1,
+        hub: 1,
+        layout: 1,
+        "global-layout": 1,
+        login: 1
+      };
       var target;
       if (gh && parts.length >= 2) {
-        target = l.origin + "/" + parts[0] + "/index.html" + (l.search || "");
+        var base = l.origin + "/" + parts[0] + "/";
+        var rest = parts.slice(1).join("/");
+        var page = rest;
+        if (!/\.html$/i.test(page)) {
+          var stem = page.split("/").pop() || "";
+          if (knownPages[stem]) page = stem + ".html";
+          else if (stem) page = stem + ".html";
+          else page = "index.html";
+        }
+        target = base + page + search;
       } else if (gh && parts.length === 1 && !/\.html$/i.test(parts[0])) {
-        target = l.origin + "/" + parts[0] + "/index.html" + (l.search || "");
+        target = l.origin + "/" + parts[0] + "/index.html" + search;
       } else {
         try {
           target = new URL("./index.html", l.href).href;

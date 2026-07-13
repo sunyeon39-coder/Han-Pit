@@ -7,7 +7,7 @@
 .index-topbar,
 .hub-top {
   border-bottom-color: rgba(255, 255, 255, 0.08);
-  background: linear-gradient(180deg, rgba(16, 20, 36, 0.94) 0%, rgba(8, 11, 22, 0.9) 100%);
+  background: linear-gradient(180deg, rgba(18, 21, 27, 0.94) 0%, rgba(9, 10, 13, 0.9) 100%);
   backdrop-filter: blur(20px) saturate(1.2);
   -webkit-backdrop-filter: blur(20px) saturate(1.2);
   box-shadow: var(--shadow-chrome);
@@ -51,7 +51,7 @@ button,
 .btn.primary,
 .manage-btn,
 .top-btn.admin {
-  border-color: rgba(239, 208, 141, 0.45);
+  border-color: rgba(255, 207, 107, 0.45);
   background: linear-gradient(145deg, #f4e4bc 0%, #e2c878 38%, #c9a24e 100%);
   color: #14120a;
   font-weight: 700;
@@ -101,8 +101,8 @@ button,
 }
 
 .tab.active {
-  border-color: rgba(239, 208, 141, 0.42);
-  background: linear-gradient(145deg, rgba(239, 208, 141, 0.28), rgba(214, 178, 94, 0.14));
+  border-color: rgba(255, 207, 107, 0.42);
+  background: linear-gradient(145deg, rgba(255, 207, 107, 0.28), rgba(255, 176, 32, 0.14));
   color: #fff8e8;
   box-shadow: var(--glow-gold), var(--shadow-inset-soft);
 }
@@ -169,8 +169,8 @@ button,
 .seat-manage-row.selected,
 .mobile-wait-row.selected,
 .mobile-seat-row.selected {
-  border-color: rgba(77, 163, 255, 0.55);
-  background: linear-gradient(90deg, rgba(77, 163, 255, 0.16), rgba(255, 255, 255, 0.04));
+  border-color: rgba(61, 219, 196, 0.55);
+  background: linear-gradient(90deg, rgba(61, 219, 196, 0.16), rgba(255, 255, 255, 0.04));
   box-shadow: var(--glow-blue), var(--shadow-inset-soft);
 }
 
@@ -178,20 +178,20 @@ button,
 .event-card {
   border-color: rgba(255, 255, 255, 0.1);
   background:
-    radial-gradient(120% 90% at 8% 0%, rgba(214, 178, 94, 0.08), transparent 55%),
+    radial-gradient(120% 90% at 8% 0%, rgba(255, 176, 32, 0.08), transparent 55%),
     linear-gradient(165deg, rgba(20, 26, 46, 0.96), rgba(9, 13, 26, 0.98));
   box-shadow: var(--shadow-card);
 }
 
 .event-card:hover {
-  border-color: rgba(239, 208, 141, 0.22);
+  border-color: rgba(255, 207, 107, 0.22);
   box-shadow:
     var(--shadow-card),
     var(--glow-gold);
 }
 
 .hub-main .event-card.is-enabled:hover {
-  border-color: rgba(239, 208, 141, 0.28);
+  border-color: rgba(255, 207, 107, 0.28);
 }
 
 .info-box,
@@ -211,7 +211,7 @@ button,
 .modal-card,
 .login-card {
   border-color: rgba(255, 255, 255, 0.12);
-  background: linear-gradient(165deg, rgba(18, 24, 44, 0.97), rgba(8, 12, 24, 0.99));
+  background: linear-gradient(165deg, rgba(18, 21, 27, 0.97), rgba(9, 10, 13, 0.99));
   box-shadow:
     var(--shadow-card),
     0 32px 80px rgba(0, 0, 0, 0.45);
@@ -243,8 +243,8 @@ textarea:focus,
 .seat-add-input:focus,
 .seat-add-event-trigger:focus {
   outline: none;
-  border-color: rgba(239, 208, 141, 0.42);
-  box-shadow: 0 0 0 3px rgba(214, 178, 94, 0.14);
+  border-color: rgba(255, 207, 107, 0.42);
+  box-shadow: 0 0 0 3px rgba(255, 176, 32, 0.14);
   background: rgba(0, 0, 0, 0.28);
 }
 
@@ -279,12 +279,12 @@ textarea:focus,
 
 /* ── Focus & selection ── */
 :focus-visible {
-  outline: 2px solid rgba(239, 208, 141, 0.55);
+  outline: 2px solid rgba(255, 207, 107, 0.55);
   outline-offset: 2px;
 }
 
 ::selection {
-  background: rgba(214, 178, 94, 0.32);
+  background: rgba(255, 176, 32, 0.32);
   color: #fff;
 }
 

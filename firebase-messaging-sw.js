@@ -2,7 +2,7 @@ importScripts("https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js
 importScripts("https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js");
 
 /** 배포마다 1 올리면 브라우저가 새 SW 로 인식해 controllerchange → 홈 화면 자동 새로고침이 걸립니다. */
-const SW_DEPLOY_REVISION = 260;
+const SW_DEPLOY_REVISION = 261;
 
 /** SW 갱신 — 새 배포 즉시 활성화 (페이지 reload 루프는 LAST_TARGET 가드로 방지) */
 self.addEventListener("install", (event) => {
@@ -28,11 +28,25 @@ const messaging = firebase.messaging();
 
 const NOTIFY_ICON = "./icons/icon-192.png";
 
+/** GitHub Pages 서브경로(/Han-Pit/) — 상대 targetUrl 을 SW scope 기준 절대 URL 로 */
+function resolveNotificationTargetUrl(raw) {
+  const rel = String(raw || "").trim() || "./layout.html";
+  if (/^https?:\/\//i.test(rel)) return rel;
+  const scope = String(self.registration?.scope || "").trim();
+  try {
+    if (scope) return new URL(rel, scope).href;
+  } catch (_) {}
+  try {
+    if (self.location?.href) return new URL(rel, self.location.href).href;
+  } catch (_) {}
+  return rel;
+}
+
 function showSeatNotificationFromPayload(data = {}, titleOverride = "") {
   const title = String(titleOverride || data.title || "").trim() || "Han Pit";
   const body =
     String(data.body || data.message || "").trim() || "좌석이 배치되었습니다.";
-  const targetUrl = String(data.targetUrl || "").trim() || "./layout.html";
+  const targetUrl = resolveNotificationTargetUrl(data.targetUrl || "./layout.html");
   const notifyTag =
     String(data.notifyTag || "").trim() ||
     (data.uid ? `hanpit-seat-${String(data.uid).trim()}` : "") ||
@@ -109,7 +123,9 @@ messaging.onBackgroundMessage((payload) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
-  const targetUrl = event.notification?.data?.targetUrl || "./layout.html";
+  const targetUrl = resolveNotificationTargetUrl(
+    event.notification?.data?.targetUrl || "./layout.html"
+  );
 
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
