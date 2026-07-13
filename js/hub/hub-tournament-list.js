@@ -82,7 +82,9 @@ export function renderTournaments(tournaments, userProfile, user) {
   const list = Array.isArray(tournaments) ? tournaments : [];
 
   if (!list.length && hubState.tournamentsBootstrapping && !hubState.tournamentsListReady && !hubState.tournamentsCache.length) {
-    eventListEl.classList.remove("event-list--loading");
+    eventListEl.classList.add("event-list--loading");
+    eventListEl.classList.remove("event-list--empty");
+    eventListEl.innerHTML = `<div class="hub-list-loading muted" style="padding:24px;text-align:center">대회 목록 불러오는 중…</div>`;
     return;
   }
 

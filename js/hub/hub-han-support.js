@@ -1,4 +1,4 @@
-import { db } from "../firebase.js";
+import { db, auth } from "../firebase.js";
 import {
   addDoc,
   collection,
@@ -213,7 +213,10 @@ export function wireHanSupportHub({ hubRefs, hubState }) {
       if (delBtn) {
         e.preventDefault();
         e.stopPropagation();
-        if (!getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) return;
+        if (!getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) {
+          alert("지원서 삭제는 시스템 admin만 가능합니다.");
+          return;
+        }
         const id = String(delBtn.getAttribute("data-han-delete") || "").trim();
         if (!id) return;
         if (!confirm("이 지원서를 삭제할까요? 삭제 후에는 복구할 수 없습니다.")) return;
@@ -248,8 +251,11 @@ export function wireHanSupportHub({ hubRefs, hubState }) {
 
   hanSupportForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const user = hubState.currentUser;
-    if (!user) return;
+    const user = hubState.currentUser ?? auth.currentUser;
+    if (!user) {
+      alert("로그인을 확인하는 중입니다. 잠시 후 다시 시도해 주세요.");
+      return;
+    }
 
     const name = String(getApplicantDisplayName(user, hubState.currentUserProfile) || "").trim();
     const age = String(hanAge?.value || "").trim();

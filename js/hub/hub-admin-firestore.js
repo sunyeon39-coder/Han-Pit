@@ -36,6 +36,7 @@ import {
   populateTournamentSelect,
   renderAdminUserList,
   syncAdminBulkSelectAllCheckbox,
+  syncSelectedTournamentForm,
   userStillHasAccessToSelectedEvent
 } from "./hub-admin-ui.js";
 import { renderTournaments } from "./hub-tournament-list.js";
@@ -111,6 +112,12 @@ export async function saveTournament() {
     );
 
     upsertHubTournamentInCache({ id, name, startDate, endDate, logoText, requiredCode });
+    if (hubRefs.adminModal?.classList.contains("show")) {
+      populateTournamentSelect();
+      if (hubRefs.adminEventSelect) hubRefs.adminEventSelect.value = id;
+      syncSelectedTournamentForm();
+      renderAdminUserList();
+    }
     alert("대회가 저장되었습니다.");
   } catch (err) {
     console.error(err);
@@ -160,7 +167,14 @@ export async function deleteTournamentCurrent() {
 
 export async function grantEventDirectly(uid, eventId) {
   if (!requireHubSystemAdmin("직접 허용")) return;
-  if (!uid || !eventId) return;
+  if (!uid) {
+    alert("관리할 유저를 선택해 주세요.");
+    return;
+  }
+  if (!eventId) {
+    alert("대회를 먼저 선택해 주세요.");
+    return;
+  }
   if (!getTournamentById(eventId)) {
     alert("유효한 대회를 먼저 선택해주세요.");
     return;
@@ -241,7 +255,14 @@ export async function grantEventDirectly(uid, eventId) {
 
 export async function revokeEventDirectly(uid, eventId) {
   if (!requireHubSystemAdmin("허용 해제")) return;
-  if (!uid || !eventId) return;
+  if (!uid) {
+    alert("관리할 유저를 선택해 주세요.");
+    return;
+  }
+  if (!eventId) {
+    alert("대회를 먼저 선택해 주세요.");
+    return;
+  }
   const tournament = getTournamentById(eventId);
   if (!tournament) {
     alert("유효한 대회를 먼저 선택해주세요.");
@@ -484,7 +505,10 @@ export async function bulkRemoveUserCodes(uids) {
 
 export function showUserCode(uid) {
   const user = hubState.usersCache.find((u) => u.uid === uid);
-  if (!user) return;
+  if (!user) {
+    alert("유저 정보를 찾을 수 없습니다.");
+    return;
+  }
 
   alert(`${user.nickname || "이름 없음"}\n접근 코드: ${user.accessCode || "없음"}`);
 }

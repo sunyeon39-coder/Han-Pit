@@ -1,5 +1,5 @@
 import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { db } from "../firebase.js";
+import { auth, db } from "../firebase.js";
 import { closeModal } from "../shared/dom-utils.js";
 import {
   isValidNicknameLength,
@@ -13,7 +13,11 @@ import { scheduleHubTournamentsRender } from "./hub-realtime-ui.js";
 
 export async function saveNickname() {
   const { profileNickname, profileModal } = hubRefs;
-  if (!hubState.currentUser) return;
+  const user = hubState.currentUser ?? auth.currentUser;
+  if (!user) {
+    alert("로그인을 확인하는 중입니다. 잠시 후 다시 시도해 주세요.");
+    return;
+  }
 
   const nickname = readCommittedNicknameInput(profileNickname);
 
@@ -23,10 +27,10 @@ export async function saveNickname() {
   }
 
   try {
-    await updateDoc(doc(db, "users", hubState.currentUser.uid), { nickname });
+    await updateDoc(doc(db, "users", user.uid), { nickname });
 
     try {
-      await syncUserDisplayNameAfterNicknameChange(hubState.currentUser.uid, nickname);
+      await syncUserDisplayNameAfterNicknameChange(user.uid, nickname);
     } catch (syncErr) {
       console.warn("[saveNickname] display name sync:", syncErr);
     }
@@ -35,7 +39,7 @@ export async function saveNickname() {
       hubState.currentUserProfile.nickname = nickname;
     }
 
-    const cacheUser = hubState.usersCache.find((u) => u.uid === hubState.currentUser.uid);
+    const cacheUser = hubState.usersCache.find((u) => u.uid === user.uid);
     if (cacheUser) {
       cacheUser.nickname = nickname;
     }

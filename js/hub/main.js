@@ -31,6 +31,7 @@ import {
   closeUserManageModal,
   runAdminAction,
   releaseStuckHubAdminAction,
+  requireAdminManageContext,
   clearAdminBulkSelection,
   applyAdminBulkSelectAll,
   syncAdminBulkSelectAllCheckbox
@@ -160,12 +161,22 @@ logoutBtn?.addEventListener("click", async () => {
 });
 
 profileBtn?.addEventListener("click", () => {
-  if (!hubState.currentUser || !hubState.currentUserProfile) return;
+  const user = hubState.currentUser ?? auth.currentUser;
+  if (!user) {
+    alert("로그인을 확인하는 중입니다. 잠시 후 다시 시도해 주세요.");
+    return;
+  }
 
-  hubRefs.profileEmail.value = hubState.currentUser.email || "";
-  hubRefs.profileNickname.value = hubState.currentUserProfile.nickname || "";
-  hubRefs.profileAccessCode.value = hubState.currentUserProfile.accessCode || "";
-  const role = String(hubState.currentUserProfile.role || "user").trim();
+  const profile =
+    hubState.currentUserProfile ||
+    readLoginProfileCache(user.uid) ||
+    normalizeUserProfile({ email: user.email || "" }, user.email || "");
+  hubState.currentUserProfile = profile;
+
+  if (hubRefs.profileEmail) hubRefs.profileEmail.value = user.email || "";
+  if (hubRefs.profileNickname) hubRefs.profileNickname.value = profile.nickname || "";
+  if (hubRefs.profileAccessCode) hubRefs.profileAccessCode.value = profile.accessCode || "";
+  const role = String(profile.role || "user").trim();
   const opsHint = hubRefs.profileModal?.querySelector("[data-profile-role-hint]");
   if (opsHint) {
     opsHint.textContent =
@@ -227,7 +238,7 @@ closeAdminBtn?.addEventListener("click", () => {
 
 newTournamentBtn?.addEventListener("click", () => {
   resetTournamentForm();
-  hubRefs.adminTournamentId.focus();
+  hubRefs.adminTournamentId?.focus();
 });
 
 saveTournamentBtn?.addEventListener("click", () => {
@@ -276,8 +287,16 @@ adminBulkSelectAll?.addEventListener("change", () => {
 });
 
 adminBulkAssignCodeBtn?.addEventListener("click", async () => {
+  const eventId = String(hubRefs.adminEventSelect?.value || "").trim();
+  if (!eventId) {
+    alert("대회를 먼저 선택해 주세요.");
+    return;
+  }
   const uids = [...hubState.adminBulkSelectedUids];
-  const eventId = hubRefs.adminEventSelect?.value || "";
+  if (!uids.length) {
+    alert("먼저 유저를 선택해 주세요.");
+    return;
+  }
   await runAdminAction(async () => {
     await bulkAssignEventCodesToUsers(uids, eventId);
   });
@@ -285,6 +304,10 @@ adminBulkAssignCodeBtn?.addEventListener("click", async () => {
 
 adminBulkRemoveCodeBtn?.addEventListener("click", async () => {
   const uids = [...hubState.adminBulkSelectedUids];
+  if (!uids.length) {
+    alert("먼저 유저를 선택해 주세요.");
+    return;
+  }
   await runAdminAction(async () => {
     await bulkRemoveUserCodes(uids);
   });
@@ -327,51 +350,91 @@ closeUserManageFooterBtn?.addEventListener("click", closeUserManageModal);
 
 manageAllowBtn?.addEventListener("click", async () => {
   await runAdminAction(async () => {
-    const eventId = hubRefs.adminEventSelect?.value || "";
-    if (!hubState.selectedManageUid || !eventId) return;
-    await grantEventDirectly(hubState.selectedManageUid, eventId);
-    renderUserManageModal(hubState.selectedManageUid);
+    const ctx = requireAdminManageContext();
+    if (!ctx) return;
+    await grantEventDirectly(ctx.uid, ctx.eventId);
+    renderUserManageModal(ctx.uid);
   });
 });
 
 manageRevokeBtn?.addEventListener("click", async () => {
   await runAdminAction(async () => {
-    const eventId = hubRefs.adminEventSelect?.value || "";
-    if (!hubState.selectedManageUid || !eventId) return;
-    await revokeEventDirectly(hubState.selectedManageUid, eventId);
-    renderUserManageModal(hubState.selectedManageUid);
+    const ctx = requireAdminManageContext();
+    if (!ctx) return;
+    await revokeEventDirectly(ctx.uid, ctx.eventId);
+    renderUserManageModal(ctx.uid);
   });
 });
 
 manageAssignCodeBtn?.addEventListener("click", async () => {
   await runAdminAction(async () => {
-    const eventId = hubRefs.adminEventSelect?.value || "";
-    if (!hubState.selectedManageUid || !eventId) return;
-    await assignEventCodeToUser(hubState.selectedManageUid, eventId);
-    renderUserManageModal(hubState.selectedManageUid);
+    const ctx = requireAdminManageContext();
+    if (!ctx) return;
+    await assignEventCodeToUser(ctx.uid, ctx.eventId);
+    renderUserManageModal(ctx.uid);
   });
 });
 
 manageRemoveCodeBtn?.addEventListener("click", async () => {
-  if (!hubState.selectedManageUid) return;
+  const ctx = requireAdminManageContext();
+  if (!ctx) return;
 
   const ok = confirm("이 유저의 코드를 제거할까요?");
   if (!ok) return;
 
   await runAdminAction(async () => {
-    await removeUserCode(hubState.selectedManageUid);
-    renderUserManageModal(hubState.selectedManageUid);
+    await removeUserCode(ctx.uid);
+    renderUserManageModal(ctx.uid);
   });
 });
 
 manageViewCodeBtn?.addEventListener("click", () => {
-  if (!hubState.selectedManageUid) return;
-  showUserCode(hubState.selectedManageUid);
+  const ctx = requireAdminManageContext({ requireEvent: false });
+  if (!ctx) return;
+  showUserCode(ctx.uid);
 });
 
 userManageModal?.addEventListener("click", (e) => {
   if (e.target === userManageModal) closeUserManageModal();
 });
+
+function ensureHubSessionContinuity(user) {
+  applyHubOpsChrome(user);
+  paintHubTournamentList();
+
+  if (!hubState.currentUserProfile) {
+    const cached = readLoginProfileCache(user.uid);
+    if (cached) {
+      hubState.currentUserProfile = cached;
+      applyHubOpsChrome(user);
+      paintHubTournamentList();
+    }
+    void loadUserProfileFresh(user.uid, user.email || "", { preferCacheFirst: true })
+      .then((fresh) => {
+        if (!fresh || hubState.currentUser?.uid !== user.uid) return;
+        hubState.currentUserProfile = fresh;
+        writeLoginProfileCache(user.uid, fresh);
+        applyHubOpsChrome(user);
+        paintHubTournamentList();
+      })
+      .catch((err) => console.warn("hub session profile refresh:", err));
+  }
+
+  if (!hubState.tournamentsListReady || !hubState.tournamentsCache.length) {
+    void loadTournaments()
+      .then(() => {
+        if (hubState.currentUser?.uid !== user.uid) return;
+        hubState.tournamentsListReady = true;
+        hubState.tournamentsBootstrapping = false;
+        paintHubTournamentList();
+      })
+      .catch((err) => console.warn("hub session tournaments refresh:", err));
+  }
+
+  if (hubRefs.adminModal?.classList.contains("show") && !hubState.usersCache.length) {
+    void loadAllUsers({ forceServer: false }).then(() => renderAdminUserList());
+  }
+}
 
 function paintHubTournamentList() {
   scheduleHubTournamentsRender();
@@ -567,6 +630,11 @@ onAuthStateChanged(auth, (user) => {
   if (isSameAuthSession(hubSessionUid, user)) {
     hubState.currentUser = user;
     applyHubAccessChromeEarly(user);
+    if (!hubState.currentUserProfile || !hubState.tournamentsListReady) {
+      void bootstrapHubSession(user);
+    } else {
+      ensureHubSessionContinuity(user);
+    }
     void bootstrapAppPush(user.uid);
     bindGlobalSeatNotificationWatch(user);
     return;

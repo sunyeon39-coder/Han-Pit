@@ -6,6 +6,7 @@ import {
   resolveStoredUserRole,
   sanitizeAllowedEvents
 } from "../shared/auth-helpers.js";
+import { auth } from "../firebase.js";
 import { writeLoginProfileCache } from "../shared/login-profile-cache.js";
 import { loadUserProfileRevalidated } from "../shared/load-user-profile.js";
 import { hubState } from "./hub-state.js";
@@ -33,7 +34,8 @@ export function hasEventAccess(userProfile, tournament, authUser) {
 
 /** Hub「Access Manage」·대회/유저 CRUD — 시스템 admin 이메일만 */
 export function getIsAdminUser(user, profile) {
-  return isSystemAdminEmail(user?.email || profile?.email);
+  const authUser = user || auth.currentUser;
+  return isSystemAdminEmail(authUser?.email || profile?.email);
 }
 
 /** index·layout·통합배치도 운영 버튼 — 직접 허용 또는 시스템 admin */

@@ -164,12 +164,12 @@ export function syncSelectedTournamentForm() {
     return;
   }
 
-  adminTournamentId.value = tournament.id || "";
-  adminTournamentName.value = tournament.name || "";
-  adminTournamentStartDate.value = tournament.startDate || "";
-  adminTournamentEndDate.value = tournament.endDate || "";
-  adminTournamentLogoText.value = tournament.logoText || "";
-  adminEventCode.value = tournament.requiredCode || "";
+  if (adminTournamentId) adminTournamentId.value = tournament.id || "";
+  if (adminTournamentName) adminTournamentName.value = tournament.name || "";
+  if (adminTournamentStartDate) adminTournamentStartDate.value = tournament.startDate || "";
+  if (adminTournamentEndDate) adminTournamentEndDate.value = tournament.endDate || "";
+  if (adminTournamentLogoText) adminTournamentLogoText.value = tournament.logoText || "";
+  if (adminEventCode) adminEventCode.value = tournament.requiredCode || "";
 }
 
 export function resetTournamentForm() {
@@ -182,12 +182,28 @@ export function resetTournamentForm() {
     adminEventCode
   } = hubRefs;
 
-  adminTournamentId.value = "";
-  adminTournamentName.value = "";
-  adminTournamentStartDate.value = "";
-  adminTournamentEndDate.value = "";
-  adminTournamentLogoText.value = "";
-  adminEventCode.value = "";
+  if (adminTournamentId) adminTournamentId.value = "";
+  if (adminTournamentName) adminTournamentName.value = "";
+  if (adminTournamentStartDate) adminTournamentStartDate.value = "";
+  if (adminTournamentEndDate) adminTournamentEndDate.value = "";
+  if (adminTournamentLogoText) adminTournamentLogoText.value = "";
+  if (adminEventCode) adminEventCode.value = "";
+}
+
+/** 유저 관리 모달 — 직접 허용/코드 부여 등 사전 조건 */
+export function requireAdminManageContext(options = {}) {
+  const requireEvent = options.requireEvent !== false;
+  const eventId = String(hubRefs.adminEventSelect?.value || "").trim();
+  const uid = String(hubState.selectedManageUid || "").trim();
+  if (!uid) {
+    alert("관리할 유저를 선택해 주세요.");
+    return null;
+  }
+  if (requireEvent && !eventId) {
+    alert("대회를 먼저 선택해 주세요.");
+    return null;
+  }
+  return { uid, eventId };
 }
 
 export function getFilteredUsers() {
@@ -214,7 +230,10 @@ export function renderUserManageModal(uid) {
   const selectedTournament = hubState.tournamentsCache.find((t) => t.id === selectedEventId);
   const user = getUserByUid(uid);
 
-  if (!user) return;
+  if (!user) {
+    alert("유저 정보를 찾을 수 없습니다. 목록을 새로고침한 뒤 다시 시도해 주세요.");
+    return;
+  }
 
   hubState.selectedManageUid = uid;
 
@@ -225,10 +244,10 @@ export function renderUserManageModal(uid) {
     !!selectedTournament?.requiredCode &&
     user.accessCode === selectedTournament.requiredCode;
 
-  manageUserName.textContent = user.nickname || "이름 없음";
-  manageUserEmail.textContent = user.email || user.uid;
-
-  manageUserMeta.innerHTML = `
+  if (manageUserName) manageUserName.textContent = user.nickname || "이름 없음";
+  if (manageUserEmail) manageUserEmail.textContent = user.email || user.uid;
+  if (manageUserMeta) {
+    manageUserMeta.innerHTML = `
     <span class="meta-pill ${roleMeta.ok ? "ok" : ""}">${escapeHtml(roleMeta.label)}</span>
     <span class="meta-pill">${escapeHtml(user.accessCode || "코드 없음")}</span>
     <span class="meta-pill ${directAllowed ? "ok" : "lock"}">
@@ -238,6 +257,7 @@ export function renderUserManageModal(uid) {
       ${codeMatched ? "코드 일치" : "코드 불일치"}
     </span>
   `;
+  }
 
   openModal(userManageModal);
 }
