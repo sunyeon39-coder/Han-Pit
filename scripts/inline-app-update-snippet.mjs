@@ -135,12 +135,27 @@ export function buildInlineAppUpdateSnippet(v) {
   function reloadTo(ver){
     ver=String(ver||"").trim();
     if(!ver||ver===pageBuild)return;
-    if(lastTarget()===ver)return;
+    if(!IS_PWA&&lastTarget()===ver)return;
     setLastTarget(ver);
     persist(ver);
     var loc=new URL(location.href);
     loc.searchParams.set("_hanpit_v",ver);
+    if(IS_PWA)loc.searchParams.set("_hanpit_pwa",String(Date.now()));
     location.replace(loc.toString());
+  }
+
+  function syncManifestForPwa(){
+    if(!IS_PWA)return Promise.resolve();
+    return fetch("./manifest.json?t="+Date.now(),{cache:"no-store",credentials:"same-origin"})
+      .then(function(r){return r.ok?r.json():null;})
+      .then(function(m){
+        if(!m)return;
+        var start=String(m.start_url||"").trim();
+        if(start){
+          try{localStorage.setItem("hanPitManifestStartUrl",start);}catch(e){}
+        }
+      })
+      .catch(function(){});
   }
 
   if(pageBuild){
@@ -223,10 +238,11 @@ export function buildInlineAppUpdateSnippet(v) {
         if(!remote||remote===pageBuild){
           if(remote)persist(remote);
           syncBustParam(remote||pageBuild);
-          return;
+          return syncManifestForPwa();
         }
         updateSw();
         reloadTo(remote);
+        return syncManifestForPwa();
       })
       .catch(function(){checking=false;});
   }
@@ -243,10 +259,24 @@ export function buildInlineAppUpdateSnippet(v) {
       swReloadGuard=true;
       updateSw();
       checkRemoteVersion(true);
+      if(IS_PWA){
+        setTimeout(function(){
+          try{
+            var stored=localStorage.getItem(KEY)||"";
+            if(stored&&stored!==pageBuild)reloadTo(stored);
+          }catch(e){}
+        },300);
+      }
+    });
+    navigator.serviceWorker.addEventListener("message",function(ev){
+      var msg=ev&&ev.data;
+      if(!msg||msg.type!=="HAN_PIT_SW_ACTIVATED")return;
+      onResume(true);
     });
   }
 
   registerSwOnly();
+  if(IS_PWA)void syncManifestForPwa();
   setTimeout(function(){checkRemoteVersion(true);},BOOT_CHECK_MS);
   setInterval(function(){
     if(document.visibilityState!=="hidden")checkRemoteVersion(false);

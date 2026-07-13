@@ -120,6 +120,10 @@ for (const name of htmlFiles) {
     `$1?v=${v}$2`
   );
   html = html.replace(
+    /<link\s+rel="manifest"\s+href="\.\/manifest\.json(?:\?v=[^"]*)?"/g,
+    `<link rel="manifest" href="./manifest.json?v=${v}"`
+  );
+  html = html.replace(
     /<div class="page-boot-loading"[\s\S]*?<\/div>\s*/g,
     ""
   );
@@ -137,7 +141,7 @@ for (const name of htmlFiles) {
 const manifestPath = join(root, "manifest.json");
 try {
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-  manifest.start_url = `./hub.html?_hanpit_v=${v}`;
+  manifest.start_url = `./login.html?_hanpit_v=${v}`;
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 } catch {
   /* ignore */
