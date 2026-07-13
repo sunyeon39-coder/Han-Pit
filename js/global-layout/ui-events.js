@@ -43,6 +43,7 @@ import {
 } from "./mobile-seat-add-modal.js";
 import { setWaitingRowSelection, syncSelectedWaitingFromMyOperatorPick } from "./waiting-picks.js";
 import { refreshGlobalLayoutAlignButtonState } from "./canvas-viewport.js";
+import { releaseStuckGlobalLayoutMutationFlags } from "./layout-mutation-guard.js";
 import { fmtElapsed, isEmptyPerson, timerClass } from "./utils.js";
 import { getGlobalRedoCount, getGlobalUndoCount } from "./undo-stack.js";
 
@@ -113,6 +114,9 @@ function applyCanvasSeatSelectionClick(seatId, multi) {
 }
 
 export function bindGlobalLayoutEventHandlers() {
+  if (GL._globalLayoutEventsBound) return;
+  GL._globalLayoutEventsBound = true;
+
   initGlobalSeatEditModal();
   initGlobalSeatHistoryModal();
   initGlobalMobileSeatAddModal();
@@ -149,6 +153,7 @@ export function bindGlobalLayoutEventHandlers() {
   });
 
   GL.panelContent?.addEventListener("click", async (e) => {
+    releaseStuckGlobalLayoutMutationFlags();
     const selectSeatRowEarly = e.target.closest("[data-select-seat]");
     if (
       selectSeatRowEarly &&
@@ -158,7 +163,7 @@ export function bindGlobalLayoutEventHandlers() {
       if (sid && tryOpenSeatHistoryFromPersonClick(e, sid)) return;
     }
 
-    if (!canManageGlobalLayoutOps() && !GL.opsServerVerified) return;
+    if (!canManageGlobalLayoutOps()) return;
 
     if (e.target.closest("#addSeatToolbarBtn")) {
       try {
@@ -397,6 +402,7 @@ export function bindGlobalLayoutEventHandlers() {
   });
 
   GL.app?.addEventListener("pointerdown", (e) => {
+    releaseStuckGlobalLayoutMutationFlags();
     if (!canManageGlobalLayoutOps()) return;
     if (e.target.closest(".seat-history-btn")) return;
     const box = e.target.closest(".seat-box[data-seat-id]");

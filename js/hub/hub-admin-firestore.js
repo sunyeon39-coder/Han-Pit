@@ -45,6 +45,12 @@ function buildOpsTournamentIds(nextAllowed = {}) {
   return Object.keys(sanitizeAllowedEvents(nextAllowed));
 }
 
+function requireHubSystemAdmin(actionLabel = "이 작업") {
+  if (getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) return true;
+  alert(`${actionLabel}은(는) 시스템 admin 계정만 가능합니다.`);
+  return false;
+}
+
 async function collectTargetUidsForEmail(uid, email = "") {
   const targetUids = new Set([uid]);
   const mail = String(email || "").trim().toLowerCase();
@@ -78,14 +84,14 @@ export async function saveTournament() {
     adminEventCode
   } = hubRefs;
 
-  if (!getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) return;
+  if (!requireHubSystemAdmin("대회 저장")) return;
 
-  const id = adminTournamentId.value.trim();
-  const name = adminTournamentName.value.trim();
-  const startDate = adminTournamentStartDate.value.trim();
-  const endDate = adminTournamentEndDate.value.trim();
-  const logoText = adminTournamentLogoText.value.trim();
-  const requiredCode = adminEventCode.value.trim();
+  const id = String(adminTournamentId?.value || "").trim();
+  const name = String(adminTournamentName?.value || "").trim();
+  const startDate = String(adminTournamentStartDate?.value || "").trim();
+  const endDate = String(adminTournamentEndDate?.value || "").trim();
+  const logoText = String(adminTournamentLogoText?.value || "").trim();
+  const requiredCode = String(adminEventCode?.value || "").trim();
 
   if (!id || !name) {
     alert("대회 ID와 대회명을 입력해주세요.");
@@ -115,9 +121,9 @@ export async function saveTournament() {
 export async function deleteTournamentCurrent() {
   const { adminTournamentId } = hubRefs;
 
-  if (!getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) return;
+  if (!requireHubSystemAdmin("대회 삭제")) return;
 
-  const id = adminTournamentId.value.trim();
+  const id = String(adminTournamentId?.value || "").trim();
   if (!id) {
     alert("삭제할 대회가 없습니다.");
     return;
@@ -153,7 +159,7 @@ export async function deleteTournamentCurrent() {
 }
 
 export async function grantEventDirectly(uid, eventId) {
-  if (!getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) return;
+  if (!requireHubSystemAdmin("직접 허용")) return;
   if (!uid || !eventId) return;
   if (!getTournamentById(eventId)) {
     alert("유효한 대회를 먼저 선택해주세요.");
@@ -234,7 +240,7 @@ export async function grantEventDirectly(uid, eventId) {
 }
 
 export async function revokeEventDirectly(uid, eventId) {
-  if (!getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) return;
+  if (!requireHubSystemAdmin("허용 해제")) return;
   if (!uid || !eventId) return;
   const tournament = getTournamentById(eventId);
   if (!tournament) {
@@ -317,7 +323,7 @@ export async function revokeEventDirectly(uid, eventId) {
 export async function assignEventCodeToUser(uid, eventId, options = {}) {
   const silent = options.silent === true;
   const skipRender = options.skipRender === true;
-  if (!getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) return { ok: false };
+  if (!requireHubSystemAdmin("유저 코드 부여")) return { ok: false };
   if (!uid || !eventId) return { ok: false };
 
   try {
@@ -358,7 +364,7 @@ export async function assignEventCodeToUser(uid, eventId, options = {}) {
 export async function removeUserCode(uid, options = {}) {
   const silent = options.silent === true;
   const skipRender = options.skipRender === true;
-  if (!getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) return { ok: false };
+  if (!requireHubSystemAdmin("유저 코드 제거")) return { ok: false };
   if (!uid) return { ok: false };
 
   try {
@@ -403,7 +409,7 @@ export async function removeUserCode(uid, options = {}) {
 
 /** 체크된 유저들에 선택 대회의 공용 코드를 일괄 부여 */
 export async function bulkAssignEventCodesToUsers(uids, eventId) {
-  if (!getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) return;
+  if (!requireHubSystemAdmin("일괄 코드 부여")) return;
   const uniq = [...new Set((uids || []).map((u) => String(u || "").trim()).filter(Boolean))];
   if (!uniq.length) {
     alert("먼저 유저를 선택해 주세요.");
@@ -439,7 +445,7 @@ export async function bulkAssignEventCodesToUsers(uids, eventId) {
 
 /** 체크된 유저들의 접근 코드를 일괄 제거 */
 export async function bulkRemoveUserCodes(uids) {
-  if (!getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) return;
+  if (!requireHubSystemAdmin("일괄 코드 제거")) return;
   const uniq = [...new Set((uids || []).map((u) => String(u || "").trim()).filter(Boolean))];
   if (!uniq.length) {
     alert("먼저 유저를 선택해 주세요.");

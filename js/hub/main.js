@@ -30,6 +30,7 @@ import {
   renderUserManageModal,
   closeUserManageModal,
   runAdminAction,
+  releaseStuckHubAdminAction,
   clearAdminBulkSelection,
   applyAdminBulkSelectAll,
   syncAdminBulkSelectAllCheckbox
@@ -176,9 +177,13 @@ profileBtn?.addEventListener("click", () => {
 });
 
 adminBtn?.addEventListener("click", () => {
+  releaseStuckHubAdminAction();
   const isAdmin = getIsAdminUser(hubState.currentUser, hubState.currentUserProfile);
 
-  if (!isAdmin) return;
+  if (!isAdmin) {
+    alert("Access Manage는 시스템 admin 계정만 사용할 수 있습니다.");
+    return;
+  }
 
   if (adminSearchInput) adminSearchInput.value = "";
   clearAdminBulkSelection();
@@ -286,7 +291,10 @@ adminBulkRemoveCodeBtn?.addEventListener("click", async () => {
 });
 
 adminResetBasicRolesBtn?.addEventListener("click", async () => {
-  if (!getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) return;
+  if (!getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) {
+    alert("역할 정리는 시스템 admin 계정만 가능합니다.");
+    return;
+  }
   const ok = window.confirm(
     "시스템 admin(sunyeon9501@gmail.com)을 제외한 모든 유저의 role을 user로, 직접 허용(allowedEvents)을 비웁니다.\n운영 권한이 필요한 유저는 이후「직접 허용」으로 다시 부여해야 합니다.\n계속할까요?"
   );

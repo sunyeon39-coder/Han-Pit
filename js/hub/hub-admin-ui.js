@@ -83,16 +83,34 @@ export function setAdminControlsBusy(busy) {
 }
 
 export async function runAdminAction(task) {
-  if (hubState.adminActionInFlight) return false;
+  releaseStuckHubAdminAction();
+  if (hubState.adminActionInFlight) {
+    alert("이전 관리 작업이 처리 중입니다. 잠시 후 다시 시도해 주세요.");
+    return false;
+  }
   hubState.adminActionInFlight = true;
   setAdminControlsBusy(true);
+  const releaseTimer = window.setTimeout(() => {
+    if (!hubState.adminActionInFlight) return;
+    console.warn("[hub] releasing stuck adminActionInFlight");
+    hubState.adminActionInFlight = false;
+    setAdminControlsBusy(false);
+  }, 45_000);
   try {
     await task();
     return true;
   } finally {
+    window.clearTimeout(releaseTimer);
     hubState.adminActionInFlight = false;
     setAdminControlsBusy(false);
   }
+}
+
+/** adminActionInFlight 가 비정상 종료 후 버튼 disabled 로 남는 것 방지 */
+export function releaseStuckHubAdminAction() {
+  if (!hubState.adminActionInFlight) return;
+  hubState.adminActionInFlight = false;
+  setAdminControlsBusy(false);
 }
 
 export function userStillHasAccessToSelectedEvent(user) {

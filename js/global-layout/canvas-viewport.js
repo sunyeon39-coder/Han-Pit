@@ -194,6 +194,11 @@ export function wireGlobalLayoutZoomBarOnce() {
 
 export function wireGlobalLayoutCanvasViewport(viewport, canvas) {
   if (!viewport || !canvas) return;
+  if (viewport.dataset.glCanvasViewportWired === "1") {
+    applyGlobalLayoutCanvasTransform(canvas);
+    return;
+  }
+  viewport.dataset.glCanvasViewportWired = "1";
 
   const key = storageKey();
   if (key !== lastLoadedStorageKey) {
