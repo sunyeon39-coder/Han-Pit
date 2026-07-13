@@ -1,30 +1,47 @@
 @import "./app-shared.css";
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");
+@import url("https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=JetBrains+Mono:wght@400;500;700&display=swap");
 
 :root {
-  --bg-1: #07111f;
-  --bg-2: #0d172a;
-  --bg-3: #13203a;
-  --panel-1: rgba(13, 22, 39, 0.82);
-  --panel-2: rgba(255, 255, 255, 0.06);
-  --panel-3: rgba(255, 255, 255, 0.1);
-  --line-soft: rgba(255, 255, 255, 0.1);
-  --line-strong: rgba(214, 178, 94, 0.34);
-  --text-1: #f7f8fc;
-  --text-2: #c7d0df;
-  --text-3: #8c99b2;
-  --accent: #d6b25e;
-  --accent-strong: #efd08d;
-  --accent-shadow: rgba(214, 178, 94, 0.28);
-  --danger: #f26d7d;
-  --radius-sm: 12px;
-  --radius-md: 18px;
-  --radius-lg: 26px;
-  --shadow-card:
-    0 1px 0 rgba(255, 255, 255, 0.04),
-    0 14px 44px rgba(0, 0, 0, 0.28);
-  --shadow-float: 0 18px 48px rgba(0, 0, 0, 0.34);
+  /* --- Han Pit Ops Terminal token system --- */
+  --void: #090a0d;
+  --void-2: #0d0f14;
+  --steel-900: #12151b;
+  --steel-800: #1a1f27;
+  --steel-700: rgba(255, 255, 255, 0.05);
+  --line: rgba(255, 255, 255, 0.09);
+  --line-strong: rgba(255, 255, 255, 0.18);
+  --grid-line: rgba(255, 255, 255, 0.035);
+
+  --amber: #ffb020;
+  --amber-strong: #ffcf6b;
+  --amber-dim: rgba(255, 176, 32, 0.28);
+  --cyan: #3ddbc4;
+  --cyan-dim: rgba(61, 219, 196, 0.28);
+  --danger: #ff4d5e;
+
+  --text-1: #eef1f4;
+  --text-2: #98a3ad;
+  --text-3: #5c6672;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 2px;
+
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.04), 0 24px 60px rgba(0, 0, 0, 0.55);
+  --shadow-float: 0 18px 48px rgba(0, 0, 0, 0.5);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --font-display: "Black Han Sans", var(--font-app), sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+
+  /* legacy aliases kept for shared partials (in-app-gate / busy overlay) */
+  --panel-1: var(--steel-900);
+  --panel-2: var(--steel-800);
+  --panel-3: rgba(255, 255, 255, 0.1);
+  --line-soft: var(--line);
+  --accent: var(--amber);
+  --accent-strong: var(--amber-strong);
 }
 
 * {
@@ -46,46 +63,16 @@ body {
 
 body {
   font-family: var(--font-app);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
   min-height: 100vh;
   background:
-    radial-gradient(720px 420px at 12% 12%, rgba(214, 178, 94, 0.18), transparent 60%),
-    radial-gradient(820px 520px at 88% -4%, rgba(87, 122, 186, 0.24), transparent 55%),
-    linear-gradient(180deg, var(--bg-1), var(--bg-2) 46%, #060c17 100%);
+    radial-gradient(900px 560px at 50% -8%, rgba(255, 176, 32, 0.07), transparent 60%),
+    linear-gradient(180deg, var(--void-2), var(--void) 60%);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--text-1);
   overflow-x: hidden;
-}
-
-body::before,
-body::after {
-  content: "";
-  position: fixed;
-  inset: auto;
-  pointer-events: none;
-  z-index: 0;
-}
-
-body::before {
-  width: 480px;
-  height: 480px;
-  top: -160px;
-  right: -90px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(214, 178, 94, 0.18), transparent 70%);
-  filter: blur(16px);
-}
-
-body::after {
-  width: 520px;
-  height: 520px;
-  left: -180px;
-  bottom: -220px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(52, 91, 155, 0.2), transparent 72%);
-  filter: blur(20px);
 }
 
 .hidden {
@@ -101,46 +88,147 @@ body::after {
   padding: 28px;
 }
 
+/* --- Ops terminal card, framed by HUD corner brackets --- */
 .login-card {
   position: relative;
   width: 100%;
-  max-width: 460px;
-  padding: 34px 28px 28px;
+  max-width: 440px;
+  padding: 46px 30px 30px;
   border-radius: var(--radius-lg);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  background: rgba(12, 17, 30, 0.92);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 40%), var(--steel-900);
   box-shadow: var(--shadow-card);
   overflow: hidden;
 }
 
-.login-card::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(135deg, rgba(239, 208, 141, 0.12), transparent 36%, transparent 70%, rgba(255, 255, 255, 0.04));
-  pointer-events: none;
-}
-
+/* corner brackets — targeting reticle frame */
+.login-card::before,
 .login-card::after {
   content: "";
   position: absolute;
-  left: 24px;
-  right: 24px;
-  top: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
-  opacity: 0.75;
+  width: 22px;
+  height: 22px;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.login-card::before {
+  top: 10px;
+  left: 10px;
+  border-top: 2px solid var(--amber);
+  border-left: 2px solid var(--amber);
+}
+
+.login-card::after {
+  bottom: 10px;
+  right: 10px;
+  border-bottom: 2px solid var(--amber);
+  border-right: 2px solid var(--amber);
+}
+
+/* opposite corners, dimmer, via a wrapper pseudo on login-wrap is overkill; use box-shadow trick instead */
+.login-card {
+  outline: 1px solid transparent;
+}
+
+.login-card .hud-corner-tr,
+.login-card .hud-corner-bl {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.login-card .hud-corner-tr {
+  top: 10px;
+  right: 10px;
+  border-top: 2px solid rgba(255, 176, 32, 0.4);
+  border-right: 2px solid rgba(255, 176, 32, 0.4);
+}
+
+.login-card .hud-corner-bl {
+  bottom: 10px;
+  left: 10px;
+  border-bottom: 2px solid rgba(255, 176, 32, 0.4);
+  border-left: 2px solid rgba(255, 176, 32, 0.4);
+}
+
+/* scanline sweep — the signature motion */
+.login-card .hud-scanline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 120px;
+  top: -120px;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(255, 176, 32, 0.08), transparent);
+  animation: hud-scan 6s linear infinite;
+}
+
+@keyframes hud-scan {
+  0% {
+    top: -120px;
+  }
+  60% {
+    top: 100%;
+  }
+  100% {
+    top: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-card .hud-scanline {
+    animation: none;
+    display: none;
+  }
+}
+
+.hud-readout {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 22px;
+}
+
+.hud-readout .hud-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--cyan);
+  box-shadow: 0 0 8px var(--cyan-dim);
+  animation: hud-blink 1.6s ease-in-out infinite;
+}
+
+@keyframes hud-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 .logo {
   position: relative;
+  z-index: 1;
   font-size: 38px;
   font-weight: 800;
   letter-spacing: -0.04em;
   text-align: center;
-  margin: 0 auto 12px;
+  margin: 0 auto 8px;
   width: 100%;
 }
 
@@ -160,73 +248,84 @@ body::after {
   width: 100%;
   max-width: 100%;
   height: auto;
-  max-height: clamp(132px, 44vmin, 228px);
+  max-height: clamp(112px, 38vmin, 188px);
   object-fit: contain;
+  filter: grayscale(0.15) contrast(1.05);
 }
 
-.logo.logo--mark::after {
-  content: "";
-  display: block;
-  width: min(320px, 92%);
-  height: 3px;
-  margin: 12px auto 0;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(214, 178, 94, 0.2), var(--accent), rgba(214, 178, 94, 0.2));
-}
-
+.logo.logo--mark::after,
 .logo:not(.logo--mark)::after {
   content: "";
   display: block;
-  width: 84px;
-  height: 3px;
+  width: min(280px, 90%);
+  height: 2px;
   margin: 14px auto 0;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(214, 178, 94, 0.2), var(--accent), rgba(214, 178, 94, 0.2));
+  background: linear-gradient(90deg, transparent, var(--amber), transparent);
 }
 
 .subtitle {
-  font-size: 14px;
+  position: relative;
+  z-index: 1;
+  font-family: var(--font-mono);
+  font-size: 12px;
   text-align: center;
   color: var(--text-2);
-  letter-spacing: 0.16em;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
-  margin-bottom: 26px;
+  margin-bottom: 30px;
 }
 
+.subtitle::before {
+  content: "// ";
+  color: var(--amber);
+}
+
+/* --- Angular, precision-cut CTA button --- */
 .login-btn {
   position: relative;
+  z-index: 1;
   width: 100%;
   min-height: 54px;
   padding: 14px 18px;
-  border: 1px solid rgba(239, 208, 141, 0.42);
-  border-radius: 12px;
+  border: 1px solid var(--amber-dim);
+  border-radius: var(--radius-md);
+  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+  font-family: var(--font-app);
   font-size: 15px;
   font-weight: 700;
   letter-spacing: 0.01em;
   cursor: pointer;
-  color: #111827;
-  background: linear-gradient(135deg, #f2dfb2, var(--accent-strong) 44%, #b8893d 100%);
+  color: #14100a;
+  background: linear-gradient(135deg, var(--amber-strong), var(--amber) 70%);
   box-shadow: none;
-  transition: filter 0.15s ease, border-color 0.15s ease;
+  transition: filter 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
 }
 
 .login-btn:hover {
-  transform: none;
-  filter: brightness(1.03);
-  border-color: rgba(239, 208, 141, 0.55);
+  filter: brightness(1.06);
+  border-color: var(--amber-strong);
 }
 
 .login-btn:active {
-  transform: translateY(0);
+  transform: translateY(1px);
+}
+
+.login-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: none;
 }
 
 .login-desc {
+  position: relative;
+  z-index: 1;
   text-align: center;
-  margin-top: 16px;
+  margin-top: 18px;
   font-size: 13px;
   color: var(--text-3);
 }
 
+/* --- Signup modal, same terminal language --- */
 .signup-modal {
   position: fixed;
   inset: 0;
@@ -234,27 +333,38 @@ body::after {
   align-items: center;
   justify-content: center;
   padding: 18px;
-  background: rgba(2, 6, 16, 0.74);
-  backdrop-filter: blur(16px);
+  background: rgba(4, 5, 8, 0.82);
+  backdrop-filter: blur(10px);
   z-index: 1000;
 }
 
 .signup-card {
+  position: relative;
   width: min(92vw, 420px);
   padding: 28px;
-  border-radius: 24px;
-  border: 1px solid var(--line-soft);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.025)),
-    linear-gradient(160deg, rgba(9, 15, 29, 0.96), rgba(18, 28, 47, 0.93));
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: var(--steel-900);
   color: var(--text-1);
   box-shadow: var(--shadow-card);
 }
 
+.signup-card::before {
+  content: "";
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 18px;
+  height: 18px;
+  border-top: 2px solid var(--amber);
+  border-left: 2px solid var(--amber);
+}
+
 .signup-card h2 {
-  font-size: 24px;
-  line-height: 1.25;
-  margin-bottom: 20px;
+  font-size: 20px;
+  line-height: 1.3;
+  margin-bottom: 22px;
+  letter-spacing: -0.01em;
 }
 
 .input-box {
@@ -265,9 +375,9 @@ body::after {
   width: 100%;
   min-height: 48px;
   padding: 0 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.045);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--steel-800);
   color: var(--text-1);
   font-size: 14px;
   outline: none;
@@ -275,29 +385,28 @@ body::after {
 }
 
 .input-box input::placeholder {
-  color: rgba(199, 208, 223, 0.55);
+  color: var(--text-3);
 }
 
 .input-box input:focus {
-  border-color: rgba(214, 178, 94, 0.55);
-  box-shadow: 0 0 0 4px rgba(214, 178, 94, 0.12);
-  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--amber-dim);
+  box-shadow: 0 0 0 3px rgba(255, 176, 32, 0.12);
 }
 
 .gender-box {
   display: flex;
   gap: 10px;
-  margin: 14px 0 16px;
+  margin: 14px 0 18px;
 }
 
 .gender-btn {
   flex: 1;
   min-height: 46px;
   padding: 10px 12px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--steel-800);
   color: var(--text-2);
   font-size: 14px;
   font-weight: 700;
@@ -305,16 +414,15 @@ body::after {
 }
 
 .gender-btn:hover {
-  transform: translateY(-1px);
-  border-color: rgba(255, 255, 255, 0.18);
+  border-color: var(--line-strong);
   color: var(--text-1);
 }
 
 .gender-btn.active {
-  border-color: rgba(239, 208, 141, 0.55);
-  background: linear-gradient(135deg, rgba(239, 208, 141, 0.24), rgba(214, 178, 94, 0.14));
-  color: #fff6de;
-  box-shadow: 0 0 0 1px rgba(239, 208, 141, 0.15) inset;
+  border-color: var(--amber);
+  background: rgba(255, 176, 32, 0.14);
+  color: var(--amber-strong);
+  box-shadow: 0 0 0 1px rgba(255, 176, 32, 0.15) inset;
 }
 
 @media (max-width: 640px) {
@@ -323,35 +431,24 @@ body::after {
   }
 
   .login-card {
-    padding: 32px 22px 24px;
-    border-radius: 22px;
-  }
-
-  .logo:not(.logo--mark) {
-    font-size: 32px;
+    padding: 42px 22px 24px;
   }
 
   .logo.logo--mark .app-mark-img {
-    max-height: clamp(120px, 48vmin, 200px);
-  }
-
-  .logo.logo--mark::after {
-    width: min(300px, 92%);
-    margin-top: 10px;
+    max-height: clamp(104px, 42vmin, 168px);
   }
 
   .subtitle {
-    font-size: 12px;
-    letter-spacing: 0.12em;
+    font-size: 11px;
+    letter-spacing: 0.16em;
   }
 
   .signup-card {
     padding: 22px;
-    border-radius: 20px;
   }
 
   .signup-card h2 {
-    font-size: 21px;
+    font-size: 18px;
   }
 
   .gender-box {
@@ -359,7 +456,7 @@ body::after {
   }
 }
 
-/* 인앱 브라우저 안내 (Google OAuth 차단 대응) */
+/* --- 인앱 브라우저 안내 (Google OAuth 차단 대응) --- */
 .in-app-gate {
   position: fixed;
   inset: 0;
@@ -368,22 +465,23 @@ body::after {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: rgba(5, 10, 20, 0.88);
-  backdrop-filter: blur(12px);
+  background: rgba(4, 5, 8, 0.9);
+  backdrop-filter: blur(10px);
 }
 
 .in-app-gate-card {
+  position: relative;
   max-width: 420px;
   width: 100%;
   padding: 28px 24px;
-  border-radius: var(--radius-md);
-  background: var(--panel-1);
-  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg);
+  background: var(--steel-900);
+  border: 1px solid var(--line);
   box-shadow: var(--shadow-float);
 }
 
 .in-app-gate-title {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 800;
   margin: 0 0 12px;
   line-height: 1.35;
@@ -409,20 +507,22 @@ body::after {
 
 .in-app-gate-secondary {
   width: 100%;
-  background: rgba(255, 255, 255, 0.08);
-  border-color: var(--panel-3);
+  background: var(--steel-800);
+  border-color: var(--line-strong);
   color: var(--text-1);
 }
 
 .in-app-gate-ghost {
   width: 100%;
   background: transparent;
-  border-color: var(--line-soft);
+  border: 1px solid var(--line);
   color: var(--text-2);
   font-weight: 700;
+  clip-path: none;
+  border-radius: var(--radius-md);
 }
 
-/* 로그인 진행 중 — 계정 선택 직후 즉시 피드백 */
+/* --- 로그인 진행 중 오버레이 --- */
 .login-busy {
   position: fixed;
   inset: 0;
@@ -431,7 +531,7 @@ body::after {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(7, 13, 25, 0.72);
+  background: rgba(4, 5, 8, 0.78);
   backdrop-filter: blur(6px);
 }
 
@@ -440,30 +540,33 @@ body::after {
 }
 
 .login-busy-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 14px;
   padding: 28px 32px;
-  border-radius: var(--radius-md);
-  background: var(--panel-1);
+  border-radius: var(--radius-lg);
+  background: var(--steel-900);
   border: 1px solid var(--line-strong);
   box-shadow: var(--shadow-float);
   min-width: min(280px, 100%);
 }
 
 .login-busy-spinner {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
-  border: 3px solid rgba(255, 255, 255, 0.12);
-  border-top-color: var(--accent);
+  border: 3px solid var(--line);
+  border-top-color: var(--amber);
   animation: login-busy-spin 0.75s linear infinite;
 }
 
 .login-busy-text {
-  font-size: 15px;
-  font-weight: 700;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
   color: var(--text-1);
   text-align: center;
 }

@@ -13,34 +13,34 @@
   --control-h: 44px;
   --control-h-sm: 36px;
   --radius-pill: 999px;
-  --radius-card: 18px;
-  --radius-control: 12px;
-  --radius-modal: 20px;
+  --radius-card: 6px;
+  --radius-control: 4px;
+  --radius-modal: 8px;
   --panel-pad: 14px;
 
   /* 앱형 크롬 — 탑바·툴바·기본 컨트롤 */
-  --chrome-bg: rgba(9, 12, 24, 0.82);
+  --chrome-bg: rgba(9, 10, 13, 0.88);
   --surface-ctrl: rgba(255, 255, 255, 0.065);
   --surface-ctrl-hover: rgba(255, 255, 255, 0.11);
-  --surface-elevated: rgba(18, 24, 42, 0.72);
+  --surface-elevated: rgba(26, 31, 39, 0.75);
   --border-app: rgba(255, 255, 255, 0.1);
   --border-strong: rgba(255, 255, 255, 0.16);
   --shadow-chrome: 0 1px 0 rgba(255, 255, 255, 0.07), 0 10px 32px rgba(0, 0, 0, 0.28);
 
   /* Layout / 배치도 (블루 포인트) */
-  --bg1: #070b18;
-  --bg2: #0c1225;
+  --bg1: #0a0c10;
+  --bg2: #0d0f14;
   --panel: rgba(255, 255, 255, 0.07);
   --border: rgba(255, 255, 255, 0.11);
-  --text: #eef2ff;
-  --muted: rgba(238, 242, 255, 0.6);
-  --accent-blue: #4da3ff;
-  --accent-gold: #d6b25e;
-  --accent-gold-strong: #efd08d;
-  --accent: var(--accent-blue);
-  --danger: #ff5b7f;
+  --text: #eef1f4;
+  --muted: rgba(152, 163, 173, 0.85);
+  --accent-blue: #3ddbc4;
+  --accent-gold: #ffb020;
+  --accent-gold-strong: #ffcf6b;
+  --accent: var(--accent-gold);
+  --danger: #ff4d5e;
   --ok: #3ee2a0;
-  --radius: 18px;
+  --radius: 6px;
   /* 카드·모달: 정리된 한 겹 + 상단 림 */
   --shadow-card:
     0 1px 0 rgba(255, 255, 255, 0.07),
@@ -50,26 +50,26 @@
   --shadow-inset-soft: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   --rim-light: inset 0 1px 0 rgba(255, 255, 255, 0.1);
   --rim-subtle: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  --glow-gold: 0 0 24px rgba(214, 178, 94, 0.18);
-  --glow-blue: 0 0 22px rgba(77, 163, 255, 0.16);
+  --glow-gold: 0 0 24px rgba(255, 176, 32, 0.18);
+  --glow-blue: 0 0 22px rgba(61, 219, 196, 0.16);
   --transition-ui: 0.22s var(--ease-out);
   --border-hair: var(--border-app);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
 
   /* Index 토너먼트 화면 (골드 CTA + 상태색) */
-  --bg-1: #07111f;
-  --bg-2: #0d172a;
-  --bg-3: #13203a;
+  --bg-1: #0d0f14;
+  --bg-2: #0a0c10;
+  --bg-3: #12151b;
   --panel-1: rgba(255, 255, 255, 0.05);
   --panel-2: rgba(255, 255, 255, 0.08);
   --panel-3: rgba(255, 255, 255, 0.12);
   --line-soft: rgba(255, 255, 255, 0.08);
   --line-mid: rgba(255, 255, 255, 0.14);
-  --line-gold: rgba(214, 178, 94, 0.34);
-  --text-1: #f7f8fc;
-  --text-2: #c8d0de;
-  --text-3: #8f9cb4;
+  --line-gold: rgba(255, 176, 32, 0.34);
+  --text-1: #eef1f4;
+  --text-2: #98a3ad;
+  --text-3: #5c6672;
   --scheduled: #94a3b8;
   --opened: #f4b860;
   --running: #5fd2a4;
@@ -83,7 +83,7 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  background-color: #060c17;
+  background-color: #090a0d;
   color-scheme: dark;
 }
 
@@ -94,7 +94,7 @@ body {
 }
 
 body {
-  background-color: #060c17;
+  background-color: #090a0d;
 }
 
 *,
@@ -154,7 +154,7 @@ a.app-mark {
   gap: 14px;
   min-height: min(42vh, 320px);
   padding: 24px;
-  background: #060c17;
+  background: #090a0d;
 }
 
 .page-boot-loading--fullscreen,
@@ -169,7 +169,7 @@ a.app-mark {
   height: 32px;
   border-radius: 50%;
   border: 3px solid rgba(255, 255, 255, 0.12);
-  border-top-color: rgba(77, 163, 255, 0.9);
+  border-top-color: rgba(61, 219, 196, 0.9);
   animation: page-boot-spin 0.75s linear infinite;
 }
 
