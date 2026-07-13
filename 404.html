@@ -253,22 +253,22 @@
           var stem = page.split("/").pop() || "";
           if (knownPages[stem]) page = stem + ".html";
           else if (stem) page = stem + ".html";
-          else page = "index.html";
+          else page = "login.html";
         }
         target = base + page + search;
       } else if (gh && parts.length === 1 && !/\.html$/i.test(parts[0])) {
-        target = l.origin + "/" + parts[0] + "/index.html" + search;
+        target = l.origin + "/" + parts[0] + "/login.html" + search;
       } else {
         try {
-          target = new URL("./index.html", l.href).href;
+          target = new URL("./login.html", l.href).href;
         } catch (e) {
-          target = "index.html";
+          target = "login.html";
         }
       }
       l.replace(target);
     })();
   </script>
-  <meta http-equiv="refresh" content="0;url=index.html" />
+  <meta http-equiv="refresh" content="0;url=login.html" />
 </head>
 <body>
   <!-- han-pit-boot-dismiss -->
@@ -289,6 +289,6 @@
 })();
 </script>
 <!-- /han-pit-boot-dismiss -->
-  <p><a href="index.html">Han Pit 홈으로 이동</a></p>
+  <p><a href="login.html">Han Pit 로그인으로 이동</a></p>
 </body>
 </html>

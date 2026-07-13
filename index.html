@@ -1,6 +1,18 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
+  <!-- han-pit-entry-redirect -->
+<script id="han-pit-entry-redirect">
+(function(){
+  try{
+    var loc=window.location;
+    var file=loc.pathname.slice(loc.pathname.lastIndexOf("/")+1).toLowerCase();
+    if(file&&file!=="index.html")return;
+    if(new URLSearchParams(loc.search||"").get("tournamentId"))return;
+    loc.replace(new URL("./login.html",loc.href).href);
+  }catch(e){}
+})();
+</script>
   <!-- han-pit-inline-update -->
 <script id="han-pit-inline-update">
 (function(){
