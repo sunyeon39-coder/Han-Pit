@@ -201,11 +201,9 @@ function buildColumns(dateContainer, timeContainer, parts, minMs, maxMs) {
   }
 
   const minutes = [];
-  for (let m = 1; m <= 59; m++) {
-    minutes.push({ value: m, label: `${m}분` });
+  for (let m = 0; m <= 59; m++) {
+    minutes.push({ value: m, label: m === 0 ? "00분" : `${m}분` });
   }
-
-  const safeMinute = parts.minute <= 0 ? 1 : Math.min(parts.minute, 59);
 
   const safeParts = {
     ...parts,
@@ -213,7 +211,7 @@ function buildColumns(dateContainer, timeContainer, parts, minMs, maxMs) {
     day: Math.min(Math.max(parts.day, 1), 31),
     ampm: parts.ampm === "pm" ? "pm" : "am",
     hour12: Math.min(Math.max(parts.hour12 || 12, 1), 12),
-    minute: safeMinute
+    minute: Math.min(Math.max(Number(parts.minute) || 0, 0), 59)
   };
 
   dateContainer.appendChild(buildColumn("year", years, safeParts.year));
