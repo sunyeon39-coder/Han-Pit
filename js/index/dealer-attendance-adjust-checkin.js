@@ -13,8 +13,6 @@ import {
   snapshotAttendanceEntry
 } from "./dealer-attendance-optimistic.js";
 import { getOperationalDayKey } from "../shared/attendance-operational-day.js";
-
-import { getOperationalDayKey } from "../shared/attendance-operational-day.js";
 import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
 
 function canAdjustAttendanceTimes() {
