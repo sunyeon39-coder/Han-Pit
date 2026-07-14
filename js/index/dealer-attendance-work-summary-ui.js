@@ -7,6 +7,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 import { escapeHtml, openModal, closeModal } from "../shared/dom-utils.js";
+import { attendanceLogCreatedAtMs } from "../shared/attendance-log-write.js";
 import { openDatetimeScrollPicker } from "../shared/datetime-scroll-picker.js";
 import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
 import { IX, refreshIndexDomRefs } from "./state.js";
@@ -72,15 +73,29 @@ function logsForWorkSummaryUid(uid) {
   return (IX.attendanceLogs || []).filter((log) => String(log.uid || "").trim() === safeUid);
 }
 
+function normalizeAttendanceLog(log) {
+  if (!log || typeof log !== "object") return log;
+  return {
+    ...log,
+    createdAt: attendanceLogCreatedAtMs(log.createdAt) || log.createdAt
+  };
+}
+
 /** 근무 누적은 운영 로그로 세션을 복원한다 — 모달 열 때 대상 로그를 로드 */
 async function loadAttendanceLogsForUid(uid) {
   const safeUid = String(uid || "").trim();
+  const tournamentId = String(getTournamentId() || "").trim();
   if (!safeUid) return [];
   try {
     const snap = await getDocs(
       query(collection(db, "dealer_attendance_logs"), where("uid", "==", safeUid))
     );
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
+    return snap.docs
+      .map((d) => normalizeAttendanceLog({ id: d.id, ...(d.data() || {}) }))
+      .filter(
+        (log) =>
+          !tournamentId || String(log.tournamentId || "").trim() === tournamentId
+      );
   } catch (err) {
     console.warn("loadAttendanceLogsForUid:", err?.code || err);
     return null;
@@ -89,7 +104,9 @@ async function loadAttendanceLogsForUid(uid) {
 
 function mergeAttendanceLogs(incoming = []) {
   const byId = new Map((IX.attendanceLogs || []).map((l) => [String(l.id || ""), l]));
-  for (const log of incoming) byId.set(String(log.id || ""), log);
+  for (const log of incoming) {
+    byId.set(String(log.id || ""), normalizeAttendanceLog(log));
+  }
   IX.attendanceLogs = Array.from(byId.values()).sort(
     (a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)
   );
@@ -502,7 +519,7 @@ async function openWorkSummaryModal() {
     loadPayProfile(ctx.uid)
   ]);
 
-  if (Array.isArray(logs) && logs.length) {
+  if (Array.isArray(logs)) {
     mergeAttendanceLogs(logs);
   }
 
@@ -544,7 +561,14 @@ async function applyWorkSummarySessionTime(row, field, pickedMs) {
       })
     : await adjustMyWorkSession(sessionArgs);
 
-  if (!result?.ok) return;
+  if (!result?.ok) {
+    alert("근무 시간 수정에 실패했습니다.");
+    return;
+  }
+
+  if (result.log) {
+    mergeAttendanceLogs([result.log]);
+  }
 
   if (result.attendancePatched) {
     await loadDealerAttendanceOnce();
@@ -552,7 +576,7 @@ async function applyWorkSummarySessionTime(row, field, pickedMs) {
   }
 
   const logs = await withTimeout(loadAttendanceLogsForUid(ctx.uid), 8000);
-  if (Array.isArray(logs) && logs.length) {
+  if (Array.isArray(logs)) {
     mergeAttendanceLogs(logs);
   }
 
@@ -576,9 +600,16 @@ async function handleWorkSummarySessionPickerClick(e) {
   const isOpen = row.dataset.open === "1";
   const previousStartMs = Number(row.dataset.prevStart || 0);
   const previousEndMs = Number(row.dataset.prevEnd || 0);
-  const initialMs = field === "start" ? previousStartMs : previousEndMs;
   const now = getNowMs();
   const minMs = now - LOG_RETENTION_MS;
+  const initialMs =
+    field === "start"
+      ? previousStartMs > 0
+        ? previousStartMs
+        : now
+      : previousEndMs > 0
+        ? previousEndMs
+        : now;
 
   const pickedMs = await openDatetimeScrollPicker({
     initialMs,

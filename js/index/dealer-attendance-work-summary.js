@@ -2,6 +2,7 @@ import { getTournamentId } from "./core-utils.js";
 import { formatDuration } from "./dealer-attendance-format.js";
 import { getWorkingMs } from "./dealer-attendance-derived.js";
 import { getOperationalDayKey } from "../shared/attendance-operational-day.js";
+import { attendanceLogCreatedAtMs } from "../shared/attendance-log-write.js";
 
 const SESSION_START = new Set(["waiting", "checked_in"]);
 
@@ -51,7 +52,7 @@ function findSessionForAdjustment(sessions, adj = {}) {
 function applyWorkSessionAdjustments(sessions, logs = []) {
   const adjustments = (Array.isArray(logs) ? logs : [])
     .filter((log) => String(log.action || "").trim() === "adjust_work_session")
-    .sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
+    .sort((a, b) => attendanceLogCreatedAtMs(a.createdAt) - attendanceLogCreatedAtMs(b.createdAt));
 
   for (const adj of adjustments) {
     const idx = findSessionForAdjustment(sessions, adj);
@@ -85,7 +86,7 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
         String(log.uid || "").trim() === uid &&
         String(log.tournamentId || "").trim() === tournamentId
     )
-    .sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
+    .sort((a, b) => attendanceLogCreatedAtMs(a.createdAt) - attendanceLogCreatedAtMs(b.createdAt));
 
   const sessions = [];
   let openStart = null;

@@ -32,13 +32,35 @@ function hour24FromParts(parts) {
   return h;
 }
 
+function daysInMonth(year, month) {
+  return new Date(year, month, 0).getDate();
+}
+
+function normalizeParts(parts) {
+  const year = Number(parts.year);
+  const month = Math.min(12, Math.max(1, Number(parts.month) || 1));
+  const maxDay = daysInMonth(year, month);
+  const day = Math.min(maxDay, Math.max(1, Number(parts.day) || 1));
+  const minute = Math.min(59, Math.max(0, Number(parts.minute) || 0));
+  const hour12 = Math.min(12, Math.max(1, Number(parts.hour12) || 12));
+  return {
+    year,
+    month,
+    day,
+    minute,
+    hour12,
+    ampm: String(parts.ampm || "am") === "pm" ? "pm" : "am"
+  };
+}
+
 function msFromParts(parts) {
+  const p = normalizeParts(parts);
   const d = new Date(
-    Number(parts.year),
-    Number(parts.month) - 1,
-    Number(parts.day),
-    hour24FromParts(parts),
-    Number(parts.minute),
+    p.year,
+    p.month - 1,
+    p.day,
+    hour24FromParts(p),
+    p.minute,
     0,
     0
   );
@@ -112,7 +134,15 @@ function scrollItemToCenter(col, item) {
   col.scrollTop = Math.max(0, offset);
 }
 
+function snapAllColumns(sheet) {
+  sheet.querySelectorAll(".dt-scroll-col").forEach((col) => {
+    const centered = getCenteredItem(col);
+    if (centered) scrollItemToCenter(col, centered);
+  });
+}
+
 function readPickerParts(sheet) {
+  snapAllColumns(sheet);
   const parts = {};
   sheet.querySelectorAll(".dt-scroll-col").forEach((col) => {
     const key = col.dataset.part;
@@ -230,8 +260,12 @@ function confirmPick() {
     return;
   }
   const sheet = modalEl.querySelector(".datetime-scroll-picker-sheet");
-  let parts = readPickerParts(sheet);
+  const parts = readPickerParts(sheet);
   let ms = msFromParts(parts);
+  if (!Number.isFinite(ms)) {
+    finishPick(null);
+    return;
+  }
   ms = clampMs(ms, pickerState.minMs, pickerState.maxMs);
   finishPick(ms);
 }

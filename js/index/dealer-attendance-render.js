@@ -118,14 +118,65 @@ function canPartialRenderDealerAdmin() {
 }
 
 function renderDealerSelfInlineHtml(myStatus) {
+  const user = auth.currentUser;
+  const tid = getTournamentId();
+  const t = IX.currentTournament;
+  const tournamentMeta = t ? { id: t.id, name: t.name, logoText: t.logoText } : null;
+  const isAdmin = canShowTournamentOpsUi(
+    user?.email,
+    IX.currentUserProfile,
+    tid,
+    tournamentMeta,
+    user?.uid
+  );
+  const me = user ? getDerivedAttendance(user) : null;
   const adminCanCheckIn = myStatus === "off" || myStatus === "checked_out";
   const adminCanCheckOut = isActiveAttendanceStatus(myStatus);
+  const canEditCheckIn = isAdmin && Boolean(me?.checkedInAt) && myStatus !== "off";
+  const canEditCheckOut = isAdmin && Boolean(me?.checkedOutAt) && myStatus === "checked_out";
+
+  const checkInChip = canEditCheckIn
+    ? `<button
+        type="button"
+        class="dealer-time-chip dealer-time-chip--editable dealer-time-chip--inline"
+        data-edit-check-in
+        title="탭하여 출근 시각 수정"
+        aria-label="출근 시각 수정"
+      >
+        <span class="dealer-time-chip-label">출근</span>
+        <span class="dealer-time-chip-value">${escapeHtml(formatDatetimeKorean(me.checkedInAt))}</span>
+      </button>`
+    : me?.checkedInAt
+      ? `<span class="dealer-inline-time">출근 ${escapeHtml(formatDatetimeKorean(me.checkedInAt))}</span>`
+      : "";
+
+  const checkOutChip = canEditCheckOut
+    ? `<button
+        type="button"
+        class="dealer-time-chip dealer-time-chip--editable dealer-time-chip--inline"
+        data-edit-check-out
+        title="탭하여 퇴근 시각 수정"
+        aria-label="퇴근 시각 수정"
+      >
+        <span class="dealer-time-chip-label">퇴근</span>
+        <span class="dealer-time-chip-value">${escapeHtml(formatDatetimeKorean(me.checkedOutAt))}</span>
+      </button>`
+    : me?.checkedOutAt
+      ? `<span class="dealer-inline-time">퇴근 ${escapeHtml(formatDatetimeKorean(me.checkedOutAt))}</span>`
+      : "";
+
+  const timesHtml =
+    checkInChip || checkOutChip
+      ? `<div class="dealer-self-times dealer-self-times--inline">${checkInChip}${checkOutChip}</div>`
+      : "";
 
   return `
+          ${timesHtml}
           <span class="dealer-status-pill ${escapeHtml(myStatus)}">${escapeHtml(getAttendanceStatusLabel(myStatus))}</span>
           <div class="dealer-action-row dealer-action-row--inline">
             <button class="dealer-action-btn primary" data-self-action="waiting" type="button" ${adminCanCheckIn ? "" : "disabled"}>내 출근</button>
             <button class="dealer-action-btn danger" data-self-action="checked_out" type="button" ${adminCanCheckOut ? "" : "disabled"}>내 퇴근</button>
+            <button class="dealer-action-btn ghost" type="button" data-show-work-summary>근무 합계</button>
           </div>
         `;
 }

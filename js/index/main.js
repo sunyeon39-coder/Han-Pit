@@ -422,7 +422,7 @@ function wireIndexPageControls() {
 
     try {
       const pickedMs = await openDatetimeScrollPicker({
-        initialMs,
+        initialMs: initialMs > 0 ? initialMs : now,
         minMs: now - ATTENDANCE_LOG_RETENTION_MS,
         maxMs: now,
         title: isCheckIn ? "출근 시각" : "퇴근 시각"

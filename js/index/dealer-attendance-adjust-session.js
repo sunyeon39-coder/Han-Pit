@@ -3,7 +3,7 @@ import { setDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-fire
 
 import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
-import { getAttendanceRef } from "./dealer-attendance-refs.js";
+import { getAttendanceRef, getAttendanceDocId } from "./dealer-attendance-refs.js";
 import { writeAttendanceLog } from "./dealer-attendance-logs.js";
 import { getDerivedAttendance } from "./dealer-attendance-derived.js";
 import { formatClock, getNowMs } from "./dealer-attendance-format.js";
@@ -34,8 +34,55 @@ function timesNear(a, b) {
   return Math.abs(Number(a) - Number(b)) <= MATCH_TOLERANCE_MS;
 }
 
+function samePickerTime(a, b) {
+  return Number(a) === Number(b);
+}
+
 function fail() {
-  return { ok: false };
+  return { ok: false, log: null };
+}
+
+function buildAttendancePatchForSessionEdit({
+  current = null,
+  prevStart = 0,
+  prevEnd = 0,
+  nextStart = 0,
+  nextEnd = 0,
+  isOpen = false,
+  now = Date.now()
+} = {}) {
+  const patch = {};
+  const checkedInAt = Number(current?.checkedInAt || 0);
+  const checkedOutAt = Number(current?.checkedOutAt || 0);
+
+  if (
+    isOpen &&
+    checkedInAt > 0 &&
+    timesNear(checkedInAt, prevStart) &&
+    isAttendanceFromCurrentOperationalDay({ checkedInAt: nextStart }, now)
+  ) {
+    patch.checkedInAt = nextStart;
+  }
+
+  if (
+    !isOpen &&
+    checkedOutAt > 0 &&
+    timesNear(checkedOutAt, prevEnd) &&
+    isAttendanceFromCurrentOperationalDay({ checkedOutAt: nextEnd }, now)
+  ) {
+    patch.checkedOutAt = nextEnd;
+  }
+
+  if (
+    !isOpen &&
+    checkedInAt > 0 &&
+    timesNear(checkedInAt, prevStart) &&
+    isAttendanceFromCurrentOperationalDay({ checkedInAt: nextStart }, now)
+  ) {
+    patch.checkedInAt = nextStart;
+  }
+
+  return patch;
 }
 
 function validateWorkSessionEdit({
@@ -76,7 +123,7 @@ function validateWorkSessionEdit({
     return null;
   }
 
-  if (timesNear(nextStart, prevStart) && (isOpen || timesNear(nextEnd, prevEnd))) {
+  if (samePickerTime(nextStart, prevStart) && (isOpen || samePickerTime(nextEnd, prevEnd))) {
     return { noop: true, prevStart, prevEnd, nextStart, nextEnd };
   }
 
@@ -109,7 +156,7 @@ export async function adjustMyWorkSession({
     isOpen
   });
   if (!validated) return fail();
-  if (validated.noop) return { ok: true, attendancePatched: false };
+  if (validated.noop) return { ok: true, log: null, attendancePatched: false };
 
   const { prevStart, prevEnd, nextStart, nextEnd } = validated;
   const now = getNowMs();
@@ -117,17 +164,15 @@ export async function adjustMyWorkSession({
   const nickname = String(IX.currentUserProfile.nickname || user.displayName || "").trim();
   const prevSnap = snapshotAttendanceEntry(tournamentId, user.uid);
 
-  const attendancePatch = {};
-  const checkedInAt = Number(current?.checkedInAt || 0);
-
-  if (
-    isOpen &&
-    checkedInAt > 0 &&
-    timesNear(checkedInAt, prevStart) &&
-    isAttendanceFromCurrentOperationalDay({ checkedInAt: nextStart }, now)
-  ) {
-    attendancePatch.checkedInAt = nextStart;
-  }
+  const attendancePatch = buildAttendancePatchForSessionEdit({
+    current,
+    prevStart,
+    prevEnd,
+    nextStart,
+    nextEnd,
+    isOpen,
+    now
+  });
 
   if (Object.keys(attendancePatch).length) {
     applyOptimisticAttendanceEntry(tournamentId, user.uid, {
@@ -176,6 +221,7 @@ export async function adjustMyWorkSession({
 
     return {
       ok: !!log,
+      log,
       attendancePatched: Object.keys(attendancePatch).length > 0
     };
   } catch (err) {
@@ -217,10 +263,37 @@ export async function adjustUserWorkSession({
     isOpen
   });
   if (!validated) return fail();
-  if (validated.noop) return { ok: true, attendancePatched: false };
+  if (validated.noop) return { ok: true, log: null, attendancePatched: false };
 
   const { prevStart, prevEnd, nextStart, nextEnd } = validated;
   const adminName = String(IX.currentUserProfile?.nickname || user.displayName || "").trim();
+  const now = getNowMs();
+  const targetEntry =
+    IX.dealerAttendanceMap.get(getAttendanceDocId(tournamentId, safeUid)) || null;
+  const prevSnap = snapshotAttendanceEntry(tournamentId, safeUid);
+  const attendancePatch = buildAttendancePatchForSessionEdit({
+    current: targetEntry,
+    prevStart,
+    prevEnd,
+    nextStart,
+    nextEnd,
+    isOpen,
+    now
+  });
+
+  if (Object.keys(attendancePatch).length) {
+    applyOptimisticAttendanceEntry(tournamentId, safeUid, {
+      ...(prevSnap || {
+        uid: safeUid,
+        nickname: String(targetNickname || "").trim(),
+        tournamentId,
+        status: targetEntry?.status || "off"
+      }),
+      ...attendancePatch,
+      updatedAt: now
+    });
+  }
+
   const detailParts = [`시작 ${formatClock(prevStart)} → ${formatClock(nextStart)}`];
   if (!isOpen) {
     detailParts.push(`종료 ${formatClock(prevEnd)} → ${formatClock(nextEnd)}`);
@@ -230,6 +303,14 @@ export async function adjustUserWorkSession({
   }
 
   try {
+    if (Object.keys(attendancePatch).length) {
+      await setDoc(
+        getAttendanceRef(tournamentId, safeUid),
+        { ...attendancePatch, updatedAt: now },
+        { merge: true }
+      );
+    }
+
     const log = await writeAttendanceLog({
       uid: safeUid,
       nickname: String(targetNickname || "").trim(),
@@ -243,8 +324,11 @@ export async function adjustUserWorkSession({
       detail: detailParts.join(" · ")
     });
 
-    return { ok: !!log, attendancePatched: false };
+    return { ok: !!log, log, attendancePatched: Object.keys(attendancePatch).length > 0 };
   } catch (err) {
+    if (Object.keys(attendancePatch).length) {
+      restoreAttendanceSnapshot(tournamentId, safeUid, prevSnap);
+    }
     console.error("adjustUserWorkSession error:", err);
     alert("근무 시간 수정에 실패했습니다.");
     return fail();
