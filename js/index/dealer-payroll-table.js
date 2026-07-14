@@ -24,9 +24,12 @@ import { getAdminAttendanceList } from "./dealer-attendance-admin-list.js";
 import { computeMyTournamentWorkSummary } from "./dealer-attendance-work-summary.js";
 import { loadAllPayProfilesForTournament, defaultPayProfile } from "./dealer-pay-profile.js";
 import { buildPayBreakdown, wonLabel } from "./dealer-attendance-pay-calc.js";
+import { formatDuration } from "./dealer-attendance-format.js";
 
 const LOG_FETCH_LIMIT = 5000;
 const XLSX_CDN_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs";
+const PAYROLL_VIEW_PAY = "pay";
+const PAYROLL_VIEW_HOURS = "hours";
 
 async function fetchAllTournamentLogs(tournamentId) {
   try {
@@ -91,6 +94,30 @@ function payForDay(row, key) {
   return found ? found.pay : 0;
 }
 
+function msForDay(row, key) {
+  const found = row.breakdown.days.find((d) => d.key === key);
+  return found ? Math.max(0, Number(found.ms || 0)) : 0;
+}
+
+function workDayCount(row) {
+  return row.breakdown.days.filter((d) => Number(d.ms || 0) > 0).length;
+}
+
+function totalWorkMs(row) {
+  return row.breakdown.days.reduce((sum, d) => sum + Math.max(0, Number(d.ms || 0)), 0);
+}
+
+function hoursDecimal(ms = 0) {
+  const safe = Math.max(0, Number(ms || 0));
+  return Math.round((safe / 3_600_000) * 100) / 100;
+}
+
+function hoursLabel(ms = 0) {
+  const safe = Math.max(0, Number(ms || 0));
+  if (!safe) return "-";
+  return formatDuration(safe);
+}
+
 function filterAndSortRows(rows, keyword = "") {
   const kw = String(keyword || "").trim().toLowerCase();
   return rows
@@ -103,7 +130,8 @@ function renderPayrollTableHtml({
   searchEl,
   payrollRows,
   payrollDayKeys,
-  payrollLoading
+  payrollLoading,
+  viewMode = PAYROLL_VIEW_PAY
 }) {
   if (!bodyEl) return;
 
@@ -119,7 +147,15 @@ function renderPayrollTableHtml({
     return;
   }
 
-  const dayKeys = payrollDayKeys;
+  if (viewMode === PAYROLL_VIEW_HOURS) {
+    bodyEl.innerHTML = renderHoursTableInner(rows, payrollRows, payrollDayKeys);
+    return;
+  }
+
+  bodyEl.innerHTML = renderPayTableInner(rows, payrollRows, payrollDayKeys);
+}
+
+function renderPayTableInner(rows, payrollRows, dayKeys) {
   const headCells = dayKeys
     .map((k) => `<th>${escapeHtml(dayLabelFor(payrollRows, k))}</th>`)
     .join("");
@@ -157,7 +193,7 @@ function renderPayrollTableHtml({
       <td class="payroll-table-grand">${wonLabel(totalGrand)}</td>
     </tr>`;
 
-  bodyEl.innerHTML = `
+  return `
     <div class="payroll-table-wrap">
       <table class="payroll-table">
         <thead>
@@ -178,6 +214,61 @@ function renderPayrollTableHtml({
   `;
 }
 
+function renderHoursTableInner(rows, payrollRows, dayKeys) {
+  const headCells = dayKeys
+    .map((k) => `<th>${escapeHtml(dayLabelFor(payrollRows, k))}</th>`)
+    .join("");
+
+  const bodyRows = rows
+    .map((r) => {
+      const dayCells = dayKeys
+        .map((k) => {
+          const ms = msForDay(r, k);
+          return `<td class="${ms ? "" : "is-zero"}">${escapeHtml(hoursLabel(ms))}</td>`;
+        })
+        .join("");
+      return `
+      <tr>
+        <td class="payroll-table-name">${escapeHtml(r.name)}</td>
+        ${dayCells}
+        <td>${workDayCount(r) ? `${workDayCount(r)}일` : "-"}</td>
+        <td class="payroll-table-grand">${escapeHtml(hoursLabel(totalWorkMs(r)))}</td>
+      </tr>`;
+    })
+    .join("");
+
+  const totalsByDayMs = dayKeys.map((k) => rows.reduce((a, r) => a + msForDay(r, k), 0));
+  const totalDays = rows.reduce((a, r) => a + workDayCount(r), 0);
+  const totalMs = rows.reduce((a, r) => a + totalWorkMs(r), 0);
+
+  const totalsRow = `
+    <tr class="payroll-table-totals">
+      <td>합계</td>
+      ${totalsByDayMs.map((ms) => `<td>${ms ? escapeHtml(hoursLabel(ms)) : "-"}</td>`).join("")}
+      <td>${totalDays ? `${totalDays}일` : "-"}</td>
+      <td class="payroll-table-grand">${escapeHtml(hoursLabel(totalMs))}</td>
+    </tr>`;
+
+  return `
+    <div class="payroll-table-wrap">
+      <table class="payroll-table payroll-table--hours">
+        <thead>
+          <tr>
+            <th class="payroll-table-name">이름</th>
+            ${headCells}
+            <th>근무 일수</th>
+            <th>총 근무 시간</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${bodyRows}
+          ${totalsRow}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 /** 정산일 키(YYYY-MM-DD)를 엑셀 친화적인 파일명 조각으로 */
 function todayStamp() {
   const d = new Date();
@@ -185,6 +276,63 @@ function todayStamp() {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}${m}${day}`;
+}
+
+function buildPaySheetAoa(rows, payrollDayKeys, payrollRows) {
+  const header = [
+    "이름",
+    ...payrollDayKeys.map((k) => dayLabelFor(payrollRows, k)),
+    "부가비용",
+    "근무비 TOTAL",
+    "최종지급액"
+  ];
+
+  const body = rows.map((r) => [
+    r.name,
+    ...payrollDayKeys.map((k) => payForDay(r, k)),
+    r.breakdown.extrasTotal,
+    r.breakdown.workTotal,
+    r.breakdown.grandTotal
+  ]);
+
+  const totalsByDay = payrollDayKeys.map((k) => rows.reduce((a, r) => a + payForDay(r, k), 0));
+  const totalExtras = rows.reduce((a, r) => a + r.breakdown.extrasTotal, 0);
+  const totalWork = rows.reduce((a, r) => a + r.breakdown.workTotal, 0);
+  const totalGrand = rows.reduce((a, r) => a + r.breakdown.grandTotal, 0);
+  body.push(["합계", ...totalsByDay, totalExtras, totalWork, totalGrand]);
+
+  return [header, ...body];
+}
+
+function buildHoursSheetAoa(rows, payrollDayKeys, payrollRows) {
+  const header = [
+    "이름",
+    ...payrollDayKeys.map((k) => `${dayLabelFor(payrollRows, k)} (시간)`),
+    "근무 일수",
+    "총 근무(시간)"
+  ];
+
+  const body = rows.map((r) => [
+    r.name,
+    ...payrollDayKeys.map((k) => {
+      const ms = msForDay(r, k);
+      return ms > 0 ? hoursDecimal(ms) : "";
+    }),
+    workDayCount(r) || "",
+    hoursDecimal(totalWorkMs(r)) || ""
+  ]);
+
+  const totalsByDayMs = payrollDayKeys.map((k) => rows.reduce((a, r) => a + msForDay(r, k), 0));
+  const totalDays = rows.reduce((a, r) => a + workDayCount(r), 0);
+  const totalMs = rows.reduce((a, r) => a + totalWorkMs(r), 0);
+  body.push([
+    "합계",
+    ...totalsByDayMs.map((ms) => (ms > 0 ? hoursDecimal(ms) : "")),
+    totalDays || "",
+    hoursDecimal(totalMs) || ""
+  ]);
+
+  return [header, ...body];
 }
 
 let xlsxModulePromise = null;
@@ -213,44 +361,39 @@ async function exportPayrollExcel(payrollRows, payrollDayKeys, keyword = "") {
 
   const XLSX = await loadXlsxModule();
 
-  const header = [
-    "이름",
-    ...payrollDayKeys.map((k) => dayLabelFor(payrollRows, k)),
-    "부가비용",
-    "근무비 TOTAL",
-    "최종지급액"
-  ];
+  const payAoa = buildPaySheetAoa(rows, payrollDayKeys, payrollRows);
+  const hoursAoa = buildHoursSheetAoa(rows, payrollDayKeys, payrollRows);
 
-  const body = rows.map((r) => [
-    r.name,
-    ...payrollDayKeys.map((k) => payForDay(r, k)),
-    r.breakdown.extrasTotal,
-    r.breakdown.workTotal,
-    r.breakdown.grandTotal
-  ]);
+  const wsPay = XLSX.utils.aoa_to_sheet(payAoa);
+  wsPay["!cols"] = payAoa[0].map((_, i) => ({ wch: i === 0 ? 12 : 13 }));
 
-  const totalsByDay = payrollDayKeys.map((k) => rows.reduce((a, r) => a + payForDay(r, k), 0));
-  const totalExtras = rows.reduce((a, r) => a + r.breakdown.extrasTotal, 0);
-  const totalWork = rows.reduce((a, r) => a + r.breakdown.workTotal, 0);
-  const totalGrand = rows.reduce((a, r) => a + r.breakdown.grandTotal, 0);
-  body.push(["합계", ...totalsByDay, totalExtras, totalWork, totalGrand]);
-
-  const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
-  ws["!cols"] = header.map((_, i) => ({ wch: i === 0 ? 12 : 13 }));
+  const wsHours = XLSX.utils.aoa_to_sheet(hoursAoa);
+  wsHours["!cols"] = hoursAoa[0].map((_, i) => ({ wch: i === 0 ? 12 : 13 }));
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "인건비");
+  XLSX.utils.book_append_sheet(wb, wsPay, "인건비");
+  XLSX.utils.book_append_sheet(wb, wsHours, "근무시간");
 
   const tournamentId = getTournamentId() || "tournament";
   XLSX.writeFile(wb, `한핏_인건비_${tournamentId}_${todayStamp()}.xlsx`);
   return true;
 }
 
-export function createPayrollTableView({ bodyEl, searchEl, exportEl } = {}) {
+export function createPayrollTableView({ bodyEl, searchEl, exportEl, tabsEl } = {}) {
   let payrollRows = [];
   let payrollDayKeys = [];
   let payrollLoading = false;
   let prefetchPromise = null;
+  let viewMode = PAYROLL_VIEW_PAY;
+
+  function syncTabState() {
+    tabsEl?.querySelectorAll("[data-payroll-view]").forEach((btn) => {
+      const active = btn.dataset.payrollView === viewMode;
+      btn.classList.toggle("active", active);
+      btn.classList.toggle("is-active", active);
+      btn.setAttribute("aria-selected", active ? "true" : "false");
+    });
+  }
 
   function renderPayrollTable() {
     renderPayrollTableHtml({
@@ -258,8 +401,10 @@ export function createPayrollTableView({ bodyEl, searchEl, exportEl } = {}) {
       searchEl,
       payrollRows,
       payrollDayKeys,
-      payrollLoading
+      payrollLoading,
+      viewMode
     });
+    syncTabState();
   }
 
   function setLoading() {
@@ -335,6 +480,15 @@ export function createPayrollTableView({ bodyEl, searchEl, exportEl } = {}) {
   }
 
   searchEl?.addEventListener("input", () => renderPayrollTable());
+  tabsEl?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-payroll-view]");
+    if (!btn) return;
+    const next = String(btn.dataset.payrollView || "").trim();
+    if (next !== PAYROLL_VIEW_PAY && next !== PAYROLL_VIEW_HOURS) return;
+    if (next === viewMode) return;
+    viewMode = next;
+    renderPayrollTable();
+  });
   bindExportButton(exportEl);
 
   return {

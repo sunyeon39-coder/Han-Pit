@@ -116,9 +116,10 @@ async function bootstrapPayrollPage(user) {
   const bodyEl = document.getElementById("payrollTableBody");
   const searchEl = document.getElementById("payrollTableSearch");
   const exportEl = document.getElementById("payrollExportBtn");
+  const tabsEl = document.getElementById("payrollViewTabs");
   if (!bodyEl) return;
 
-  const table = createPayrollTableView({ bodyEl, searchEl, exportEl });
+  const table = createPayrollTableView({ bodyEl, searchEl, exportEl, tabsEl });
   table.setLoading();
 
   const profilePromise = loadPayrollUserProfile(user);
