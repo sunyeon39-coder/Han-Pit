@@ -222,6 +222,50 @@ button,
   letter-spacing: -0.03em;
 }
 
+.modal-card {
+  --modal-pad: 24px;
+  max-height: min(88vh, 860px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+}
+
+.modal-backdrop {
+  padding: 16px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 900px) {
+  .modal-backdrop.show {
+    align-items: flex-start;
+  }
+}
+
+.modal-card > h2:first-child {
+  position: sticky;
+  top: calc(var(--modal-pad) * -1);
+  margin: calc(var(--modal-pad) * -1) calc(var(--modal-pad) * -1) 16px;
+  padding: var(--modal-pad) var(--modal-pad) 14px;
+  background: rgba(10, 12, 17, 0.97);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  z-index: 3;
+  box-shadow: 0 12px 18px -12px rgba(0, 0, 0, 0.5);
+}
+
+.attendance-log-head {
+  position: sticky;
+  top: calc(var(--modal-pad) * -1);
+  margin: calc(var(--modal-pad) * -1) calc(var(--modal-pad) * -1) 16px;
+  padding: var(--modal-pad) var(--modal-pad) 14px;
+  background: rgba(10, 12, 17, 0.97);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  z-index: 3;
+}
+
 /* ── Forms ── */
 input,
 select,

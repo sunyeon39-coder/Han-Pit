@@ -1428,6 +1428,7 @@ body {
     max-width: 100%;
     margin: 0;
     padding: 18px;
+    --modal-pad: 18px;
     border-radius: 8px;
     max-height: calc(100dvh - 24px);
     overflow-y: auto;
