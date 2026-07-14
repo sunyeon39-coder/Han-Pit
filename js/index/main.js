@@ -88,6 +88,7 @@ import {
   resetIndexOpsChromeState,
   getIndexHadOps
 } from "./index-ops-chrome.js";
+import { setupPayrollTableEvents } from "./dealer-payroll-table.js";
 
 import { wireSeatMapListeners } from "./seat-map.js";
 import {
@@ -379,6 +380,7 @@ async function init() {
 
   setupAttendanceLogEvents();
   setupWorkSummaryEvents();
+  setupPayrollTableEvents();
 
   applyIndexOpsPermissions(auth.currentUser);
   IX.indexBootComplete = true;
@@ -391,6 +393,7 @@ function wireIndexPageControls() {
   // 동기 와이어링 시점에 먼저 걸어 둔다. (Firestore 정체로 boot가 멈춰도 닫기 동작 보장)
   setupAttendanceLogEvents();
   setupWorkSummaryEvents();
+  setupPayrollTableEvents();
 
   IX.dealerOpsMount?.addEventListener("click", async (e) => {
     const checkInBtn = e.target.closest("[data-edit-check-in]");

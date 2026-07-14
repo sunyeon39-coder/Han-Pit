@@ -325,6 +325,7 @@
       <button id="globalLayoutBtn" class="manage-btn hidden" type="button">통합 배치도</button>
       <button id="eventAdminBtn" class="manage-btn hidden" type="button">카드 관리</button>
       <button id="attendanceLogBtn" class="manage-btn hidden" type="button">운영 로그</button>
+      <button id="payrollTableBtn" class="manage-btn hidden" type="button">인건비</button>
       <button id="seatMapBtn" class="manage-btn" type="button">전체 배치도</button>
     </div>
   </header>
@@ -379,6 +380,19 @@
       <button id="closeWorkSummaryBtn" class="mini-btn" type="button">닫기</button>
     </div>
     <div id="workSummaryBody" class="work-summary-body"></div>
+  </div>
+</div>
+
+<div id="payrollTableModal" class="modal-backdrop">
+  <div class="modal-card payroll-table-card">
+    <div class="attendance-log-head">
+      <h2>전체 인건비 표</h2>
+      <button id="closePayrollTableBtn" class="mini-btn" type="button">닫기</button>
+    </div>
+    <div class="payroll-table-toolbar">
+      <input id="payrollTableSearch" type="text" placeholder="이름 검색" />
+    </div>
+    <div id="payrollTableBody" class="payroll-table-body"></div>
   </div>
 </div>
 

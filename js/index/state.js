@@ -61,6 +61,13 @@ export const IX = {
   /** admin이 타인 근무 합계를 열 때 { uid, nickname } — null 이면 본인 */
   workSummaryTarget: null,
 
+  payrollTableBtn: null,
+  payrollTableModal: null,
+  payrollTableBody: null,
+  payrollTableSearch: null,
+  closePayrollTableBtn: null,
+  payrollTableEventsBound: false,
+
   attendanceLogUi: {
     search: "",
     action: "all",
@@ -135,6 +142,12 @@ export function refreshIndexDomRefs() {
   IX.workSummaryModal = $("workSummaryModal");
   IX.workSummaryBody = $("workSummaryBody");
   IX.closeWorkSummaryBtn = $("closeWorkSummaryBtn");
+
+  IX.payrollTableBtn = $("payrollTableBtn");
+  IX.payrollTableModal = $("payrollTableModal");
+  IX.payrollTableBody = $("payrollTableBody");
+  IX.payrollTableSearch = $("payrollTableSearch");
+  IX.closePayrollTableBtn = $("closePayrollTableBtn");
 
   IX.seatMapOpenEditorBtn = $("seatMapOpenEditorBtn");
   IX.eventAdminModal = $("eventAdminModal");

@@ -94,6 +94,11 @@ service cloud.firestore {
         allow read: if signedIn();
         allow create, update, delete: if isAdmin();
       }
+
+      match /dealer_pay_profiles/{uid} {
+        allow read: if signedIn();
+        allow create, update, delete: if isAdmin();
+      }
     }
 
     match /layout_events/{docId} {

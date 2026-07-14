@@ -27,6 +27,7 @@ export function syncIndexOpsToolbar(canOps) {
     IX.seatMapOpenEditorBtn?.classList.remove("hidden");
     IX.eventAdminBtn?.classList.remove("hidden");
     IX.attendanceLogBtn?.classList.remove("hidden");
+    IX.payrollTableBtn?.classList.remove("hidden");
     if (IX.seatMapOpenEditorBtn) IX.seatMapOpenEditorBtn.dataset.canEdit = "1";
     return;
   }
@@ -37,5 +38,6 @@ export function syncIndexOpsToolbar(canOps) {
   IX.seatMapOpenEditorBtn?.classList.add("hidden");
   IX.eventAdminBtn?.classList.add("hidden");
   IX.attendanceLogBtn?.classList.add("hidden");
+  IX.payrollTableBtn?.classList.add("hidden");
   if (IX.seatMapOpenEditorBtn) IX.seatMapOpenEditorBtn.dataset.canEdit = "0";
 }

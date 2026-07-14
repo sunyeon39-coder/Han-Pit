@@ -2426,3 +2426,98 @@ button.work-summary-time-chip{
   color:var(--text-1);
   outline:none;
 }
+
+/* ============================================================
+   전체 딜러 인건비 표
+   ============================================================ */
+
+.payroll-table-card {
+  max-width: min(960px, 96vw);
+}
+
+.payroll-table-toolbar {
+  margin-bottom: 10px;
+}
+
+.payroll-table-toolbar input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-1);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.payroll-table-body {
+  max-height: 70vh;
+  overflow: auto;
+}
+
+.payroll-table-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-3);
+  padding: 24px 0;
+  text-align: center;
+}
+
+.payroll-table-wrap {
+  overflow-x: auto;
+}
+
+.payroll-table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 640px;
+  font-size: 12px;
+}
+
+.payroll-table th,
+.payroll-table td {
+  padding: 9px 10px;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--text-2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.payroll-table thead th {
+  color: var(--text-3);
+  font-weight: 800;
+  font-size: 11px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.payroll-table td.is-zero {
+  color: var(--text-3);
+}
+
+.payroll-table-name {
+  text-align: left !important;
+  font-weight: 800;
+  color: var(--text-1);
+  position: sticky;
+  left: 0;
+  background: #0c1220;
+}
+
+.payroll-table thead th.payroll-table-name {
+  background: #0c1220;
+}
+
+.payroll-table-grand {
+  color: var(--accent-strong);
+  font-weight: 900;
+}
+
+.payroll-table-totals {
+  font-weight: 900;
+}
+
+.payroll-table-totals td {
+  border-top: 2px solid rgba(255, 255, 255, 0.16);
+  border-bottom: none;
+  color: var(--text-1);
+}
