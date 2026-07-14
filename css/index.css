@@ -2667,8 +2667,8 @@ button.work-summary-time-chip{
   margin-bottom: 10px;
 }
 
+.payroll-page .payroll-table-toolbar input,
 .payroll-table-toolbar input {
-  width: 100%;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--text-1);

@@ -188,9 +188,21 @@ function todayStamp() {
 }
 
 let xlsxModulePromise = null;
+
+function resolveXlsxModule(mod = {}) {
+  if (mod?.utils && typeof mod.writeFile === "function") return mod;
+  if (mod?.default?.utils && typeof mod.default.writeFile === "function") return mod.default;
+  throw new Error("XLSX module unavailable");
+}
+
 function loadXlsxModule() {
   if (!xlsxModulePromise) {
-    xlsxModulePromise = import(XLSX_CDN_URL);
+    xlsxModulePromise = import(/* @vite-ignore */ XLSX_CDN_URL)
+      .then(resolveXlsxModule)
+      .catch((err) => {
+        xlsxModulePromise = null;
+        throw err;
+      });
   }
   return xlsxModulePromise;
 }
@@ -292,7 +304,12 @@ export function createPayrollTableView({ bodyEl, searchEl, exportEl } = {}) {
   }
 
   async function handleExportClick() {
-    if (!exportEl) return;
+    if (!exportEl || exportEl.disabled) return;
+    if (!payrollRows.length) {
+      alert("내보낼 데이터가 없습니다.");
+      return;
+    }
+
     const prevText = exportEl.textContent;
     exportEl.disabled = true;
     exportEl.textContent = "내보내는 중…";
@@ -308,14 +325,25 @@ export function createPayrollTableView({ bodyEl, searchEl, exportEl } = {}) {
     }
   }
 
+  function bindExportButton(el = exportEl) {
+    if (!el || el.dataset.payrollExportBound === "1") return;
+    el.dataset.payrollExportBound = "1";
+    el.addEventListener("click", (e) => {
+      e.preventDefault();
+      void handleExportClick();
+    });
+  }
+
   searchEl?.addEventListener("input", () => renderPayrollTable());
-  exportEl?.addEventListener("click", () => void handleExportClick());
+  bindExportButton(exportEl);
 
   return {
     loadPayrollTable,
     renderPayrollTable,
     prefetchPayrollData,
-    setLoading
+    setLoading,
+    exportPayrollExcel: handleExportClick,
+    bindExportButton
   };
 }
 
