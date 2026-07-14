@@ -13,19 +13,15 @@ import {
   limit
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
-import { escapeHtml, openModal, closeModal } from "../shared/dom-utils.js";
-import { IX, refreshIndexDomRefs } from "./state.js";
+import { escapeHtml } from "../shared/dom-utils.js";
 import { getTournamentId } from "./core-utils.js";
+import { IX, refreshIndexDomRefs } from "./state.js";
 import { getAdminAttendanceList } from "./dealer-attendance-admin-list.js";
 import { computeMyTournamentWorkSummary } from "./dealer-attendance-work-summary.js";
 import { loadAllPayProfilesForTournament, defaultPayProfile } from "./dealer-pay-profile.js";
 import { buildPayBreakdown, wonLabel } from "./dealer-attendance-pay-calc.js";
 
 const LOG_FETCH_LIMIT = 5000;
-
-let payrollRows = [];
-let payrollDayKeys = [];
-let payrollLoading = false;
 
 async function fetchAllTournamentLogs(tournamentId) {
   try {
@@ -90,17 +86,21 @@ function payForDay(row, key) {
   return found ? found.pay : 0;
 }
 
-function renderPayrollTable() {
-  refreshIndexDomRefs();
-  const body = IX.payrollTableBody;
-  if (!body) return;
+function renderPayrollTableHtml({
+  bodyEl,
+  searchEl,
+  payrollRows,
+  payrollDayKeys,
+  payrollLoading
+}) {
+  if (!bodyEl) return;
 
   if (payrollLoading) {
-    body.innerHTML = `<p class="payroll-table-empty">불러오는 중…</p>`;
+    bodyEl.innerHTML = `<p class="payroll-table-empty">불러오는 중…</p>`;
     return;
   }
 
-  const keyword = String(IX.payrollTableSearch?.value || "").trim().toLowerCase();
+  const keyword = String(searchEl?.value || "").trim().toLowerCase();
   const rows = payrollRows
     .filter(
       (r) =>
@@ -111,7 +111,7 @@ function renderPayrollTable() {
     .sort((a, b) => a.name.localeCompare(b.name, "ko"));
 
   if (!rows.length) {
-    body.innerHTML = `<p class="payroll-table-empty">표시할 딜러가 없습니다.</p>`;
+    bodyEl.innerHTML = `<p class="payroll-table-empty">표시할 딜러가 없습니다.</p>`;
     return;
   }
 
@@ -153,7 +153,7 @@ function renderPayrollTable() {
       <td class="payroll-table-grand">${wonLabel(totalGrand)}</td>
     </tr>`;
 
-  body.innerHTML = `
+  bodyEl.innerHTML = `
     <div class="payroll-table-wrap">
       <table class="payroll-table">
         <thead>
@@ -174,50 +174,74 @@ function renderPayrollTable() {
   `;
 }
 
-export async function openPayrollTableModal() {
-  refreshIndexDomRefs();
-  openModal(IX.payrollTableModal);
+export function createPayrollTableView({ bodyEl, searchEl } = {}) {
+  let payrollRows = [];
+  let payrollDayKeys = [];
+  let payrollLoading = false;
 
-  payrollLoading = true;
-  renderPayrollTable();
+  function renderPayrollTable() {
+    renderPayrollTableHtml({
+      bodyEl,
+      searchEl,
+      payrollRows,
+      payrollDayKeys,
+      payrollLoading
+    });
+  }
 
-  const tournamentId = getTournamentId();
-  if (!tournamentId) {
+  async function loadPayrollTable() {
+    payrollLoading = true;
+    renderPayrollTable();
+
+    const tournamentId = getTournamentId();
+    if (!tournamentId) {
+      payrollLoading = false;
+      renderPayrollTable();
+      return;
+    }
+
+    const [logs, profileMap] = await Promise.all([
+      fetchAllTournamentLogs(tournamentId),
+      loadAllPayProfilesForTournament()
+    ]);
+
+    const adminList = getAdminAttendanceList();
+    const logsByUid = groupLogsByUid(logs);
+    payrollRows = buildPayrollRows(adminList, logsByUid, profileMap);
+    payrollDayKeys = collectDayKeys(payrollRows);
+
     payrollLoading = false;
     renderPayrollTable();
-    return;
   }
 
-  const [logs, profileMap] = await Promise.all([
-    fetchAllTournamentLogs(tournamentId),
-    loadAllPayProfilesForTournament()
-  ]);
+  searchEl?.addEventListener("input", () => renderPayrollTable());
 
-  const adminList = getAdminAttendanceList();
-  const logsByUid = groupLogsByUid(logs);
-  payrollRows = buildPayrollRows(adminList, logsByUid, profileMap);
-  payrollDayKeys = collectDayKeys(payrollRows);
-
-  payrollLoading = false;
-  if (IX.payrollTableModal?.classList.contains("show")) {
-    renderPayrollTable();
-  }
+  return {
+    loadPayrollTable,
+    renderPayrollTable
+  };
 }
 
-function closePayrollTableModal() {
-  closeModal(IX.payrollTableModal);
+export function buildPayrollPageHref(tournamentId = "") {
+  const tid = String(tournamentId || getTournamentId() || "").trim();
+  if (!tid) return "./payroll.html";
+  return `./payroll.html?tournamentId=${encodeURIComponent(tid)}`;
 }
 
-export function setupPayrollTableEvents() {
+let payrollPageNavBound = false;
+
+export function setupPayrollPageNav() {
   refreshIndexDomRefs();
-  if (IX.payrollTableEventsBound) return;
-  if (!IX.payrollTableModal) return;
-  IX.payrollTableEventsBound = true;
-
-  IX.payrollTableBtn?.addEventListener("click", () => void openPayrollTableModal());
-  IX.closePayrollTableBtn?.addEventListener("click", closePayrollTableModal);
-  IX.payrollTableModal?.addEventListener("click", (e) => {
-    if (e.target === IX.payrollTableModal) closePayrollTableModal();
+  if (payrollPageNavBound) return;
+  if (!IX.payrollTableBtn) return;
+  payrollPageNavBound = true;
+  IX.payrollTableBtn.addEventListener("click", () => {
+    const tid = getTournamentId();
+    if (!tid) {
+      alert("대회 정보가 없습니다.");
+      return;
+    }
+    sessionStorage.setItem("tournamentId", tid);
+    location.href = buildPayrollPageHref(tid);
   });
-  IX.payrollTableSearch?.addEventListener("input", () => renderPayrollTable());
 }

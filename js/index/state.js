@@ -62,11 +62,6 @@ export const IX = {
   workSummaryTarget: null,
 
   payrollTableBtn: null,
-  payrollTableModal: null,
-  payrollTableBody: null,
-  payrollTableSearch: null,
-  closePayrollTableBtn: null,
-  payrollTableEventsBound: false,
 
   attendanceLogUi: {
     search: "",
@@ -144,10 +139,6 @@ export function refreshIndexDomRefs() {
   IX.closeWorkSummaryBtn = $("closeWorkSummaryBtn");
 
   IX.payrollTableBtn = $("payrollTableBtn");
-  IX.payrollTableModal = $("payrollTableModal");
-  IX.payrollTableBody = $("payrollTableBody");
-  IX.payrollTableSearch = $("payrollTableSearch");
-  IX.closePayrollTableBtn = $("closePayrollTableBtn");
 
   IX.seatMapOpenEditorBtn = $("seatMapOpenEditorBtn");
   IX.eventAdminModal = $("eventAdminModal");

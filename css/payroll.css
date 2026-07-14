@@ -1,0 +1,55 @@
+.payroll-page {
+  max-width: min(1200px, 96vw);
+  margin: 0 auto;
+  padding: 18px 16px 40px;
+  box-sizing: border-box;
+}
+
+.payroll-page-head {
+  margin-bottom: 16px;
+}
+
+.payroll-page-head h1 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: var(--text-1);
+}
+
+.payroll-page-lead {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+
+.payroll-page .payroll-table-body {
+  max-height: none;
+  overflow: visible;
+}
+
+.payroll-page .payroll-table-wrap {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.payroll-page .payroll-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #0c1220;
+}
+
+.payroll-page .payroll-table-name {
+  background: #0c1220;
+}
+
+.payroll-page-denied {
+  margin: 0;
+  padding: 28px 16px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-3);
+}

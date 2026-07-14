@@ -38,7 +38,8 @@ const PAGE_MODULE_ENTRY = {
   "hub.html": "hub.js",
   "layout.html": "layout.js",
   "global-layout.html": "global-layout.js",
-  "login.html": "login.js"
+  "login.html": "login.js",
+  "payroll.html": "payroll.js"
 };
 
 const htmlFiles = readdirSync(root).filter((name) => name.endsWith(".html"));
