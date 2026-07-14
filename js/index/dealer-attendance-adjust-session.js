@@ -13,8 +13,22 @@ import {
   restoreAttendanceSnapshot,
   snapshotAttendanceEntry
 } from "./dealer-attendance-optimistic.js";
+import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
 
 const MATCH_TOLERANCE_MS = 120_000;
+
+function canAdjustAttendanceTimes() {
+  const user = auth.currentUser;
+  const tournamentId = getTournamentId();
+  const t = IX.currentTournament;
+  return canShowTournamentOpsUi(
+    user?.email,
+    IX.currentUserProfile,
+    tournamentId,
+    t ? { id: t.id, name: t.name, logoText: t.logoText } : null,
+    user?.uid
+  );
+}
 
 function timesNear(a, b) {
   return Math.abs(Number(a) - Number(b)) <= MATCH_TOLERANCE_MS;
@@ -81,6 +95,8 @@ export async function adjustMyWorkSession({
   newEndMs = 0,
   isOpen = false
 } = {}) {
+  if (!canAdjustAttendanceTimes()) return fail();
+
   const tournamentId = getTournamentId();
   const user = auth.currentUser;
   if (!user || !tournamentId || !IX.currentUserProfile) return fail();
@@ -186,6 +202,8 @@ export async function adjustUserWorkSession({
   newEndMs = 0,
   isOpen = false
 } = {}) {
+  if (!canAdjustAttendanceTimes()) return fail();
+
   const tournamentId = getTournamentId();
   const user = auth.currentUser;
   const safeUid = String(targetUid || "").trim();

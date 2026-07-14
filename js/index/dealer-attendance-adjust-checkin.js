@@ -14,11 +14,29 @@ import {
 } from "./dealer-attendance-optimistic.js";
 import { getOperationalDayKey } from "../shared/attendance-operational-day.js";
 
+import { getOperationalDayKey } from "../shared/attendance-operational-day.js";
+import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
+
+function canAdjustAttendanceTimes() {
+  const user = auth.currentUser;
+  const tournamentId = getTournamentId();
+  const t = IX.currentTournament;
+  return canShowTournamentOpsUi(
+    user?.email,
+    IX.currentUserProfile,
+    tournamentId,
+    t ? { id: t.id, name: t.name, logoText: t.logoText } : null,
+    user?.uid
+  );
+}
+
 /**
  * 본인 출근 시각(checkedInAt) 수정 + 운영 로그 기록
  * @returns {boolean} 성공 여부
  */
 export async function adjustMyCheckedInAt(newCheckedInAtMs) {
+  if (!canAdjustAttendanceTimes()) return false;
+
   const tournamentId = getTournamentId();
   const user = auth.currentUser;
   if (!user || !tournamentId || !IX.currentUserProfile) return false;
@@ -107,6 +125,8 @@ export async function adjustMyCheckedInAt(newCheckedInAtMs) {
  * @returns {boolean} 성공 여부
  */
 export async function adjustMyCheckedOutAt(newCheckedOutAtMs) {
+  if (!canAdjustAttendanceTimes()) return false;
+
   const tournamentId = getTournamentId();
   const user = auth.currentUser;
   if (!user || !tournamentId || !IX.currentUserProfile) return false;

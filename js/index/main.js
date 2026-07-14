@@ -399,6 +399,21 @@ function wireIndexPageControls() {
     const user = auth.currentUser;
     if (!user) return;
 
+    const tid = getTournamentId();
+    const t = IX.currentTournament;
+    const tournamentMeta = t ? { id: t.id, name: t.name, logoText: t.logoText } : null;
+    if (
+      !canShowTournamentOpsUi(
+        user.email,
+        IX.currentUserProfile,
+        tid,
+        tournamentMeta,
+        user.uid
+      )
+    ) {
+      return;
+    }
+
     const me = getDerivedAttendance(user);
     const now = getNowMs();
     const isCheckIn = !!checkInBtn;

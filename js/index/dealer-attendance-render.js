@@ -231,8 +231,9 @@ export function renderDealerOps() {
 
   const myCheckInText = formatClockOrDash(me?.checkedInAt);
   const myCheckOutText = formatClockOrDash(me?.checkedOutAt);
-  const canEditCheckIn = Boolean(me?.checkedInAt) && myStatus !== "off";
-  const canEditCheckOut = Boolean(me?.checkedOutAt) && myStatus === "checked_out";
+  const canEditSelfCheckTimes = false;
+  const canEditCheckIn = canEditSelfCheckTimes && Boolean(me?.checkedInAt) && myStatus !== "off";
+  const canEditCheckOut = canEditSelfCheckTimes && Boolean(me?.checkedOutAt) && myStatus === "checked_out";
 
   let adminHtml = "";
 
@@ -330,7 +331,7 @@ export function renderDealerOps() {
               </button>`
             : `<div class="dealer-time-chip">
                 <span class="dealer-time-chip-label">출근</span>
-                <span class="dealer-time-chip-value">${escapeHtml(myCheckInText)}</span>
+                <span class="dealer-time-chip-value">${escapeHtml(me?.checkedInAt ? formatDatetimeKorean(me.checkedInAt) : myCheckInText)}</span>
               </div>`
         }
 
@@ -349,7 +350,7 @@ export function renderDealerOps() {
               </button>`
             : `<div class="dealer-time-chip">
                 <span class="dealer-time-chip-label">퇴근</span>
-                <span class="dealer-time-chip-value">${escapeHtml(myCheckOutText)}</span>
+                <span class="dealer-time-chip-value">${escapeHtml(me?.checkedOutAt ? formatDatetimeKorean(me.checkedOutAt) : myCheckOutText)}</span>
               </div>`
         }
       </div>
