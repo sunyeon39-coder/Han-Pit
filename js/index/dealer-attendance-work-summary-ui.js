@@ -112,6 +112,14 @@ function canEditWorkSummaryPay() {
   );
 }
 
+function canEditWorkSummarySessions() {
+  return canEditWorkSummaryPay();
+}
+
+function canViewWorkSummaryPay() {
+  return Boolean(getWorkSummaryContext()?.uid);
+}
+
 function resetWorkSummaryPayState() {
   workSummaryPayProfile = null;
   workSummaryPayLoadState = "idle";
@@ -369,7 +377,26 @@ function syncWorkSummaryModalTitle(ctx) {
   titleEl.textContent = "대회 근무 합계";
 }
 
-function renderWorkSummarySessionRow(session) {
+function renderWorkSummaryTimeChip(field, label, valueLabel, editable) {
+  if (editable) {
+    return `<button
+        type="button"
+        class="work-summary-time-chip work-summary-time-chip--editable"
+        data-session-picker="${field}"
+        title="탭하여 ${escapeHtml(label)} 시각 수정"
+      >
+        <span class="work-summary-time-chip-label">${escapeHtml(label)}</span>
+        <span class="work-summary-time-chip-value">${valueLabel}</span>
+      </button>`;
+  }
+
+  return `<div class="work-summary-time-chip">
+      <span class="work-summary-time-chip-label">${escapeHtml(label)}</span>
+      <span class="work-summary-time-chip-value">${valueLabel}</span>
+    </div>`;
+}
+
+function renderWorkSummarySessionRow(session, canEditSessions = false) {
   const sessionKey = escapeHtml(String(session.sessionKey || ""));
   const startLabel = escapeHtml(formatDatetimeKorean(session.startMs));
   const endLabel = escapeHtml(formatDatetimeKorean(session.endMs));
@@ -378,15 +405,7 @@ function renderWorkSummarySessionRow(session) {
 
   const endControl = session.open
     ? `<span class="work-summary-session-open-label">진행 중</span>`
-    : `<button
-        type="button"
-        class="work-summary-time-chip work-summary-time-chip--editable"
-        data-session-picker="end"
-        title="탭하여 종료 시각 수정"
-      >
-        <span class="work-summary-time-chip-label">종료</span>
-        <span class="work-summary-time-chip-value">${endLabel}</span>
-      </button>`;
+    : renderWorkSummaryTimeChip("end", "종료", endLabel, canEditSessions);
 
   return `
     <li
@@ -397,15 +416,7 @@ function renderWorkSummarySessionRow(session) {
       data-open="${open}"
     >
       <div class="work-summary-session-edit">
-        <button
-          type="button"
-          class="work-summary-time-chip work-summary-time-chip--editable"
-          data-session-picker="start"
-          title="탭하여 시작 시각 수정"
-        >
-          <span class="work-summary-time-chip-label">시작</span>
-          <span class="work-summary-time-chip-value">${startLabel}</span>
-        </button>
+        ${renderWorkSummaryTimeChip("start", "시작", startLabel, canEditSessions)}
         <span class="work-summary-time-sep">~</span>
         ${endControl}
         ${session.open ? `<span class="work-summary-open-badge">근무 중</span>` : ""}
@@ -432,20 +443,22 @@ function renderWorkSummaryModal() {
   const logs = logsForWorkSummaryUid(ctx.uid);
   const summary = computeMyTournamentWorkSummary({ uid: ctx.uid }, logs, derived);
 
+  const canEditPay = canEditWorkSummaryPay();
+  const canEditSessions = canEditWorkSummarySessions();
+  const canViewPay = canViewWorkSummaryPay();
+  const payProfile = workSummaryPayProfile || defaultPayProfile(ctx.uid);
+  const payBreakdown = buildPayBreakdown(summary.sessions, payProfile);
+  const paySection =
+    !canViewPay || workSummaryPayLoadState === "idle"
+      ? ""
+      : renderWorkSummaryPaySection(payProfile, payBreakdown, canEditPay);
+
   const sessionRows =
     summary.sessions.length === 0
       ? `<p class="work-summary-empty">이 대회에서 집계된 근무 기록이 없습니다.</p>`
       : `<ul class="work-summary-sessions">
-          ${summary.sessions.map((s) => renderWorkSummarySessionRow(s)).join("")}
+          ${summary.sessions.map((s) => renderWorkSummarySessionRow(s, canEditSessions)).join("")}
         </ul>`;
-
-  const canEditPay = canEditWorkSummaryPay();
-  const payProfile = workSummaryPayProfile || defaultPayProfile(ctx.uid);
-  const payBreakdown = buildPayBreakdown(summary.sessions, payProfile);
-  const paySection =
-    workSummaryPayLoadState === "idle"
-      ? ""
-      : renderWorkSummaryPaySection(payProfile, payBreakdown, canEditPay);
 
   body.innerHTML = `
     <div class="work-summary-metrics">
@@ -502,6 +515,7 @@ async function openWorkSummaryModal() {
 }
 
 async function applyWorkSummarySessionTime(row, field, pickedMs) {
+  if (!canEditWorkSummarySessions()) return;
   if (!row || !Number.isFinite(pickedMs) || pickedMs <= 0) return;
 
   const ctx = getWorkSummaryContext();
@@ -548,6 +562,8 @@ async function applyWorkSummarySessionTime(row, field, pickedMs) {
 }
 
 async function handleWorkSummarySessionPickerClick(e) {
+  if (!canEditWorkSummarySessions()) return;
+
   const btn = e.target.closest("[data-session-picker]");
   if (!btn) return;
 
