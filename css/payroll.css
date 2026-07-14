@@ -6,22 +6,15 @@
 }
 
 .payroll-page-head {
-  margin-bottom: 16px;
+  margin-bottom: 10px;
 }
 
 .payroll-page-head h1 {
-  margin: 0 0 6px;
+  margin: 0;
   font-size: 22px;
   font-weight: 900;
   letter-spacing: -0.02em;
   color: var(--text-1);
-}
-
-.payroll-page-lead {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--text-3);
 }
 
 .payroll-view-tabs {
@@ -101,10 +94,6 @@
 /* payroll.html 가독성 + 엑셀 버튼 */
 .payroll-page-head h1 {
   font-size: 25px;
-}
-
-.payroll-page-lead {
-  font-size: 14.5px;
 }
 
 .payroll-page .payroll-table-toolbar {

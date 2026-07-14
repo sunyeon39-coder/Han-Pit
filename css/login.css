@@ -259,25 +259,8 @@ body {
   display: block;
   width: min(280px, 90%);
   height: 2px;
-  margin: 14px auto 0;
+  margin: 14px auto 24px;
   background: linear-gradient(90deg, transparent, var(--amber), transparent);
-}
-
-.subtitle {
-  position: relative;
-  z-index: 1;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  text-align: center;
-  color: var(--text-2);
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  margin-bottom: 30px;
-}
-
-.subtitle::before {
-  content: "// ";
-  color: var(--amber);
 }
 
 /* --- Angular, precision-cut CTA button --- */
@@ -314,15 +297,6 @@ body {
   opacity: 0.5;
   cursor: not-allowed;
   filter: none;
-}
-
-.login-desc {
-  position: relative;
-  z-index: 1;
-  text-align: center;
-  margin-top: 18px;
-  font-size: 13px;
-  color: var(--text-3);
 }
 
 /* --- Signup modal, same terminal language --- */
@@ -436,11 +410,6 @@ body {
 
   .logo.logo--mark .app-mark-img {
     max-height: clamp(104px, 42vmin, 168px);
-  }
-
-  .subtitle {
-    font-size: 11px;
-    letter-spacing: 0.16em;
   }
 
   .signup-card {

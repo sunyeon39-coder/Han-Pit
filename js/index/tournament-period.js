@@ -56,7 +56,6 @@ function showMissingTournamentOnIndex() {
     IX.root.innerHTML = `
       <section class="index-boot-card" role="alert">
         <h2 class="index-boot-title">대회를 찾을 수 없습니다</h2>
-        <p class="index-boot-desc">Firestore에 해당 대회가 없거나 아직 동기화되지 않았습니다. 허브에서 대회를 다시 저장·선택해 주세요.</p>
         <a class="manage-btn index-boot-btn" href="${escapeHtml(hubHref)}">Han Pit 허브로 이동</a>
       </section>`;
   }

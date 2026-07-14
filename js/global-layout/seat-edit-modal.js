@@ -116,8 +116,7 @@ function renderEventList(els, events, currentId) {
     const empty = document.createElement("li");
     empty.className = "global-seat-edit-modal__select-empty is-muted";
     empty.setAttribute("role", "presentation");
-    empty.textContent =
-      "운영일(06:00~익일 05:59)에 해당하는 카드가 없습니다. index에서 해당 날짜 카드를 만드세요.";
+    empty.textContent = "—";
     els.eventList.appendChild(empty);
     return;
   }

@@ -348,10 +348,6 @@
       aria-labelledby="globalSeatEditTitle"
     >
       <h2 id="globalSeatEditTitle" class="global-seat-edit-modal__title">Seat 수정</h2>
-      <p class="global-seat-edit-modal__hint">
-        <strong>카드</strong>는 목록에서 다른 이벤트 카드로 바꿀 수 있고, <strong>Box ID</strong>는 필요 시 수정할 수 있습니다. 카드/Box를 바꾸면 저장 후
-        <code>layout.html</code> 배치로 이동할지 묻습니다.
-      </p>
       <p class="global-seat-edit-modal__meta global-seat-edit-modal__meta--id">
         Seat ID: <code id="globalSeatEditSeatIdDisplay"></code>
       </p>
@@ -413,7 +409,7 @@
     >
       <h2 id="globalSeatHistoryTitle" class="global-seat-edit-modal__title">Seat 배치 이력</h2>
       <p id="globalSeatHistoryCardId" class="global-seat-edit-modal__meta global-seat-edit-modal__meta--id"></p>
-      <p id="globalSeatHistoryEmpty" class="global-seat-history-empty muted" hidden>아직 저장된 배치 이력이 없습니다.</p>
+      <p id="globalSeatHistoryEmpty" class="global-seat-history-empty muted" hidden></p>
       <ul id="globalSeatHistoryList" class="global-seat-history-list"></ul>
       <div class="global-seat-edit-modal__actions">
         <button type="button" class="global-seat-edit-modal__btn global-seat-edit-modal__btn--primary" data-close-seat-history>
@@ -432,10 +428,6 @@
       aria-labelledby="globalMobileSeatAddTitle"
     >
       <h2 id="globalMobileSeatAddTitle" class="global-seat-edit-modal__title">Seat 추가</h2>
-      <p class="global-seat-edit-modal__hint">
-        <strong>카드 ID</strong>는 index「카드 관리」에 보이는 값입니다. <strong>Box ID</strong>는 layout 주소창의
-        <code>boxId</code>와 같아야 합니다.
-      </p>
       <div class="global-seat-edit-modal__fields">
         <label class="global-seat-edit-modal__label" for="globalMobileSeatAddLabel">Seat 라벨</label>
         <input

@@ -478,12 +478,6 @@ export function wireSeatMapListeners() {
     void loadSeatMapLayout()
       .then(() => {
         renderSeatMap();
-        if (!IX.seatMapLayout.length && IX.seatMapCanvas) {
-          const hint = document.createElement("p");
-          hint.className = "seat-map-empty-hint";
-          hint.textContent = "저장된 Seat이 없습니다. 맵 편집에서 Seat을 추가해 주세요.";
-          IX.seatMapCanvas.appendChild(hint);
-        }
         requestAnimationFrame(() => {
           focusSeatMapViewportTopLeft(IX.seatMapScroll);
         });

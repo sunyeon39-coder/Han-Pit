@@ -335,10 +335,6 @@ async function init() {
       IX.root.innerHTML = `
         <section class="index-boot-card" role="status">
           <h2 class="index-boot-title">대회가 선택되지 않았습니다</h2>
-          <p class="index-boot-desc">
-            URL에 <code>tournamentId</code>가 없거나 세션이 비어 있습니다.
-            허브에서 대회 카드를 눌러 들어오거나 아래 버튼으로 이동해 주세요.
-          </p>
           <a class="manage-btn index-boot-btn" href="${escapeHtml(hubHref)}">Han Pit 허브로 이동</a>
         </section>`;
     }

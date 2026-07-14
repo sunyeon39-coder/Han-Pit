@@ -143,8 +143,6 @@ export function createLayoutPcPanelRender(deps) {
     if (canManageLayout()) {
       html.push(`<input id="waitNameInput" placeholder="-" />`);
       html.push(`<button id="addWaitBtn" class="btn primary" style="width:100%; margin-bottom:12px;">+ 대기 추가</button>`);
-    } else {
-      html.push(`<div class="badge" style="margin-bottom:12px;">대기 관리는 운영 권한이 필요합니다</div>`);
     }
 
     if (displayWaiting.length === 0) {

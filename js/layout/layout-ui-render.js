@@ -20,7 +20,6 @@ export function createLayoutUiRender(deps) {
       <div class="row">
         <div class="left">
           <div style="font-weight:900;">준비중</div>
-          <div class="badge">여기는 나중에 Box 기능 붙이면 됩니다</div>
         </div>
       </div>
     `;

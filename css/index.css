@@ -182,31 +182,16 @@ body {
 }
 
 .index-boot-title {
-  margin: 0 0 12px;
+  margin: 0 0 16px;
   font-size: 20px;
   font-weight: 900;
   letter-spacing: -0.02em;
   color: rgba(247, 248, 252, 0.98);
 }
 
-.index-boot-desc {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.55;
-  color: var(--text-3);
-}
-
-.index-boot-desc code {
-  font-size: 12px;
-  padding: 1px 6px;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.25);
-  color: rgba(247, 248, 252, 0.9);
-}
-
 .index-boot-btn {
   display: inline-flex;
-  margin-top: 18px;
+  margin-top: 0;
   text-decoration: none;
   align-items: center;
   justify-content: center;
@@ -658,13 +643,6 @@ body {
   font-size: 14px;
 }
 
-.seat-map-kicker {
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: .2em;
-  color: var(--accent-strong);
-}
-
 .seat-map-legend {
   display: flex;
   flex-wrap: wrap;
@@ -920,17 +898,6 @@ body {
   margin: 0;
   font-size: 14px;
   color: rgba(255, 255, 255, 0.82);
-}
-
-.seat-map-empty-hint{
-  position: absolute;
-  left: 24px;
-  top: 24px;
-  margin: 0;
-  max-width: min(420px, 90%);
-  font-size: 14px;
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.62);
 }
 
 .seat-map-scroll::-webkit-scrollbar{
@@ -1230,12 +1197,6 @@ body {
   font-weight:900;
   letter-spacing:-.03em;
   line-height:1.1;
-}
-
-.dealer-ops-sub{
-  font-size:12px;
-  color:var(--text-3);
-  margin-top:4px;
 }
 
 .dealer-status-pill{
@@ -1555,13 +1516,6 @@ button.dealer-time-chip--editable{
   letter-spacing:-.02em;
 }
 
-.work-summary-hint{
-  margin:0;
-  font-size:12px;
-  line-height:1.5;
-  color:var(--text-3);
-}
-
 .work-summary-sessions{
   list-style:none;
   margin:0;
@@ -1701,8 +1655,7 @@ button.work-summary-time-chip{
   color:var(--text-1);
 }
 
-.work-summary-pay-loading,
-.work-summary-pay-hint{
+.work-summary-pay-loading{
   margin:0;
   font-size:12px;
   line-height:1.5;
@@ -1764,13 +1717,6 @@ button.work-summary-time-chip{
   font-weight:800;
 }
 
-.work-summary-pay-tax-note{
-  margin:0 0 4px;
-  font-size:12px;
-  line-height:1.45;
-  color:var(--text-3);
-}
-
 .work-summary-pay-extras-head{
   display:flex;
   align-items:center;
@@ -1815,12 +1761,6 @@ button.work-summary-time-chip{
   border-radius:10px;
   background:rgba(255,255,255,.03);
   font-size:13px;
-}
-
-.work-summary-pay-extras-empty{
-  margin:0;
-  font-size:12px;
-  color:var(--text-3);
 }
 
 .work-summary-pay-readonly{
@@ -2194,10 +2134,6 @@ button.work-summary-time-chip{
     font-size:16px;
   }
 
-  .dealer-ops-sub{
-    font-size:11px;
-  }
-
   .dealer-admin-summary{
     display:grid;
     grid-template-columns: repeat(3, minmax(0,1fr));
@@ -2319,13 +2255,6 @@ button.work-summary-time-chip{
   margin-bottom:12px;
 }
 
-.attendance-log-summary{
-  font-size:13px;
-  font-weight:700;
-  color:var(--text-3);
-  margin-bottom:12px;
-}
-
 /* ===============================
    ATTENDANCE LOG MODAL
 =============================== */
@@ -2367,13 +2296,6 @@ button.work-summary-time-chip{
 
 .attendance-log-toolbar input::placeholder{
   color:rgba(255,255,255,.45);
-}
-
-.attendance-log-summary{
-  font-size:13px;
-  font-weight:700;
-  color:rgba(255,255,255,.62);
-  margin-bottom:12px;
 }
 
 .attendance-log-list{

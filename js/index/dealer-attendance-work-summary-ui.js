@@ -295,18 +295,13 @@ function renderWorkSummaryPaySection(profile, breakdown, canEdit) {
           <input type="number" data-pay-daily min="0" step="1000" value="${dailyRate || ""}" />
         </label>
       </div>
-      <p class="work-summary-pay-tax-note">시급·일급 근무비는 프리랜서 원천징수 3.3%가 자동 차감됩니다.</p>
       <div class="work-summary-pay-extras">
         <div class="work-summary-pay-extras-head">
           <span>부가비용</span>
           <button type="button" class="mini-btn" data-pay-extra-add>+ 추가</button>
         </div>
         <ul class="work-summary-pay-extras-list" data-pay-extras-list>
-          ${
-            extras.length
-              ? extras.map((item) => renderPayExtraRow(item, true)).join("")
-              : `<li class="work-summary-pay-extras-empty">등록된 부가비용이 없습니다.</li>`
-          }
+          ${extras.map((item) => renderPayExtraRow(item, true)).join("")}
         </ul>
       </div>`
     : `
@@ -343,11 +338,6 @@ function renderWorkSummaryPaySection(profile, breakdown, canEdit) {
       <div class="work-summary-pay-breakdown" data-pay-breakdown>
         ${renderPayBreakdownHtml(breakdown, profile)}
       </div>
-      ${
-        canEdit
-          ? `<p class="work-summary-pay-hint">저장하면 전체 인건비 표에도 같은 금액이 반영됩니다.</p>`
-          : ""
-      }
     </section>`;
 }
 
@@ -449,10 +439,6 @@ function renderWorkSummaryModal() {
           ${summary.sessions.map((s) => renderWorkSummarySessionRow(s)).join("")}
         </ul>`;
 
-  const hint = ctx.isAdminTarget
-    ? "운영 로그 기준 누적입니다. 시작·종료를 탭해 수정하면 해당 직원의 근무 합계에 반영됩니다."
-    : "시작·종료를 탭해 스크롤로 시각을 고르고 확인을 누르면 누적에 반영됩니다.";
-
   const canEditPay = canEditWorkSummaryPay();
   const payProfile = workSummaryPayProfile || defaultPayProfile(ctx.uid);
   const payBreakdown = buildPayBreakdown(summary.sessions, payProfile);
@@ -473,7 +459,6 @@ function renderWorkSummaryModal() {
       </div>
     </div>
     ${paySection}
-    <p class="work-summary-hint">${escapeHtml(hint)}</p>
     ${sessionRows}
   `;
 }
@@ -655,11 +640,6 @@ function handleWorkSummaryPayExtraRemove(btn) {
   if (!body || !row) return;
 
   row.remove();
-
-  const list = body.querySelector("[data-pay-extras-list]");
-  if (list && !list.querySelector("[data-pay-extra-row]")) {
-    list.innerHTML = `<li class="work-summary-pay-extras-empty">등록된 부가비용이 없습니다.</li>`;
-  }
 
   updateWorkSummaryPayBreakdown(body, getWorkSummarySessionsForPay());
 }

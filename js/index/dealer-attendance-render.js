@@ -245,7 +245,6 @@ export function renderDealerOps() {
       <div class="dealer-ops-head">
         <div>
           <div class="dealer-ops-title">딜러 운영 현황</div>
-          <div class="dealer-ops-sub">현재 대회 기준 실시간 출근 / 대기 / 배치 상태</div>
         </div>
         <button class="dealer-toggle-btn" data-dealer-toggle>▲</button>
       </div>
@@ -262,7 +261,6 @@ export function renderDealerOps() {
         <div class="dealer-ops-head">
   <div>
     <div class="dealer-ops-title">딜러 운영 현황</div>
-    <div class="dealer-ops-sub">현재 대회 기준 실시간 출근 / 대기 / 배치 상태</div>
   </div>
 
   <button class="dealer-toggle-btn" data-dealer-toggle>
@@ -309,7 +307,6 @@ export function renderDealerOps() {
     <div class="dealer-ops-head">
       <div>
         <div class="dealer-ops-title">내 근무 상태</div>
-        <div class="dealer-ops-sub">현재 대회 기준 출근 / 퇴근 관리</div>
       </div>
       <span class="dealer-status-pill ${escapeHtml(myStatus)}">
         ${escapeHtml(getAttendanceStatusLabel(myStatus))}

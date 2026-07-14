@@ -192,7 +192,6 @@ export function createLayoutSeatNotifyController({
     overlay.innerHTML = `
       <div class="modal-card sound-card">
         <div class="modal-title">알림 소리 활성화</div>
-        <div class="modal-text">배치 알림 시 소리가 반복 재생되도록 활성화합니다.</div>
         <div class="modal-actions">
           <button id="soundEnableBtn" class="btn primary">활성화</button>
           <button id="soundCloseBtn" class="btn">닫기</button>

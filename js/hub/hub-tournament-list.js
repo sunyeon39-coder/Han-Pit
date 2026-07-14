@@ -16,29 +16,12 @@ function buildHubEmptyStateHtml(isAdmin) {
     ? `<div class="hub-empty-actions">
         <button type="button" class="hub-empty-cta" data-hub-empty-admin>대회 추가 · 접근 관리 열기</button>
       </div>`
-    : `<p class="hub-empty-muted hub-empty-muted--user">운영진이 대회를 등록하면 이곳에 카드가 표시됩니다.</p>`;
+    : "";
 
   return `
     <div class="hub-empty-state">
-      <div class="hub-empty-glow" aria-hidden="true"></div>
-      <div class="hub-empty-orbit" aria-hidden="true"></div>
-      <p class="hub-empty-kicker">HAN Pit Hub</p>
       <h2 class="hub-empty-title">표시할 대회가 아직 없습니다</h2>
-      <p class="hub-empty-lead">
-        토너먼트가 등록되면 카드가 나타나고, 입장 가능한 대회는 <strong>자세히 보기</strong>로
-        일정·박스 화면으로 이동할 수 있어요.
-      </p>
-      <ul class="hub-empty-features" aria-label="주요 기능">
-        <li><span class="hub-empty-chip hub-empty-chip--gold">출석</span> 딜러 체크인 · 대기</li>
-        <li><span class="hub-empty-chip hub-empty-chip--blue">배치</span> 좌석 · 대기열 운영</li>
-        <li><span class="hub-empty-chip hub-empty-chip--mint">알림</span> 배치·상태 안내</li>
-      </ul>
       ${adminActions}
-      <div class="hub-empty-deco" aria-hidden="true">
-        <span class="hub-empty-card hub-empty-card--a"></span>
-        <span class="hub-empty-card hub-empty-card--b"></span>
-        <span class="hub-empty-card hub-empty-card--c"></span>
-      </div>
     </div>
   `;
 }

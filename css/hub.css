@@ -233,7 +233,7 @@ body {
   width: 100%;
   max-width: 520px;
   margin: 0 auto;
-  padding: 36px 28px 40px;
+  padding: 24px 20px;
   text-align: center;
   border-radius: 6px;
   border: 1px solid var(--line);
@@ -591,13 +591,6 @@ body {
 .top-btn--ops-admin {
   border-color: var(--amber-dim);
   box-shadow: 0 0 0 1px rgba(255, 176, 32, 0.2);
-}
-
-.profile-role-hint {
-  margin: 0 0 14px;
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--amber-strong);
 }
 
 .event-right {
@@ -1608,12 +1601,6 @@ body {
   width: min(580px, 94vw);
   max-height: min(92dvh, 920px);
   overflow-y: auto;
-}
-
-.han-support-lead {
-  margin: 0 0 18px;
-  font-size: 13px;
-  line-height: 1.45;
 }
 
 .han-support-card textarea {

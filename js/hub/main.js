@@ -176,14 +176,6 @@ profileBtn?.addEventListener("click", () => {
   if (hubRefs.profileEmail) hubRefs.profileEmail.value = user.email || "";
   if (hubRefs.profileNickname) hubRefs.profileNickname.value = profile.nickname || "";
   if (hubRefs.profileAccessCode) hubRefs.profileAccessCode.value = profile.accessCode || "";
-  const role = String(profile.role || "user").trim();
-  const opsHint = hubRefs.profileModal?.querySelector("[data-profile-role-hint]");
-  if (opsHint) {
-    opsHint.textContent =
-      role === "admin"
-        ? "권한: 운영 admin (직접 허용 — 대회 카드에서「자세히 보기」 후 운영 메뉴 사용)"
-        : `권한: ${role}`;
-  }
   openModal(hubRefs.profileModal);
 });
 

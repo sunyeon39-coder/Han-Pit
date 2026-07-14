@@ -324,11 +324,10 @@
   <div id="hanSupportModal" class="modal-backdrop">
     <div class="modal-card han-support-card">
       <h2>HAN 지원</h2>
-      <p class="han-support-lead muted">아래 정보를 입력해 제출해 주세요. 운영진이 확인합니다.</p>
 
       <form id="hanSupportForm">
         <div class="form-group">
-          <label for="hanName">이름 <span class="muted">(로그인 계정, 수정 불가)</span></label>
+          <label for="hanName">이름</label>
           <input
             id="hanName"
             name="name"
@@ -368,16 +367,15 @@
           <input id="hanPhone" name="phone" type="tel" required maxlength="40" autocomplete="tel" placeholder="010-0000-0000" />
         </div>
         <div class="form-group">
-          <label for="hanExperience">경력 <span class="muted">(150자 이내)</span></label>
+          <label for="hanExperience">경력</label>
           <textarea
             id="hanExperience"
             name="experience"
             rows="4"
             required
             maxlength="150"
-            placeholder="지원동기 및 경력 을 간단히 적어 주세요."
+            placeholder="-"
           ></textarea>
-          <div class="han-exp-count muted"><span id="hanExperienceCount">0</span> / 150</div>
         </div>
         <div class="modal-actions">
           <button id="hanSupportCloseBtn" class="btn ghost" type="button">닫기</button>
@@ -386,7 +384,7 @@
       </form>
 
       <div id="hanSupportAdminWrap" class="han-support-admin hidden" aria-hidden="true">
-        <h3 class="han-support-admin-title">지원 내역 <span class="muted">(관리자 전용)</span></h3>
+        <h3 class="han-support-admin-title">지원 내역</h3>
         <div id="hanSupportAdminList" class="han-support-admin-list"></div>
       </div>
     </div>
@@ -396,7 +394,6 @@
   <div id="profileModal" class="modal-backdrop">
     <div class="modal-card">
       <h2>내 프로필</h2>
-      <p class="profile-role-hint" data-profile-role-hint></p>
 
       <div class="form-group">
         <label for="profileEmail">이메일</label>
