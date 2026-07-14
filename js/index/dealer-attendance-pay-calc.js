@@ -1,5 +1,20 @@
 import { getOperationalDayKey } from "../shared/attendance-operational-day.js";
 
+/** 프리랜서 사업소득 원천징수 (소득세 3% + 지방소득세 0.3%) */
+export const FREELANCER_WITHHOLDING_RATE = 0.033;
+
+export function freelancerWithholdingAmount(gross = 0) {
+  const safe = Math.max(0, Math.round(Number(gross || 0)));
+  if (!safe) return 0;
+  return Math.floor(safe * FREELANCER_WITHHOLDING_RATE);
+}
+
+export function applyFreelancerWithholding(gross = 0) {
+  const safe = Math.max(0, Math.round(Number(gross || 0)));
+  if (!safe) return 0;
+  return safe - freelancerWithholdingAmount(safe);
+}
+
 function sessionDurationMs(session = {}) {
   if (Number.isFinite(session?.durationMs)) return Math.max(0, Number(session.durationMs));
   const startMs = Number(session?.startMs || 0);
@@ -46,20 +61,28 @@ export function buildPayBreakdown(sessions = [], profile = {}) {
 
   const msByDay = collectMsByOperationalDay(sessions);
   const days = [];
+  let grossWorkTotal = 0;
+  let withholdingTotal = 0;
   let workTotal = 0;
 
   for (const [key, ms] of [...msByDay.entries()].sort()) {
-    let pay = 0;
+    let grossPay = 0;
     if (payMode === "daily") {
-      pay = ms > 0 ? dailyRate : 0;
+      grossPay = ms > 0 ? dailyRate : 0;
     } else {
-      pay = Math.round((ms / 3_600_000) * hourlyRate);
+      grossPay = Math.round((ms / 3_600_000) * hourlyRate);
     }
+    const withholding = freelancerWithholdingAmount(grossPay);
+    const pay = applyFreelancerWithholding(grossPay);
+    grossWorkTotal += grossPay;
+    withholdingTotal += withholding;
     workTotal += pay;
     days.push({
       key,
       label: formatSettlementDayLabel(key),
       ms,
+      grossPay,
+      withholding,
       pay
     });
   }
@@ -67,6 +90,8 @@ export function buildPayBreakdown(sessions = [], profile = {}) {
   return {
     days,
     extrasTotal,
+    grossWorkTotal,
+    withholdingTotal,
     workTotal,
     grandTotal: workTotal + extrasTotal
   };

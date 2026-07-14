@@ -137,6 +137,7 @@ async function bootstrapPayrollPage(user) {
 
   await dataPromise;
   await table.loadPayrollTable();
+  table.bindViewTabs(document.getElementById("payrollViewTabs"));
   table.bindExportButton(document.getElementById("payrollExportBtn"));
 }
 

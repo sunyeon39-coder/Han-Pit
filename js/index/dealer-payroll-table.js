@@ -386,13 +386,25 @@ export function createPayrollTableView({ bodyEl, searchEl, exportEl, tabsEl } = 
   let prefetchPromise = null;
   let viewMode = PAYROLL_VIEW_PAY;
 
+  function resolveTabsEl() {
+    return tabsEl || document.getElementById("payrollViewTabs");
+  }
+
   function syncTabState() {
-    tabsEl?.querySelectorAll("[data-payroll-view]").forEach((btn) => {
+    resolveTabsEl()?.querySelectorAll("[data-payroll-view]").forEach((btn) => {
       const active = btn.dataset.payrollView === viewMode;
       btn.classList.toggle("active", active);
       btn.classList.toggle("is-active", active);
       btn.setAttribute("aria-selected", active ? "true" : "false");
     });
+  }
+
+  function setViewMode(next) {
+    const mode = String(next || "").trim();
+    if (mode !== PAYROLL_VIEW_PAY && mode !== PAYROLL_VIEW_HOURS) return;
+    if (mode === viewMode) return;
+    viewMode = mode;
+    renderPayrollTable();
   }
 
   function renderPayrollTable() {
@@ -479,16 +491,19 @@ export function createPayrollTableView({ bodyEl, searchEl, exportEl, tabsEl } = 
     });
   }
 
+  function bindViewTabs(el = resolveTabsEl()) {
+    if (!el || el.dataset.payrollTabsBound === "1") return;
+    el.dataset.payrollTabsBound = "1";
+    el.querySelectorAll("[data-payroll-view]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        setViewMode(btn.dataset.payrollView);
+      });
+    });
+  }
+
   searchEl?.addEventListener("input", () => renderPayrollTable());
-  tabsEl?.addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-payroll-view]");
-    if (!btn) return;
-    const next = String(btn.dataset.payrollView || "").trim();
-    if (next !== PAYROLL_VIEW_PAY && next !== PAYROLL_VIEW_HOURS) return;
-    if (next === viewMode) return;
-    viewMode = next;
-    renderPayrollTable();
-  });
+  bindViewTabs();
   bindExportButton(exportEl);
 
   return {
@@ -497,7 +512,8 @@ export function createPayrollTableView({ bodyEl, searchEl, exportEl, tabsEl } = 
     prefetchPayrollData,
     setLoading,
     exportPayrollExcel: handleExportClick,
-    bindExportButton
+    bindExportButton,
+    bindViewTabs
   };
 }
 

@@ -1764,6 +1764,13 @@ button.work-summary-time-chip{
   font-weight:800;
 }
 
+.work-summary-pay-tax-note{
+  margin:0 0 4px;
+  font-size:12px;
+  line-height:1.45;
+  color:var(--text-3);
+}
+
 .work-summary-pay-extras-head{
   display:flex;
   align-items:center;
@@ -1892,6 +1899,14 @@ button.work-summary-time-chip{
   font-size:14px;
   font-weight:900;
   color:var(--text-1);
+}
+
+.work-summary-pay-total-row.is-deduction{
+  color:#ffb4b4;
+}
+
+.work-summary-pay-total-row.is-deduction strong{
+  color:#ff9a9a;
 }
 
 .work-summary-pay-total-row.is-grand{

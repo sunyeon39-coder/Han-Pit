@@ -201,6 +201,19 @@ function renderPayBreakdownHtml(breakdown, profile = {}) {
         : ""
     }
     <div class="work-summary-pay-totals">
+      ${
+        breakdown.withholdingTotal > 0
+          ? `
+      <div class="work-summary-pay-total-row">
+        <span>근무비 TOTAL (세전)</span>
+        <strong>${escapeHtml(wonLabel(breakdown.grossWorkTotal))}</strong>
+      </div>
+      <div class="work-summary-pay-total-row is-deduction">
+        <span>원천징수 3.3%</span>
+        <strong>-${escapeHtml(wonLabel(breakdown.withholdingTotal))}</strong>
+      </div>`
+          : ""
+      }
       <div class="work-summary-pay-total-row">
         <span>근무비 TOTAL</span>
         <strong>${escapeHtml(wonLabel(breakdown.workTotal))}</strong>
@@ -282,6 +295,7 @@ function renderWorkSummaryPaySection(profile, breakdown, canEdit) {
           <input type="number" data-pay-daily min="0" step="1000" value="${dailyRate || ""}" />
         </label>
       </div>
+      <p class="work-summary-pay-tax-note">시급·일급 근무비는 프리랜서 원천징수 3.3%가 자동 차감됩니다.</p>
       <div class="work-summary-pay-extras">
         <div class="work-summary-pay-extras-head">
           <span>부가비용</span>
