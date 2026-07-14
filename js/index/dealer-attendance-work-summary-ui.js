@@ -553,6 +553,8 @@ async function applyWorkSummarySessionTime(row, field, pickedMs) {
     isOpen
   };
 
+  const previousMs = field === "start" ? previousStartMs : previousEndMs;
+
   const result = ctx.isAdminTarget
     ? await adjustUserWorkSession({
         targetUid: ctx.uid,
@@ -563,6 +565,11 @@ async function applyWorkSummarySessionTime(row, field, pickedMs) {
 
   if (!result?.ok) {
     alert("근무 시간 수정에 실패했습니다.");
+    return;
+  }
+
+  if (!result.log && pickedMs !== previousMs) {
+    alert("선택한 시간이 반영되지 않았습니다. 다시 시도해 주세요.");
     return;
   }
 

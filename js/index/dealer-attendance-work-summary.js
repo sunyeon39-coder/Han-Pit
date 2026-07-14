@@ -40,6 +40,13 @@ function findSessionForAdjustment(sessions, adj = {}) {
   const prevEnd = Number(adj.previousSessionEndMs || 0);
   if (!prevStart) return -1;
 
+  const exact = sessions.findIndex((s) => {
+    if (Number(s.startMs) !== prevStart) return false;
+    if (s.open) return true;
+    return Number(s.endMs) === prevEnd;
+  });
+  if (exact >= 0) return exact;
+
   return sessions.findIndex((s) => {
     if (!Number.isFinite(Number(s.startMs))) return false;
     if (Math.abs(Number(s.startMs) - prevStart) > 120_000) return false;

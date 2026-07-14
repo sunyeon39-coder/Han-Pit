@@ -110,16 +110,15 @@ function finishPick(value) {
   resolve?.(value);
 }
 
-function getCenteredItem(col) {
-  const rect = col.getBoundingClientRect();
-  const centerY = rect.top + rect.height / 2;
+function getSelectedItem(col) {
+  if (!col) return null;
+  const targetCenter = col.scrollTop + COL_H / 2;
   const items = col.querySelectorAll(".dt-scroll-item");
   let best = null;
   let bestDist = Infinity;
   items.forEach((item) => {
-    const ir = item.getBoundingClientRect();
-    const iy = ir.top + ir.height / 2;
-    const dist = Math.abs(iy - centerY);
+    const itemCenter = item.offsetTop + ITEM_H / 2;
+    const dist = Math.abs(itemCenter - targetCenter);
     if (dist < bestDist) {
       bestDist = dist;
       best = item;
@@ -128,16 +127,25 @@ function getCenteredItem(col) {
   return best;
 }
 
+function getCenteredItem(col) {
+  return getSelectedItem(col);
+}
+
 function scrollItemToCenter(col, item) {
   if (!col || !item) return;
   const offset = item.offsetTop - (COL_H / 2 - ITEM_H / 2);
   col.scrollTop = Math.max(0, offset);
 }
 
+function snapColumn(col) {
+  const selected = getSelectedItem(col);
+  if (selected) scrollItemToCenter(col, selected);
+  return selected;
+}
+
 function snapAllColumns(sheet) {
   sheet.querySelectorAll(".dt-scroll-col").forEach((col) => {
-    const centered = getCenteredItem(col);
-    if (centered) scrollItemToCenter(col, centered);
+    snapColumn(col);
   });
 }
 
@@ -146,7 +154,7 @@ function readPickerParts(sheet) {
   const parts = {};
   sheet.querySelectorAll(".dt-scroll-col").forEach((col) => {
     const key = col.dataset.part;
-    const item = getCenteredItem(col);
+    const item = getSelectedItem(col);
     const raw = item?.dataset.value ?? "";
     parts[key] = key === "ampm" ? String(raw) : Number(raw);
   });
@@ -174,6 +182,9 @@ function buildColumn(part, items, selectedValue) {
         ? String(item.value) === String(selectedValue)
         : Number(item.value) === Number(selectedValue);
     if (selected) btn.dataset.selected = "1";
+    btn.addEventListener("click", () => {
+      scrollItemToCenter(col, btn);
+    });
     col.appendChild(btn);
   }
 
@@ -184,8 +195,7 @@ function buildColumn(part, items, selectedValue) {
   col.addEventListener("scroll", () => {
     if (scrollTimer) clearTimeout(scrollTimer);
     scrollTimer = setTimeout(() => {
-      const centered = getCenteredItem(col);
-      if (centered) scrollItemToCenter(col, centered);
+      snapColumn(col);
     }, 80);
   });
 
