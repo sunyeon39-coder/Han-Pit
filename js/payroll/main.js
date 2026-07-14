@@ -98,6 +98,13 @@ function wirePayrollPageNav() {
   });
 }
 
+/**
+ * 속도 개선: 권한 확인(loadPayrollUserProfile)과 데이터 로딩(출석·로스터·로그·인건비설정)을
+ * 동시에 시작합니다. 서로 결과가 필요 없는 독립적인 Firestore 조회이기 때문에, 이전처럼
+ * "프로필 확인 → 출석/로스터 → 로그/인건비설정" 순서로 기다리지 않고 한 번에 병렬로 실행해
+ * 첫 화면이 뜨기까지의 시간을 단축합니다. 권한이 없는 것으로 확인되면 미리 받아둔 데이터는
+ * 그냥 버립니다(화면에 그리지 않음).
+ */
 async function bootstrapPayrollPage(user) {
   const tournamentId = ensureTournamentContextOrAlert();
   if (!tournamentId) return;
@@ -106,19 +113,28 @@ async function bootstrapPayrollPage(user) {
   seedIndexTournamentMetaFromHubCache();
   syncPayrollTopbarTitle();
 
-  await loadPayrollUserProfile(user);
+  const bodyEl = document.getElementById("payrollTableBody");
+  const searchEl = document.getElementById("payrollTableSearch");
+  const exportEl = document.getElementById("payrollExportBtn");
+  if (!bodyEl) return;
+
+  const table = createPayrollTableView({ bodyEl, searchEl, exportEl });
+  table.setLoading();
+
+  const profilePromise = loadPayrollUserProfile(user);
+  const dataPromise = Promise.all([
+    loadDealerAttendanceOnce(),
+    loadTournamentDealerRosterOnce(),
+    table.prefetchPayrollData(tournamentId)
+  ]);
+
+  await profilePromise;
   if (!canAccessPayrollPage(user)) {
     showPayrollDenied();
     return;
   }
 
-  await Promise.all([loadDealerAttendanceOnce(), loadTournamentDealerRosterOnce()]);
-
-  const bodyEl = document.getElementById("payrollTableBody");
-  const searchEl = document.getElementById("payrollTableSearch");
-  if (!bodyEl) return;
-
-  const table = createPayrollTableView({ bodyEl, searchEl });
+  await dataPromise;
   await table.loadPayrollTable();
 }
 

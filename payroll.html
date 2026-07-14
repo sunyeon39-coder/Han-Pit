@@ -254,6 +254,12 @@
   <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin />
   <link rel="dns-prefetch" href="https://www.gstatic.com" />
   <link rel="modulepreload" href="./js/payroll.js?v=20260714162250" crossorigin />
+  <link rel="modulepreload" href="./js/payroll/main.js?v=20260714162250" crossorigin />
+  <link rel="modulepreload" href="./js/index/dealer-payroll-table.js?v=20260714162250" crossorigin />
+  <link rel="modulepreload" href="./js/index/dealer-attendance-load-once.js?v=20260714162250" crossorigin />
+  <link rel="modulepreload" href="./js/index/dealer-attendance-roster.js?v=20260714162250" crossorigin />
+  <link rel="modulepreload" href="./js/index/dealer-attendance-admin-list.js?v=20260714162250" crossorigin />
+  <link rel="modulepreload" href="./js/shared/tournament-ops-access.js?v=20260714162250" crossorigin />
   <!-- /han-pit-perf-hints -->
   <meta charset="UTF-8" />
   <meta
@@ -317,6 +323,7 @@
     </div>
     <div class="payroll-table-toolbar">
       <input id="payrollTableSearch" type="text" placeholder="이름 검색" />
+      <button id="payrollExportBtn" class="mini-btn payroll-export-btn" type="button">엑셀 다운로드</button>
     </div>
     <div id="payrollTableBody" class="payroll-table-body"></div>
   </main>

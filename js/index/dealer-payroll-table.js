@@ -2,6 +2,10 @@
  * 전체 딜러 인건비 표 — 대회 전체 딜러의 정산일별 인건비를 한 화면에서 봅니다.
  * dealer_attendance_logs 를 대회 전체로 한 번에 불러와 딜러별로 묶은 뒤,
  * 이미 만들어둔 computeMyTournamentWorkSummary / buildPayBreakdown 을 그대로 재사용합니다.
+ *
+ * 속도: 로그/인건비설정 조회(prefetchPayrollData)는 출석·로스터 로딩과 서로 의존성이 없으므로
+ * main.js 에서 동시에 시작합니다 — 두 그룹의 Firestore 조회를 순차가 아니라 병렬로 실행해
+ * 첫 렌더까지의 대기 시간을 줄입니다.
  */
 import { db } from "../firebase.js";
 import {
@@ -22,6 +26,7 @@ import { loadAllPayProfilesForTournament, defaultPayProfile } from "./dealer-pay
 import { buildPayBreakdown, wonLabel } from "./dealer-attendance-pay-calc.js";
 
 const LOG_FETCH_LIMIT = 5000;
+const XLSX_CDN_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs";
 
 async function fetchAllTournamentLogs(tournamentId) {
   try {
@@ -86,6 +91,13 @@ function payForDay(row, key) {
   return found ? found.pay : 0;
 }
 
+function filterAndSortRows(rows, keyword = "") {
+  const kw = String(keyword || "").trim().toLowerCase();
+  return rows
+    .filter((r) => !kw || r.name.toLowerCase().includes(kw) || r.email.toLowerCase().includes(kw))
+    .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+}
+
 function renderPayrollTableHtml({
   bodyEl,
   searchEl,
@@ -100,15 +112,7 @@ function renderPayrollTableHtml({
     return;
   }
 
-  const keyword = String(searchEl?.value || "").trim().toLowerCase();
-  const rows = payrollRows
-    .filter(
-      (r) =>
-        !keyword ||
-        r.name.toLowerCase().includes(keyword) ||
-        r.email.toLowerCase().includes(keyword)
-    )
-    .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  const rows = filterAndSortRows(payrollRows, searchEl?.value || "");
 
   if (!rows.length) {
     bodyEl.innerHTML = `<p class="payroll-table-empty">표시할 딜러가 없습니다.</p>`;
@@ -174,10 +178,67 @@ function renderPayrollTableHtml({
   `;
 }
 
-export function createPayrollTableView({ bodyEl, searchEl } = {}) {
+/** 정산일 키(YYYY-MM-DD)를 엑셀 친화적인 파일명 조각으로 */
+function todayStamp() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}${m}${day}`;
+}
+
+let xlsxModulePromise = null;
+function loadXlsxModule() {
+  if (!xlsxModulePromise) {
+    xlsxModulePromise = import(XLSX_CDN_URL);
+  }
+  return xlsxModulePromise;
+}
+
+async function exportPayrollExcel(payrollRows, payrollDayKeys, keyword = "") {
+  const rows = filterAndSortRows(payrollRows, keyword);
+  if (!rows.length) return false;
+
+  const XLSX = await loadXlsxModule();
+
+  const header = [
+    "이름",
+    ...payrollDayKeys.map((k) => dayLabelFor(payrollRows, k)),
+    "부가비용",
+    "근무비 TOTAL",
+    "최종지급액"
+  ];
+
+  const body = rows.map((r) => [
+    r.name,
+    ...payrollDayKeys.map((k) => payForDay(r, k)),
+    r.breakdown.extrasTotal,
+    r.breakdown.workTotal,
+    r.breakdown.grandTotal
+  ]);
+
+  const totalsByDay = payrollDayKeys.map((k) => rows.reduce((a, r) => a + payForDay(r, k), 0));
+  const totalExtras = rows.reduce((a, r) => a + r.breakdown.extrasTotal, 0);
+  const totalWork = rows.reduce((a, r) => a + r.breakdown.workTotal, 0);
+  const totalGrand = rows.reduce((a, r) => a + r.breakdown.grandTotal, 0);
+  body.push(["합계", ...totalsByDay, totalExtras, totalWork, totalGrand]);
+
+  const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
+  ws["!cols"] = header.map((_, i) => ({ wch: i === 0 ? 12 : 13 }));
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "인건비");
+
+  const tournamentId = getTournamentId() || "tournament";
+  XLSX.writeFile(wb, `한핏_인건비_${tournamentId}_${todayStamp()}.xlsx`);
+  return true;
+}
+
+export function createPayrollTableView({ bodyEl, searchEl, exportEl } = {}) {
   let payrollRows = [];
   let payrollDayKeys = [];
   let payrollLoading = false;
+  let prefetchPromise = null;
 
   function renderPayrollTable() {
     renderPayrollTableHtml({
@@ -187,6 +248,25 @@ export function createPayrollTableView({ bodyEl, searchEl } = {}) {
       payrollDayKeys,
       payrollLoading
     });
+  }
+
+  function setLoading() {
+    payrollLoading = true;
+    renderPayrollTable();
+  }
+
+  /**
+   * dealer_attendance_logs / dealer_pay_profiles 조회를 즉시 시작합니다.
+   * getAdminAttendanceList() 에 필요한 출석·로스터 로딩과는 서로 무관하므로
+   * 호출자(main.js)가 이 두 그룹을 동시에 시작해 대기 시간을 줄일 수 있습니다.
+   */
+  function prefetchPayrollData(tournamentId = getTournamentId()) {
+    if (!prefetchPromise) {
+      prefetchPromise = tournamentId
+        ? Promise.all([fetchAllTournamentLogs(tournamentId), loadAllPayProfilesForTournament()])
+        : Promise.resolve([[], new Map()]);
+    }
+    return prefetchPromise;
   }
 
   async function loadPayrollTable() {
@@ -200,10 +280,7 @@ export function createPayrollTableView({ bodyEl, searchEl } = {}) {
       return;
     }
 
-    const [logs, profileMap] = await Promise.all([
-      fetchAllTournamentLogs(tournamentId),
-      loadAllPayProfilesForTournament()
-    ]);
+    const [logs, profileMap] = await prefetchPayrollData(tournamentId);
 
     const adminList = getAdminAttendanceList();
     const logsByUid = groupLogsByUid(logs);
@@ -214,11 +291,31 @@ export function createPayrollTableView({ bodyEl, searchEl } = {}) {
     renderPayrollTable();
   }
 
+  async function handleExportClick() {
+    if (!exportEl) return;
+    const prevText = exportEl.textContent;
+    exportEl.disabled = true;
+    exportEl.textContent = "내보내는 중…";
+    try {
+      const ok = await exportPayrollExcel(payrollRows, payrollDayKeys, searchEl?.value || "");
+      if (!ok) alert("내보낼 데이터가 없습니다.");
+    } catch (err) {
+      console.warn("payroll excel export:", err);
+      alert("엑셀 파일을 만드는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.");
+    } finally {
+      exportEl.disabled = false;
+      exportEl.textContent = prevText;
+    }
+  }
+
   searchEl?.addEventListener("input", () => renderPayrollTable());
+  exportEl?.addEventListener("click", () => void handleExportClick());
 
   return {
     loadPayrollTable,
-    renderPayrollTable
+    renderPayrollTable,
+    prefetchPayrollData,
+    setLoading
   };
 }
 
