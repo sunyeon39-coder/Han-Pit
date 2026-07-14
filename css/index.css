@@ -1517,7 +1517,7 @@ button.dealer-time-chip--editable{
 }
 
 .work-summary-card{
-  max-width:min(480px, 96vw);
+  max-width:min(560px, 96vw);
 }
 
 .work-summary-body{
@@ -1677,6 +1677,234 @@ button.work-summary-time-chip{
   margin:0;
   font-size:13px;
   color:var(--text-3);
+}
+
+.work-summary-pay{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  padding-top:4px;
+  border-top:1px solid rgba(255,255,255,.08);
+}
+
+.work-summary-pay-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+
+.work-summary-pay-head h3{
+  margin:0;
+  font-size:14px;
+  font-weight:900;
+  color:var(--text-1);
+}
+
+.work-summary-pay-loading,
+.work-summary-pay-hint{
+  margin:0;
+  font-size:12px;
+  line-height:1.5;
+  color:var(--text-3);
+}
+
+.work-summary-pay-mode{
+  display:flex;
+  gap:12px;
+}
+
+.work-summary-pay-mode-option{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  font-size:13px;
+  font-weight:800;
+  color:var(--text-2);
+}
+
+.work-summary-pay-rates{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+}
+
+.work-summary-pay-rate{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  padding:10px 12px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.03);
+  opacity:.72;
+}
+
+.work-summary-pay-rate.is-active{
+  opacity:1;
+  border-color:rgba(61,219,196,.35);
+  background:rgba(61,219,196,.08);
+}
+
+.work-summary-pay-rate span{
+  font-size:11px;
+  font-weight:800;
+  color:var(--text-3);
+}
+
+.work-summary-pay-rate input{
+  width:100%;
+  box-sizing:border-box;
+  background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.08);
+  color:var(--text-1);
+  border-radius:10px;
+  padding:8px 10px;
+  font-size:13px;
+  font-weight:800;
+}
+
+.work-summary-pay-extras-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:8px;
+  font-size:12px;
+  font-weight:800;
+  color:var(--text-2);
+}
+
+.work-summary-pay-extras-list{
+  list-style:none;
+  margin:0;
+  padding:0;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+.work-summary-pay-extra-row{
+  display:grid;
+  grid-template-columns:1fr 120px auto;
+  gap:8px;
+  align-items:center;
+}
+
+.work-summary-pay-extra-row input{
+  width:100%;
+  box-sizing:border-box;
+  background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.08);
+  color:var(--text-1);
+  border-radius:10px;
+  padding:8px 10px;
+  font-size:13px;
+}
+
+.work-summary-pay-extra-row.is-readonly{
+  grid-template-columns:1fr auto;
+  padding:8px 10px;
+  border-radius:10px;
+  background:rgba(255,255,255,.03);
+  font-size:13px;
+}
+
+.work-summary-pay-extras-empty{
+  margin:0;
+  font-size:12px;
+  color:var(--text-3);
+}
+
+.work-summary-pay-readonly{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+.work-summary-pay-readonly-line{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin:0;
+  font-size:13px;
+  color:var(--text-2);
+}
+
+.work-summary-pay-readonly-line strong{
+  color:var(--text-1);
+}
+
+.work-summary-pay-breakdown{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+.work-summary-pay-breakdown-table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:12px;
+}
+
+.work-summary-pay-breakdown-table th,
+.work-summary-pay-breakdown-table td{
+  padding:8px 10px;
+  border-bottom:1px solid rgba(255,255,255,.06);
+  color:var(--text-2);
+}
+
+.work-summary-pay-breakdown-table th{
+  text-align:left;
+  font-size:11px;
+  font-weight:800;
+  color:var(--text-3);
+}
+
+.work-summary-pay-breakdown-table td:last-child,
+.work-summary-pay-breakdown-table th:last-child{
+  text-align:right;
+}
+
+.work-summary-pay-breakdown-empty{
+  text-align:center !important;
+  color:var(--text-3) !important;
+}
+
+.work-summary-pay-totals{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  padding-top:4px;
+}
+
+.work-summary-pay-total-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  font-size:13px;
+  color:var(--text-2);
+}
+
+.work-summary-pay-total-row strong{
+  font-size:14px;
+  font-weight:900;
+  color:var(--text-1);
+}
+
+.work-summary-pay-total-row.is-grand{
+  margin-top:4px;
+  padding-top:8px;
+  border-top:1px solid rgba(255,255,255,.1);
+  font-weight:800;
+  color:var(--text-1);
+}
+
+.work-summary-pay-total-row.is-grand strong{
+  font-size:16px;
+  color:#bdf5ec;
 }
 
 .dealer-action-btn{

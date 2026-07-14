@@ -1,5 +1,11 @@
 import { db } from "../firebase.js";
-import { collection, doc, getDocs, setDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { getTournamentId } from "./core-utils.js";
 
 export function defaultPayProfile(uid = "") {
@@ -31,6 +37,21 @@ function normalizePayProfile(raw = {}, uid = "") {
     dailyRate: Math.max(0, Number(raw?.dailyRate || 0) || 0),
     extras
   };
+}
+
+export async function loadPayProfile(uid = "", tournamentId = "") {
+  const safeUid = String(uid || "").trim();
+  const tid = String(tournamentId || getTournamentId() || "").trim();
+  if (!safeUid || !tid) return defaultPayProfile(safeUid);
+
+  try {
+    const snap = await getDoc(doc(db, "tournaments", tid, "dealer_pay_profiles", safeUid));
+    if (!snap.exists()) return defaultPayProfile(safeUid);
+    return normalizePayProfile(snap.data() || {}, safeUid);
+  } catch (err) {
+    console.warn("loadPayProfile:", err?.code || err);
+    return defaultPayProfile(safeUid);
+  }
 }
 
 export async function loadAllPayProfilesForTournament(tournamentId = "") {
