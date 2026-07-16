@@ -25,7 +25,7 @@ import {
 } from "./fs-layout-projection.js";
 import { getEventCardIdFromRecord } from "../shared/tournament-event-instance.js";
 import { buildSeatAssignedNotifyMessage } from "../shared/seat-notification-label.js";
-import { rebuildWaitingAfterSeatToWait, resolveReturnToWaitingJoinMs } from "./fs-waiting-merge.js";
+import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
 import { pushGlobalUndo } from "./undo-stack.js";
 import { captureSeatShellSnapshot } from "./utils.js";
 import { clearMyWaitingPick, applyOptimisticMyWaitingPick } from "./waiting-picks.js";
@@ -321,24 +321,13 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
           break;
         }
         if (!bumpedPrevHasOtherSeat) {
-          const returnJoin = resolveReturnToWaitingJoinMs(
-            waitingArr,
-            GL.tournamentId,
-            { uid: prevUid, email: prevEmail, name: prevName },
-            now,
-            GL.attendanceByUid
-          );
-          swapReturnedJoinedAt = returnJoin;
+          swapReturnedJoinedAt = now;
           nextWaiting = rebuildWaitingAfterSeatToWait(
             nextWaiting,
             GL.tournamentId,
             { uid: prevUid, email: prevEmail, name: prevName },
-            returnJoin,
-            {
-              source: "seat_swap",
-              preserveJoinedAt: returnJoin,
-              attendanceByUid: GL.attendanceByUid
-            }
+            now,
+            { source: "seat_swap", resetJoinedAt: true }
           );
         }
       }

@@ -7,7 +7,7 @@ import { renderSeats, refreshGlobalLayoutPcOpsPanel, invalidateWaitingPanelFinge
 import { renderGlobalLayoutMobile } from "./mobile-panel-render.js";
 import { getCurrentTournamentWaiting } from "./waiting.js";
 import { isEmptyPerson } from "./utils.js";
-import { rebuildWaitingAfterSeatToWait, resolveReturnToWaitingJoinMs } from "./fs-waiting-merge.js";
+import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
 import { isPersonSeatedInGlobalSeats } from "./waiting.js";
 import { personIdentityMatches } from "../shared/tournament-waiting-queue.js";
 import {
@@ -122,19 +122,12 @@ export function applyOptimisticAssign({ targetSeatId, waiting, seat }) {
     const bumpedPrevHasOtherSeat = others.some((s) => !isEmptyPerson(String(s?.person || "").trim()));
 
     if (!bumpedPrevHasOtherSeat) {
-      const returnJoin = resolveReturnToWaitingJoinMs(
-        snapshot.globalWaiting,
-        GL.tournamentId,
-        prevPerson,
-        now,
-        GL.attendanceByUid
-      );
       GL.globalWaiting = rebuildWaitingAfterSeatToWait(
         GL.globalWaiting,
         GL.tournamentId,
         prevPerson,
-        returnJoin,
-        { source: "seat_swap", preserveJoinedAt: returnJoin, attendanceByUid: GL.attendanceByUid }
+        now,
+        { source: "seat_swap", resetJoinedAt: true }
       );
     }
   }

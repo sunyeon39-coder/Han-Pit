@@ -349,7 +349,7 @@ function syncGlobalWaitingFromPayload(payload = {}, mode = "undo") {
       GL.tournamentId,
       { uid: prevUid, email: prevEmail, name: prevName },
       bumpJoinedAt,
-      { source: "seat_swap" }
+      { source: "seat_swap", resetJoinedAt: true }
     );
   }
 
@@ -596,7 +596,7 @@ async function redoAssignPayload(payload) {
         GL.tournamentId,
         { uid: prevUid, email: prevEmail, name: prevName },
         bumpJoinedAt,
-        { source: "seat_swap" }
+        { source: "seat_swap", resetJoinedAt: true }
       );
     }
 
