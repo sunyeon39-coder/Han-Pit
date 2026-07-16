@@ -10,23 +10,12 @@ import {
   waitingPersonIdentityKey,
   personIdentityMatches
 } from "../shared/tournament-waiting-queue.js";
-import { waitingRowMatchesPerson } from "./fs-waiting-merge.js";
 import { fmtElapsed, isEmptyPerson, makeUid, timerClass, toMillis } from "./utils.js";
 import { bumpGlobalLayoutDataRevision } from "./realtime-ui.js";
 
 function toPositiveMs(v) {
   const ms = toMillis(v);
   return Number.isFinite(ms) && ms > 0 ? Math.floor(ms) : 0;
-}
-
-function waitingPersonIdentityKey(raw = {}) {
-  const uid = String(raw?.uid || "").trim();
-  const email = String(raw?.email || "").trim().toLowerCase();
-  const name = String(raw?.name || raw?.nickname || "").trim();
-  if (uid) return `uid:${uid}`;
-  if (email) return `email:${email}`;
-  if (name) return `name:${name}`;
-  return "";
 }
 
 function isSameWaitingPerson(a = {}, b = {}) {
