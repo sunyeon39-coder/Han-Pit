@@ -3,9 +3,10 @@ import {
   collection,
   doc,
   getDocs,
-  writeBatch,
-  runTransaction
+  writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
+import { runSerializedGlobalWaitingWrite } from "../global-layout/global-waiting-write-lock.js";
 
 const LAYOUT_EVENTS_REF = collection(db, "layout_events");
 const GLOBAL_WAITING_REF = doc(db, "layout_shared", "global_waiting");
@@ -22,7 +23,7 @@ export async function removeUserFromEventWaiting(user, selectedTournamentId = ""
   try {
     let removedCount = 0;
 
-    await runTransaction(db, async (tx) => {
+    await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
       const snap = await tx.get(GLOBAL_WAITING_REF);
       if (!snap.exists()) return;
 
@@ -66,7 +67,7 @@ export async function removeUserFromEventWaiting(user, selectedTournamentId = ""
           { merge: true }
         );
       }
-    });
+    }));
 
     return removedCount;
   } catch (err) {

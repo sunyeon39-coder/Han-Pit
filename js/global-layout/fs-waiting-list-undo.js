@@ -2,7 +2,6 @@ import { db } from "../firebase.js";
 import {
   deleteDoc,
   doc,
-  runTransaction,
   setDoc,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
@@ -357,15 +356,17 @@ function syncGlobalWaitingFromPayload(payload = {}, mode = "undo") {
 }
 
 export async function updateGlobalWaiting(nextWaiting = []) {
-  await setDoc(
-    doc(db, "layout_shared", "global_waiting"),
-    {
-      version: 2,
-      waiting: nextWaiting,
-      updatedAt: Date.now(),
-      updatedAtServer: serverTimestamp()
-    },
-    { merge: true }
+  await runSerializedGlobalWaitingWrite(() =>
+    setDoc(
+      doc(db, "layout_shared", "global_waiting"),
+      {
+        version: 2,
+        waiting: nextWaiting,
+        updatedAt: Date.now(),
+        updatedAtServer: serverTimestamp()
+      },
+      { merge: true }
+    )
   );
 }
 
@@ -378,7 +379,7 @@ async function undoAssignPayload(payload) {
   const waitingBefore = Array.isArray(payload.waitingBefore) ? payload.waitingBefore : null;
   const seatBefore = payload.seatBefore && typeof payload.seatBefore === "object" ? payload.seatBefore : null;
 
-  await runTransaction(db, async (tx) => {
+  await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
     const wSnap = await tx.get(waitingRef);
     const wData = wSnap.exists() ? wSnap.data() || {} : {};
     const arr = Array.isArray(wData.waiting) ? [...wData.waiting] : [];
@@ -465,7 +466,7 @@ async function undoAssignPayload(payload) {
         { merge: true }
       );
     }
-  });
+  }));
 
   await syncLayoutProjection(payload.eventId, payload.boxId);
 }
@@ -478,7 +479,7 @@ async function undoClearSeatPayload(payload) {
   const waitingBefore = Array.isArray(payload.waitingBefore) ? payload.waitingBefore : null;
   const now = Date.now();
 
-  await runTransaction(db, async (tx) => {
+  await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
     const wSnap = await tx.get(waitingRef);
     const wData = wSnap.exists() ? wSnap.data() || {} : {};
     const nextWaiting = waitingBefore
@@ -533,7 +534,7 @@ async function undoClearSeatPayload(payload) {
         { merge: true }
       );
     }
-  });
+  }));
 
   await syncLayoutProjection(payload.eventId, payload.boxId);
 }
@@ -563,7 +564,7 @@ async function redoAssignPayload(payload) {
   const waitingName = String(waitingRow.name || "").trim();
   const waitingTournamentId = String(waitingRow.tournamentId || GL.tournamentId).trim();
 
-  await runFirestoreTransactionWithRetry(db, async (tx) => {
+  await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
     const [wSnap, seatSnap] = await Promise.all([tx.get(waitingRef), tx.get(seatRef)]);
     if (!seatSnap?.exists()) throw new Error("seat_not_found");
 
@@ -663,7 +664,7 @@ async function redoAssignPayload(payload) {
         { merge: true }
       );
     }
-  });
+  }));
 
   await syncLayoutProjection(eventId, boxId);
 }
@@ -695,7 +696,7 @@ async function redoClearSeatPayload(payload) {
     targetSeatId
   );
 
-  await runFirestoreTransactionWithRetry(db, async (tx) => {
+  await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
     const [waitingSnap, seatSnap, ...otherSnaps] = await Promise.all([
       tx.get(waitingRef),
       tx.get(seatRef),
@@ -775,7 +776,7 @@ async function redoClearSeatPayload(payload) {
         { merge: true }
       );
     }
-  });
+  }));
 
   await syncLayoutProjection(eventId, boxId);
 }
@@ -859,7 +860,7 @@ async function redoRemoveWaitingPayload(payload) {
   const waitingRef = doc(db, "layout_shared", "global_waiting");
   const now = Date.now();
 
-  await runFirestoreTransactionWithRetry(db, async (tx) => {
+  await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
     const snap = await tx.get(waitingRef);
     const data = snap.exists() ? snap.data() || {} : {};
     const arr = Array.isArray(data.waiting) ? [...data.waiting] : [];
@@ -876,7 +877,7 @@ async function redoRemoveWaitingPayload(payload) {
       },
       { merge: true }
     );
-  });
+  }));
 
   // undo의 remove_waiting 처리(replaceGlobalWaitingLocal)와 대칭 — 서버 스냅샷 도착 전에도 즉시 반영
   replaceGlobalWaitingLocal((GL.globalWaiting || []).filter((w) => String(w?.id || "").trim() !== wid));

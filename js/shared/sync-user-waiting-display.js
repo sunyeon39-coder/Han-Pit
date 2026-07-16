@@ -4,11 +4,12 @@ import {
   doc,
   getDocs,
   query,
-  runTransaction,
   serverTimestamp,
   where,
   writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { runFirestoreTransactionWithRetry } from "./firestore-transaction-retry.js";
+import { runSerializedGlobalWaitingWrite } from "../global-layout/global-waiting-write-lock.js";
 
 const WAITING_REF = () => doc(db, "layout_shared", "global_waiting");
 
@@ -31,7 +32,7 @@ export async function syncUserDisplayNameAfterNicknameChange(uid = "", nickname 
 async function syncGlobalWaitingNameForUser(userUid, name) {
   let updated = 0;
   try {
-    await runTransaction(db, async (tx) => {
+    await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
       const snap = await tx.get(WAITING_REF());
       if (!snap.exists()) return;
 
@@ -61,7 +62,7 @@ async function syncGlobalWaitingNameForUser(userUid, name) {
         },
         { merge: true }
       );
-    });
+    }));
   } catch (err) {
     console.error("syncGlobalWaitingNameForUser error:", err);
   }

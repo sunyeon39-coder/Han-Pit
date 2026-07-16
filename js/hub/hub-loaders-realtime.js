@@ -204,7 +204,7 @@ export async function loadTournaments(options = {}) {
 async function reconcileDirectAllowOpsOnServer(users = []) {
   if (!getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) return { fixed: 0 };
 
-  let fixed = 0;
+  const jobs = [];
   for (const u of users || []) {
     if (!u?.uid || isSystemAdminEmail(u.email)) continue;
     if (!userRecordHasDirectOpsAllow(u)) continue;
@@ -230,18 +230,27 @@ async function reconcileDirectAllowOpsOnServer(users = []) {
 
     if (!needsRole && !needsEvents) continue;
 
-    try {
-      await updateDoc(doc(db, "users", u.uid), patch);
-      u.role = "admin";
-      u._rawRole = "admin";
-      u.allowedEvents = patch.allowedEvents;
-      u._rawAllowedEvents = { ...patch.allowedEvents };
-      u._rawOpsTournamentIds = patch.opsTournamentIds;
-      fixed += 1;
-    } catch (err) {
-      console.warn("[reconcileDirectAllowOpsOnServer]", u.uid, err?.code || err);
-    }
+    jobs.push({ u, patch });
   }
+
+  // 대상 유저별 문서가 서로 독립적이므로 순차 대기 대신 한 번에 병렬로 반영한다.
+  let fixed = 0;
+  await Promise.all(
+    jobs.map(({ u, patch }) =>
+      updateDoc(doc(db, "users", u.uid), patch)
+        .then(() => {
+          u.role = "admin";
+          u._rawRole = "admin";
+          u.allowedEvents = patch.allowedEvents;
+          u._rawAllowedEvents = { ...patch.allowedEvents };
+          u._rawOpsTournamentIds = patch.opsTournamentIds;
+          fixed += 1;
+        })
+        .catch((err) => {
+          console.warn("[reconcileDirectAllowOpsOnServer]", u.uid, err?.code || err);
+        })
+    )
+  );
   return { fixed };
 }
 
@@ -251,7 +260,7 @@ async function pruneStaleOpsTournamentIdsOnServer(users = []) {
     return { fixed: 0 };
   }
 
-  let fixed = 0;
+  const jobs = [];
   for (const u of users || []) {
     if (!u?.uid || isSystemAdminEmail(u.email)) continue;
 
@@ -273,22 +282,30 @@ async function pruneStaleOpsTournamentIdsOnServer(users = []) {
 
     if (!opsStale && !roleStale) continue;
 
-    try {
-      await updateDoc(doc(db, "users", u.uid), {
+    jobs.push({ u, rawAllowed, expectedOps, roleWant });
+  }
+
+  let fixed = 0;
+  await Promise.all(
+    jobs.map(({ u, rawAllowed, expectedOps, roleWant }) =>
+      updateDoc(doc(db, "users", u.uid), {
         allowedEvents: rawAllowed,
         opsTournamentIds: expectedOps,
         role: roleWant
-      });
-      u.allowedEvents = rawAllowed;
-      u._rawAllowedEvents = { ...rawAllowed };
-      u._rawOpsTournamentIds = expectedOps;
-      u.role = roleWant;
-      u._rawRole = roleWant;
-      fixed += 1;
-    } catch (err) {
-      console.warn("[pruneStaleOpsTournamentIdsOnServer]", u.uid, err?.code || err);
-    }
-  }
+      })
+        .then(() => {
+          u.allowedEvents = rawAllowed;
+          u._rawAllowedEvents = { ...rawAllowed };
+          u._rawOpsTournamentIds = expectedOps;
+          u.role = roleWant;
+          u._rawRole = roleWant;
+          fixed += 1;
+        })
+        .catch((err) => {
+          console.warn("[pruneStaleOpsTournamentIdsOnServer]", u.uid, err?.code || err);
+        })
+    )
+  );
   return { fixed };
 }
 
@@ -349,23 +366,29 @@ export async function healNonAdminUsersToBasic(users = [], options = {}) {
   hubState.usersRoleHealInFlight = true;
   let fixed = 0;
   try {
-    for (const u of toFix) {
-      const updates = { role: "user" };
-      if (stripAllowedEvents) {
-        updates.allowedEvents = {};
-      }
-      await updateDoc(doc(db, "users", u.uid), updates);
-      u.role = "user";
-      u._rawRole = "user";
-      if (stripAllowedEvents) {
-        u.allowedEvents = {};
-        u._rawAllowedEvents = {};
-      }
-      fixed += 1;
-    }
-  } catch (err) {
-    console.error("[healNonAdminUsersToBasic] error:", err);
-    throw err;
+    // 대상 유저 전원을 순차로 하나씩 저장하면 인원이 많을수록 그대로 느려진다.
+    // 유저 문서는 서로 독립적이므로 병렬로 보내고, 개별 실패는 나머지를 막지 않게 처리한다.
+    await Promise.all(
+      toFix.map((u) => {
+        const updates = { role: "user" };
+        if (stripAllowedEvents) {
+          updates.allowedEvents = {};
+        }
+        return updateDoc(doc(db, "users", u.uid), updates)
+          .then(() => {
+            u.role = "user";
+            u._rawRole = "user";
+            if (stripAllowedEvents) {
+              u.allowedEvents = {};
+              u._rawAllowedEvents = {};
+            }
+            fixed += 1;
+          })
+          .catch((err) => {
+            console.error("[healNonAdminUsersToBasic]", u.uid, err);
+          });
+      })
+    );
   } finally {
     hubState.usersRoleHealInFlight = false;
   }

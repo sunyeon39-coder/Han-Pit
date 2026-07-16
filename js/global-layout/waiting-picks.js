@@ -13,6 +13,7 @@ import { escapeHtml } from "./utils.js";
 import { flushOptimisticGlobalLayoutUi } from "./optimistic-seat-mutation.js";
 import { canManageGlobalLayoutOps } from "./ops-access.js";
 import { releaseStuckGlobalLayoutMutationFlags } from "./layout-mutation-guard.js";
+import { runSerializedGlobalWaitingWrite } from "./global-waiting-write-lock.js";
 
 const WAITING_REF = () => doc(db, "layout_shared", "global_waiting");
 
@@ -146,7 +147,7 @@ export async function pruneOperatorPicksWithoutOps() {
       deniedOperatorPickUids.add(uid);
     }
     try {
-      await updateDoc(WAITING_REF(), patch);
+      await runSerializedGlobalWaitingWrite(() => updateDoc(WAITING_REF(), patch));
     } catch (err) {
       console.warn("pruneOperatorPicksWithoutOps write:", err?.code || err);
     }
@@ -186,7 +187,9 @@ export async function clearOperatorPickForUid(uid = "") {
   if (!id) return;
   deniedOperatorPickUids.add(id);
   try {
-    await updateDoc(WAITING_REF(), { [`operatorPicks.${id}`]: deleteField() });
+    await runSerializedGlobalWaitingWrite(() =>
+      updateDoc(WAITING_REF(), { [`operatorPicks.${id}`]: deleteField() })
+    );
   } catch (err) {
     console.warn("clearOperatorPickForUid:", err?.code || err);
   }
@@ -339,18 +342,22 @@ export async function syncMyWaitingPick(waitingId = "") {
   const wid = String(waitingId || "").trim();
   applyOptimisticMyWaitingPick(wid);
   try {
-    if (!wid) {
-      await updateDoc(WAITING_REF(), { [`operatorPicks.${uid}`]: deleteField() });
-      return;
-    }
-    await updateDoc(WAITING_REF(), {
-      [`operatorPicks.${uid}`]: {
-        waitingId: wid,
-        tournamentId: String(GL.tournamentId || "").trim(),
-        displayName: getOperatorDisplayName(GL.userProfile, GL.currentUser),
-        color: GL.layoutAccentColor,
-        updatedAt: Date.now()
+    // 좌석 배치/스왑 트랜잭션과 같은 layout_shared/global_waiting 문서를 건드리므로,
+    // 직렬화 큐를 거치지 않으면 두 쓰기가 동시에 부딪혀 트랜잭션이 실패-재시도를 반복해
+    // (특히 스왑처럼 트랜잭션이 큰 경우) 체감 지연이 커진다.
+    await runSerializedGlobalWaitingWrite(() => {
+      if (!wid) {
+        return updateDoc(WAITING_REF(), { [`operatorPicks.${uid}`]: deleteField() });
       }
+      return updateDoc(WAITING_REF(), {
+        [`operatorPicks.${uid}`]: {
+          waitingId: wid,
+          tournamentId: String(GL.tournamentId || "").trim(),
+          displayName: getOperatorDisplayName(GL.userProfile, GL.currentUser),
+          color: GL.layoutAccentColor,
+          updatedAt: Date.now()
+        }
+      });
     });
   } catch (err) {
     console.warn("syncMyWaitingPick:", err?.code || err);

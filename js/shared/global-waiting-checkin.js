@@ -2,6 +2,7 @@ import { db } from "../firebase.js";
 import { doc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { runFirestoreTransactionWithRetry } from "./firestore-transaction-retry.js";
 import { dedupeGlobalWaitingRows } from "./tournament-waiting-queue.js";
+import { runSerializedGlobalWaitingWrite } from "../global-layout/global-waiting-write-lock.js";
 
 const GLOBAL_WAITING_REF = () => doc(db, "layout_shared", "global_waiting");
 
@@ -63,7 +64,7 @@ export async function upsertCheckInIntoGlobalWaiting({
   const now = Date.now();
   let savedRow = null;
 
-  await runFirestoreTransactionWithRetry(db, async (tx) => {
+  await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
     const waitingSnap = await tx.get(waitingRef);
     const waitingState = waitingSnap.exists()
       ? waitingSnap.data() || {}
@@ -98,7 +99,7 @@ export async function upsertCheckInIntoGlobalWaiting({
       },
       { merge: true }
     );
-  });
+  }));
 
   return { ok: true, row: savedRow };
 }

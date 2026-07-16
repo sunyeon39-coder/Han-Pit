@@ -1,5 +1,7 @@
 import { db } from "../firebase.js";
 import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
+import { runSerializedGlobalWaitingWrite } from "../global-layout/global-waiting-write-lock.js";
 
 import { canUseTournamentOps } from "../shared/auth-helpers.js";
 import { getTournamentId } from "./core-utils.js";
@@ -176,48 +178,58 @@ export async function ensureMeRecovered(user) {
     );
 
     if (!inWaiting) {
-      const recoverNow = Date.now();
-      const existingByPerson =
-        waitingList.find((item) => {
-          if (!item || typeof item !== "object") return false;
-          const itemTournamentId = String(item.tournamentId || "").trim();
-          if (itemTournamentId && itemTournamentId !== tournamentId) return false;
-          const itemUid = String(item.uid || "").trim();
-          const itemName = String(item.name || "").trim();
-          if (itemUid && itemUid === String(user.uid).trim()) return true;
-          return !!(nickname && itemName && itemName === nickname);
-        }) || null;
-      const recoverRow = {
-        id: String(existingByPerson?.id || `w_${user.uid}`).trim(),
-        uid: user.uid,
-        email: String(IX.currentUserProfile?.email || user.email || "").trim(),
-        name: nickname,
-        addedAt: Number(existingByPerson?.addedAt || existingByPerson?.joinedAt || recoverNow) || recoverNow,
-        joinedAt: Number(existingByPerson?.joinedAt || existingByPerson?.addedAt || recoverNow) || recoverNow,
-        createdAt: Number(existingByPerson?.createdAt || recoverNow) || recoverNow,
-        source: String(existingByPerson?.source || "auto_recover_assigned").trim(),
-        tournamentId,
-        blockChecked: existingByPerson?.blockChecked === true,
-        blockCheckedAt: existingByPerson?.blockCheckedAt ?? null,
-        blockAccumulatedMs: Number(existingByPerson?.blockAccumulatedMs || 0) || 0
-      };
-      if (existingByPerson) {
-        const idx = waitingList.findIndex((item) => String(item?.id || "").trim() === recoverRow.id);
-        if (idx >= 0) waitingList[idx] = { ...existingByPerson, ...recoverRow };
-        else waitingList.push(recoverRow);
-      } else {
-        waitingList.push(recoverRow);
-      }
+      // 대기 목록을 앞서 읽은 스냅샷 그대로 다시 저장하면, 그 사이 다른 클라이언트가 반영한
+      // 변경을 덮어써버릴 수 있다(lost update). 실제 쓰기 직전에 트랜잭션으로 다시 읽어 반영한다.
+      await runSerializedGlobalWaitingWrite(() =>
+        runFirestoreTransactionWithRetry(db, async (tx) => {
+          const freshSnap = await tx.get(waitingRef);
+          const freshData = freshSnap.exists() ? freshSnap.data() || {} : {};
+          const freshList = Array.isArray(freshData.waiting) ? [...freshData.waiting] : [];
 
-      await setDoc(
-        waitingRef,
-        {
-          ...waitingStateDoc,
-          version: 2,
-          waiting: waitingList,
-          updatedAt: Date.now()
-        },
-        { merge: true }
+          const recoverNow = Date.now();
+          const existingByPerson =
+            freshList.find((item) => {
+              if (!item || typeof item !== "object") return false;
+              const itemTournamentId = String(item.tournamentId || "").trim();
+              if (itemTournamentId && itemTournamentId !== tournamentId) return false;
+              const itemUid = String(item.uid || "").trim();
+              const itemName = String(item.name || "").trim();
+              if (itemUid && itemUid === String(user.uid).trim()) return true;
+              return !!(nickname && itemName && itemName === nickname);
+            }) || null;
+          const recoverRow = {
+            id: String(existingByPerson?.id || `w_${user.uid}`).trim(),
+            uid: user.uid,
+            email: String(IX.currentUserProfile?.email || user.email || "").trim(),
+            name: nickname,
+            addedAt: Number(existingByPerson?.addedAt || existingByPerson?.joinedAt || recoverNow) || recoverNow,
+            joinedAt: Number(existingByPerson?.joinedAt || existingByPerson?.addedAt || recoverNow) || recoverNow,
+            createdAt: Number(existingByPerson?.createdAt || recoverNow) || recoverNow,
+            source: String(existingByPerson?.source || "auto_recover_assigned").trim(),
+            tournamentId,
+            blockChecked: existingByPerson?.blockChecked === true,
+            blockCheckedAt: existingByPerson?.blockCheckedAt ?? null,
+            blockAccumulatedMs: Number(existingByPerson?.blockAccumulatedMs || 0) || 0
+          };
+          if (existingByPerson) {
+            const idx = freshList.findIndex((item) => String(item?.id || "").trim() === recoverRow.id);
+            if (idx >= 0) freshList[idx] = { ...existingByPerson, ...recoverRow };
+            else freshList.push(recoverRow);
+          } else {
+            freshList.push(recoverRow);
+          }
+
+          tx.set(
+            waitingRef,
+            {
+              ...freshData,
+              version: 2,
+              waiting: freshList,
+              updatedAt: Date.now()
+            },
+            { merge: true }
+          );
+        })
       );
     }
 

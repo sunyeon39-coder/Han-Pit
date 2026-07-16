@@ -1,12 +1,12 @@
 import { db } from "../firebase.js";
 import {
   collection,
-  deleteDoc,
   getDocs,
   limit,
   orderBy,
   query,
-  where
+  where,
+  writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 /** 대회당 최신 N건만 유지 (Cloud Function 과 동일) */
@@ -58,9 +58,12 @@ export async function maybePruneAttendanceLogsForTournament(tournamentId = "", o
     const oldSnap = await getDocs(
       query(col, where("tournamentId", "==", tid), where("createdAt", "<", cutoff), limit(PRUNE_BATCH))
     );
-    for (const d of oldSnap.docs) {
-      await deleteDoc(d.ref);
-      deleted += 1;
+    if (oldSnap.docs.length) {
+      // 최대 80건을 한 건씩 지우는 대신 배치 하나로 묶어 왕복 횟수를 줄인다.
+      const batch = writeBatch(db);
+      for (const d of oldSnap.docs) batch.delete(d.ref);
+      await batch.commit();
+      deleted += oldSnap.docs.length;
     }
 
     const recentSnap = await getDocs(
@@ -82,9 +85,11 @@ export async function maybePruneAttendanceLogsForTournament(tournamentId = "", o
             limit(PRUNE_BATCH)
           )
         );
-        for (const d of excessSnap.docs) {
-          await deleteDoc(d.ref);
-          deleted += 1;
+        if (excessSnap.docs.length) {
+          const batch = writeBatch(db);
+          for (const d of excessSnap.docs) batch.delete(d.ref);
+          await batch.commit();
+          deleted += excessSnap.docs.length;
         }
       }
     }

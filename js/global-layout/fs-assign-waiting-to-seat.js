@@ -41,6 +41,7 @@ import {
 } from "./seat-history.js";
 import { logGlobalLayoutAttendance } from "./attendance-log.js";
 import { personIdentityMatches } from "../shared/tournament-waiting-queue.js";
+import { runSerializedGlobalWaitingWrite } from "./global-waiting-write-lock.js";
 
 function uniqueDocRefs(refs = []) {
   const seen = new Set();
@@ -195,7 +196,7 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
       canonicalSeatBoxId = canonicalSeatBoxId || fallback.boxId;
     }
 
-    await runFirestoreTransactionWithRetry(db, async (tx) => {
+    await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
       const waitingId = String(waiting.id || "").trim();
       const waitingUid = String(waiting.uid || "").trim();
       const waitingEmail = String(waiting.email || "").trim();
@@ -470,7 +471,7 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
         eventId: canonicalSeatEventId,
         boxId: canonicalSeatBoxId
       };
-    });
+    }));
 
     if (assignLogMeta) {
       logGlobalLayoutAttendance({

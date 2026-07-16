@@ -18,6 +18,8 @@ import { IX } from "./state.js";
 import { getAttendanceRef } from "./dealer-attendance-refs.js";
 import { writeAttendanceLog } from "./dealer-attendance-logs.js";
 import { getLayoutEventDocByEventAndBox } from "./layout-events.js";
+import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
+import { runSerializedGlobalWaitingWrite } from "../global-layout/global-waiting-write-lock.js";
 
 export async function removeUsersFromSharedWaitingByUids(targetUids = []) {
   const uidSet = new Set(
@@ -29,30 +31,34 @@ export async function removeUsersFromSharedWaitingByUids(targetUids = []) {
   if (!uidSet.size) return;
 
   const waitingRef = doc(db, "layout_shared", "global_waiting");
-  const snap = await getDoc(waitingRef);
 
-  if (!snap.exists()) return;
+  await runSerializedGlobalWaitingWrite(() =>
+    runFirestoreTransactionWithRetry(db, async (tx) => {
+      const snap = await tx.get(waitingRef);
+      if (!snap.exists()) return;
 
-  const data = snap.data() || {};
-  const waiting = Array.isArray(data.waiting) ? data.waiting : [];
+      const data = snap.data() || {};
+      const waiting = Array.isArray(data.waiting) ? data.waiting : [];
 
-  const nextWaiting = waiting.filter((item) => {
-    if (!item || typeof item !== "object") return false;
-    const uid = String(item.uid || "").trim();
-    return !uidSet.has(uid);
-  });
+      const nextWaiting = waiting.filter((item) => {
+        if (!item || typeof item !== "object") return false;
+        const uid = String(item.uid || "").trim();
+        return !uidSet.has(uid);
+      });
 
-  if (nextWaiting.length === waiting.length) return;
+      if (nextWaiting.length === waiting.length) return;
 
-  await setDoc(
-    waitingRef,
-    {
-      ...data,
-      version: 2,
-      waiting: nextWaiting,
-      updatedAt: Date.now()
-    },
-    { merge: true }
+      tx.set(
+        waitingRef,
+        {
+          ...data,
+          version: 2,
+          waiting: nextWaiting,
+          updatedAt: Date.now()
+        },
+        { merge: true }
+      );
+    })
   );
 }
 

@@ -1,7 +1,6 @@
 import { db } from "../firebase.js";
 import {
   doc,
-  runTransaction,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { GL } from "./state.js";
@@ -27,6 +26,8 @@ import {
   entryFromSeatOccupant
 } from "./seat-history.js";
 import { logGlobalLayoutAttendance } from "./attendance-log.js";
+import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
+import { runSerializedGlobalWaitingWrite } from "./global-waiting-write-lock.js";
 
 export async function clearSeat(seatId = "") {
   const targetSeatId = String(seatId || "").trim();
@@ -60,7 +61,7 @@ export async function clearSeat(seatId = "") {
 
   GL.seatMutationInFlight = true;
   try {
-    await runTransaction(db, async (tx) => {
+    await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
       let seatRef = null;
       let seatSnap = null;
       for (const ref of seatRefs) {
@@ -200,7 +201,7 @@ export async function clearSeat(seatId = "") {
         boxId: undoBoxId,
         targetSeatId
       };
-    });
+    }));
   } catch (err) {
     rollbackOptimistic();
     flushOptimisticGlobalLayoutUi();

@@ -312,33 +312,43 @@ async function clearDuplicatePersonSeatsExcept(
   );
   const touched = new Set();
 
-  for (const ref of refs) {
-    let snap;
-    try {
-      snap = await getDoc(ref);
-    } catch (err) {
-      console.warn("clearDuplicatePersonSeatsExcept getDoc:", err);
-      continue;
-    }
-    if (!snap.exists()) continue;
+  // 후보 좌석들은 서로 다른 문서라 순서를 지킬 이유가 없다 — 순차 await 대신
+  // 조회를 한 번에 병렬로 보내 후보 수만큼 늘어나던 왕복 시간을 없앤다.
+  const snaps = await Promise.all(
+    refs.map(async (ref) => {
+      try {
+        return { ref, snap: await getDoc(ref) };
+      } catch (err) {
+        console.warn("clearDuplicatePersonSeatsExcept getDoc:", err);
+        return null;
+      }
+    })
+  );
+
+  const writes = [];
+  for (const entry of snaps) {
+    if (!entry || !entry.snap.exists()) continue;
+    const { ref, snap } = entry;
     const data = snap.data() || {};
     const otherSeatId = String(data.seatId || "").trim();
     const kEvent = String(data.currentEventId || data.mappedEventId || "").trim();
     const kBox = String(data.boxId || "").trim();
     if (kEvent && kBox) touched.add(`${kEvent}__${kBox}`);
 
-    await setDoc(
-      ref,
-      {
-        person: "비어있음",
-        personUid: "",
-        personEmail: "",
-        seatedAt: null,
-        status: "empty",
-        updatedAt: now,
-        updatedAtServer: serverTimestamp()
-      },
-      { merge: true }
+    writes.push(
+      setDoc(
+        ref,
+        {
+          person: "비어있음",
+          personUid: "",
+          personEmail: "",
+          seatedAt: null,
+          status: "empty",
+          updatedAt: now,
+          updatedAtServer: serverTimestamp()
+        },
+        { merge: true }
+      )
     );
 
     if (otherSeatId) {
@@ -358,20 +368,22 @@ async function clearDuplicatePersonSeatsExcept(
     }
   }
 
+  await Promise.all(writes);
   return touched;
 }
 
 async function deleteOrphanGlobalSeatDocsForSeatId(seatId = "", keepDocId = "") {
   const keep = String(keepDocId || "").trim();
   const rows = await listGlobalSeatDocRefsBySeatId(GL.tournamentId, seatId);
-  for (const row of rows) {
-    if (keep && row.id === keep) continue;
-    try {
-      await deleteDoc(row.ref);
-    } catch (err) {
-      console.error("deleteOrphanGlobalSeatDocsForSeatId error:", err);
-    }
-  }
+  await Promise.all(
+    rows
+      .filter((row) => !(keep && row.id === keep))
+      .map((row) =>
+        deleteDoc(row.ref).catch((err) => {
+          console.error("deleteOrphanGlobalSeatDocsForSeatId error:", err);
+        })
+      )
+  );
 }
 
 function seatCardPairDiffers(prevE, prevB, nextE, nextB, eventCards = []) {

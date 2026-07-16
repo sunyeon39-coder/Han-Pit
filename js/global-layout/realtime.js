@@ -17,6 +17,7 @@ import {
   filterAttendanceRowsForWaitingMerge
 } from "../shared/attendance-waiting-filter.js";
 import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
+import { runSerializedGlobalWaitingWrite } from "./global-waiting-write-lock.js";
 import {
   dealerAttendanceQueryForTournament,
   filterAttendanceDocsForTournament
@@ -463,7 +464,7 @@ async function recoverRemovedSeatPeopleToWaiting(removedSeats = [], currentSeats
 
   const waitingRef = doc(db, "layout_shared", "global_waiting");
   const now = Date.now();
-  await runFirestoreTransactionWithRetry(db, async (tx) => {
+  await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
     const waitingSnap = await tx.get(waitingRef);
     const waitingData = waitingSnap.exists() ? waitingSnap.data() || {} : {};
     const waitingArr = Array.isArray(waitingData.waiting) ? waitingData.waiting : [];
@@ -501,7 +502,7 @@ async function recoverRemovedSeatPeopleToWaiting(removedSeats = [], currentSeats
       },
       { merge: true }
     );
-  });
+  }));
 }
 
 function seatPersonIsSame(prev, next) {
