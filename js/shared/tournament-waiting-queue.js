@@ -112,6 +112,74 @@ export function personExistsInGlobalWaiting(globalWaiting = [], tournamentId = "
   return false;
 }
 
+function waitingPersonIdentityKey(row = {}) {
+  const uid = String(row?.uid || "").trim();
+  const email = String(row?.email || "").trim().toLowerCase();
+  const name = String(row?.name || row?.nickname || "").trim();
+  if (uid) return `uid:${uid}`;
+  if (email) return `email:${email}`;
+  if (name) return `name:${name}`;
+  return "";
+}
+
+function preferWaitingDisplayRow(a = {}, b = {}) {
+  const blockedA = a?.blockChecked === true;
+  const blockedB = b?.blockChecked === true;
+  if (blockedA !== blockedB) return blockedA ? a : b;
+
+  const idA = String(a?.id || "").trim();
+  const idB = String(b?.id || "").trim();
+  const score = (id = "") => {
+    if (id.startsWith("w_")) return 3;
+    if (id.startsWith("att_")) return 2;
+    if (id.startsWith("wait_")) return 1;
+    return 0;
+  };
+  if (score(idA) !== score(idB)) return score(idA) > score(idB) ? a : b;
+
+  const joinA = getWaitingRowJoinMs(a);
+  const joinB = getWaitingRowJoinMs(b);
+  if (joinA !== joinB) return joinA <= joinB ? a : b;
+  return a;
+}
+
+/** 화면 목록 — 같은 사람 중복 행 제거, BLOCK 행 우선 */
+export function dedupeWaitingDisplayRows(list = []) {
+  const passthrough = [];
+  const byKey = new Map();
+  for (const row of list || []) {
+    const key = waitingPersonIdentityKey(row);
+    if (!key) {
+      passthrough.push(row);
+      continue;
+    }
+    const prev = byKey.get(key);
+    byKey.set(key, prev ? preferWaitingDisplayRow(prev, row) : row);
+  }
+  return [...passthrough, ...byKey.values()];
+}
+
+/** Firestore 저장 전 — 같은 사람 중복 global_waiting 행 병합 */
+export function dedupeGlobalWaitingRows(rows = [], tournamentId = "") {
+  const tid = String(tournamentId || "").trim();
+  const passthrough = [];
+  const byKey = new Map();
+  for (const row of rows || []) {
+    if (!waitingRowBelongsToTournament(row, tid)) {
+      passthrough.push(row);
+      continue;
+    }
+    const key = waitingPersonIdentityKey(row);
+    if (!key) {
+      passthrough.push(row);
+      continue;
+    }
+    const prev = byKey.get(key);
+    byKey.set(key, prev ? preferWaitingDisplayRow(prev, row) : row);
+  }
+  return [...passthrough, ...byKey.values()];
+}
+
 function waitingDisplayHasEntry(merged = [], candidate = {}) {
   const cUid = String(candidate.uid || "").trim();
   const cEmail = String(candidate.email || "").trim();
@@ -223,7 +291,7 @@ export function buildTournamentWaitingDisplayList({
     });
   }
 
-  return merged;
+  return dedupeWaitingDisplayRows(merged);
 }
 
 /** 퇴근·미출근(uid inactive) — Firestore 대기열 정리용 */

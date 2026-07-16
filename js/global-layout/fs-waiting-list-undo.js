@@ -18,6 +18,7 @@ import {
   replaceGlobalWaitingLocal,
   resolveWaitingEntryById
 } from "./waiting.js";
+import { dedupeGlobalWaitingRows } from "../shared/tournament-waiting-queue.js";
 import { flushOptimisticGlobalLayoutUi } from "./optimistic-seat-mutation.js";
 import { invalidateWaitingPanelFingerprint } from "./panel-ui.js";
 import { canManageGlobalLayoutOps } from "./ops-access.js";
@@ -1060,8 +1061,26 @@ export async function setWaitingBlocked(waitingId = "", checked = false) {
       const snap = await tx.get(waitingRef);
       const data = snap.exists() ? (snap.data() || {}) : {};
       const arr = Array.isArray(data.waiting) ? [...data.waiting] : [];
-      const { next, changed } = applyWaitingBlockToWaitingArray(arr, wid, target, nextChecked, now);
-      if (!changed) return;
+      const { next: blockedNext, changed } = applyWaitingBlockToWaitingArray(
+        arr,
+        wid,
+        target,
+        nextChecked,
+        now
+      );
+      const next = dedupeGlobalWaitingRows(blockedNext, GL.tournamentId);
+      if (!changed && next.length === arr.length) {
+        let same = next.length === arr.length;
+        if (same) {
+          for (let i = 0; i < next.length; i++) {
+            if (String(next[i]?.id || "") !== String(arr[i]?.id || "")) {
+              same = false;
+              break;
+            }
+          }
+        }
+        if (same) return;
+      }
 
       tx.set(
         waitingRef,

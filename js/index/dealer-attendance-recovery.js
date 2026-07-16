@@ -91,13 +91,19 @@ export async function ensureMeRecovered(user) {
   const { ref: waitingRef, state: waitingStateDoc } = await getSharedWaitingState();
   const waitingList = Array.isArray(waitingStateDoc.waiting) ? waitingStateDoc.waiting : [];
 
+  const nickname =
+    String(IX.currentUserProfile?.nickname || user.displayName || "").trim() ||
+    String(user.email || "").trim();
+
   const inWaiting = waitingList.some((item) => {
     if (!item || typeof item !== "object") return false;
     const itemUid = String(item.uid || "").trim();
     const itemTournamentId = String(item.tournamentId || "").trim();
-    if (itemUid !== String(user.uid).trim()) return false;
+    const itemName = String(item.name || "").trim();
     if (itemTournamentId && itemTournamentId !== tournamentId) return false;
-    return true;
+    if (itemUid && itemUid === String(user.uid).trim()) return true;
+    if (nickname && itemName && itemName === nickname) return true;
+    return false;
   });
 
   if (isStaleOperationalDayAttendance(raw) && inWaiting) {
@@ -171,17 +177,37 @@ export async function ensureMeRecovered(user) {
 
     if (!inWaiting) {
       const recoverNow = Date.now();
-      waitingList.push({
-        id: `w_${user.uid}`,
+      const existingByPerson =
+        waitingList.find((item) => {
+          if (!item || typeof item !== "object") return false;
+          const itemTournamentId = String(item.tournamentId || "").trim();
+          if (itemTournamentId && itemTournamentId !== tournamentId) return false;
+          const itemUid = String(item.uid || "").trim();
+          const itemName = String(item.name || "").trim();
+          if (itemUid && itemUid === String(user.uid).trim()) return true;
+          return !!(nickname && itemName && itemName === nickname);
+        }) || null;
+      const recoverRow = {
+        id: String(existingByPerson?.id || `w_${user.uid}`).trim(),
         uid: user.uid,
         email: String(IX.currentUserProfile?.email || user.email || "").trim(),
         name: nickname,
-        addedAt: recoverNow,
-        joinedAt: recoverNow,
-        createdAt: recoverNow,
-        source: "auto_recover_assigned",
-        tournamentId
-      });
+        addedAt: Number(existingByPerson?.addedAt || existingByPerson?.joinedAt || recoverNow) || recoverNow,
+        joinedAt: Number(existingByPerson?.joinedAt || existingByPerson?.addedAt || recoverNow) || recoverNow,
+        createdAt: Number(existingByPerson?.createdAt || recoverNow) || recoverNow,
+        source: String(existingByPerson?.source || "auto_recover_assigned").trim(),
+        tournamentId,
+        blockChecked: existingByPerson?.blockChecked === true,
+        blockCheckedAt: existingByPerson?.blockCheckedAt ?? null,
+        blockAccumulatedMs: Number(existingByPerson?.blockAccumulatedMs || 0) || 0
+      };
+      if (existingByPerson) {
+        const idx = waitingList.findIndex((item) => String(item?.id || "").trim() === recoverRow.id);
+        if (idx >= 0) waitingList[idx] = { ...existingByPerson, ...recoverRow };
+        else waitingList.push(recoverRow);
+      } else {
+        waitingList.push(recoverRow);
+      }
 
       await setDoc(
         waitingRef,
