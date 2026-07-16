@@ -323,7 +323,6 @@ export function bindGlobalLayoutEventHandlers() {
       await setWaitingBlocked(wid, nextChecked);
     } catch (err) {
       console.error("setWaitingBlocked error:", err);
-      alert("BLOCK 체크 변경에 실패했습니다.");
       flushOptimisticGlobalLayoutUi();
     } finally {
       blockCb.disabled = false;

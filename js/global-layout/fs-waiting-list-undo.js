@@ -19,7 +19,7 @@ import {
   resolveWaitingEntryById,
   setPendingWaitingBlock
 } from "./waiting.js";
-import { dedupeGlobalWaitingRows, personIdentityMatches } from "../shared/tournament-waiting-queue.js";
+import { dedupeGlobalWaitingRows, personIdentityMatches, waitingPersonIdentityKey } from "../shared/tournament-waiting-queue.js";
 import { flushOptimisticGlobalLayoutUi } from "./optimistic-seat-mutation.js";
 import { invalidateWaitingPanelFingerprint } from "./panel-ui.js";
 import { canManageGlobalLayoutOps } from "./ops-access.js";
@@ -35,6 +35,52 @@ import {
   restoreGlobalUndo
 } from "./undo-stack.js";
 import { markGlobalLayoutLocalMutation, markSkipSeatRecovery } from "./layout-mutation-guard.js";
+
+/** BLOCK 연타 시 Firestore 트랜잭션 충돌 방지 — 직렬 저장, 같은 사람은 마지막 상태만 반영 */
+const waitingBlockSaveQueue = [];
+let waitingBlockSavePumpActive = false;
+
+function waitingBlockSaveKey(target = {}, wid = "") {
+  return waitingPersonIdentityKey(target) || `id:${String(wid || "").trim()}`;
+}
+
+function enqueueWaitingBlockSave(job = {}) {
+  return new Promise((resolve, reject) => {
+    waitingBlockSaveQueue.push({ ...job, resolve, reject });
+    void pumpWaitingBlockSaveQueue();
+  });
+}
+
+async function pumpWaitingBlockSaveQueue() {
+  if (waitingBlockSavePumpActive) return;
+  waitingBlockSavePumpActive = true;
+  try {
+    while (waitingBlockSaveQueue.length) {
+      const first = waitingBlockSaveQueue.shift();
+      const key = waitingBlockSaveKey(first.target, first.wid);
+      const waiters = [{ resolve: first.resolve, reject: first.reject }];
+      let latest = first;
+
+      while (waitingBlockSaveQueue.length) {
+        const peek = waitingBlockSaveQueue[0];
+        if (waitingBlockSaveKey(peek.target, peek.wid) !== key) break;
+        const coalesced = waitingBlockSaveQueue.shift();
+        latest = coalesced;
+        waiters.push({ resolve: coalesced.resolve, reject: coalesced.reject });
+      }
+
+      try {
+        await setWaitingBlockedOnce(latest.wid, latest.checked, latest.target);
+        waiters.forEach((w) => w.resolve());
+      } catch (err) {
+        waiters.forEach((w) => w.reject(err));
+      }
+    }
+  } finally {
+    waitingBlockSavePumpActive = false;
+    if (waitingBlockSaveQueue.length) void pumpWaitingBlockSaveQueue();
+  }
+}
 
 function resolveUndoSeatRef(payload = {}) {
   const ref = resolveGlobalSeatDocRefForUndo(payload, GL.tournamentId);
@@ -1038,11 +1084,26 @@ export async function removeManualWaiting(waitingId = "") {
 export async function setWaitingBlocked(waitingId = "", checked = false) {
   const wid = String(waitingId || "").trim();
   if (!wid) return;
+
   let target = resolveWaitingEntryById(wid);
   if (!target) {
     applyWaitingBlockLocal(wid, checked === true);
     target = resolveWaitingEntryById(wid);
   }
+  if (!target) return;
+
+  return enqueueWaitingBlockSave({
+    wid,
+    checked: checked === true,
+    target
+  });
+}
+
+async function setWaitingBlockedOnce(waitingId = "", checked = false, seedTarget = null) {
+  const wid = String(waitingId || "").trim();
+  if (!wid) return;
+
+  let target = resolveWaitingEntryById(wid) || seedTarget;
   if (!target) return;
 
   const waitingRef = doc(db, "layout_shared", "global_waiting");
@@ -1058,46 +1119,52 @@ export async function setWaitingBlocked(waitingId = "", checked = false) {
   markGlobalLayoutLocalMutation(20_000);
   let blockSaved = false;
   try {
-    await runTransaction(db, async (tx) => {
-      const snap = await tx.get(waitingRef);
-      const data = snap.exists() ? (snap.data() || {}) : {};
-      const arr = Array.isArray(data.waiting) ? [...data.waiting] : [];
-      const { next: blockedNext, changed } = applyWaitingBlockToWaitingArray(
-        arr,
-        wid,
-        target,
-        nextChecked,
-        now
-      );
-      const next = dedupeGlobalWaitingRows(blockedNext, GL.tournamentId);
-      if (!changed && next.length === arr.length) {
-        let same = next.length === arr.length;
-        if (same) {
-          for (let i = 0; i < next.length; i++) {
-            if (String(next[i]?.id || "") !== String(arr[i]?.id || "")) {
-              same = false;
-              break;
+    target = resolveWaitingEntryById(wid) || target;
+    await runFirestoreTransactionWithRetry(
+      db,
+      async (tx) => {
+        const snap = await tx.get(waitingRef);
+        const data = snap.exists() ? snap.data() || {} : {};
+        const arr = Array.isArray(data.waiting) ? [...data.waiting] : [];
+        const { next: blockedNext, changed } = applyWaitingBlockToWaitingArray(
+          arr,
+          wid,
+          target,
+          nextChecked,
+          now
+        );
+        const next = dedupeGlobalWaitingRows(blockedNext, GL.tournamentId);
+        if (!changed && next.length === arr.length) {
+          let same = next.length === arr.length;
+          if (same) {
+            for (let i = 0; i < next.length; i++) {
+              if (String(next[i]?.id || "") !== String(arr[i]?.id || "")) {
+                same = false;
+                break;
+              }
             }
           }
+          if (same) return;
         }
-        if (same) return;
-      }
 
-      tx.set(
-        waitingRef,
-        {
-          ...data,
-          version: 2,
-          waiting: next,
-          updatedAt: now,
-          updatedAtServer: serverTimestamp()
-        },
-        { merge: true }
-      );
-    });
+        tx.set(
+          waitingRef,
+          {
+            ...data,
+            version: 2,
+            waiting: next,
+            updatedAt: now,
+            updatedAtServer: serverTimestamp()
+          },
+          { merge: true }
+        );
+      },
+      5
+    );
     blockSaved = true;
   } catch (err) {
-    console.error("setWaitingBlocked error:", err);
+    const code = String(err?.code || "").trim();
+    console.error("setWaitingBlocked error:", code || err);
     replaceGlobalWaitingLocal(snapshotBefore);
     const prevRow =
       snapshotBefore.find((w) => String(w?.id || "").trim() === wid) ||
@@ -1109,6 +1176,7 @@ export async function setWaitingBlocked(waitingId = "", checked = false) {
     }
     flushOptimisticGlobalLayoutUi();
     alert("BLOCK 변경에 실패했습니다.");
+    throw err;
   } finally {
     GL.waitingMutationInFlight = false;
     if (blockSaved) {

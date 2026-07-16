@@ -497,7 +497,6 @@ export function wireGlobalLayoutMobileEventsOnce() {
       await setWaitingBlocked(wid, nextChecked);
     } catch (err) {
       console.error("mobile setWaitingBlocked error:", err);
-      alert("BLOCK 변경에 실패했습니다.");
       fullRender();
     } finally {
       cb.disabled = false;
