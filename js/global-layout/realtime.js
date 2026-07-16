@@ -166,6 +166,16 @@ function scheduleRecoverRemovedSeatPeople(removedSeats, currentSeats) {
   }, 600);
 }
 
+function syncAttendanceByUidFromDocs(docs = []) {
+  const map = new Map();
+  for (const d of docs || []) {
+    const data = typeof d?.data === "function" ? d.data() || {} : d?.data || d || {};
+    const uid = String(data.uid || d?.id || "").trim();
+    if (uid) map.set(uid, data);
+  }
+  GL.attendanceByUid = map;
+}
+
 function rebuildGlobalLayoutAttendanceInactiveUids() {
   if (!GL.tournamentId) return;
   GL.attendanceInactiveUids = buildAttendanceInactiveUidSet(
@@ -210,6 +220,7 @@ function applyDealerAttendanceSnap(snap) {
 
   const docs = filterAttendanceDocsForTournament(snap.docs, GL.tournamentId);
   attendanceInactiveSourceDocs = docs;
+  syncAttendanceByUidFromDocs(docs);
   GL.attendanceFilterReady = true;
   rebuildGlobalLayoutAttendanceInactiveUids();
 
@@ -747,6 +758,7 @@ export function bindRealtime() {
   GL.waitingMutationInFlight = false;
   GL.localMutationUntil = 0;
   GL.pendingWaitingBlockByPerson = new Map();
+  GL.attendanceByUid = new Map();
   GL.attendanceFilterReady = false;
   GL.attendanceInactiveUids = new Set();
   GL.attendanceWaiting = [];
@@ -815,7 +827,7 @@ export function bindRealtime() {
     doc(db, "layout_shared", "global_waiting"),
     (snap) => {
       if (shouldIgnoreStaleGlobalLayoutSnapshot(snap)) return;
-      if (GL.waitingMutationInFlight) return;
+      if (GL.waitingMutationInFlight || GL.seatMutationInFlight) return;
       const data = snap.exists() ? snap.data() || {} : {};
       const nextWaiting = mergeIncomingGlobalWaiting(
         Array.isArray(data.waiting) ? data.waiting : [],

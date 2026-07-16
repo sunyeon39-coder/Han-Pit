@@ -1,4 +1,6 @@
 import { makeUid } from "./utils.js";
+import { getWaitingRowJoinMs } from "../shared/tournament-waiting-queue.js";
+import { resolveAttendanceWaitingJoinMs } from "../shared/attendance-operational-day.js";
 
 /** global_waiting 행이 같은 대회·같은 사람( uid / email / 이름-only )인지 */
 export function waitingRowMatchesPerson(w, tournamentId, person) {
@@ -19,8 +21,38 @@ export function waitingRowMatchesPerson(w, tournamentId, person) {
 }
 
 /**
- * 배치 해제·스왑 등으로 다시 대기에 들어갈 때: 기존 동일인 행을 제거하고 joinedAt 을 지금으로 새로 넣는다.
- * (배치 중에는 waiting.js 가 좌석 점유로 행을 숨기지만 Firestore 행은 남을 수 있어 joinedAt 이 갱신되지 않던 문제 방지)
+ * 좌석→대기 복귀 시 원래 대기 순번(joinedAt) 유지 — 스왑 직후 맨 위로 튀는 현상 방지
+ */
+export function resolveReturnToWaitingJoinMs(
+  waitingArr = [],
+  tournamentId = "",
+  person = {},
+  fallbackMs = Date.now(),
+  attendanceByUid = null
+) {
+  const tid = String(tournamentId || "").trim();
+  let best = 0;
+  for (const w of waitingArr || []) {
+    if (!waitingRowMatchesPerson(w, tid, person)) continue;
+    const ms = getWaitingRowJoinMs(w);
+    if (ms > 0 && (!best || ms < best)) best = ms;
+  }
+  if (best > 0) return best;
+
+  const uid = String(person?.uid || "").trim();
+  if (uid && attendanceByUid instanceof Map) {
+    const att = attendanceByUid.get(uid);
+    if (att) {
+      const attJoin = resolveAttendanceWaitingJoinMs(att);
+      if (attJoin > 0) return attJoin;
+    }
+  }
+  return Number(fallbackMs) || Date.now();
+}
+
+/**
+ * 배치 해제·스왑 등으로 다시 대기에 들어갈 때: 기존 joinedAt 을 최대한 유지한다.
+ * (신규 대기만 nowMs — 스왑·비우기는 원래 순번 복원)
  */
 export function rebuildWaitingAfterSeatToWait(waitingArr, tournamentId, person, nowMs, extraFields = {}) {
   const tid = String(tournamentId || "").trim();
@@ -48,8 +80,19 @@ export function rebuildWaitingAfterSeatToWait(waitingArr, tournamentId, person, 
     blockChecked: _dropBlock,
     blockCheckedAt: _dropBlockAt,
     blockAccumulatedMs: _dropBlockMs,
+    preserveJoinedAt: _dropPreserveJoin,
+    attendanceByUid: _dropAttMap,
     ...restExtra
   } = extraFields;
+  const joinedAt =
+    Number(extraFields.preserveJoinedAt || 0) ||
+    resolveReturnToWaitingJoinMs(
+      waitingArr,
+      tid,
+      person,
+      nowMs,
+      extraFields.attendanceByUid instanceof Map ? extraFields.attendanceByUid : null
+    );
   return [
     ...filtered,
     {
@@ -58,7 +101,7 @@ export function rebuildWaitingAfterSeatToWait(waitingArr, tournamentId, person, 
       email: prevEmail,
       name: prevName || prevUid || "-",
       tournamentId: tid,
-      joinedAt: nowMs,
+      joinedAt,
       ...blockFields,
       ...restExtra
     }

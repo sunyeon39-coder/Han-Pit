@@ -39,6 +39,8 @@ export const GL = {
   /** admin 좌석 삭제 직후 자동 대기 복구 억제 시각(unix ms) */
   skipSeatRecoveryUntil: 0,
   attendanceWaiting: [],
+  /** uid → dealer_attendance — 스왑·비우기 시 원래 joinedAt 복원용 */
+  attendanceByUid: new Map(),
   /** 현재 대회 출석 문서 기준 퇴근·미출근 uid — global_waiting 유령 행 제거용 */
   attendanceInactiveUids: new Set(),
   attendanceCheckedOutUids: new Set(),
