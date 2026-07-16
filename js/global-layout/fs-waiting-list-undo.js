@@ -13,6 +13,7 @@ import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
 import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
 import {
   applyWaitingBlockLocal,
+  applyWaitingBlockToWaitingArray,
   getCurrentTournamentWaiting,
   replaceGlobalWaitingLocal,
   resolveWaitingEntryById
@@ -1052,75 +1053,29 @@ export async function setWaitingBlocked(waitingId = "", checked = false) {
   flushOptimisticGlobalLayoutUi();
 
   GL.waitingMutationInFlight = true;
-  markGlobalLayoutLocalMutation();
+  markGlobalLayoutLocalMutation(20_000);
   let blockSaved = false;
   try {
-  await runTransaction(db, async (tx) => {
-    const snap = await tx.get(waitingRef);
-    const data = snap.exists() ? (snap.data() || {}) : {};
-    const arr = Array.isArray(data.waiting) ? [...data.waiting] : [];
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(waitingRef);
+      const data = snap.exists() ? (snap.data() || {}) : {};
+      const arr = Array.isArray(data.waiting) ? [...data.waiting] : [];
+      const { next, changed } = applyWaitingBlockToWaitingArray(arr, wid, target, nextChecked, now);
+      if (!changed) return;
 
-    const targetUid = String(target.uid || "").trim();
-    const targetEmail = String(target.email || "").trim().toLowerCase();
-    const targetName = String(target.name || "").trim();
-    const targetTid = String(target.tournamentId || GL.tournamentId || "").trim();
-
-    let idx = arr.findIndex((w) => String(w?.id || "").trim() === wid);
-    if (idx < 0) {
-      idx = arr.findIndex((w) => {
-        const wTid = String(w?.tournamentId || "").trim();
-        if (targetTid && wTid && targetTid !== wTid) return false;
-        const wUid = String(w?.uid || "").trim();
-        const wEmail = String(w?.email || "").trim().toLowerCase();
-        const wName = String(w?.name || "").trim();
-        if (targetUid && wUid && targetUid === wUid) return true;
-        if (!targetUid && targetEmail && wEmail && targetEmail === wEmail) return true;
-        if (!targetUid && !targetEmail && targetName && wName === targetName) return true;
-        return false;
-      });
-    }
-
-    const base = idx >= 0 && arr[idx] && typeof arr[idx] === "object"
-      ? { ...arr[idx] }
-      : {
-          id: wid,
-          uid: String(target.uid || "").trim(),
-          email: String(target.email || "").trim(),
-          name: String(target.name || "").trim(),
-          tournamentId: String(target.tournamentId || GL.tournamentId || "").trim(),
-          joinedAt: Number(target.joinedAt || target.createdAt || Date.now()) || Date.now()
-        };
-
-    const prevChecked = base.blockChecked === true;
-    if (prevChecked === nextChecked) return;
-
-    if (nextChecked) {
-      base.blockChecked = true;
-      base.blockCheckedAt = now;
-    } else {
-      const startedAt = Number(base.blockCheckedAt || 0);
-      const elapsed = startedAt > 0 ? Math.max(0, now - startedAt) : 0;
-      base.blockChecked = false;
-      base.blockCheckedAt = null;
-      base.blockAccumulatedMs = Number(base.blockAccumulatedMs || 0) + elapsed;
-    }
-
-    if (idx >= 0) arr[idx] = base;
-    else arr.push(base);
-
-    tx.set(
-      waitingRef,
-      {
-        ...data,
-        version: 2,
-        waiting: arr,
-        updatedAt: now,
-        updatedAtServer: serverTimestamp()
-      },
-      { merge: true }
-    );
-  });
-  blockSaved = true;
+      tx.set(
+        waitingRef,
+        {
+          ...data,
+          version: 2,
+          waiting: next,
+          updatedAt: now,
+          updatedAtServer: serverTimestamp()
+        },
+        { merge: true }
+      );
+    });
+    blockSaved = true;
   } catch (err) {
     console.error("setWaitingBlocked error:", err);
     replaceGlobalWaitingLocal(snapshotBefore);

@@ -35,11 +35,13 @@ export function buildCheckInWaitingRow({
     joinedAt: now,
     createdAt: now,
     source: "checkin",
-    tournamentId: String(tournamentId || "").trim(),
-    blockChecked: false,
-    blockCheckedAt: null,
-    blockAccumulatedMs: 0
+    tournamentId: String(tournamentId || "").trim()
   };
+  if (existing?.blockChecked !== true) {
+    row.blockChecked = false;
+    row.blockCheckedAt = null;
+    row.blockAccumulatedMs = Number(existing?.blockAccumulatedMs || 0) || 0;
+  }
   delete row.joinedAtServer;
   delete row.carryStartedAt;
   return row;

@@ -4,8 +4,10 @@ import { resolveAttendanceWaitingJoinMs, resolveAttendanceWaitingStatusChangedMs
 import {
   waitingRowBelongsToTournament as sharedWaitingRowBelongsToTournament,
   buildTournamentWaitingDisplayList,
-  isPersonSeatedInGlobalSeats as sharedIsPersonSeatedInGlobalSeats
+  isPersonSeatedInGlobalSeats as sharedIsPersonSeatedInGlobalSeats,
+  findGlobalWaitingBlockFields
 } from "../shared/tournament-waiting-queue.js";
+import { waitingRowMatchesPerson } from "./fs-waiting-merge.js";
 import { fmtElapsed, isEmptyPerson, makeUid, timerClass, toMillis } from "./utils.js";
 import { bumpGlobalLayoutDataRevision } from "./realtime-ui.js";
 
@@ -148,6 +150,83 @@ export function replaceGlobalWaitingLocal(nextWaiting = []) {
   bumpGlobalLayoutDataRevision();
 }
 
+/** Firestore 스냅샷이 로컬 BLOCK 변경을 되돌리지 않도록 병합 */
+export function mergeRemoteGlobalWaitingPreservingLocalBlock(incoming = [], local = []) {
+  if (!Array.isArray(incoming) || !incoming.length) return incoming || [];
+  const tid = String(GL.tournamentId || "").trim();
+  const guardActive =
+    GL.waitingMutationInFlight === true || Date.now() < (GL.localMutationUntil || 0);
+  if (!guardActive || !Array.isArray(local) || !local.length) return incoming;
+
+  return incoming.map((remote) => {
+    const patch = findGlobalWaitingBlockFields(local, tid, remote);
+    if (!patch?.blockChecked || remote?.blockChecked === true) return remote;
+    return { ...remote, ...patch };
+  });
+}
+
+function waitingRowMatchesBlockTarget(row = {}, waitingId = "", target = {}, tournamentId = "") {
+  const wid = String(waitingId || "").trim();
+  const tid = String(tournamentId || GL.tournamentId || "").trim();
+  const targetTid = String(target?.tournamentId || tid).trim();
+  const wTid = String(row?.tournamentId || "").trim();
+  if (targetTid && wTid && targetTid !== wTid) return false;
+  const wId = String(row?.id || "").trim();
+  if (wid && wId === wid) return true;
+  return waitingRowMatchesPerson(row, tid, target);
+}
+
+export function applyBlockFieldsToWaitingRow(row = {}, nextChecked = false, now = Date.now()) {
+  const base = { ...row };
+  if (nextChecked) {
+    base.blockChecked = true;
+    base.blockCheckedAt = now;
+    return base;
+  }
+  const startedAt = Number(base.blockCheckedAt || 0);
+  const elapsed = startedAt > 0 ? Math.max(0, now - startedAt) : 0;
+  base.blockChecked = false;
+  base.blockCheckedAt = null;
+  base.blockAccumulatedMs = Number(base.blockAccumulatedMs || 0) + elapsed;
+  return base;
+}
+
+export function applyWaitingBlockToWaitingArray(arr = [], waitingId = "", target = {}, nextChecked = false, now = Date.now()) {
+  const list = Array.isArray(arr) ? [...arr] : [];
+  const tid = String(GL.tournamentId || "").trim();
+  let changed = false;
+  let matched = false;
+  const next = list.map((row) => {
+    if (!row || typeof row !== "object") return row;
+    if (!waitingRowMatchesBlockTarget(row, waitingId, target, tid)) return row;
+    matched = true;
+    const prevChecked = row.blockChecked === true;
+    if (prevChecked === nextChecked) return row;
+    changed = true;
+    return applyBlockFieldsToWaitingRow(row, nextChecked, now);
+  });
+
+  if (!matched && nextChecked) {
+    changed = true;
+    next.push(
+      applyBlockFieldsToWaitingRow(
+        {
+          id: String(waitingId || "").trim() || makeUid("wait"),
+          uid: String(target.uid || "").trim(),
+          email: String(target.email || "").trim(),
+          name: String(target.name || "").trim(),
+          tournamentId: tid,
+          joinedAt: Number(target.joinedAt || target.createdAt || now) || now
+        },
+        true,
+        now
+      )
+    );
+  }
+
+  return { next, changed };
+}
+
 export function applyWaitingBlockLocal(waitingId = "", checked = false) {
   const wid = String(waitingId || "").trim();
   if (!wid || !Array.isArray(GL.globalWaiting)) return;
@@ -162,22 +241,8 @@ export function applyWaitingBlockLocal(waitingId = "", checked = false) {
     null;
 
   GL.globalWaiting = GL.globalWaiting.map((w) => {
-    const sameId = String(w?.id || "").trim() === wid;
-    const samePerson = seed ? isSameWaitingPerson(w, seed) : false;
-    if (!sameId && !samePerson) return w;
-
-    const base = { ...w };
-    if (nextChecked) {
-      base.blockChecked = true;
-      base.blockCheckedAt = now;
-    } else {
-      const startedAt = Number(base.blockCheckedAt || 0);
-      const elapsed = startedAt > 0 ? Math.max(0, now - startedAt) : 0;
-      base.blockChecked = false;
-      base.blockCheckedAt = null;
-      base.blockAccumulatedMs = Number(base.blockAccumulatedMs || 0) + elapsed;
-    }
-    return base;
+    if (!waitingRowMatchesBlockTarget(w, wid, seed || { id: wid }, GL.tournamentId)) return w;
+    return applyBlockFieldsToWaitingRow(w, nextChecked, now);
   });
   GL._waitingListCache = null;
   GL._waitingListCacheRev = -1;
@@ -298,7 +363,12 @@ export function getCurrentTournamentWaiting() {
     globalSeats: GL.globalSeats,
     attendanceFilterReady: GL.attendanceFilterReady === true,
     attendanceWaitingRows: GL.attendanceWaiting
-  }).map((w) => {
+  })
+    .map((w) => {
+      const blockFields = findGlobalWaitingBlockFields(GL.globalWaiting, GL.tournamentId, w);
+      return blockFields ? { ...w, ...blockFields } : w;
+    })
+    .map((w) => {
     const uid = String(w?.uid || "").trim();
     if (!uid) return w;
     const att = (GL.attendanceWaiting || []).find((row) => String(row?.uid || "").trim() === uid);

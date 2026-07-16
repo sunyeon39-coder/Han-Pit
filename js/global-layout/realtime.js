@@ -57,7 +57,7 @@ import {
 } from "../shared/tournament-waiting-queue.js";
 import { invalidateWaitingPanelFingerprint } from "./panel-ui.js";
 import { resolveAttendanceWaitingJoinMs } from "../shared/attendance-operational-day.js";
-import { replaceGlobalWaitingLocal } from "./waiting.js";
+import { mergeRemoteGlobalWaitingPreservingLocalBlock, replaceGlobalWaitingLocal } from "./waiting.js";
 
 /** Firestore 전파 전 캐시 스냅샷이 방금 배치한 좌석을 비우는 것 방지 */
 const RECENT_LOCAL_SEAT_MS = 12000;
@@ -614,10 +614,14 @@ function applyGlobalSeatsFromSnapshot(snap, prevSeatsRef = { value: [] }) {
 
 async function refreshGlobalWaitingFromServer() {
   if (isFirestoreQuotaCoolingDown()) return;
+  if (GL.waitingMutationInFlight) return;
   try {
     const snap = await getDocFromServer(doc(db, "layout_shared", "global_waiting"));
     const data = snap.exists() ? snap.data() || {} : {};
-    const nextWaiting = Array.isArray(data.waiting) ? data.waiting : [];
+    const nextWaiting = mergeRemoteGlobalWaitingPreservingLocalBlock(
+      Array.isArray(data.waiting) ? data.waiting : [],
+      GL.globalWaiting
+    );
     GL.globalWaiting = nextWaiting;
     purgeSeatedPeopleFromGlobalWaitingLocal();
     applyOperatorPicksFromDoc(data, snap.metadata || {});
@@ -780,7 +784,10 @@ export function bindRealtime() {
       if (shouldIgnoreStaleGlobalLayoutSnapshot(snap)) return;
       if (GL.waitingMutationInFlight) return;
       const data = snap.exists() ? snap.data() || {} : {};
-      const nextWaiting = Array.isArray(data.waiting) ? data.waiting : [];
+      const nextWaiting = mergeRemoteGlobalWaitingPreservingLocalBlock(
+        Array.isArray(data.waiting) ? data.waiting : [],
+        GL.globalWaiting
+      );
       lastWaitingUiFingerprint = globalWaitingUiFingerprint(nextWaiting);
 
       GL.globalWaiting = nextWaiting;

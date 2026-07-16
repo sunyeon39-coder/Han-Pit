@@ -127,11 +127,12 @@ function waitingDisplayHasEntry(merged = [], candidate = {}) {
   });
 }
 
-function findGlobalWaitingBlockFields(globalWaiting = [], tournamentId = "", person = {}) {
+export function findGlobalWaitingBlockFields(globalWaiting = [], tournamentId = "", person = {}) {
   const tid = String(tournamentId || "").trim();
   const uid = String(person?.uid || "").trim();
   const email = String(person?.email || "").trim();
   const name = String(person?.name || person?.nickname || "").trim();
+  let fallback = null;
   for (const w of globalWaiting || []) {
     if (!waitingRowBelongsToTournament(w, tid)) continue;
     const wUid = String(w?.uid || "").trim();
@@ -149,13 +150,13 @@ function findGlobalWaitingBlockFields(globalWaiting = [], tournamentId = "", per
         blockAccumulatedMs: Number(w.blockAccumulatedMs || 0) || 0
       };
     }
-    return {
+    fallback = {
       blockChecked: false,
       blockCheckedAt: null,
       blockAccumulatedMs: Number(w.blockAccumulatedMs || 0) || 0
     };
   }
-  return null;
+  return fallback;
 }
 
 /**
@@ -213,12 +214,12 @@ export function buildTournamentWaitingDisplayList({
         uid,
         email: item?.email,
         name: item?.nickname || item?.name
-      }) || {};
+      }) || null;
     merged.push({
       ...item,
       id: String(item.id || `att_${uid || "row"}`).trim(),
       name: String(item.name || item.nickname || "").trim() || uid || "-",
-      ...blockFields
+      ...(blockFields || {})
     });
   }
 
