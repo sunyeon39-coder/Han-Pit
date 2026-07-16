@@ -9,14 +9,12 @@ let flushTimer = 0;
 const pending = { seats: false, waiting: false, seatPanel: false, metaOnly: false };
 
 /** Firestore 연속 스냅샷을 한 프레임으로 묶어 45명 동시 사용 시 렌더 폭주 완화 */
-const REALTIME_UI_DEBOUNCE_MS = 64;
+const REALTIME_UI_DEBOUNCE_MS = 96;
 
 export function bumpGlobalLayoutDataRevision() {
   GL.dataRevision = (GL.dataRevision || 0) + 1;
   GL._waitingListCache = null;
   GL._waitingListCacheRev = -1;
-  GL._waitingPanelFp = null;
-  GL._seatPanelFp = "";
 }
 
 function flushGlobalLayoutRealtimeUi() {

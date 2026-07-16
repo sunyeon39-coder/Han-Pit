@@ -6,6 +6,8 @@ import {
   buildTournamentWaitingDisplayList,
   isPersonSeatedInGlobalSeats as sharedIsPersonSeatedInGlobalSeats,
   findGlobalWaitingBlockFields,
+  buildGlobalWaitingBlockIndex,
+  resolveGlobalWaitingBlockFields,
   dedupeGlobalWaitingRows,
   waitingPersonIdentityKey,
   personIdentityMatches
@@ -466,6 +468,9 @@ export function getCurrentTournamentWaiting() {
     return GL._waitingListCache;
   }
 
+  const tid = String(GL.tournamentId || "").trim();
+  const blockIndex = buildGlobalWaitingBlockIndex(GL.globalWaiting, tid);
+
   const merged = buildTournamentWaitingDisplayList({
     globalWaiting: GL.globalWaiting,
     tournamentId: GL.tournamentId,
@@ -476,7 +481,12 @@ export function getCurrentTournamentWaiting() {
     attendanceWaitingRows: GL.attendanceWaiting
   })
     .map((w) => {
-      const blockFields = findGlobalWaitingBlockFields(GL.globalWaiting, GL.tournamentId, w);
+      const blockFields = resolveGlobalWaitingBlockFields(
+        blockIndex,
+        GL.globalWaiting,
+        tid,
+        w
+      );
       return blockFields ? { ...w, ...blockFields } : w;
     })
     .map((w) => {

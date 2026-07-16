@@ -35,15 +35,11 @@ import {
   restoreGlobalUndo
 } from "./undo-stack.js";
 import { markGlobalLayoutLocalMutation, markSkipSeatRecovery } from "./layout-mutation-guard.js";
-import { runSerializedGlobalWaitingWrite } from "./global-waiting-write-lock.js";
+import { runSerializedGlobalWaitingWrite, setWaitingBlockSavePending } from "./global-waiting-write-lock.js";
 
 /** BLOCK 연타 시 Firestore 트랜잭션 충돌 방지 — 직렬 저장, 같은 사람은 마지막 상태만 반영 */
 const waitingBlockSaveQueue = [];
 let waitingBlockSavePumpActive = false;
-
-export function isWaitingBlockSavePending() {
-  return waitingBlockSavePumpActive || waitingBlockSaveQueue.length > 0;
-}
 
 function waitingBlockSaveKey(target = {}, wid = "") {
   return waitingPersonIdentityKey(target) || `id:${String(wid || "").trim()}`;
@@ -59,6 +55,7 @@ function enqueueWaitingBlockSave(job = {}) {
 async function pumpWaitingBlockSaveQueue() {
   if (waitingBlockSavePumpActive) return;
   waitingBlockSavePumpActive = true;
+  setWaitingBlockSavePending(true);
   try {
     while (waitingBlockSaveQueue.length) {
       const first = waitingBlockSaveQueue.shift();
@@ -83,6 +80,7 @@ async function pumpWaitingBlockSaveQueue() {
     }
   } finally {
     waitingBlockSavePumpActive = false;
+    setWaitingBlockSavePending(waitingBlockSaveQueue.length > 0);
     if (waitingBlockSaveQueue.length) void pumpWaitingBlockSaveQueue();
   }
 }

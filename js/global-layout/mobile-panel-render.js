@@ -232,7 +232,7 @@ function syncMobileWaitRow(row, w) {
   const nameEl = row.querySelector(".mobile-seat-person");
   if (nameEl) nameEl.textContent = String(w.name || w.uid || "-");
   const cb = row.querySelector(".wait-block-check");
-  if (cb) cb.checked = blocked;
+  if (cb && !cb.disabled) cb.checked = blocked;
   let badge = row.querySelector(".wait-block-badge");
   if (blocked && !badge && nameEl?.parentElement) {
     badge = document.createElement("span");

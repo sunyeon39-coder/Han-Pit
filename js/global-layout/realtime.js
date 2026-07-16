@@ -59,11 +59,7 @@ import { invalidateWaitingPanelFingerprint } from "./panel-ui.js";
 import { resolveAttendanceWaitingJoinMs } from "../shared/attendance-operational-day.js";
 import { mergeIncomingGlobalWaiting, replaceGlobalWaitingLocal } from "./waiting.js";
 import { dedupeGlobalWaitingRows } from "../shared/tournament-waiting-queue.js";
-import { isWaitingBlockSavePending } from "./fs-waiting-list-undo.js";
-import {
-  isGlobalWaitingWriteInFlight,
-  runSerializedGlobalWaitingWrite
-} from "./global-waiting-write-lock.js";
+import { isWaitingBlockSavePending, isGlobalWaitingWriteInFlight, runSerializedGlobalWaitingWrite } from "./global-waiting-write-lock.js";
 
 /** Firestore 전파 전 캐시 스냅샷이 방금 배치한 좌석을 비우는 것 방지 */
 const RECENT_LOCAL_SEAT_MS = 12000;
@@ -74,6 +70,7 @@ let restoreMissingWaitingTimer = null;
 let attendanceInactiveSourceDocs = [];
 let lastSeatsUiFingerprint = "";
 let lastWaitingUiFingerprint = "";
+let lastAttendanceUiFingerprint = "";
 let seatSnapshotReceived = false;
 /** 서버 기준 좌석 동기화 완료(또는 서버에 좌석 0건 확인) */
 let globalSeatsServerSynced = false;
@@ -115,6 +112,20 @@ function globalWaitingUiFingerprint(arr = []) {
         Number(w?.blockAccumulatedMs || 0) || 0
       ].join(":")
     )
+    .join("|");
+}
+
+function attendanceWaitingUiFingerprint(rows = []) {
+  return (rows || [])
+    .map((row) =>
+      [
+        String(row?.uid || "").trim(),
+        String(row?.status || "").trim(),
+        Number(row?.statusChangedAt || row?.checkedInAt || 0) || 0,
+        Number(row?.checkedOutAt || 0) || 0
+      ].join(":")
+    )
+    .sort()
     .join("|");
 }
 
@@ -168,7 +179,6 @@ function rebuildGlobalLayoutAttendanceInactiveUids() {
   );
   GL._waitingListCache = null;
   GL._waitingListCacheRev = -1;
-  GL._waitingPanelFp = null;
 }
 
 function purgeSeatedPeopleFromGlobalWaitingLocal() {
@@ -206,6 +216,10 @@ function applyDealerAttendanceSnap(snap) {
   GL.attendanceWaiting = filterAttendanceRowsForWaitingMerge(
     docs.map((d) => ({ id: d.id, ...(d.data() || {}) }))
   ).map(({ id: _id, ...rest }) => rest);
+
+  const nextAttFp = attendanceWaitingUiFingerprint(GL.attendanceWaiting);
+  if (nextAttFp === lastAttendanceUiFingerprint) return;
+  lastAttendanceUiFingerprint = nextAttFp;
 
   bumpGlobalLayoutDataRevision();
   scheduleGlobalLayoutRealtimeUi({ waiting: true });
@@ -739,6 +753,7 @@ export function bindRealtime() {
   attendanceInactiveSourceDocs = [];
   lastSeatsUiFingerprint = "";
   lastWaitingUiFingerprint = "";
+  lastAttendanceUiFingerprint = "";
   seatSnapshotReceived = false;
   globalSeatsServerSynced = false;
 
@@ -806,12 +821,28 @@ export function bindRealtime() {
         Array.isArray(data.waiting) ? data.waiting : [],
         GL.globalWaiting
       );
-      lastWaitingUiFingerprint = globalWaitingUiFingerprint(nextWaiting);
+      const nextFp = globalWaitingUiFingerprint(nextWaiting);
 
       GL.globalWaiting = nextWaiting;
-      purgeSeatedPeopleFromGlobalWaitingLocal();
+      const purgedSeatedWaiting = purgeSeatedPeopleFromGlobalWaitingLocal();
       applyOperatorPicksFromDoc(data, snap.metadata || {});
       rebuildGlobalLayoutAttendanceInactiveUids();
+
+      if (nextFp === lastWaitingUiFingerprint && !purgedSeatedWaiting) {
+        updateGlobalLayoutWaitingMeta();
+        if (GL.attendanceFilterReady) {
+          scheduleHealMissingWaitingFromAttendance();
+        }
+        if (
+          snap.metadata?.fromCache &&
+          (!snap.exists() || !nextWaiting.length)
+        ) {
+          void refreshGlobalWaitingFromServer();
+        }
+        return;
+      }
+
+      lastWaitingUiFingerprint = nextFp;
       bumpGlobalLayoutDataRevision();
       updateGlobalLayoutWaitingMeta();
       scheduleGlobalLayoutRealtimeUi({ waiting: true, seatPanel: true });

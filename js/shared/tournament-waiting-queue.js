@@ -204,6 +204,43 @@ function waitingDisplayHasEntry(merged = [], candidate = {}) {
   });
 }
 
+function blockFieldsFromWaitingRow(w = {}) {
+  if (w?.blockChecked === true) {
+    return {
+      blockChecked: true,
+      blockCheckedAt: w.blockCheckedAt ?? null,
+      blockAccumulatedMs: Number(w.blockAccumulatedMs || 0) || 0
+    };
+  }
+  return {
+    blockChecked: false,
+    blockCheckedAt: null,
+    blockAccumulatedMs: Number(w.blockAccumulatedMs || 0) || 0
+  };
+}
+
+/** getCurrentTournamentWaiting — 행마다 findGlobalWaitingBlockFields 반복 방지 */
+export function buildGlobalWaitingBlockIndex(globalWaiting = [], tournamentId = "") {
+  const tid = String(tournamentId || "").trim();
+  const index = new Map();
+  for (const w of globalWaiting || []) {
+    if (!waitingRowBelongsToTournament(w, tid)) continue;
+    const key = waitingPersonIdentityKey(w);
+    if (!key) continue;
+    const patch = blockFieldsFromWaitingRow(w);
+    const prev = index.get(key);
+    if (!prev) index.set(key, patch);
+    else if (patch.blockChecked && !prev.blockChecked) index.set(key, patch);
+  }
+  return index;
+}
+
+export function resolveGlobalWaitingBlockFields(index, globalWaiting = [], tournamentId = "", person = {}) {
+  const key = waitingPersonIdentityKey(person);
+  if (key && index?.has(key)) return index.get(key);
+  return findGlobalWaitingBlockFields(globalWaiting, tournamentId, person);
+}
+
 export function findGlobalWaitingBlockFields(globalWaiting = [], tournamentId = "", person = {}) {
   const tid = String(tournamentId || "").trim();
   const uid = String(person?.uid || "").trim();

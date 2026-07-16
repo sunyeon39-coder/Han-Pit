@@ -357,6 +357,7 @@ export function renderWaiting(_waiting) {
     existingManual &&
     waitCol.contains(existingList)
   ) {
+    updateWaitingTimersInPanel();
     restorePanelScroll();
     updateGlobalMetaToolbar();
     return;
