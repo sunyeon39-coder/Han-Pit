@@ -19,13 +19,15 @@ import {
   getWaitingDisplayStartMs,
   isWaitingBlocked,
   getCurrentTournamentWaiting,
-  partitionWaitingForMobileDisplay
+  partitionWaitingForMobileDisplay,
+  resolveSelectedWaitingForAssign
 } from "./waiting.js";
 import {
   buildOperatorLegendHtml,
   buildWaitingPickBadgesHtml,
   waitingRowPickClass,
-  setWaitingRowSelection
+  setWaitingRowSelection,
+  syncSelectedWaitingFromMyOperatorPick
 } from "./waiting-picks.js";
 import { getEventBoxPaletteClass, buildEventBoxPaletteMap } from "./event-box-palette.js";
 import { getEventCardIdFromRecord } from "../shared/tournament-event-instance.js";
@@ -95,6 +97,20 @@ function buildMobileSeatByKeyMap() {
     if (sid) map.set(sid, seat);
   }
   return map;
+}
+
+function resolveMobileSelectedWaiting(waiting = getCurrentTournamentWaiting()) {
+  const selId = String(GL.selectedWaitingId || "").trim();
+  if (!selId) return null;
+  return (
+    waiting.find((w) => String(w.id || "").trim() === selId) || resolveSelectedWaitingForAssign()
+  );
+}
+
+function buildMobileAssignSeatButtonHtml(seatId, selectedWaiting, occupied) {
+  const action = occupied ? "스왑" : "배치";
+  const assignLabel = escapeHtml(`${selectedWaiting.name || ""} 이 Seat에 ${action}`);
+  return `<button type="button" class="mobile-pill-btn primary mobile-pill-btn--assign-seat" data-mobile-assign="${escapeHtml(seatId)}" aria-label="${assignLabel}">${action}</button>`;
 }
 
 function mobileLayoutStructureFingerprint() {
@@ -171,14 +187,18 @@ function syncMobileSeatRow(row, seat, selectedWaiting, paletteMap) {
   }
 
   let assignBtn = row.querySelector("[data-mobile-assign]");
-  if (selectedWaiting && !occupied && !assignBtn) {
+  if (selectedWaiting && canManageGlobalLayoutOps()) {
     const actions = row.querySelector(".mobile-seat-inline-actions");
-    const assignLabel = escapeHtml(`${selectedWaiting.name || ""} 이 Seat에 배치`);
-    actions?.insertAdjacentHTML(
-      "beforeend",
-      `<button type="button" class="mobile-pill-btn primary mobile-pill-btn--assign-seat" data-mobile-assign="${escapeHtml(seatId)}" aria-label="${assignLabel}">배치</button>`
-    );
-  } else if ((!selectedWaiting || occupied) && assignBtn) {
+    const html = buildMobileAssignSeatButtonHtml(seatId, selectedWaiting, occupied);
+    if (!assignBtn) {
+      actions?.insertAdjacentHTML("beforeend", html);
+    } else {
+      const wantLabel = occupied ? "스왑" : "배치";
+      if (assignBtn.textContent.trim() !== wantLabel) {
+        assignBtn.outerHTML = html.trim();
+      }
+    }
+  } else if (assignBtn) {
     assignBtn.remove();
   }
 
@@ -243,9 +263,7 @@ function trySyncGlobalLayoutMobile() {
   updateGlobalLayoutWaitingMeta();
 
   const waiting = getCurrentTournamentWaiting();
-  const selectedWaiting = GL.selectedWaitingId
-    ? waiting.find((w) => String(w.id || "") === GL.selectedWaitingId) || null
-    : null;
+  const selectedWaiting = resolveMobileSelectedWaiting(waiting);
   const paletteMap = buildEventBoxPaletteMap(GL.globalSeats);
   const seatByKey = buildMobileSeatByKeyMap();
   const waitById = new Map(waiting.map((w) => [String(w.id || ""), w]));
@@ -302,8 +320,9 @@ export function wireGlobalLayoutMobileEventsOnce() {
     const assignBtn = e.target.closest("[data-mobile-assign]");
     if (assignBtn) {
       e.stopPropagation();
+      syncSelectedWaitingFromMyOperatorPick();
       const sid = String(assignBtn.getAttribute("data-mobile-assign") || "").trim();
-      if (!GL.selectedWaitingId || !sid) return;
+      if (!String(GL.selectedWaitingId || "").trim() || !sid) return;
       try {
         const { assignSelectedWaitingToSeat } = await loadFirestoreOps();
         await assignSelectedWaitingToSeat(sid);
@@ -399,6 +418,11 @@ export function wireGlobalLayoutMobileEventsOnce() {
       const now = Date.now();
 
       if (GL.selectedWaitingId) {
+        syncSelectedWaitingFromMyOperatorPick();
+        if (!String(GL.selectedWaitingId || "").trim()) {
+          fullRender();
+          return;
+        }
         setMobileSeatSelection(sid);
         try {
           const { assignSelectedWaitingToSeat } = await loadFirestoreOps();
@@ -540,9 +564,7 @@ export function renderGlobalLayoutMobile(options = {}) {
   wrap.className = "mobile global-layout-mobile";
 
   const waiting = getCurrentTournamentWaiting();
-  const selectedWaiting = GL.selectedWaitingId
-    ? waiting.find((w) => String(w.id || "") === GL.selectedWaitingId) || null
-    : null;
+  const selectedWaiting = resolveMobileSelectedWaiting(waiting);
   const paletteMap = buildEventBoxPaletteMap(GL.globalSeats);
 
   wrap.innerHTML = `
@@ -588,9 +610,6 @@ export function renderGlobalLayoutMobile(options = {}) {
       const seatedAt = occupied ? getGlobalSeatSeatedAtMs(s) || Date.now() : 0;
       const elapsed = seatedAt ? Date.now() - seatedAt : 0;
       const tClass = occupied ? timerClass(elapsed) : "";
-      const assignLabel = selectedWaiting
-        ? escapeHtml(`${selectedWaiting.name || ""} 이 Seat에 배치`)
-        : "";
       const ebMeta = occupied ? "" : formatMobileSeatEventBoxMeta(s);
       seatCard.innerHTML += `
         <div class="mobile-seat-row compact ${paletteClass} ${isSel ? "selected" : ""}" data-mobile-seat="${escapeHtml(rowKey)}" data-firestore-doc="${escapeHtml(firestoreDocId)}">
@@ -609,8 +628,8 @@ export function renderGlobalLayoutMobile(options = {}) {
               <button type="button" class="mobile-pill-btn" data-rename-seat="${escapeHtml(seatId)}">수정</button>
               <button type="button" class="mobile-pill-btn danger" data-del-seat="${escapeHtml(seatId)}" data-del-doc="${escapeHtml(firestoreDocId)}">삭제</button>
               ${
-                selectedWaiting
-                  ? `<button type="button" class="mobile-pill-btn primary mobile-pill-btn--assign-seat" data-mobile-assign="${escapeHtml(seatId)}" aria-label="${assignLabel}">배치</button>`
+                selectedWaiting && canManageGlobalLayoutOps()
+                  ? buildMobileAssignSeatButtonHtml(seatId, selectedWaiting, occupied)
                   : ""
               }
             </div>
