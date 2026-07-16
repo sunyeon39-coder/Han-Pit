@@ -5,9 +5,74 @@ import { getOperationalDayKey } from "../shared/attendance-operational-day.js";
 import { attendanceLogCreatedAtMs } from "../shared/attendance-log-write.js";
 
 const SESSION_START = new Set(["waiting", "checked_in"]);
+const SESSION_DEDUPE_TOLERANCE_MS = 120_000;
 
 function localDateKey(ms) {
   return getOperationalDayKey(Number(ms) || Date.now());
+}
+
+function sessionEndMs(session, nowMs = Date.now()) {
+  if (session?.open) return nowMs;
+  return Number(session?.endMs || 0);
+}
+
+function workSessionsAreDuplicate(a, b, nowMs = Date.now()) {
+  const aStart = Number(a?.startMs || 0);
+  const bStart = Number(b?.startMs || 0);
+  const aEnd = sessionEndMs(a, nowMs);
+  const bEnd = sessionEndMs(b, nowMs);
+  if (!aStart || !bStart || !aEnd || !bEnd) return false;
+
+  const sameEnd =
+    Math.abs(aEnd - bEnd) <= SESSION_DEDUPE_TOLERANCE_MS &&
+    (localDateKey(aStart) === localDateKey(bStart) || localDateKey(aEnd) === localDateKey(bEnd));
+  if (sameEnd) return true;
+
+  const overlapStart = Math.max(aStart, bStart);
+  const overlapEnd = Math.min(aEnd, bEnd);
+  const overlapMs = Math.max(0, overlapEnd - overlapStart);
+  const shorterMs = Math.min(aEnd - aStart, bEnd - bStart);
+  return shorterMs > 0 && overlapMs / shorterMs >= 0.85;
+}
+
+function mergeDuplicateWorkSessions(keep, drop) {
+  keep.startMs = Math.max(Number(keep.startMs || 0), Number(drop.startMs || 0));
+  if (!keep.open && !drop.open) {
+    keep.endMs = Math.max(Number(keep.endMs || 0), Number(drop.endMs || 0));
+  }
+  keep.open = Boolean(keep.open || drop.open);
+  delete keep.durationMs;
+  keep.sessionKey = buildWorkSessionKey(keep);
+  return keep;
+}
+
+function dedupeWorkSessions(sessions = [], nowMs = Date.now()) {
+  const sorted = [...sessions].sort((a, b) => Number(a.startMs) - Number(b.startMs));
+  const result = [];
+
+  for (const session of sorted) {
+    const dupIdx = result.findIndex((existing) => workSessionsAreDuplicate(existing, session, nowMs));
+    if (dupIdx >= 0) {
+      mergeDuplicateWorkSessions(result[dupIdx], session);
+      continue;
+    }
+    result.push({ ...session });
+  }
+
+  return result.map((session) => withSessionKey(session));
+}
+
+function sessionAlreadyCoversRange(sessions, startMs, endMs, nowMs = Date.now()) {
+  const start = Number(startMs || 0);
+  const end = Number(endMs || 0);
+  if (!start || !end) return false;
+
+  return sessions.some((session) => {
+    const candidate = session.open
+      ? { ...session, endMs: end, open: false }
+      : session;
+    return workSessionsAreDuplicate(candidate, { startMs: start, endMs: end, open: false }, nowMs);
+  });
 }
 
 function sessionDurationMs(session) {
@@ -123,7 +188,23 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
     }
     if (action === "adjust_check_in") {
       const next = Number(log.newCheckedInAt || 0);
-      if (next > 0) openStart = next;
+      if (next > 0) {
+        if (openStart != null) {
+          openStart = next;
+        } else {
+          // 퇴근 후 출근 시각을 수정한 경우 — 이미 마감된 구간의 시작 시각을 갱신
+          for (let i = sessions.length - 1; i >= 0; i -= 1) {
+            const session = sessions[i];
+            if (session.open) continue;
+            const dayKey = localDateKey(next);
+            if (localDateKey(session.startMs) !== dayKey && localDateKey(session.endMs) !== dayKey) continue;
+            session.startMs = next;
+            delete session.durationMs;
+            session.sessionKey = buildWorkSessionKey(session);
+            break;
+          }
+        }
+      }
       if (at) lastActivity = at;
       continue;
     }
@@ -156,18 +237,20 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
   const status = String(derived?.status || "").trim();
   const checkedInAt = Number(derived?.checkedInAt || 0);
   const checkedOutAt = Number(derived?.checkedOutAt || 0);
+  const nowMs = Date.now();
   const isOpen =
     checkedInAt > 0 && status !== "checked_out" && status !== "off";
 
   if (isOpen) {
-    sessions.push(
-      withSessionKey({
-        startMs: checkedInAt,
-        endMs: Date.now(),
-        durationMs: getWorkingMs(derived),
-        open: true
-      })
-    );
+    const derivedOpen = withSessionKey({
+      startMs: checkedInAt,
+      endMs: nowMs,
+      durationMs: getWorkingMs(derived),
+      open: true
+    });
+    if (!sessions.some((s) => workSessionsAreDuplicate(s, derivedOpen, nowMs))) {
+      sessions.push(derivedOpen);
+    }
     openStart = null;
   } else if (openStart) {
     // 로그상 아직 안 닫힌 세션. 이전 운영일이면 마지막 활동 시점으로 마감, 오늘이면 진행 중.
@@ -178,8 +261,7 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
       sessions.push(withSessionKey({ startMs: openStart, endMs: Date.now(), open: true }));
     }
   } else if (checkedInAt > 0 && checkedOutAt > 0 && status === "checked_out") {
-    const dup = sessions.some((s) => Math.abs(Number(s.startMs) - checkedInAt) < 120_000);
-    if (!dup) {
+    if (!sessionAlreadyCoversRange(sessions, checkedInAt, checkedOutAt, nowMs)) {
       sessions.push(
         withSessionKey({
           startMs: checkedInAt,
@@ -191,11 +273,12 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
   }
 
   applyWorkSessionAdjustments(sessions, mine);
+  const dedupedSessions = dedupeWorkSessions(sessions, nowMs);
 
   const daySet = new Set();
   let totalMs = 0;
 
-  sessions.forEach((s) => {
+  dedupedSessions.forEach((s) => {
     const ms = sessionDurationMs(s);
     totalMs += ms;
     const dk1 = localDateKey(s.startMs);
@@ -208,7 +291,7 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
   return {
     dayCount,
     totalMs,
-    sessions: sessions.sort((a, b) => Number(b.startMs) - Number(a.startMs)),
+    sessions: dedupedSessions.sort((a, b) => Number(b.startMs) - Number(a.startMs)),
     dayLabel: `${dayCount}일`,
     durationLabel: formatDuration(totalMs)
   };
