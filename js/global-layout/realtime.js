@@ -57,8 +57,7 @@ import {
 } from "../shared/tournament-waiting-queue.js";
 import { invalidateWaitingPanelFingerprint } from "./panel-ui.js";
 import { resolveAttendanceWaitingJoinMs } from "../shared/attendance-operational-day.js";
-import { mergeRemoteGlobalWaitingPreservingLocalBlock, replaceGlobalWaitingLocal } from "./waiting.js";
-import { dedupeGlobalWaitingRows } from "../shared/tournament-waiting-queue.js";
+import { mergeIncomingGlobalWaiting, replaceGlobalWaitingLocal } from "./waiting.js";
 import { dedupeGlobalWaitingRows } from "../shared/tournament-waiting-queue.js";
 
 /** Firestore 전파 전 캐시 스냅샷이 방금 배치한 좌석을 비우는 것 방지 */
@@ -251,7 +250,7 @@ async function healInactiveRowsOutOfGlobalWaiting() {
       },
       { merge: true }
     );
-    replaceGlobalWaitingLocal(healed);
+    replaceGlobalWaitingLocal(mergeIncomingGlobalWaiting(healed, GL.globalWaiting));
     bumpGlobalLayoutDataRevision();
     scheduleGlobalLayoutRealtimeUi({ waiting: true });
   } catch (err) {
@@ -263,11 +262,12 @@ async function healInactiveRowsOutOfGlobalWaiting() {
 
 function scheduleHealMissingWaitingFromAttendance() {
   if (!GL.tournamentId || !GL.attendanceFilterReady) return;
+  if (Date.now() < (GL.localMutationUntil || 0)) return;
   if (restoreMissingWaitingTimer) clearTimeout(restoreMissingWaitingTimer);
   restoreMissingWaitingTimer = setTimeout(() => {
     restoreMissingWaitingTimer = null;
     void healMissingWaitingFromAttendance();
-  }, 300);
+  }, 1200);
 }
 
 export { scheduleHealMissingWaitingFromAttendance };
@@ -275,6 +275,7 @@ export { scheduleHealMissingWaitingFromAttendance };
 /** 출석 문서에 waiting 이 있는데 global_waiting 에 없으면 복구 (운영자·일반 유저 공통) */
 async function healMissingWaitingFromAttendance() {
   if (!GL.tournamentId || GL.waitingMutationInFlight || !GL.attendanceFilterReady) return;
+  if (Date.now() < (GL.localMutationUntil || 0)) return;
 
   const checkedOut = buildCheckedOutAttendanceUidSet(attendanceInactiveSourceDocs, GL.tournamentId);
   const missing = buildMissingGlobalWaitingRestoreList({
@@ -286,58 +287,61 @@ async function healMissingWaitingFromAttendance() {
     resolveJoinedAt: (row) => resolveAttendanceWaitingJoinMs(row, Date.now())
   });
 
+  if (!missing.length) return;
+
   const waitingRef = doc(db, "layout_shared", "global_waiting");
   try {
     GL.waitingMutationInFlight = true;
-    if (missing.length) {
-      let healed = null;
-      await runFirestoreTransactionWithRetry(db, async (tx) => {
-        const waitingSnap = await tx.get(waitingRef);
-        const waitingData = waitingSnap.exists()
-          ? waitingSnap.data() || {}
-          : { version: 2, waiting: [], updatedAt: Date.now() };
-        let waitingArr = Array.isArray(waitingData.waiting) ? [...waitingData.waiting] : [];
-        const now = Date.now();
-        let changed = false;
+    let healed = null;
+    await runFirestoreTransactionWithRetry(db, async (tx) => {
+      const waitingSnap = await tx.get(waitingRef);
+      const waitingData = waitingSnap.exists()
+        ? waitingSnap.data() || {}
+        : { version: 2, waiting: [], updatedAt: Date.now() };
+      let waitingArr = Array.isArray(waitingData.waiting) ? [...waitingData.waiting] : [];
+      const now = Date.now();
+      let changed = false;
 
-        for (const person of missing) {
-          const uid = String(person?.uid || "").trim();
-          if (uid && checkedOut.has(uid)) continue;
-          if (personExistsInGlobalWaiting(waitingArr, GL.tournamentId, person)) continue;
-          const joinMs = Number(person.joinedAt || 0) || now;
-          waitingArr = rebuildWaitingAfterSeatToWait(waitingArr, GL.tournamentId, person, joinMs, {
-            source: "attendance_restore",
-            ...(person.uid ? { id: `w_${person.uid}` } : {})
-          });
-          changed = true;
-        }
-        if (!changed) return;
-
-        healed = waitingArr;
-        tx.set(
-          waitingRef,
-          {
-            ...waitingData,
-            version: 2,
-            waiting: waitingArr,
-            updatedAt: now,
-            updatedAtServer: serverTimestamp()
-          },
-          { merge: true }
-        );
-      });
-
-      if (healed) {
-        console.info(
-          "[healMissingWaitingFromAttendance] restored",
-          missing.length,
-          "row(s) for",
-          GL.tournamentId
-        );
-        replaceGlobalWaitingLocal(healed);
-        bumpGlobalLayoutDataRevision();
-        scheduleGlobalLayoutRealtimeUi({ waiting: true });
+      for (const person of missing) {
+        const uid = String(person?.uid || "").trim();
+        if (uid && checkedOut.has(uid)) continue;
+        if (personExistsInGlobalWaiting(waitingArr, GL.tournamentId, person)) continue;
+        const joinMs = Number(person.joinedAt || 0) || now;
+        waitingArr = rebuildWaitingAfterSeatToWait(waitingArr, GL.tournamentId, person, joinMs, {
+          source: "attendance_restore",
+          ...(person.uid ? { id: `w_${person.uid}` } : {})
+        });
+        changed = true;
       }
+      if (!changed) return;
+
+      waitingArr = dedupeGlobalWaitingRows(waitingArr, GL.tournamentId);
+      healed = waitingArr;
+      tx.set(
+        waitingRef,
+        {
+          ...waitingData,
+          version: 2,
+          waiting: waitingArr,
+          updatedAt: now,
+          updatedAtServer: serverTimestamp()
+        },
+        { merge: true }
+      );
+    });
+
+    if (healed) {
+      console.info(
+        "[healMissingWaitingFromAttendance] restored",
+        missing.length,
+        "row(s) for",
+        GL.tournamentId
+      );
+      replaceGlobalWaitingLocal(
+        mergeIncomingGlobalWaiting(healed, GL.globalWaiting)
+      );
+      bumpGlobalLayoutDataRevision();
+      scheduleGlobalLayoutRealtimeUi({ waiting: true });
     }
   } catch (err) {
     console.warn("healMissingWaitingFromAttendance:", err?.code || err);
@@ -620,12 +624,9 @@ async function refreshGlobalWaitingFromServer() {
   try {
     const snap = await getDocFromServer(doc(db, "layout_shared", "global_waiting"));
     const data = snap.exists() ? snap.data() || {} : {};
-    const nextWaiting = dedupeGlobalWaitingRows(
-      mergeRemoteGlobalWaitingPreservingLocalBlock(
-        Array.isArray(data.waiting) ? data.waiting : [],
-        GL.globalWaiting
-      ),
-      GL.tournamentId
+    const nextWaiting = mergeIncomingGlobalWaiting(
+      Array.isArray(data.waiting) ? data.waiting : [],
+      GL.globalWaiting
     );
     GL.globalWaiting = nextWaiting;
     purgeSeatedPeopleFromGlobalWaitingLocal();
@@ -720,6 +721,7 @@ export function bindRealtime() {
   GL.seatMutationInFlight = false;
   GL.waitingMutationInFlight = false;
   GL.localMutationUntil = 0;
+  GL.pendingWaitingBlockByPerson = new Map();
   GL.attendanceFilterReady = false;
   GL.attendanceInactiveUids = new Set();
   GL.attendanceWaiting = [];
@@ -789,12 +791,9 @@ export function bindRealtime() {
       if (shouldIgnoreStaleGlobalLayoutSnapshot(snap)) return;
       if (GL.waitingMutationInFlight) return;
       const data = snap.exists() ? snap.data() || {} : {};
-      const nextWaiting = dedupeGlobalWaitingRows(
-        mergeRemoteGlobalWaitingPreservingLocalBlock(
-          Array.isArray(data.waiting) ? data.waiting : [],
-          GL.globalWaiting
-        ),
-        GL.tournamentId
+      const nextWaiting = mergeIncomingGlobalWaiting(
+        Array.isArray(data.waiting) ? data.waiting : [],
+        GL.globalWaiting
       );
       lastWaitingUiFingerprint = globalWaitingUiFingerprint(nextWaiting);
 

@@ -16,9 +16,10 @@ import {
   applyWaitingBlockToWaitingArray,
   getCurrentTournamentWaiting,
   replaceGlobalWaitingLocal,
-  resolveWaitingEntryById
+  resolveWaitingEntryById,
+  setPendingWaitingBlock
 } from "./waiting.js";
-import { dedupeGlobalWaitingRows } from "../shared/tournament-waiting-queue.js";
+import { dedupeGlobalWaitingRows, personIdentityMatches } from "../shared/tournament-waiting-queue.js";
 import { flushOptimisticGlobalLayoutUi } from "./optimistic-seat-mutation.js";
 import { invalidateWaitingPanelFingerprint } from "./panel-ui.js";
 import { canManageGlobalLayoutOps } from "./ops-access.js";
@@ -1098,6 +1099,14 @@ export async function setWaitingBlocked(waitingId = "", checked = false) {
   } catch (err) {
     console.error("setWaitingBlocked error:", err);
     replaceGlobalWaitingLocal(snapshotBefore);
+    const prevRow =
+      snapshotBefore.find((w) => String(w?.id || "").trim() === wid) ||
+      snapshotBefore.find((w) => personIdentityMatches(w, target));
+    if (prevRow) {
+      setPendingWaitingBlock(prevRow, prevRow.blockChecked === true, now);
+    } else {
+      setPendingWaitingBlock(target, false, now);
+    }
     flushOptimisticGlobalLayoutUi();
     alert("BLOCK 변경에 실패했습니다.");
   } finally {

@@ -122,6 +122,8 @@ function waitingPersonIdentityKey(row = {}) {
   return "";
 }
 
+export { waitingPersonIdentityKey };
+
 function preferWaitingDisplayRow(a = {}, b = {}) {
   const blockedA = a?.blockChecked === true;
   const blockedB = b?.blockChecked === true;
@@ -143,41 +145,48 @@ function preferWaitingDisplayRow(a = {}, b = {}) {
   return a;
 }
 
-/** 화면 목록 — 같은 사람 중복 행 제거, BLOCK 행 우선 */
+/** 화면 목록 — 같은 사람 중복 행 제거, BLOCK 행 우선 (uid·이름-only 포함) */
 export function dedupeWaitingDisplayRows(list = []) {
   const passthrough = [];
-  const byKey = new Map();
+  const scoped = [];
   for (const row of list || []) {
     const key = waitingPersonIdentityKey(row);
     if (!key) {
       passthrough.push(row);
       continue;
     }
-    const prev = byKey.get(key);
-    byKey.set(key, prev ? preferWaitingDisplayRow(prev, row) : row);
+    scoped.push(row);
   }
-  return [...passthrough, ...byKey.values()];
+
+  const merged = [];
+  for (const row of scoped) {
+    const idx = merged.findIndex((prev) => personIdentityMatches(prev, row));
+    if (idx < 0) merged.push(row);
+    else merged[idx] = preferWaitingDisplayRow(merged[idx], row);
+  }
+  return [...passthrough, ...merged];
 }
 
-/** Firestore 저장 전 — 같은 사람 중복 global_waiting 행 병합 */
+/** Firestore 저장 전 — 같은 사람 중복 global_waiting 행 병합 (uid·이름-only 포함) */
 export function dedupeGlobalWaitingRows(rows = [], tournamentId = "") {
   const tid = String(tournamentId || "").trim();
   const passthrough = [];
-  const byKey = new Map();
+  const scoped = [];
   for (const row of rows || []) {
-    if (!waitingRowBelongsToTournament(row, tid)) {
+    if (tid && !waitingRowBelongsToTournament(row, tid)) {
       passthrough.push(row);
       continue;
     }
-    const key = waitingPersonIdentityKey(row);
-    if (!key) {
-      passthrough.push(row);
-      continue;
-    }
-    const prev = byKey.get(key);
-    byKey.set(key, prev ? preferWaitingDisplayRow(prev, row) : row);
+    scoped.push(row);
   }
-  return [...passthrough, ...byKey.values()];
+
+  const merged = [];
+  for (const row of scoped) {
+    const idx = merged.findIndex((prev) => personIdentityMatches(prev, row));
+    if (idx < 0) merged.push(row);
+    else merged[idx] = preferWaitingDisplayRow(merged[idx], row);
+  }
+  return [...passthrough, ...merged];
 }
 
 function waitingDisplayHasEntry(merged = [], candidate = {}) {

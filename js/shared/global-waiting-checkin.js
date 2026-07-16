@@ -1,6 +1,7 @@
 import { db } from "../firebase.js";
 import { doc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { runFirestoreTransactionWithRetry } from "./firestore-transaction-retry.js";
+import { dedupeGlobalWaitingRows } from "./tournament-waiting-queue.js";
 
 const GLOBAL_WAITING_REF = () => doc(db, "layout_shared", "global_waiting");
 
@@ -85,12 +86,14 @@ export async function upsertCheckInIntoGlobalWaiting({
     if (existingIdx >= 0) waitingList[existingIdx] = savedRow;
     else waitingList.push(savedRow);
 
+    const deduped = dedupeGlobalWaitingRows(waitingList, tid);
+
     tx.set(
       waitingRef,
       {
         ...waitingState,
         version: 2,
-        waiting: waitingList,
+        waiting: deduped,
         updatedAt: now
       },
       { merge: true }

@@ -488,8 +488,8 @@ export function wireGlobalLayoutMobileEventsOnce() {
     if (!wid) return;
     const nextChecked = !!cb.checked;
     applyWaitingBlockLocal(wid, nextChecked);
+    applyOptimisticWaitingBlockRow(cb.closest("[data-mobile-wait]"), nextChecked);
     invalidateWaitingPanelFingerprint();
-    renderGlobalLayoutMobile({ forceFull: true });
     updateGlobalLayoutWaitingMeta();
     cb.disabled = true;
     try {

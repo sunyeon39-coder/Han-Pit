@@ -44,6 +44,8 @@ export const GL = {
   attendanceCheckedOutUids: new Set(),
   /** dealer_attendance 1회 이상 반영 전에는 global_waiting 유령 행 숨김 */
   attendanceFilterReady: false,
+  /** BLOCK 저장 확인 전까지 스냅샷·heal 이 덮어쓰지 못하게 하는 로컬 잠금 */
+  pendingWaitingBlockByPerson: new Map(),
 
   selectedWaitingId: "",
   /** 다중 선택: Ctrl(Windows/Linux) 또는 ⌘(macOS) + 클릭으로 토글 */

@@ -315,8 +315,8 @@ export function bindGlobalLayoutEventHandlers() {
     if (!wid) return;
     const nextChecked = !!blockCb.checked;
     applyWaitingBlockLocal(wid, nextChecked);
+    applyOptimisticWaitingBlockRow(blockCb.closest("[data-wid]"), nextChecked);
     invalidateWaitingPanelFingerprint();
-    renderWaiting(getCurrentTournamentWaiting());
     updateGlobalLayoutWaitingMeta();
     blockCb.disabled = true;
     try {

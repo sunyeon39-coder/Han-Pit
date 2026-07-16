@@ -5,7 +5,10 @@ import {
   waitingRowBelongsToTournament as sharedWaitingRowBelongsToTournament,
   buildTournamentWaitingDisplayList,
   isPersonSeatedInGlobalSeats as sharedIsPersonSeatedInGlobalSeats,
-  findGlobalWaitingBlockFields
+  findGlobalWaitingBlockFields,
+  dedupeGlobalWaitingRows,
+  waitingPersonIdentityKey,
+  personIdentityMatches
 } from "../shared/tournament-waiting-queue.js";
 import { waitingRowMatchesPerson } from "./fs-waiting-merge.js";
 import { fmtElapsed, isEmptyPerson, makeUid, timerClass, toMillis } from "./utils.js";
@@ -146,23 +149,132 @@ export function waitingRowBelongsToTournament(row = {}, tournamentId = "") {
 /** BLOCK 체크 직후 상단 카운트용 — Firestore 스냅샷 전 로컬 대기 목록 반영 */
 /** Firestore 전 global_waiting 배열을 로컬에 반영 (낙관적 추가·삭제) */
 export function replaceGlobalWaitingLocal(nextWaiting = []) {
-  GL.globalWaiting = Array.isArray(nextWaiting) ? [...nextWaiting] : [];
+  GL.globalWaiting = dedupeGlobalWaitingRows(
+    Array.isArray(nextWaiting) ? [...nextWaiting] : [],
+    GL.tournamentId
+  );
   bumpGlobalLayoutDataRevision();
 }
 
-/** Firestore 스냅샷이 로컬 BLOCK 변경을 되돌리지 않도록 병합 */
-export function mergeRemoteGlobalWaitingPreservingLocalBlock(incoming = [], local = []) {
-  if (!Array.isArray(incoming) || !incoming.length) return incoming || [];
-  const tid = String(GL.tournamentId || "").trim();
-  const guardActive =
-    GL.waitingMutationInFlight === true || Date.now() < (GL.localMutationUntil || 0);
-  if (!guardActive || !Array.isArray(local) || !local.length) return incoming;
+export function setPendingWaitingBlock(target = {}, nextChecked = false, now = Date.now()) {
+  const key = waitingPersonIdentityKey(target);
+  if (!key) return;
+  if (!GL.pendingWaitingBlockByPerson) GL.pendingWaitingBlockByPerson = new Map();
 
-  return incoming.map((remote) => {
-    const patch = findGlobalWaitingBlockFields(local, tid, remote);
-    if (!patch?.blockChecked || remote?.blockChecked === true) return remote;
-    return { ...remote, ...patch };
+  const person = {
+    uid: String(target.uid || "").trim(),
+    email: String(target.email || "").trim(),
+    name: String(target.name || target.nickname || "").trim()
+  };
+
+  if (nextChecked === true) {
+    GL.pendingWaitingBlockByPerson.set(key, {
+      target: person,
+      blockChecked: true,
+      blockCheckedAt: now,
+      blockAccumulatedMs: Number(target.blockAccumulatedMs || 0) || 0
+    });
+    return;
+  }
+
+  const startedAt = Number(target.blockCheckedAt || 0);
+  const elapsed = startedAt > 0 ? Math.max(0, now - startedAt) : 0;
+  GL.pendingWaitingBlockByPerson.set(key, {
+    target: person,
+    blockChecked: false,
+    blockCheckedAt: null,
+    blockAccumulatedMs: Number(target.blockAccumulatedMs || 0) + elapsed
   });
+}
+
+function findPendingBlockForPerson(row = {}) {
+  if (!GL.pendingWaitingBlockByPerson?.size) return null;
+  for (const pending of GL.pendingWaitingBlockByPerson.values()) {
+    if (pending?.target && personIdentityMatches(row, pending.target)) return pending;
+  }
+  return null;
+}
+
+function deletePendingBlockForPerson(row = {}) {
+  if (!GL.pendingWaitingBlockByPerson?.size) return;
+  for (const [key, pending] of GL.pendingWaitingBlockByPerson.entries()) {
+    if (pending?.target && personIdentityMatches(row, pending.target)) {
+      GL.pendingWaitingBlockByPerson.delete(key);
+      return;
+    }
+  }
+}
+
+function reconcilePendingWaitingBlocks(rows = []) {
+  if (!GL.pendingWaitingBlockByPerson?.size) return rows;
+  for (const row of rows) {
+    const pending = findPendingBlockForPerson(row);
+    if (!pending) continue;
+    const rowBlocked = row.blockChecked === true;
+    const wantBlocked = pending.blockChecked === true;
+    if (rowBlocked === wantBlocked) deletePendingBlockForPerson(row);
+  }
+  return rows;
+}
+
+function applyPendingBlockPatch(row = {}, pending = null) {
+  if (!pending) return row;
+  const rowBlocked = row.blockChecked === true;
+  const wantBlocked = pending.blockChecked === true;
+  if (rowBlocked === wantBlocked) return row;
+  if (wantBlocked) {
+    return {
+      ...row,
+      blockChecked: true,
+      blockCheckedAt: pending.blockCheckedAt ?? Date.now(),
+      blockAccumulatedMs: Number(pending.blockAccumulatedMs || 0) || 0
+    };
+  }
+  return {
+    ...row,
+    blockChecked: false,
+    blockCheckedAt: null,
+    blockAccumulatedMs: Number(pending.blockAccumulatedMs ?? row.blockAccumulatedMs ?? 0) || 0
+  };
+}
+
+/** Firestore·heal·캐시 스냅샷 수신 시 BLOCK 상태를 안정적으로 병합 */
+export function mergeIncomingGlobalWaiting(incoming = [], local = []) {
+  const tid = String(GL.tournamentId || "").trim();
+  let rows = dedupeGlobalWaitingRows(Array.isArray(incoming) ? [...incoming] : [], tid);
+
+  rows = rows.map((remote) => {
+    let row = { ...remote };
+    const localPatch = findGlobalWaitingBlockFields(local, tid, row);
+    if (localPatch?.blockChecked === true && row.blockChecked !== true) {
+      row = { ...row, ...localPatch };
+    }
+
+    const pending = findPendingBlockForPerson(row);
+    if (pending) {
+      row = applyPendingBlockPatch(row, pending);
+    }
+    return row;
+  });
+
+  if (GL.pendingWaitingBlockByPerson?.size) {
+    for (const [, pending] of GL.pendingWaitingBlockByPerson.entries()) {
+      const hasMatch = rows.some((row) => personIdentityMatches(row, pending?.target || {}));
+      if (hasMatch) continue;
+      const localRow = (local || []).find((row) => personIdentityMatches(row, pending?.target || {}));
+      if (localRow) {
+        rows.push(applyPendingBlockPatch({ ...localRow }, pending));
+      }
+    }
+  }
+
+  rows = dedupeGlobalWaitingRows(rows, tid);
+  return reconcilePendingWaitingBlocks(rows);
+}
+
+/** @deprecated mergeIncomingGlobalWaiting 사용 */
+export function mergeRemoteGlobalWaitingPreservingLocalBlock(incoming = [], local = []) {
+  return mergeIncomingGlobalWaiting(incoming, local);
 }
 
 function waitingRowMatchesBlockTarget(row = {}, waitingId = "", target = {}, tournamentId = "") {
@@ -240,10 +352,20 @@ export function applyWaitingBlockLocal(waitingId = "", checked = false) {
     GL.globalWaiting.find((w) => String(w?.id || "").trim() === wid) ||
     null;
 
-  GL.globalWaiting = GL.globalWaiting.map((w) => {
-    if (!waitingRowMatchesBlockTarget(w, wid, seed || { id: wid }, GL.tournamentId)) return w;
-    return applyBlockFieldsToWaitingRow(w, nextChecked, now);
-  });
+  const blockTarget = seed || { id: wid };
+
+  GL.globalWaiting = dedupeGlobalWaitingRows(
+    GL.globalWaiting.map((w) => {
+      if (!waitingRowMatchesBlockTarget(w, wid, blockTarget, GL.tournamentId)) return w;
+      return applyBlockFieldsToWaitingRow(w, nextChecked, now);
+    }),
+    GL.tournamentId
+  );
+  const matched =
+    GL.globalWaiting.find((w) =>
+      waitingRowMatchesBlockTarget(w, wid, blockTarget, GL.tournamentId)
+    ) || blockTarget;
+  setPendingWaitingBlock(matched, nextChecked, now);
   GL._waitingListCache = null;
   GL._waitingListCacheRev = -1;
 }
@@ -369,6 +491,7 @@ export function getCurrentTournamentWaiting() {
       return blockFields ? { ...w, ...blockFields } : w;
     })
     .map((w) => {
+    if (isWaitingBlocked(w)) return w;
     const uid = String(w?.uid || "").trim();
     if (!uid) return w;
     const att = (GL.attendanceWaiting || []).find((row) => String(row?.uid || "").trim() === uid);
