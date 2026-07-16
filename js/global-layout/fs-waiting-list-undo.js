@@ -1066,13 +1066,16 @@ export async function removeManualWaiting(waitingId = "") {
   replaceGlobalWaitingLocal(next);
   flushOptimisticGlobalLayoutUi();
 
-  if (GL.selectedWaitingId === wid) {
+  const hadSelectedWaiting = GL.selectedWaitingId === wid;
+  if (hadSelectedWaiting) {
     GL.selectedWaitingId = "";
-    void clearMyWaitingPick();
   }
 
   try {
     await updateGlobalWaiting([...(GL.globalWaiting || [])]);
+    // "내 선택 표시" 서버 해제는 이 삭제 저장이 끝난 뒤에 큐에 넣는다 — 먼저 넣으면
+    // 같은 직렬화 큐를 쓰는 updateGlobalWaiting이 그 쓰기를 기다리게 되어 매번 지연이 생긴다.
+    if (hadSelectedWaiting) void clearMyWaitingPick();
     pushGlobalUndo({
       kind: "remove_waiting",
       snapshotBefore,

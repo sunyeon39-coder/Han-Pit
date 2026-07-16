@@ -1,6 +1,6 @@
 import { buildSeatAssignedNotificationWrite, buildSeatAssignedTargetUrl } from "../shared/seat-notification-push.js";
 import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
-import { db } from "../firebase.js";
+import { auth, db } from "../firebase.js";
 import {
   doc,
   setDoc,
@@ -28,7 +28,7 @@ import { buildSeatAssignedNotifyMessage } from "../shared/seat-notification-labe
 import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
 import { pushGlobalUndo } from "./undo-stack.js";
 import { captureSeatShellSnapshot } from "./utils.js";
-import { clearMyWaitingPick, applyOptimisticMyWaitingPick } from "./waiting-picks.js";
+import { applyOptimisticMyWaitingPick, clearMyWaitingPick } from "./waiting-picks.js";
 import {
   applyOptimisticAssign,
   flushOptimisticGlobalLayoutUi
@@ -130,7 +130,10 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   applyOptimisticMyWaitingPick("");
   flushOptimisticGlobalLayoutUi();
   notifyOptimisticSeatAssignedForWaiting(waiting, seat, targetSeatId);
-  void clearMyWaitingPick();
+  // 화면 반영은 위에서 이미 즉시 끝났다. 서버 쪽 "내 선택 표시" 해제는 별도 쓰기로
+  // 내보내지 않고, 잠시 뒤 시작하는 배정 트랜잭션 안에서 같은 문서를 쓸 때 같이 반영한다.
+  // (직렬화 큐를 공유하는 별도 쓰기로 내보내면, 배정 트랜잭션이 그 쓰기가 끝날 때까지
+  // 기다리게 되어 배정마다 불필요한 지연이 매번 생긴다.)
 
   const now = Date.now();
   const waitingRef = doc(db, "layout_shared", "global_waiting");
@@ -293,6 +296,21 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
       const waitingArr = Array.isArray(waitingData.waiting) ? waitingData.waiting : [];
       undoWaitingBefore = JSON.parse(JSON.stringify(waitingArr));
 
+      // 이 트랜잭션이 이미 같은 문서(global_waiting)를 읽고 쓰는 김에, 이 배정을 요청한
+      // 운영자의 "내 선택 표시"도 여기서 같이 지운다. 별도 쓰기로 빼면 직렬화 큐 때문에
+      // 이 트랜잭션이 그 쓰기를 기다리게 되어 배정마다 지연이 생긴다.
+      const myUid = String(GL.currentUser?.uid || auth.currentUser?.uid || "").trim();
+      let nextOperatorPicks = waitingData.operatorPicks;
+      if (
+        myUid &&
+        nextOperatorPicks &&
+        typeof nextOperatorPicks === "object" &&
+        Object.prototype.hasOwnProperty.call(nextOperatorPicks, myUid)
+      ) {
+        nextOperatorPicks = { ...nextOperatorPicks };
+        delete nextOperatorPicks[myUid];
+      }
+
       let nextWaiting = waitingArr.filter((w) => {
         if (!w || typeof w !== "object") return false;
         const wId = String(w.id || "").trim();
@@ -368,6 +386,7 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
           ...waitingData,
           version: 2,
           waiting: nextWaiting,
+          ...(nextOperatorPicks !== waitingData.operatorPicks ? { operatorPicks: nextOperatorPicks } : {}),
           updatedAt: now,
           updatedAtServer: serverTimestamp()
         },
@@ -497,6 +516,10 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   } catch (err) {
     rollbackOptimistic();
     flushOptimisticGlobalLayoutUi();
+    // 배정 트랜잭션이 실패하면 그 안에 같이 넣어둔 "내 선택 표시" 해제도 서버에 반영되지
+    // 않는다. 화면은 이미 낙관적으로 풀린 상태이므로, 다른 운영자 화면과 어긋나지 않게
+    // 최선 노력으로 별도 정리한다(성공 경로의 지연에는 영향 없음).
+    void clearMyWaitingPick();
     throw err;
   } finally {
     GL.seatMutationInFlight = false;
