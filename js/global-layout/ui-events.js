@@ -41,7 +41,11 @@ import {
   initGlobalMobileSeatAddModal,
   openGlobalMobileSeatAddModal
 } from "./mobile-seat-add-modal.js";
-import { setWaitingRowSelection, syncSelectedWaitingFromMyOperatorPick } from "./waiting-picks.js";
+import {
+  setWaitingRowSelection,
+  syncSelectedWaitingFromMyOperatorPick,
+  syncMyWaitingPick
+} from "./waiting-picks.js";
 import { refreshGlobalLayoutAlignButtonState } from "./canvas-viewport.js";
 import { releaseStuckGlobalLayoutMutationFlags } from "./layout-mutation-guard.js";
 import { fmtElapsed, isEmptyPerson, timerClass } from "./utils.js";

@@ -877,6 +877,9 @@ async function redoRemoveWaitingPayload(payload) {
       { merge: true }
     );
   });
+
+  // undo의 remove_waiting 처리(replaceGlobalWaitingLocal)와 대칭 — 서버 스냅샷 도착 전에도 즉시 반영
+  replaceGlobalWaitingLocal((GL.globalWaiting || []).filter((w) => String(w?.id || "").trim() !== wid));
 }
 
 function finishUndoRedoUiRefresh(snap = null) {
@@ -980,6 +983,8 @@ export async function redoLastGlobalAction() {
         firestoreDocId: snap.firestoreDocId
       });
       await deleteDoc(seatRef);
+      // undo의 add_seat 처리(removeSeatFromGlobalLayoutLocal)와 대칭 — 서버 스냅샷 도착 전에도 즉시 반영
+      removeSeatFromGlobalLayoutLocal({ targetSeatId: sid, firestoreDocId: snap.firestoreDocId });
       await syncLayoutProjection(eid, bid);
     } else if (snap.kind === "remove_waiting") {
       await redoRemoveWaitingPayload(snap);
