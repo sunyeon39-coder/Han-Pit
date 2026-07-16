@@ -59,6 +59,11 @@ import { invalidateWaitingPanelFingerprint } from "./panel-ui.js";
 import { resolveAttendanceWaitingJoinMs } from "../shared/attendance-operational-day.js";
 import { mergeIncomingGlobalWaiting, replaceGlobalWaitingLocal } from "./waiting.js";
 import { dedupeGlobalWaitingRows } from "../shared/tournament-waiting-queue.js";
+import { isWaitingBlockSavePending } from "./fs-waiting-list-undo.js";
+import {
+  isGlobalWaitingWriteInFlight,
+  runSerializedGlobalWaitingWrite
+} from "./global-waiting-write-lock.js";
 
 /** Firestore 전파 전 캐시 스냅샷이 방금 배치한 좌석을 비우는 것 방지 */
 const RECENT_LOCAL_SEAT_MS = 12000;
@@ -219,7 +224,8 @@ function scheduleHealInactiveOutOfGlobalWaiting() {
 }
 
 async function healInactiveRowsOutOfGlobalWaiting() {
-  if (!GL.tournamentId || GL.waitingMutationInFlight) return;
+  if (!GL.tournamentId || GL.waitingMutationInFlight || isWaitingBlockSavePending()) return;
+  if (isGlobalWaitingWriteInFlight()) return;
   const checkedOut = buildCheckedOutAttendanceUidSet(attendanceInactiveSourceDocs, GL.tournamentId);
   if (!checkedOut.size) return;
 
@@ -240,16 +246,18 @@ async function healInactiveRowsOutOfGlobalWaiting() {
     if (healed.length === list.length) return;
 
     GL.waitingMutationInFlight = true;
-    await setDoc(
-      waitingRef,
-      {
-        ...state,
-        version: 2,
-        waiting: healed,
-        updatedAt: Date.now()
-      },
-      { merge: true }
-    );
+    await runSerializedGlobalWaitingWrite(async () => {
+      await setDoc(
+        waitingRef,
+        {
+          ...state,
+          version: 2,
+          waiting: healed,
+          updatedAt: Date.now()
+        },
+        { merge: true }
+      );
+    });
     replaceGlobalWaitingLocal(mergeIncomingGlobalWaiting(healed, GL.globalWaiting));
     bumpGlobalLayoutDataRevision();
     scheduleGlobalLayoutRealtimeUi({ waiting: true });
@@ -276,6 +284,7 @@ export { scheduleHealMissingWaitingFromAttendance };
 async function healMissingWaitingFromAttendance() {
   if (!GL.tournamentId || GL.waitingMutationInFlight || !GL.attendanceFilterReady) return;
   if (Date.now() < (GL.localMutationUntil || 0)) return;
+  if (isWaitingBlockSavePending() || isGlobalWaitingWriteInFlight()) return;
 
   const checkedOut = buildCheckedOutAttendanceUidSet(attendanceInactiveSourceDocs, GL.tournamentId);
   const missing = buildMissingGlobalWaitingRestoreList({
@@ -293,7 +302,8 @@ async function healMissingWaitingFromAttendance() {
   try {
     GL.waitingMutationInFlight = true;
     let healed = null;
-    await runFirestoreTransactionWithRetry(db, async (tx) => {
+    await runSerializedGlobalWaitingWrite(() =>
+      runFirestoreTransactionWithRetry(db, async (tx) => {
       const waitingSnap = await tx.get(waitingRef);
       const waitingData = waitingSnap.exists()
         ? waitingSnap.data() || {}
@@ -328,7 +338,8 @@ async function healMissingWaitingFromAttendance() {
         },
         { merge: true }
       );
-    });
+    })
+    );
 
     if (healed) {
       console.info(

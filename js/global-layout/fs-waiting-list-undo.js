@@ -35,10 +35,15 @@ import {
   restoreGlobalUndo
 } from "./undo-stack.js";
 import { markGlobalLayoutLocalMutation, markSkipSeatRecovery } from "./layout-mutation-guard.js";
+import { runSerializedGlobalWaitingWrite } from "./global-waiting-write-lock.js";
 
 /** BLOCK 연타 시 Firestore 트랜잭션 충돌 방지 — 직렬 저장, 같은 사람은 마지막 상태만 반영 */
 const waitingBlockSaveQueue = [];
 let waitingBlockSavePumpActive = false;
+
+export function isWaitingBlockSavePending() {
+  return waitingBlockSavePumpActive || waitingBlockSaveQueue.length > 0;
+}
 
 function waitingBlockSaveKey(target = {}, wid = "") {
   return waitingPersonIdentityKey(target) || `id:${String(wid || "").trim()}`;
@@ -1120,46 +1125,48 @@ async function setWaitingBlockedOnce(waitingId = "", checked = false, seedTarget
   let blockSaved = false;
   try {
     target = resolveWaitingEntryById(wid) || target;
-    await runFirestoreTransactionWithRetry(
-      db,
-      async (tx) => {
-        const snap = await tx.get(waitingRef);
-        const data = snap.exists() ? snap.data() || {} : {};
-        const arr = Array.isArray(data.waiting) ? [...data.waiting] : [];
-        const { next: blockedNext, changed } = applyWaitingBlockToWaitingArray(
-          arr,
-          wid,
-          target,
-          nextChecked,
-          now
-        );
-        const next = dedupeGlobalWaitingRows(blockedNext, GL.tournamentId);
-        if (!changed && next.length === arr.length) {
-          let same = next.length === arr.length;
-          if (same) {
-            for (let i = 0; i < next.length; i++) {
-              if (String(next[i]?.id || "") !== String(arr[i]?.id || "")) {
-                same = false;
-                break;
+    await runSerializedGlobalWaitingWrite(() =>
+      runFirestoreTransactionWithRetry(
+        db,
+        async (tx) => {
+          const snap = await tx.get(waitingRef);
+          const data = snap.exists() ? snap.data() || {} : {};
+          const arr = Array.isArray(data.waiting) ? [...data.waiting] : [];
+          const { next: blockedNext, changed } = applyWaitingBlockToWaitingArray(
+            arr,
+            wid,
+            target,
+            nextChecked,
+            now
+          );
+          const next = dedupeGlobalWaitingRows(blockedNext, GL.tournamentId);
+          if (!changed && next.length === arr.length) {
+            let same = next.length === arr.length;
+            if (same) {
+              for (let i = 0; i < next.length; i++) {
+                if (String(next[i]?.id || "") !== String(arr[i]?.id || "")) {
+                  same = false;
+                  break;
+                }
               }
             }
+            if (same) return;
           }
-          if (same) return;
-        }
 
-        tx.set(
-          waitingRef,
-          {
-            ...data,
-            version: 2,
-            waiting: next,
-            updatedAt: now,
-            updatedAtServer: serverTimestamp()
-          },
-          { merge: true }
-        );
-      },
-      5
+          tx.set(
+            waitingRef,
+            {
+              ...data,
+              version: 2,
+              waiting: next,
+              updatedAt: now,
+              updatedAtServer: serverTimestamp()
+            },
+            { merge: true }
+          );
+        },
+        8
+      )
     );
     blockSaved = true;
   } catch (err) {
