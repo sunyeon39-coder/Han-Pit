@@ -17,7 +17,11 @@ import {
   filterAttendanceRowsForWaitingMerge
 } from "../shared/attendance-waiting-filter.js";
 import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
-import { runSerializedGlobalWaitingWrite } from "./global-waiting-write-lock.js";
+import {
+  isWaitingBlockSavePending,
+  isGlobalWaitingWriteInFlight,
+  runSerializedGlobalWaitingWrite
+} from "./global-waiting-write-lock.js";
 import {
   dealerAttendanceQueryForTournament,
   filterAttendanceDocsForTournament
@@ -60,7 +64,6 @@ import { invalidateWaitingPanelFingerprint } from "./panel-ui.js";
 import { resolveAttendanceWaitingJoinMs } from "../shared/attendance-operational-day.js";
 import { mergeIncomingGlobalWaiting, replaceGlobalWaitingLocal } from "./waiting.js";
 import { dedupeGlobalWaitingRows } from "../shared/tournament-waiting-queue.js";
-import { isWaitingBlockSavePending, isGlobalWaitingWriteInFlight, runSerializedGlobalWaitingWrite } from "./global-waiting-write-lock.js";
 
 /** Firestore 전파 전 캐시 스냅샷이 방금 배치한 좌석을 비우는 것 방지 */
 const RECENT_LOCAL_SEAT_MS = 12000;
