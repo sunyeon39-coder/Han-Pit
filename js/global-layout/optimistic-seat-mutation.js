@@ -190,19 +190,12 @@ export function applyOptimisticClear({ targetSeatId, seat }) {
       prevPerson
     );
     if (!hasOtherSeat) {
-      const returnJoin = resolveReturnToWaitingJoinMs(
-        snapshot.globalWaiting,
-        GL.tournamentId,
-        prevPerson,
-        now,
-        GL.attendanceByUid
-      );
       GL.globalWaiting = rebuildWaitingAfterSeatToWait(
         GL.globalWaiting,
         GL.tournamentId,
         prevPerson,
-        returnJoin,
-        { source: "seat_clear", preserveJoinedAt: returnJoin, attendanceByUid: GL.attendanceByUid }
+        now,
+        { source: "seat_clear", resetJoinedAt: true }
       );
     }
   }

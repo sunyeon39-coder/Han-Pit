@@ -14,7 +14,7 @@ import {
 } from "./utils.js";
 import { getCandidateSeatRefsForPerson } from "./seat-candidates.js";
 import { scheduleSyncLayoutProjection } from "./fs-layout-projection.js";
-import { rebuildWaitingAfterSeatToWait, resolveReturnToWaitingJoinMs } from "./fs-waiting-merge.js";
+import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
 import { pushGlobalUndo } from "./undo-stack.js";
 import { captureSeatShellSnapshot } from "./utils.js";
 import {
@@ -142,24 +142,13 @@ export async function clearSeat(seatId = "") {
         });
 
         if (!hasOtherSeat) {
-          const returnJoin = resolveReturnToWaitingJoinMs(
-            waitingArr,
-            GL.tournamentId,
-            { uid: prevUid, email: prevEmail, name: prevName },
-            now,
-            GL.attendanceByUid
-          );
-          returnedJoinedAt = returnJoin;
+          returnedJoinedAt = now;
           const nextWaiting = rebuildWaitingAfterSeatToWait(
             waitingArr,
             GL.tournamentId,
             { uid: prevUid, email: prevEmail, name: prevName },
-            returnJoin,
-            {
-              source: "seat_clear",
-              preserveJoinedAt: returnJoin,
-              attendanceByUid: GL.attendanceByUid
-            }
+            now,
+            { source: "seat_clear", resetJoinedAt: true }
           );
           tx.set(
             waitingRef,

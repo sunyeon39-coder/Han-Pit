@@ -492,7 +492,7 @@ export function getCurrentTournamentWaiting() {
     .map((w) => {
     if (isWaitingBlocked(w)) return w;
     const rowSource = String(w?.source || "").trim();
-    if (rowSource === "seat_swap" || rowSource === "seat_clear") return w;
+    if (rowSource === "seat_swap" || rowSource === "seat_clear" || rowSource === "seat_removed_recovery") return w;
     const uid = String(w?.uid || "").trim();
     if (!uid) return w;
     const att = (GL.attendanceWaiting || []).find((row) => String(row?.uid || "").trim() === uid);

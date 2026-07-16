@@ -51,8 +51,9 @@ export function resolveReturnToWaitingJoinMs(
 }
 
 /**
- * 배치 해제·스왑 등으로 다시 대기에 들어갈 때: 기존 joinedAt 을 최대한 유지한다.
- * (신규 대기만 nowMs — 스왑·비우기는 원래 순번 복원)
+ * 배치 해제·스왑 등으로 다시 대기에 들어갈 때 joinedAt 결정.
+ * - seat_clear / seat_removed_recovery: nowMs (타이머 00부터)
+ * - seat_swap: 원래 대기 순번 유지
  */
 export function rebuildWaitingAfterSeatToWait(waitingArr, tournamentId, person, nowMs, extraFields = {}) {
   const tid = String(tournamentId || "").trim();
@@ -81,18 +82,26 @@ export function rebuildWaitingAfterSeatToWait(waitingArr, tournamentId, person, 
     blockCheckedAt: _dropBlockAt,
     blockAccumulatedMs: _dropBlockMs,
     preserveJoinedAt: _dropPreserveJoin,
+    resetJoinedAt: _dropResetJoin,
     attendanceByUid: _dropAttMap,
     ...restExtra
   } = extraFields;
+  const source = String(restExtra.source || extraFields.source || "").trim();
+  const resetJoin =
+    extraFields.resetJoinedAt === true ||
+    source === "seat_clear" ||
+    source === "seat_removed_recovery";
   const joinedAt =
     Number(extraFields.preserveJoinedAt || 0) ||
-    resolveReturnToWaitingJoinMs(
-      waitingArr,
-      tid,
-      person,
-      nowMs,
-      extraFields.attendanceByUid instanceof Map ? extraFields.attendanceByUid : null
-    );
+    (resetJoin
+      ? Number(nowMs) || Date.now()
+      : resolveReturnToWaitingJoinMs(
+          waitingArr,
+          tid,
+          person,
+          nowMs,
+          extraFields.attendanceByUid instanceof Map ? extraFields.attendanceByUid : null
+        ));
   return [
     ...filtered,
     {

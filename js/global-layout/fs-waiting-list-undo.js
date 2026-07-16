@@ -176,9 +176,6 @@ function resolveWaitingJoinedAt(payload = {}, waitingRow = {}, fallbackMs = Date
 function resolveReturnedJoinedAt(payload = {}, fallbackMs = Date.now()) {
   const ms = Number(payload.returnedJoinedAt || 0);
   if (Number.isFinite(ms) && ms > 0) return ms;
-  const seatBefore = payload.seatBefore && typeof payload.seatBefore === "object" ? payload.seatBefore : null;
-  const seatedAt = Number(seatBefore?.seatedAt || 0);
-  if (Number.isFinite(seatedAt) && seatedAt > 0) return seatedAt;
   return fallbackMs;
 }
 
@@ -298,7 +295,7 @@ function syncGlobalWaitingFromPayload(payload = {}, mode = "undo") {
     const base = Array.isArray(payload.waitingBefore)
       ? JSON.parse(JSON.stringify(payload.waitingBefore))
       : [...(GL.globalWaiting || [])];
-    const bumpJoinedAt = resolveReturnedJoinedAt(payload);
+    const bumpJoinedAt = resolveReturnedJoinedAt(payload, Date.now());
     const nextWaiting = rebuildWaitingAfterSeatToWait(
       base,
       GL.tournamentId,
@@ -307,7 +304,8 @@ function syncGlobalWaitingFromPayload(payload = {}, mode = "undo") {
         email: String(seatBefore.personEmail || "").trim(),
         name: prevName
       },
-      bumpJoinedAt
+      bumpJoinedAt,
+      { source: "seat_clear", resetJoinedAt: true }
     );
     replaceGlobalWaitingLocal(nextWaiting);
     return;

@@ -471,7 +471,8 @@ async function recoverRemovedSeatPeopleToWaiting(removedSeats = [], currentSeats
     for (const p of people) {
       if (waitingArr.some((w) => waitingRowMatchesPerson(w, GL.tournamentId, p))) continue;
       nextWaiting = rebuildWaitingAfterSeatToWait(nextWaiting, GL.tournamentId, p, now, {
-        source: "seat_removed_recovery"
+        source: "seat_removed_recovery",
+        resetJoinedAt: true
       });
       if (!p.uid) continue;
       tx.set(
