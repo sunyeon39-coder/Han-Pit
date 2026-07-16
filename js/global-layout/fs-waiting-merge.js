@@ -24,20 +24,43 @@ export function waitingRowMatchesPerson(w, tournamentId, person) {
  */
 export function rebuildWaitingAfterSeatToWait(waitingArr, tournamentId, person, nowMs, extraFields = {}) {
   const tid = String(tournamentId || "").trim();
-  const filtered = waitingArr.filter((w) => !waitingRowMatchesPerson(w, tid, person));
+  const prevRows = (waitingArr || []).filter((w) => waitingRowMatchesPerson(w, tid, person));
+  const prev = prevRows[0] || null;
+  const filtered = (waitingArr || []).filter((w) => !waitingRowMatchesPerson(w, tid, person));
   const prevUid = String(person.uid || "").trim();
   const prevEmail = String(person.email || "").trim();
   const prevName = String(person.name || "").trim();
+  const blockFields =
+    prev?.blockChecked === true
+      ? {
+          blockChecked: true,
+          blockCheckedAt: prev.blockCheckedAt ?? nowMs,
+          blockAccumulatedMs: Number(prev.blockAccumulatedMs || 0) || 0
+        }
+      : {
+          blockChecked: false,
+          blockCheckedAt: null,
+          blockAccumulatedMs: Number(prev?.blockAccumulatedMs || 0) || 0
+        };
+  const id = String(extraFields.id || prev?.id || makeUid("wait")).trim();
+  const {
+    id: _dropId,
+    blockChecked: _dropBlock,
+    blockCheckedAt: _dropBlockAt,
+    blockAccumulatedMs: _dropBlockMs,
+    ...restExtra
+  } = extraFields;
   return [
     ...filtered,
     {
-      id: makeUid("wait"),
+      id,
       uid: prevUid,
       email: prevEmail,
       name: prevName || prevUid || "-",
       tournamentId: tid,
       joinedAt: nowMs,
-      ...extraFields
+      ...blockFields,
+      ...restExtra
     }
   ];
 }

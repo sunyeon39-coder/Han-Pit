@@ -127,6 +127,37 @@ function waitingDisplayHasEntry(merged = [], candidate = {}) {
   });
 }
 
+function findGlobalWaitingBlockFields(globalWaiting = [], tournamentId = "", person = {}) {
+  const tid = String(tournamentId || "").trim();
+  const uid = String(person?.uid || "").trim();
+  const email = String(person?.email || "").trim();
+  const name = String(person?.name || person?.nickname || "").trim();
+  for (const w of globalWaiting || []) {
+    if (!waitingRowBelongsToTournament(w, tid)) continue;
+    const wUid = String(w?.uid || "").trim();
+    const wEmail = String(w?.email || "").trim();
+    const wName = String(w?.name || "").trim();
+    const samePerson =
+      (uid && wUid && uid === wUid) ||
+      (email && wEmail && email === wEmail) ||
+      (name && wName && name === wName);
+    if (!samePerson) continue;
+    if (w?.blockChecked === true) {
+      return {
+        blockChecked: true,
+        blockCheckedAt: w.blockCheckedAt ?? null,
+        blockAccumulatedMs: Number(w.blockAccumulatedMs || 0) || 0
+      };
+    }
+    return {
+      blockChecked: false,
+      blockCheckedAt: null,
+      blockAccumulatedMs: Number(w.blockAccumulatedMs || 0) || 0
+    };
+  }
+  return null;
+}
+
 /**
  * 통합배치도 대기 패널·딜러 운영 현황 공통 — 화면에 보이는 대기 목록
  */
@@ -177,10 +208,17 @@ export function buildTournamentWaitingDisplayList({
       continue;
     }
     if (waitingDisplayHasEntry(merged, item)) continue;
+    const blockFields =
+      findGlobalWaitingBlockFields(globalWaiting, tid, {
+        uid,
+        email: item?.email,
+        name: item?.nickname || item?.name
+      }) || {};
     merged.push({
       ...item,
       id: String(item.id || `att_${uid || "row"}`).trim(),
-      name: String(item.name || item.nickname || "").trim() || uid || "-"
+      name: String(item.name || item.nickname || "").trim() || uid || "-",
+      ...blockFields
     });
   }
 

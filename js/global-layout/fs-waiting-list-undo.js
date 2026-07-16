@@ -1053,6 +1053,7 @@ export async function setWaitingBlocked(waitingId = "", checked = false) {
 
   GL.waitingMutationInFlight = true;
   markGlobalLayoutLocalMutation();
+  let blockSaved = false;
   try {
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(waitingRef);
@@ -1119,6 +1120,7 @@ export async function setWaitingBlocked(waitingId = "", checked = false) {
       { merge: true }
     );
   });
+  blockSaved = true;
   } catch (err) {
     console.error("setWaitingBlocked error:", err);
     replaceGlobalWaitingLocal(snapshotBefore);
@@ -1126,5 +1128,10 @@ export async function setWaitingBlocked(waitingId = "", checked = false) {
     alert("BLOCK 변경에 실패했습니다.");
   } finally {
     GL.waitingMutationInFlight = false;
+    if (blockSaved) {
+      applyWaitingBlockLocal(wid, nextChecked);
+      invalidateWaitingPanelFingerprint();
+      flushOptimisticGlobalLayoutUi();
+    }
   }
 }

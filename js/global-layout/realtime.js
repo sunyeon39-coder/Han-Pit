@@ -778,13 +778,7 @@ export function bindRealtime() {
     doc(db, "layout_shared", "global_waiting"),
     (snap) => {
       if (shouldIgnoreStaleGlobalLayoutSnapshot(snap)) return;
-      if (
-        GL.waitingMutationInFlight &&
-        snap.metadata?.fromCache &&
-        !snap.metadata?.hasPendingWrites
-      ) {
-        return;
-      }
+      if (GL.waitingMutationInFlight) return;
       const data = snap.exists() ? snap.data() || {} : {};
       const nextWaiting = Array.isArray(data.waiting) ? data.waiting : [];
       lastWaitingUiFingerprint = globalWaitingUiFingerprint(nextWaiting);
