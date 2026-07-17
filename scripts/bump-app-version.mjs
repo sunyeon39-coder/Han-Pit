@@ -124,10 +124,6 @@ for (const name of htmlFiles) {
     /<link\s+rel="manifest"\s+href="\.\/manifest\.json(?:\?v=[^"]*)?"/g,
     `<link rel="manifest" href="./manifest.json?v=${v}"`
   );
-  html = html.replace(
-    /<div class="page-boot-loading"[\s\S]*?<\/div>\s*/g,
-    ""
-  );
   if (html.includes(BOOT_DISMISS_MARKER)) {
     html = html.replace(
       new RegExp(`${BOOT_DISMISS_MARKER}[\\s\\S]*?${BOOT_DISMISS_END}`, "m"),

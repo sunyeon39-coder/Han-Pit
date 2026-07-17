@@ -8,7 +8,7 @@
     document.documentElement.style.backgroundColor="#060c17";
     document.documentElement.style.colorScheme="dark";
   }catch(e){}
-  var BUILD="20260717101307";
+  var BUILD="20260717102111";
   var KEY="hanPitAppVersion";
   var LAST_TARGET="hanPitReloadTarget";
   var meta=document.querySelector('meta[name="han-pit-build"]');
@@ -216,7 +216,7 @@
 </script>
   <!-- /han-pit-inline-update -->
   <!-- han-pit-critical-shell -->
-  <style id="han-pit-critical-shell">html{color-scheme:dark;background:#060c17}body{margin:0;min-height:100%;background:#060c17;color:#eef2ff}.page-boot-loading,.page-boot-text{display:none!important}.layout-canvas-viewport,.canvas.pc-canvas{background:#0a1022}</style>
+  <style id="han-pit-critical-shell">html{color-scheme:dark;background:#060c17}body{margin:0;min-height:100%;background:#060c17;color:#eef2ff}.page-boot-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;min-height:100dvh;min-height:100vh;padding:24px;background:#060c17}.page-boot-spinner{width:32px;height:32px;border-radius:50%;border:3px solid rgba(255,255,255,.12);border-top-color:rgba(77,163,255,.9);animation:han-pit-boot-spin .75s linear infinite}@keyframes han-pit-boot-spin{to{transform:rotate(360deg)}}.page-boot-text{margin:0;font-size:14px;color:rgba(255,255,255,.62)}.layout-canvas-viewport,.canvas.pc-canvas{background:#0a1022}</style>
   <!-- /han-pit-critical-shell -->
   <!-- han-pit-asset-fix -->
   <script id="han-pit-asset-fix">
@@ -247,25 +247,25 @@
 })();
 </script>
   <!-- /han-pit-asset-fix -->
-  <meta name="han-pit-build" content="20260717101307" />
+  <meta name="han-pit-build" content="20260717102111" />
   <!-- han-pit-perf-hints -->
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
   <link rel="preconnect" href="https://firebase.googleapis.com" crossorigin />
   <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin />
   <link rel="dns-prefetch" href="https://www.gstatic.com" />
-  <link rel="modulepreload" href="./js/global-layout.js?v=20260717101307" crossorigin />
+  <link rel="modulepreload" href="./js/global-layout.js?v=20260717102111" crossorigin />
   <!-- /han-pit-perf-hints -->
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Han Pit - Global Layout</title>
-  <link rel="manifest" href="./manifest.json?v=20260717101307" />
+  <link rel="manifest" href="./manifest.json?v=20260717102111" />
   <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
   <meta name="theme-color" content="#090a0d" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <link rel="stylesheet" href="./css/layout.css?v=20260717101307" />
-  <link rel="stylesheet" href="./css/global-layout.css?v=20260717101307" />
+  <link rel="stylesheet" href="./css/layout.css?v=20260717102111" />
+  <link rel="stylesheet" href="./css/global-layout.css?v=20260717102111" />
 </head>
 <body class="page-global-layout">
   <!-- han-pit-boot-dismiss -->
@@ -279,10 +279,7 @@
       if(el)el.dataset.pageBootLoaded="1";
     });
   }
-  dismiss();
-  if(document.readyState==="loading"){
-    document.addEventListener("DOMContentLoaded",dismiss,{once:true});
-  }
+  window.setTimeout(dismiss,15000);
 })();
 </script>
 <!-- /han-pit-boot-dismiss -->
@@ -309,7 +306,9 @@
   </header>
 
   <main id="app">
-    <p class="page-boot-text">통합 배치도 불러오는 중…</p>
+    <div class="page-boot-loading" role="status" aria-live="polite">
+      <div class="page-boot-spinner" aria-hidden="true"></div>
+      <p class="page-boot-text">통합 배치도 불러오는 중…</p>
     </div>
   </main>
 
@@ -481,6 +480,6 @@
     </div>
   </div>
 
-  <script type="module" src="./js/global-layout.js?v=20260717101307"></script>
+  <script type="module" src="./js/global-layout.js?v=20260717102111"></script>
 </body>
 </html>

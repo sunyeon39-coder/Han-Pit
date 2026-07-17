@@ -1,10 +1,11 @@
 /** bump-app-version.mjs 가 HTML <head> 에 삽입하는 인라인 스니펫 (모듈 로드 전 실행) */
 
-export const CRITICAL_SHELL_STYLE_TAG = `<style id="han-pit-critical-shell">html{color-scheme:dark;background:#060c17}body{margin:0;min-height:100%;background:#060c17;color:#eef2ff}.page-boot-loading,.page-boot-text{display:none!important}.layout-canvas-viewport,.canvas.pc-canvas{background:#0a1022}</style>`;
+export const CRITICAL_SHELL_STYLE_TAG = `<style id="han-pit-critical-shell">html{color-scheme:dark;background:#060c17}body{margin:0;min-height:100%;background:#060c17;color:#eef2ff}.page-boot-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;min-height:100dvh;min-height:100vh;padding:24px;background:#060c17}.page-boot-spinner{width:32px;height:32px;border-radius:50%;border:3px solid rgba(255,255,255,.12);border-top-color:rgba(77,163,255,.9);animation:han-pit-boot-spin .75s linear infinite}@keyframes han-pit-boot-spin{to{transform:rotate(360deg)}}.page-boot-text{margin:0;font-size:14px;color:rgba(255,255,255,.62)}.layout-canvas-viewport,.canvas.pc-canvas{background:#0a1022}</style>`;
 
 export const BOOT_DISMISS_MARKER = "<!-- han-pit-boot-dismiss -->";
 
-/** 모듈 로드 전 HTML 인라인 스피너 제거 */
+/** 부팅 스피너 안전장치: 정상 로드 시엔 앱 모듈(instantDismissAllBootLoaders)이 제거하고,
+ *  JS 로드 실패 등으로 앱이 뜨지 못한 경우에만 타임아웃으로 스피너를 걷어낸다(무한 스피너 방지). */
 export function buildBootDismissSnippet() {
   return `${BOOT_DISMISS_MARKER}
 <script id="han-pit-boot-dismiss">
@@ -17,10 +18,7 @@ export function buildBootDismissSnippet() {
       if(el)el.dataset.pageBootLoaded="1";
     });
   }
-  dismiss();
-  if(document.readyState==="loading"){
-    document.addEventListener("DOMContentLoaded",dismiss,{once:true});
-  }
+  window.setTimeout(dismiss,15000);
 })();
 </script>
 <!-- /han-pit-boot-dismiss -->`;
