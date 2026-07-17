@@ -152,11 +152,34 @@ body {
 }
 
 .index-page {
-  padding: 24px 28px 40px;
+  padding: 24px 28px 56px;
+  max-width: 1180px;
+  margin: 0 auto;
 }
 
 .index-root {
   width: 100%;
+}
+
+/* PC(넓은 화면): 이벤트 카드가 화면 전체 폭으로 늘어지지 않도록 그리드로 정렬
+   (다른 곳의 모바일 분기점 900px 과 겹치지 않게 901px 부터 적용) */
+@media (min-width: 901px) {
+  #indexRoot {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 6px 18px;
+    align-items: start;
+  }
+
+  #indexRoot .date-header {
+    grid-column: 1 / -1;
+    margin-top: 6px;
+  }
+
+  #indexRoot .event-card {
+    margin-bottom: 0;
+    height: 100%;
+  }
 }
 
 .index-boot-card {
