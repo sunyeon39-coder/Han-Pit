@@ -13,9 +13,9 @@
   --control-h: 44px;
   --control-h-sm: 36px;
   --radius-pill: 999px;
-  --radius-card: 6px;
-  --radius-control: 4px;
-  --radius-modal: 8px;
+  --radius-card: 12px;
+  --radius-control: 10px;
+  --radius-modal: 18px;
   --panel-pad: 14px;
 
   /* 앱형 크롬 — 탑바·툴바·기본 컨트롤 */

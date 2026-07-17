@@ -4,9 +4,8 @@
 :root {
   --accent-gold: #ffb020;
   --accent-gold-strong: #ffcf6b;
-  --radius-control: 4px;
-  --radius-modal: 8px;
   --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+  /* radius-control / radius-modal 은 app-shared.css 공통 토큰을 그대로 사용 */
 }
 
 html,
@@ -61,7 +60,6 @@ input {
   font-size: 18px;
   cursor: pointer;
   box-shadow: none;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .icon-btn:hover {
@@ -82,7 +80,6 @@ input {
   letter-spacing: 0.01em;
   cursor: pointer;
   box-shadow: none;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .pill-btn:hover {
@@ -346,7 +343,7 @@ main{
 
 .row{
   padding:12px;
-  border-radius:4px;
+  border-radius: var(--radius-control);
   border:1px solid var(--border);
   margin-bottom:10px;
   display:flex;
@@ -470,23 +467,24 @@ input{
 input:focus{ border-color:rgba(61, 219, 196,.6); }
 
 .btn{
-  height:30px;
-  padding:0 12px;
-  border-radius:12px;
+  height:36px;
+  padding:0 14px;
+  border-radius:var(--radius-control);
   border:1px solid var(--border);
   background:var(--panel);
+  color:var(--text);
   font-weight:900;
   cursor:pointer;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
 }
-.btn.primary{
-  border-color:var(--accent);
-  background:rgba(61, 219, 196,.22);
+.btn:hover{
+  background:rgba(255,255,255,.09);
+  border-color:rgba(255,255,255,.2);
 }
-.btn.danger{
-  border-color:var(--danger);
-  background:rgba(255,91,127,.22);
-}
-.btn.small{ height:34px; padding:0 4px; border-radius:6px; font-weight:800; }
+/* .btn.primary / .btn.danger 색상은 app-premium.css 공통 정의(골드/레드)를 사용 */
+.btn.small{ height:30px; padding:0 10px; border-radius:8px; font-weight:800; font-size:12px; }
 
 
 
@@ -534,18 +532,24 @@ input:focus{ border-color:rgba(61, 219, 196,.6); }
 .sheet-btn{
   width:100%;
   height:52px;
-  border-radius:6px;
-  border:1px solid var(--accent);
-  background:rgba(61, 219, 196,.25);
-  color:var(--text);
+  border-radius:var(--radius-control);
+  border:1px solid rgba(255, 207, 107,.38);
+  background: linear-gradient(135deg, rgba(255, 207, 107,.22), rgba(255, 176, 32,.1));
+  color:#fff4d6;
   font-weight:900;
   font-size:16px;
   cursor:pointer;
+}
+.sheet-btn:hover{
+  filter:brightness(1.08);
 }
 .sheet-btn.ghost{
   border-color:var(--border);
   background:var(--panel);
   font-weight:800;
+}
+.sheet-btn.ghost:hover{
+  background:rgba(255,255,255,.09);
 }
 /* ===== Timer Chip / Colors ===== */
 .time-chip{
@@ -992,7 +996,7 @@ input:focus{ border-color:rgba(61, 219, 196,.6); }
 .mobile-seat-row,
 .mobile-wait-row {
   border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   padding: 14px;
   margin-bottom: 5px;
   background: rgba(255,255,255,0.02);
@@ -1072,7 +1076,7 @@ body.page-global-layout .pc-panel .global-list > .mobile-wait-row {
 .mobile-pill-btn {
   min-height: 36px;
   padding: 0 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   border: 1px solid rgba(255,255,255,0.12);
   background: rgba(255,255,255,0.04);
   color: rgba(255,255,255,0.9);
@@ -1081,21 +1085,26 @@ body.page-global-layout .pc-panel .global-list > .mobile-wait-row {
   cursor: pointer;
 }
 
+.mobile-pill-btn:hover {
+  background: rgba(255,255,255,0.09);
+  border-color: rgba(255,255,255,0.2);
+}
+
 .mobile-pill-btn.active {
   border-color: rgba(255,255,255,0.12);
   background: rgba(255,255,255,0.04);
   color: rgba(255,255,255,0.9);
 }
 
-.mobile-pill-btn.primary {
-  border-color: rgba(61, 219, 196,0.8);
-  background: rgba(61, 219, 196,0.18);
-  color: #dbeafe;
-}
+/* .mobile-pill-btn.primary 색상(골드)·hover 는 아래쪽 공통 정의를 사용 */
 
 .mobile-pill-btn.danger {
   border-color: rgba(255,90,110,0.5);
   color: #ff5a6e;
+}
+
+.mobile-pill-btn.danger:hover {
+  background: rgba(255,90,110,0.14);
 }
 
 .mobile-wait-name {
@@ -1812,16 +1821,9 @@ main{
   font-weight:900;
 }
 
-.tab.active,
-.btn.primary,
-.sheet-btn,
-.pill-inline.primary,
-.mobile-pill-btn.primary,
-.badge.sel{
-  border-color: rgba(255, 207, 107,.38);
-  background: linear-gradient(135deg, rgba(255, 207, 107,.18), rgba(255, 176, 32,.08));
-  color: #fff4d6;
-}
+/* .tab.active / .btn.primary / .sheet-btn / .pill-inline.primary / .mobile-pill-btn.primary
+   골드 색상은 아래쪽 (구 "PC 패널" 섹션)에 있던 중복 정의를 통합했다 — 실제 값은 그 위치 참고.
+   .badge.sel 은 "배치할 대기" 선택 표시이므로 여기서 제외하고 틸(teal) 색을 유지한다. */
 
 .btn.danger,
 .pill-inline.danger,
@@ -1843,7 +1845,7 @@ main{
 .seat-manage-row,
 .mobile-seat-row,
 .mobile-wait-row{
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: rgba(255,255,255,.035);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
 }
@@ -2018,7 +2020,7 @@ input:focus{
   flex: 1;
   min-height: 48px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   padding: 13px 14px;
   font-size: 15px;
   font-weight: 800;
@@ -2079,7 +2081,7 @@ input:focus{
   flex: 1;
   min-height: 48px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   padding: 13px 14px;
   font-size: 15px;
   font-weight: 800;
@@ -2145,7 +2147,7 @@ input:focus{
 .seat-manage-row,
 .mobile-seat-row,
 .mobile-wait-row {
-  border-radius: 4px;
+  border-radius: var(--radius-control);
 }
 
 .btn,
@@ -2159,8 +2161,7 @@ input:focus{
 .btn.primary,
 .sheet-btn,
 .pill-inline.primary,
-.mobile-pill-btn.primary,
-.badge.sel {
+.mobile-pill-btn.primary {
   border-color: rgba(255, 207, 107, 0.38);
   background: linear-gradient(135deg, rgba(255, 207, 107, 0.18), rgba(255, 176, 32, 0.08));
   color: #fff4d6;

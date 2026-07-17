@@ -17,7 +17,17 @@
   filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.45));
 }
 
-/* ── Controls ── */
+/* ── Controls ──
+ * 공통 버튼 상호작용 언어: 모든 버튼 계열 클래스는 동일한 트랜지션 · hover ·
+ * active(눌림) · disabled · focus 느낌을 공유한다. 페이지별 accent 색상은
+ * --btn-accent(하이라이트) / --btn-accent-strong 두 변수로만 갈아끼운다.
+ */
+:root {
+  --btn-accent: var(--accent-gold);
+  --btn-accent-strong: var(--accent-gold-strong);
+  --btn-accent-ink: #14120a;
+}
+
 button,
 .btn,
 .pill-btn,
@@ -26,16 +36,23 @@ button,
 .back-btn,
 .manage-btn,
 .mini-btn,
+.row-btn,
+.detail-btn,
+.sheet-btn,
+.mobile-pill-btn,
 .tab,
+.payroll-view-tab,
+.login-btn,
+.gender-btn,
 .event-admin-pick,
 .pill-inline {
   transition:
-    background var(--transition-ui),
-    border-color var(--transition-ui),
-    color var(--transition-ui),
-    box-shadow var(--transition-ui),
-    filter var(--transition-ui),
-    transform var(--transition-ui);
+    background 0.18s var(--ease-out),
+    border-color 0.18s var(--ease-out),
+    color 0.18s var(--ease-out),
+    box-shadow 0.18s var(--ease-out),
+    filter 0.18s var(--ease-out),
+    transform 0.12s var(--ease-out);
 }
 
 .btn,
@@ -44,29 +61,68 @@ button,
 .top-btn,
 .back-btn,
 .manage-btn,
-.mini-btn {
+.mini-btn,
+.row-btn,
+.detail-btn,
+.sheet-btn,
+.mobile-pill-btn {
   box-shadow: var(--shadow-inset-soft);
+}
+
+/* 눌림(press) 피드백 — 모든 클릭 가능한 컨트롤에 통일 적용 */
+button:not(:disabled):active,
+.btn:not(.is-disabled):active,
+.pill-btn:not(.is-disabled):active,
+.icon-btn:not(.is-disabled):active,
+.top-btn:active,
+.back-btn:active,
+.manage-btn:active,
+.mini-btn:active,
+.row-btn:active,
+.detail-btn:active,
+.sheet-btn:active,
+.mobile-pill-btn:active,
+.tab:active {
+  transform: scale(0.97);
+}
+
+button:disabled,
+.btn:disabled,
+.btn.is-disabled,
+.pill-btn:disabled,
+.icon-btn:disabled,
+.mini-btn:disabled,
+[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.2);
+  transform: none !important;
 }
 
 .btn.primary,
 .manage-btn,
 .top-btn.admin {
-  border-color: rgba(255, 207, 107, 0.45);
-  background: linear-gradient(145deg, #f4e4bc 0%, #e2c878 38%, #c9a24e 100%);
-  color: #14120a;
+  border-color: color-mix(in srgb, var(--btn-accent-strong) 55%, transparent);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--btn-accent-strong) 55%, #fff 45%) 0%,
+    var(--btn-accent-strong) 38%,
+    var(--btn-accent) 100%
+  );
+  color: var(--btn-accent-ink);
   font-weight: 700;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.45),
-    0 8px 22px rgba(201, 162, 78, 0.22);
+    0 8px 22px color-mix(in srgb, var(--btn-accent) 30%, transparent);
 }
 
 .btn.primary:hover,
 .manage-btn:hover,
 .top-btn.admin:hover {
-  filter: brightness(1.05);
+  filter: brightness(1.06);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    0 10px 26px rgba(201, 162, 78, 0.28);
+    0 10px 28px color-mix(in srgb, var(--btn-accent) 36%, transparent);
 }
 
 .btn.ghost,
@@ -85,6 +141,18 @@ button,
 .top-btn:hover {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06));
   border-color: var(--border-strong);
+}
+
+.btn.danger {
+  border-color: rgba(255, 77, 94, 0.4);
+  background: linear-gradient(145deg, rgba(255, 120, 132, 0.24), rgba(255, 77, 94, 0.12));
+  color: #ffd7db;
+  font-weight: 700;
+}
+
+.btn.danger:hover {
+  background: linear-gradient(145deg, rgba(255, 120, 132, 0.32), rgba(255, 77, 94, 0.18));
+  border-color: rgba(255, 77, 94, 0.55);
 }
 
 /* ── Tabs & panels ── */
@@ -290,6 +358,33 @@ textarea:focus,
   border-color: rgba(255, 207, 107, 0.42);
   box-shadow: 0 0 0 3px rgba(255, 176, 32, 0.14);
   background: rgba(0, 0, 0, 0.28);
+}
+
+/* ── Icon-only close button (모든 모달 공용) ── */
+.icon-close-btn {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-1, #eef1f4);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.18s var(--ease-out), border-color 0.18s var(--ease-out), transform 0.12s var(--ease-out);
+}
+
+.icon-close-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.icon-close-btn:active {
+  transform: scale(0.94);
 }
 
 /* ── Time chips & pills ── */

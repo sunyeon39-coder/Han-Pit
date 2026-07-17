@@ -94,7 +94,6 @@ body {
   letter-spacing: 0.01em;
   cursor: pointer;
   box-shadow: none;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .top-btn.profile {
@@ -407,7 +406,7 @@ body {
   width: 28%;
   max-width: 140px;
   height: 56px;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--line);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(0, 0, 0, 0.2));
   transform: rotate(-4deg);
@@ -500,7 +499,7 @@ body {
   width: var(--hub-thumb);
   height: var(--hub-thumb);
   flex-shrink: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: linear-gradient(165deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
   border: 1px solid var(--amber-dim);
   color: var(--amber-strong);
@@ -605,8 +604,7 @@ body {
   min-width: 0;
   min-height: var(--control-h);
   height: var(--control-h);
-  border-radius: 4px;
-  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  border-radius: var(--radius-pill);
   padding: 0 20px;
   border: 1px solid var(--amber-dim);
   background: linear-gradient(135deg, var(--amber-strong), var(--amber) 70%);
@@ -616,7 +614,6 @@ body {
   letter-spacing: 0.01em;
   cursor: pointer;
   box-shadow: none;
-  transition: filter 0.15s ease, border-color 0.15s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -738,7 +735,7 @@ body {
 
 .mini-btn {
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   min-height: var(--control-h-sm);
   padding: 0 12px;
   background: var(--steel-900);
@@ -749,6 +746,11 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+.mini-btn:hover {
+  background: var(--steel-800);
+  border-color: rgba(255, 255, 255, 0.24);
 }
 
 .form-group {
@@ -781,7 +783,7 @@ body {
 .form-group select {
   width: 100%;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   padding: 12px 14px;
   font-size: 15px;
   background: var(--steel-800);
@@ -913,11 +915,15 @@ body {
 
 .row-btn {
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   padding: 10px 12px;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
+}
+
+.row-btn:hover {
+  filter: brightness(1.08);
 }
 
 .row-btn.allow {
@@ -952,7 +958,7 @@ body {
 .user-manage-trigger {
   min-width: 96px;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   padding: 12px 14px;
   background: var(--steel-800);
   color: var(--text-1);
@@ -963,7 +969,8 @@ body {
 }
 
 .user-manage-trigger:hover {
-  opacity: .92;
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.26);
 }
 
 .user-manage-backdrop {
@@ -1037,16 +1044,8 @@ body {
   font-size: 15px;
 }
 
+/* .icon-close-btn 은 app-premium.css 공통 정의를 사용 */
 .icon-close-btn {
-  border: 1px solid var(--line);
-  background: var(--steel-800);
-  color: var(--text-1);
-  width: 38px;
-  height: 38px;
-  border-radius: 4px;
-  font-size: 18px;
-  font-weight: 700;
-  cursor: pointer;
   flex-shrink: 0;
 }
 
