@@ -135,20 +135,29 @@ body {
   border-color: rgba(255, 255, 255, 0.14);
 }
 
+/* 상단바 관리 버튼 6개가 한 번에 나열되면 금색이 겹쳐 시끄러워 보이므로,
+   테두리만 금색 톤을 쓰는 절제된 스타일로 통일하고 hover 시에만 채워지도록 함 */
 .manage-btn {
-  border: 1px solid rgba(255, 176, 32, 0.4);
-  background: linear-gradient(135deg, var(--accent-gold-strong), var(--accent-strong) 70%);
-  color: #14100a;
+  border: 1px solid rgba(255, 176, 32, 0.28);
+  background: rgba(255, 176, 32, 0.07);
+  color: #ffd98f;
   box-shadow: none;
   white-space: nowrap;
   flex-shrink: 0;
-  font-weight: 700;
+  font-weight: 650;
   border-radius: var(--radius-pill);
 }
 
 .manage-btn:hover {
-  filter: brightness(1.04);
-  border-color: rgba(255, 207, 107, 0.5);
+  background: linear-gradient(135deg, var(--accent-gold-strong), var(--accent-strong) 70%);
+  border-color: rgba(255, 207, 107, 0.55);
+  color: #14100a;
+}
+
+/* 그 중 가장 자주 쓰는 항목만 은은하게 강조 */
+.manage-btn#seatMapBtn {
+  border-color: rgba(255, 176, 32, 0.5);
+  background: rgba(255, 176, 32, 0.14);
 }
 
 .index-page {
@@ -166,7 +175,7 @@ body {
 @media (min-width: 901px) {
   #indexRoot {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
     gap: 6px 18px;
     align-items: start;
   }
@@ -293,26 +302,34 @@ body {
   z-index: 1;
   display: flex;
   justify-content: space-between;
-  gap: 14px;
+  gap: 12px;
   align-items: flex-start;
   margin-bottom: 12px;
 }
 
+.event-header > div:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .event-title {
-  font-size: 22px;
-  line-height: 1.08;
+  font-size: 20px;
+  line-height: 1.2;
   font-weight: 900;
   letter-spacing: -0.02em;
   color: rgba(247, 248, 252, 0.98);
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 .pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 120px;
-  min-height: 34px;
-  padding: 0 14px;
+  flex-shrink: 0;
+  min-width: 104px;
+  min-height: 32px;
+  padding: 0 12px;
   border-radius: 3px;
   font-family: var(--font-mono);
   font-size: 11px;
@@ -359,7 +376,7 @@ body {
 
 .info-box {
   min-height: 92px;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   padding: 12px 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background:
@@ -387,15 +404,18 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  text-align: center;
   min-height: 42px;
-  border-radius: 4px;
+  padding: 4px 8px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 176, 32, 0.16);
   background: rgba(255, 255, 255, 0.03);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
+  line-height: 1.35;
   color: rgba(238, 241, 244, 0.85);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
 }
 
 .my-seat-badge {

@@ -120,5 +120,5 @@ export function formatSeatSummary(eventId, boxId) {
   const summary = getSeatSummary(eventId, boxId);
 
   if (summary.totalSeats <= 0) return "No Seats";
-  return `${summary.totalSeats} Seats · ${summary.occupiedSeats} In Use`;
+  return `${summary.occupiedSeats}/${summary.totalSeats} in use`;
 }
