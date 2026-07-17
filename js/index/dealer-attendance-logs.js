@@ -35,6 +35,7 @@ function getAttendanceActionLabel(action) {
   if (action === "adjust_check_in") return "출근 시각 수정";
   if (action === "adjust_check_out") return "퇴근 시각 수정";
   if (action === "adjust_work_session") return "근무 구간 수정";
+  if (action === "delete_work_session") return "근무 구간 삭제";
   if (action === "operational_day_reset") return "운영일 전환 초기화";
   return action || "기타";
 }

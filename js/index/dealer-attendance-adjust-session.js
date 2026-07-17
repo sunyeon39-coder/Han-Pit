@@ -334,3 +334,65 @@ export async function adjustUserWorkSession({
     return fail();
   }
 }
+
+/**
+ * admin — 중복·겹침 근무 구간 중 하나 삭제 (운영 로그만, 집계에서 제외)
+ * @returns {Promise<{ok: boolean}>}
+ */
+export async function deleteUserWorkSession({
+  targetUid = "",
+  targetNickname = "",
+  sessionKey = "",
+  previousStartMs = 0,
+  previousEndMs = 0,
+  isOpen = false
+} = {}) {
+  if (!canAdjustAttendanceTimes()) return fail();
+
+  const tournamentId = getTournamentId();
+  const user = auth.currentUser;
+  const safeUid = String(targetUid || "").trim();
+  if (!user || !tournamentId || !safeUid) return fail();
+
+  const prevStart = Number(previousStartMs || 0);
+  const prevEnd = Number(previousEndMs || 0);
+  if (!prevStart) {
+    alert("삭제할 근무 구간을 찾을 수 없습니다.");
+    return fail();
+  }
+  if (isOpen) {
+    alert("진행 중인 근무 구간은 삭제할 수 없습니다.");
+    return fail();
+  }
+  if (!prevEnd || prevEnd <= prevStart) {
+    alert("종료 시각이 없는 근무 구간은 삭제할 수 없습니다.");
+    return fail();
+  }
+
+  const adminName = String(IX.currentUserProfile?.nickname || user.displayName || "").trim();
+  const detailParts = [
+    `시작 ${formatClock(prevStart)} · 종료 ${formatClock(prevEnd)}`
+  ];
+  if (adminName) {
+    detailParts.push(`관리자 ${adminName} 삭제`);
+  }
+
+  try {
+    const log = await writeAttendanceLog({
+      uid: safeUid,
+      nickname: String(targetNickname || "").trim(),
+      action: "delete_work_session",
+      tournamentId,
+      sessionKey: String(sessionKey || "").trim(),
+      previousSessionStartMs: prevStart,
+      previousSessionEndMs: prevEnd,
+      detail: detailParts.join(" · ")
+    });
+
+    return { ok: !!log, log };
+  } catch (err) {
+    console.error("deleteUserWorkSession error:", err);
+    alert("근무 구간 삭제에 실패했습니다.");
+    return fail();
+  }
+}

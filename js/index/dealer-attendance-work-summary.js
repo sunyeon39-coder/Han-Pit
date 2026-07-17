@@ -95,30 +95,39 @@ function withSessionKey(session) {
 }
 
 function findSessionForAdjustment(sessions, adj = {}) {
-  const key = String(adj.sessionKey || "").trim();
-  if (key) {
-    const byKey = sessions.findIndex((s) => String(s.sessionKey || "") === key);
-    if (byKey >= 0) return byKey;
+  const idx = sessions.findIndex((s) => sessionMatchesWorkSessionRef(s, adj));
+  return idx;
+}
+
+function sessionMatchesWorkSessionRef(session, ref = {}) {
+  const key = String(ref.sessionKey || "").trim();
+  if (key && String(session.sessionKey || "") === key) return true;
+
+  const prevStart = Number(ref.previousSessionStartMs || ref.newSessionStartMs || 0);
+  const prevEnd = Number(ref.previousSessionEndMs || ref.newSessionEndMs || 0);
+  if (!prevStart) return false;
+
+  if (Number(session.startMs) === prevStart) {
+    if (session.open) return true;
+    return Number(session.endMs) === prevEnd;
   }
 
-  const prevStart = Number(adj.previousSessionStartMs || 0);
-  const prevEnd = Number(adj.previousSessionEndMs || 0);
-  if (!prevStart) return -1;
+  if (Math.abs(Number(session.startMs) - prevStart) > SESSION_DEDUPE_TOLERANCE_MS) return false;
+  if (session.open) return true;
+  if (!prevEnd) return false;
+  return Math.abs(Number(session.endMs) - prevEnd) <= SESSION_DEDUPE_TOLERANCE_MS;
+}
 
-  const exact = sessions.findIndex((s) => {
-    if (Number(s.startMs) !== prevStart) return false;
-    if (s.open) return true;
-    return Number(s.endMs) === prevEnd;
-  });
-  if (exact >= 0) return exact;
+function applyWorkSessionDeletions(sessions, logs = []) {
+  const deletions = (Array.isArray(logs) ? logs : [])
+    .filter((log) => String(log.action || "").trim() === "delete_work_session")
+    .sort((a, b) => attendanceLogCreatedAtMs(a.createdAt) - attendanceLogCreatedAtMs(b.createdAt));
 
-  return sessions.findIndex((s) => {
-    if (!Number.isFinite(Number(s.startMs))) return false;
-    if (Math.abs(Number(s.startMs) - prevStart) > 120_000) return false;
-    if (s.open) return true;
-    if (!prevEnd) return false;
-    return Math.abs(Number(s.endMs) - prevEnd) <= 120_000;
-  });
+  if (!deletions.length) return sessions;
+
+  return sessions.filter(
+    (session) => !deletions.some((del) => sessionMatchesWorkSessionRef(session, del))
+  );
 }
 
 function applyWorkSessionAdjustments(sessions, logs = []) {
@@ -274,11 +283,12 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
 
   applyWorkSessionAdjustments(sessions, mine);
   const dedupedSessions = dedupeWorkSessions(sessions, nowMs);
+  const visibleSessions = applyWorkSessionDeletions(dedupedSessions, mine);
 
   const daySet = new Set();
   let totalMs = 0;
 
-  dedupedSessions.forEach((s) => {
+  visibleSessions.forEach((s) => {
     const ms = sessionDurationMs(s);
     totalMs += ms;
     const dk1 = localDateKey(s.startMs);
@@ -291,7 +301,7 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
   return {
     dayCount,
     totalMs,
-    sessions: dedupedSessions.sort((a, b) => Number(b.startMs) - Number(a.startMs)),
+    sessions: visibleSessions.sort((a, b) => Number(b.startMs) - Number(a.startMs)),
     dayLabel: `${dayCount}일`,
     durationLabel: formatDuration(totalMs)
   };

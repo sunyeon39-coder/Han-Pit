@@ -15,7 +15,7 @@ import { getTournamentId } from "./core-utils.js";
 import { getDerivedAttendance } from "./dealer-attendance-derived.js";
 import { getAdminAttendanceList } from "./dealer-attendance-admin-list.js";
 import { formatDatetimeKorean, getNowMs } from "./dealer-attendance-format.js";
-import { adjustMyWorkSession, adjustUserWorkSession } from "./dealer-attendance-adjust-session.js";
+import { adjustMyWorkSession, adjustUserWorkSession, deleteUserWorkSession } from "./dealer-attendance-adjust-session.js";
 import { loadDealerAttendanceOnce } from "./dealer-attendance-load-once.js";
 import { scheduleRenderDealerOps } from "./dealer-attendance-render.js";
 import {
@@ -413,7 +413,7 @@ function renderWorkSummaryTimeChip(field, label, valueLabel, editable) {
     </div>`;
 }
 
-function renderWorkSummarySessionRow(session, canEditSessions = false) {
+function renderWorkSummarySessionRow(session, canEditSessions = false, canDeleteSession = false) {
   const sessionKey = escapeHtml(String(session.sessionKey || ""));
   const startLabel = escapeHtml(formatDatetimeKorean(session.startMs));
   const endLabel = escapeHtml(formatDatetimeKorean(session.endMs));
@@ -423,6 +423,11 @@ function renderWorkSummarySessionRow(session, canEditSessions = false) {
   const endControl = session.open
     ? `<span class="work-summary-session-open-label">진행 중</span>`
     : renderWorkSummaryTimeChip("end", "종료", endLabel, canEditSessions);
+
+  const deleteBtn =
+    canDeleteSession && !session.open
+      ? `<button type="button" class="mini-btn work-summary-session-delete" data-session-delete title="이 근무 구간 삭제">삭제</button>`
+      : "";
 
   return `
     <li
@@ -438,7 +443,10 @@ function renderWorkSummarySessionRow(session, canEditSessions = false) {
         ${endControl}
         ${session.open ? `<span class="work-summary-open-badge">근무 중</span>` : ""}
       </div>
-      <span class="work-summary-session-dur">${durationLabel}</span>
+      <div class="work-summary-session-footer">
+        <span class="work-summary-session-dur">${durationLabel}</span>
+        ${deleteBtn}
+      </div>
     </li>
   `;
 }
@@ -462,6 +470,7 @@ function renderWorkSummaryModal() {
 
   const canEditPay = canEditWorkSummaryPay();
   const canEditSessions = canEditWorkSummarySessions();
+  const canDeleteSession = canEditSessions && summary.sessions.length >= 2;
   const canViewPay = canViewWorkSummaryPay();
   const payProfile = workSummaryPayProfile || defaultPayProfile(ctx.uid);
   const payBreakdown = buildPayBreakdown(summary.sessions, payProfile);
@@ -474,7 +483,7 @@ function renderWorkSummaryModal() {
     summary.sessions.length === 0
       ? `<p class="work-summary-empty">이 대회에서 집계된 근무 기록이 없습니다.</p>`
       : `<ul class="work-summary-sessions">
-          ${summary.sessions.map((s) => renderWorkSummarySessionRow(s, canEditSessions)).join("")}
+          ${summary.sessions.map((s) => renderWorkSummarySessionRow(s, canEditSessions, canDeleteSession)).join("")}
         </ul>`;
 
   body.innerHTML = `
@@ -629,6 +638,64 @@ async function handleWorkSummarySessionPickerClick(e) {
   await applyWorkSummarySessionTime(row, field, pickedMs);
 }
 
+async function handleWorkSummarySessionDelete(row) {
+  if (!canEditWorkSummarySessions()) return;
+  if (!row) return;
+
+  const ctx = getWorkSummaryContext();
+  if (!ctx?.uid) return;
+
+  const sessions = getWorkSummarySessionsForPay();
+  if (sessions.length < 2) return;
+
+  const isOpen = row.dataset.open === "1";
+  if (isOpen) {
+    alert("진행 중인 근무 구간은 삭제할 수 없습니다.");
+    return;
+  }
+
+  const previousStartMs = Number(row.dataset.prevStart || 0);
+  const previousEndMs = Number(row.dataset.prevEnd || 0);
+  if (!previousStartMs || !previousEndMs) return;
+
+  const startLabel = formatDatetimeKorean(previousStartMs);
+  const endLabel = formatDatetimeKorean(previousEndMs);
+  if (
+    !confirm(
+      `${startLabel} ~ ${endLabel}\n\n이 근무 구간을 삭제할까요?\n(운영 로그에 기록되며 집계에서 제외됩니다.)`
+    )
+  ) {
+    return;
+  }
+
+  const result = await deleteUserWorkSession({
+    targetUid: ctx.uid,
+    targetNickname: ctx.nickname,
+    sessionKey: row.dataset.sessionKey || "",
+    previousStartMs,
+    previousEndMs,
+    isOpen
+  });
+
+  if (!result?.ok) {
+    alert("근무 구간 삭제에 실패했습니다.");
+    return;
+  }
+
+  if (result.log) {
+    mergeAttendanceLogs([result.log]);
+  }
+
+  const logs = await withTimeout(loadAttendanceLogsForUid(ctx.uid), 8000);
+  if (Array.isArray(logs)) {
+    mergeAttendanceLogs(logs);
+  }
+
+  if (IX.workSummaryModal?.classList.contains("show")) {
+    renderWorkSummaryModal();
+  }
+}
+
 function closeWorkSummaryModal() {
   IX.workSummaryTarget = null;
   resetWorkSummaryPayState();
@@ -734,6 +801,13 @@ async function handleWorkSummaryModalClick(e) {
   const removeBtn = e.target.closest("[data-extra-remove]");
   if (removeBtn) {
     handleWorkSummaryPayExtraRemove(removeBtn);
+    return;
+  }
+
+  const deleteBtn = e.target.closest("[data-session-delete]");
+  if (deleteBtn) {
+    const row = deleteBtn.closest("[data-session-key]");
+    void handleWorkSummarySessionDelete(row);
     return;
   }
 

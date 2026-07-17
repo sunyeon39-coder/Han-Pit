@@ -1624,8 +1624,25 @@ button.work-summary-time-chip{
   font-weight:800;
   color:var(--text-1);
   white-space:nowrap;
-  align-self:flex-end;
+}
+
+.work-summary-session-footer{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
   padding-top:0;
+}
+
+.work-summary-session-delete{
+  flex-shrink:0;
+  color:#fca5a5;
+  border-color:rgba(248,113,113,.35);
+  background:rgba(248,113,113,.08);
+}
+
+.work-summary-session-delete:active{
+  background:rgba(248,113,113,.16);
 }
 
 .work-summary-session.is-open{
