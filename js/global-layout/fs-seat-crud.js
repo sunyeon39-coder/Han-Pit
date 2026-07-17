@@ -817,8 +817,12 @@ async function addGlobalSeatCore({ label = "", eventId = "", boxId = "", clearFo
     currentEventId: eid,
     boxId: bid,
     sourceLayoutDocId: `${eid}__${bid}`,
-    __firestoreDocId: docId
+    __firestoreDocId: docId,
+    __localAddedAt: now
   };
+  // setDoc 이전의 await 구간에서 실시간 스냅샷이 도착해 낙관적 좌석을 지우지 못하도록 가드.
+  markGlobalLayoutLocalMutation();
+  markSkipSeatRecovery();
   const existingIdx = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === seatId);
   if (existingIdx >= 0) GL.globalSeats[existingIdx] = { ...GL.globalSeats[existingIdx], ...optimistic };
   else GL.globalSeats.push(optimistic);

@@ -399,13 +399,22 @@ function shouldKeepLocalSeatOverRemoteEmpty(prevSeat, nextSeat) {
   return Date.now() - seatedAt < RECENT_LOCAL_SEAT_MS;
 }
 
+function isRecentLocalSeatAdd(seat) {
+  const addedAt = Number(seat?.__localAddedAt || 0);
+  if (!addedAt) return false;
+  return Date.now() - addedAt < RECENT_LOCAL_SEAT_MS;
+}
+
 function mergeGlobalSeatsFromSnapshot(prevSeats = [], nextSeats = []) {
   const prevById = new Map();
   for (const seat of prevSeats) {
     const sid = String(seat?.seatId || "").trim();
     if (sid) prevById.set(sid, seat);
   }
-  return nextSeats.map((next) => {
+  const nextIds = new Set(
+    nextSeats.map((s) => String(s?.seatId || "").trim()).filter(Boolean)
+  );
+  const merged = nextSeats.map((next) => {
     const sid = String(next?.seatId || "").trim();
     const prev = sid ? prevById.get(sid) : null;
     if (!prev || !shouldKeepLocalSeatOverRemoteEmpty(prev, next)) return next;
@@ -418,6 +427,14 @@ function mergeGlobalSeatsFromSnapshot(prevSeats = [], nextSeats = []) {
       status: prev.status || next.status || "occupied"
     };
   });
+  // 방금 로컬에서 만든 좌석이 아직 서버 스냅샷에 반영되기 전이라면
+  // 스냅샷 목록에 없더라도 잠시 유지한다 — 생성 도중 박스가 사라지는 것 방지.
+  const preservedLocalAdds = prevSeats.filter((seat) => {
+    const sid = String(seat?.seatId || "").trim();
+    if (!sid || nextIds.has(sid)) return false;
+    return isRecentLocalSeatAdd(seat);
+  });
+  return preservedLocalAdds.length ? [...merged, ...preservedLocalAdds] : merged;
 }
 
 function personIdentityKey(person = {}) {
