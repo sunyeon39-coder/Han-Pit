@@ -6,6 +6,13 @@ import { attendanceLogCreatedAtMs } from "../shared/attendance-log-write.js";
 
 const SESSION_START = new Set(["waiting", "checked_in"]);
 const SESSION_DEDUPE_TOLERANCE_MS = 120_000;
+// adjust_work_session / delete_work_session 은 딜러가 바닥에서 실제로 한 활동이 아니라
+// 관리자가 과거 기록을 "고치는" 메타 로그다. 이 로그들은 별도 단계(applyWorkSessionAdjustments /
+// applyWorkSessionDeletions)에서 처리하므로, 메인 루프의 "그 외 활동 → lastActivity 갱신"
+// 폴백에 걸리면 안 된다. 걸리면 아직 checked_out 로그가 없는(=아직 open인) 세션의 종료
+// 시각이 "방금 이 수정 로그를 쓴 시각"으로 계속 밀리는 버그가 생긴다 — 수정을 시도할
+// 때마다 세션이 "지금"까지 늘어나 보이는 원인.
+const NON_ACTIVITY_LOG_ACTIONS = new Set(["adjust_work_session", "delete_work_session"]);
 
 function localDateKey(ms) {
   return getOperationalDayKey(Number(ms) || Date.now());
@@ -199,6 +206,10 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
 
   for (const log of mine) {
     const action = String(log.action || "").trim();
+    // adjust_work_session / delete_work_session 은 이 루프에서 완전히 건너뛴다 — 실제 세션
+    // 재구성은 applyWorkSessionAdjustments/applyWorkSessionDeletions 가 별도로 처리하고,
+    // 여기서 손대면 lastActivity 가 "수정 로그를 쓴 시각"으로 오염된다.
+    if (NON_ACTIVITY_LOG_ACTIONS.has(action)) continue;
     const at = Number(log.createdAt || 0) || 0;
     // checked_in/checked_out 로그는 setDoc 이후 await 없이(fire-and-forget) 기록되는 경우가
     // 있어, 로그 문서가 실제로 쓰여진 시각(createdAt)이 백그라운드 탭 지연 등으로 실제
@@ -281,6 +292,18 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
       sessions.push(derivedOpen);
     }
     openStart = null;
+  } else if (
+    openStart &&
+    status === "checked_out" &&
+    checkedOutAt > openStart &&
+    Math.abs(Number(checkedInAt) - Number(openStart)) <= SESSION_DEDUPE_TOLERANCE_MS
+  ) {
+    // checked_out "액션 로그"는 없지만(예전 데이터, 기록 누락 등) attendance 문서 자체는
+    // 이 출근 건이 실제로 퇴근 처리됐다고 말하고 있는 경우 — "마지막 활동 시점"으로 대충
+    // 마감 추정하지 말고 문서의 진짜 퇴근 시각(checkedOutAt)을 그대로 쓴다. 이걸 안 하면
+    // 아래 분기(lastActivity 기반 추정)로 빠져서, 이후 이 세션에 어떤 로그가 하나라도
+    // 더 쓰이는 순간(수정 시도 포함) 종료 시각이 "그 로그를 쓴 시각"으로 계속 밀린다.
+    sessions.push(withSessionKey({ startMs: openStart, endMs: checkedOutAt, open: false }));
   } else if (openStart) {
     // 로그상 아직 안 닫힌 세션. 이전 운영일이면 마지막 활동 시점으로 마감, 오늘이면 진행 중.
     if (localDateKey(openStart) !== localDateKey(Date.now())) {
