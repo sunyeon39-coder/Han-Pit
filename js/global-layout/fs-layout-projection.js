@@ -306,23 +306,27 @@ export async function syncLayoutProjection(eventId = "", boxId = "") {
   if (!e || !b || !GL.tournamentId) return;
 
   const layoutDocId = getProjectionDocId(e, b);
-  let liveRows = (GL.globalSeats || []).filter((s) => {
-    const src = String(s.sourceLayoutDocId || "").trim();
-    if (src && src === layoutDocId) return true;
-    const eid = String(s.currentEventId || s.mappedEventId || "").trim();
-    return eid === e && String(s.boxId || "").trim() === b;
-  });
-  if (!liveRows.length) {
-    try {
-      const q = query(
-        collection(db, "tournaments", GL.tournamentId, "global_seats"),
-        where("sourceLayoutDocId", "==", layoutDocId)
-      );
-      const snap = await getDocs(q);
-      liveRows = snap.docs.map((d) => d.data() || {});
-    } catch (err) {
-      console.error("syncLayoutProjection getDocs error:", err);
-    }
+  // 이 함수는 layout_events/{eventId__boxId} 의 seats 배열을 "통째로" 덮어쓴다(merge:true여도
+  // 배열 필드 자체는 부분 병합이 안 되고 완전히 교체됨). 예전엔 로컬 캐시(GL.globalSeats)를
+  // 먼저 쓰고, 로컬에 이 박스의 좌석이 "하나도" 없을 때만 서버에서 다시 읽어왔다 — 그런데
+  // 좌석 생성·이동·배치 도중 실시간 스냅샷 경합 등으로 로컬 상태가 "일부만" 빠진 경우(전부가
+  // 아니라 한두 개만 없는 경우)엔 이 안전장치가 걸리지 않아서, 실제로는 존재하는 좌석이
+  // layout_events 에서 통째로 지워져 버렸다 — layout.html 박스 편집 화면에서 좌석이
+  // "사라지는" 사고의 원인. 그래서 로컬 캐시를 신뢰하지 않고 항상 서버에서 이 박스의
+  // 진짜 좌석 목록을 다시 읽어온 뒤에만 덮어쓴다.
+  let liveRows;
+  try {
+    const q = query(
+      collection(db, "tournaments", GL.tournamentId, "global_seats"),
+      where("sourceLayoutDocId", "==", layoutDocId)
+    );
+    const snap = await getDocs(q);
+    liveRows = snap.docs.map((d) => d.data() || {});
+  } catch (err) {
+    console.error("syncLayoutProjection getDocs error:", err);
+    // 서버에서 진짜 목록을 못 읽었으면 아예 쓰지 않는다 — 불완전할 수 있는 로컬 상태로
+    // seats 배열을 덮어써서 실제 좌석을 지우는 것보다, 이번 동기화를 건너뛰는 게 안전하다.
+    return;
   }
 
   const seats = liveRows

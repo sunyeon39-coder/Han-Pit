@@ -69,6 +69,7 @@ import {
   getSortedSeats as computeSortedSeatsForLayout
 } from "./layout-main-display-helpers.js";
 import { createLayoutSeatWaitingMutations } from "./layout-main-seat-waiting-mutations.js";
+import { createSeatWaitingMutationQueue } from "./layout-seat-waiting-mutation-queue.js";
 import { setupLayoutMainDomWiring } from "./layout-main-dom-wiring.js";
 import {
   alertFcmRegistrationResult,
@@ -289,6 +290,18 @@ import {
     }
   }
 
+  // 좌석/대기 뮤테이션과 저장(saveEventState/saveWaitingState)이 동일한 in-flight 카운터를
+  // 공유해야, 어떤 경로로 로컬 상태를 바꾸든(좌석 추가/삭제/비우기/드래그 이동 등) 저장이
+  // 서버에 반영되기 전까지 실시간 스냅샷이 로컬 변경을 덮어쓰지 않는다.
+  const layoutMutationQueue = createSeatWaitingMutationQueue();
+  const {
+    runSeatWaitingMutationSerialized,
+    enqueueHealAfterMutation,
+    beginLayoutOptimisticMutation,
+    endLayoutOptimisticMutation,
+    isLayoutOptimisticMutationInFlight
+  } = layoutMutationQueue;
+
   const {
     saveEventState,
     saveWaitingState,
@@ -311,7 +324,9 @@ import {
     clone,
     sanitizeLayoutState,
     isEmptyPerson,
-    hasWritableLayoutContext
+    hasWritableLayoutContext,
+    beginLayoutOptimisticMutation,
+    endLayoutOptimisticMutation
   });
 
   function normalizeWaitingEntry(raw) {
@@ -360,7 +375,12 @@ import {
     showOptimisticSeatAssignedAlert: (payload) =>
       layoutSeatNotifyBridge.showOptimisticSeatAssignedAlert(payload),
     getAttendanceWaiting: () => attendanceWaitingState.items,
-    getAttendanceInactiveUids: () => attendanceWaitingState.inactiveUids
+    getAttendanceInactiveUids: () => attendanceWaitingState.inactiveUids,
+    runSeatWaitingMutationSerialized,
+    enqueueHealAfterMutation,
+    beginLayoutOptimisticMutation,
+    endLayoutOptimisticMutation,
+    isLayoutOptimisticMutationInFlight
   });
 
   const {
@@ -374,8 +394,7 @@ import {
     findSeat,
     getWaitingListForDisplay,
     clearWaitingSelectionIfSeated,
-    removeWaitingEntriesByIdentity,
-    isLayoutOptimisticMutationInFlight
+    removeWaitingEntriesByIdentity
   } = seatMutations;
 
   layoutGlobalSeatsMerge = createLayoutGlobalSeatsMerge({

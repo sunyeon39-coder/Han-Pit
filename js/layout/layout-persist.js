@@ -19,7 +19,9 @@ export function createLayoutPersistServices({
   clone,
   sanitizeLayoutState,
   isEmptyPerson,
-  hasWritableLayoutContext
+  hasWritableLayoutContext,
+  beginLayoutOptimisticMutation,
+  endLayoutOptimisticMutation
 }) {
   let saveEventTimer = null;
   let saveWaitingTimer = null;
@@ -39,6 +41,10 @@ export function createLayoutPersistServices({
 
   async function saveEventState() {
     if (!hasWritableLayoutContext()) return;
+    // 저장이 서버에 반영될 때까지는 실시간 스냅샷을 신뢰하지 않는다.
+    // (로컬에 좌석을 추가/삭제한 직후, 아직 저장이 끝나기 전에 구버전 스냅샷이 도착하면
+    //  방금 만든 좌석 박스가 통째로 사라져 보이는 사고를 방지)
+    if (typeof beginLayoutOptimisticMutation === "function") beginLayoutOptimisticMutation();
     try {
       const sanitizedEventState = sanitizeLayoutState({
         seats: clone(eventState.seats),
@@ -60,11 +66,14 @@ export function createLayoutPersistServices({
       ]);
     } catch (err) {
       console.error("saveEventState error:", err);
+    } finally {
+      if (typeof endLayoutOptimisticMutation === "function") endLayoutOptimisticMutation();
     }
   }
 
   async function saveWaitingState() {
     if (!hasWritableLayoutContext()) return;
+    if (typeof beginLayoutOptimisticMutation === "function") beginLayoutOptimisticMutation();
     try {
       const sanitizedWaitingState = sanitizeLayoutState({
         seats: clone(eventState.seats),
@@ -83,6 +92,8 @@ export function createLayoutPersistServices({
       );
     } catch (err) {
       console.error("saveWaitingState error:", err);
+    } finally {
+      if (typeof endLayoutOptimisticMutation === "function") endLayoutOptimisticMutation();
     }
   }
 

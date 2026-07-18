@@ -4,7 +4,6 @@
 import { buildSeatAssignedNotifyMessage } from "../shared/seat-notification-label.js";
 import { normalizeWaitingName } from "./layout-main-waiting-normalize.js";
 import { layoutGetBestDisplayName, layoutSyncDisplayNameFallback } from "./layout-main-remote.js";
-import { createSeatWaitingMutationQueue } from "./layout-seat-waiting-mutation-queue.js";
 import { createSeatWaitingIdentityHelpers } from "./layout-seat-waiting-identity-helpers.js";
 
 export function createLayoutSeatWaitingMutations(deps) {
@@ -38,16 +37,13 @@ export function createLayoutSeatWaitingMutations(deps) {
     buildSeatTargetUrl,
     render,
     renderPanel,
-    showOptimisticSeatAssignedAlert
-  } = deps;
-
-  const {
+    showOptimisticSeatAssignedAlert,
     runSeatWaitingMutationSerialized,
     enqueueHealAfterMutation,
     beginLayoutOptimisticMutation,
     endLayoutOptimisticMutation,
     isLayoutOptimisticMutationInFlight
-  } = createSeatWaitingMutationQueue();
+  } = deps;
 
   const {
     isIdentitySeatedAnywhereInTournament,
