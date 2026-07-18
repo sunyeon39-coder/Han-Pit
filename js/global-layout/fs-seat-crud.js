@@ -248,6 +248,7 @@ export async function deleteGlobalSeat(seatKey = "", options = {}) {
   }
 
   try {
+    const attendanceSyncedUids = new Set();
     for (const docInfo of docsById.values()) {
       const data = docInfo.data || {};
       const archiveEventId =
@@ -276,6 +277,37 @@ export async function deleteGlobalSeat(seatKey = "", options = {}) {
         firestoreDocId: String(docInfo.id || "").trim(),
         seatDoc: data
       });
+
+      // Seat 문서 삭제만으로는 출석 문서(dealer_attendance)가 자동으로 갱신되지 않는다.
+      // 여기서 바로 갱신하지 않으면 이 아래 markSkipSeatRecovery()로 인해 실시간 스냅샷
+      // 기반 복구(recoverRemovedSeatPeopleToWaiting)도 이 삭제 건은 건너뛰게 되어,
+      // 실제로는 어느 좌석에도 없는데 "배치중" 상태만 영구히 남는 유령 상태가 생긴다.
+      const occupantUid = String(data.personUid || "").trim();
+      const occupantEmail = String(data.personEmail || "").trim();
+      const occupantName = String(data.person || "").trim();
+      if (occupantUid && !isEmptyPerson(occupantName) && !attendanceSyncedUids.has(occupantUid)) {
+        attendanceSyncedUids.add(occupantUid);
+        const hasOtherSeat = GL.globalSeats.some((s) => {
+          if (isEmptyPerson(String(s.person || "").trim())) return false;
+          const sUid = String(s.personUid || "").trim();
+          const sEmail = String(s.personEmail || "").trim();
+          return (occupantUid && sUid === occupantUid) || (occupantEmail && sEmail === occupantEmail);
+        });
+        void setDoc(
+          getAttendanceRef(db, GL.tournamentId, occupantUid),
+          {
+            uid: occupantUid,
+            email: occupantEmail,
+            name: occupantName,
+            tournamentId: GL.tournamentId,
+            status: hasOtherSeat ? "assigned" : "waiting",
+            statusChangedAt: Date.now(),
+            updatedAt: Date.now(),
+            updatedAtServer: serverTimestamp()
+          },
+          { merge: true }
+        ).catch((err) => console.warn("deleteGlobalSeat attendance sync:", err));
+      }
     }
 
     for (const key of projectionKeys) {
@@ -325,6 +357,9 @@ async function clearDuplicatePersonSeatsExcept(
     })
   );
 
+  const sourceUid = String(person.uid || "").trim();
+  const sourceEmail = String(person.email || "").trim().toLowerCase();
+
   const writes = [];
   for (const entry of snaps) {
     if (!entry || !entry.snap.exists()) continue;
@@ -350,6 +385,36 @@ async function clearDuplicatePersonSeatsExcept(
         { merge: true }
       )
     );
+
+    // 이 후보 좌석이 (uid/email 기준으로) 지금 남겨두는 사람과 "확실히 같은 사람"이면
+    // 그 사람의 출석 상태는 이 함수 호출 뒤 applyGlobalSeatRename이 새 좌석 기준으로
+    // 갱신하므로 여기서 건드리지 않는다. 반대로 이름만으로 매칭돼 실제로는 다른 사람일
+    // 수 있는 경우, 이 좌석 문서의 실제 personUid를 기준으로 그 사람의 출석 상태를
+    // "대기"로 되돌려 놓지 않으면 "배치중"인데 실제로는 어떤 좌석에도 없는 유령 상태가 남는다.
+    const dataUid = String(data.personUid || "").trim();
+    const dataEmail = String(data.personEmail || "").trim().toLowerCase();
+    const dataName = String(data.person || "").trim();
+    const isConfirmedSamePerson =
+      (sourceUid && dataUid && sourceUid === dataUid) ||
+      (sourceEmail && dataEmail && sourceEmail === dataEmail);
+    if (!isConfirmedSamePerson && dataUid && !isEmptyPerson(dataName)) {
+      writes.push(
+        setDoc(
+          getAttendanceRef(db, GL.tournamentId, dataUid),
+          {
+            uid: dataUid,
+            email: String(data.personEmail || "").trim(),
+            name: dataName,
+            tournamentId: GL.tournamentId,
+            status: "waiting",
+            statusChangedAt: now,
+            updatedAt: now,
+            updatedAtServer: serverTimestamp()
+          },
+          { merge: true }
+        ).catch((err) => console.warn("clearDuplicatePersonSeatsExcept attendance sync:", err))
+      );
+    }
 
     if (otherSeatId) {
       const oidx = GL.globalSeats.findIndex(

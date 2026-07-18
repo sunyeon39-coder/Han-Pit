@@ -811,6 +811,18 @@ export function bindRealtime() {
       if (snap.empty && snap.metadata?.fromCache && GL.globalSeats.length > 0) {
         return;
       }
+      // 완전히 빈 캐시 스냅샷뿐 아니라, 모바일/PWA가 백그라운드에서 돌아올 때 로컬 캐시가
+      // 서버와 아직 덜 맞춰진 상태에서 "일부만 있는" 캐시 스냅샷이 먼저 도착할 수 있다.
+      // 이걸 그대로 반영하면 실제로는 멀쩡한 좌석·배치 인원이 잠깐(때로는 다음 실제 변경이
+      // 있을 때까지 계속) 화면에서 사라져 보인다 — 서버 기준으로 재확인 후 반영한다.
+      if (snap.metadata?.fromCache && GL.globalSeats.length > 0 && !snap.empty) {
+        const incomingCount = snap.docs.length;
+        const prevCount = GL.globalSeats.length;
+        if (incomingCount < prevCount * 0.5) {
+          void refreshGlobalSeatsFromServer();
+          return;
+        }
+      }
       const { removedOccupiedSeats, nextSeats, historyGaps } = applyGlobalSeatsFromSnapshot(
         snap,
         prevSeatsRef
