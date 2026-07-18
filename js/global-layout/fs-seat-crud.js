@@ -827,6 +827,11 @@ async function addGlobalSeatCore({ label = "", eventId = "", boxId = "", clearFo
   if (existingIdx >= 0) GL.globalSeats[existingIdx] = { ...GL.globalSeats[existingIdx], ...optimistic };
   else GL.globalSeats.push(optimistic);
   flushOptimisticGlobalLayoutUi();
+  // 시간 기준 가드(markGlobalLayoutLocalMutation/RECENT_LOCAL_SEAT_MS)만으로는 네트워크가
+  // 느려서 setDoc 이 오래 걸리는 경우 유예 시간이 지나 버려 캔버스에서 좌석이 사라질 수
+  // 있었다. setDoc 이 실제로 끝날 때까지는 이 seatId 를 "생성 중"으로 표시해 realtime
+  // 스냅샷 병합 로직이 시간과 무관하게 보존하도록 한다.
+  GL.pendingLocalSeatIds.add(seatId);
 
   try {
     await ensureLayoutEventShellForGlobalOps(eid, bid);
@@ -838,6 +843,7 @@ async function addGlobalSeatCore({ label = "", eventId = "", boxId = "", clearFo
       const rollbackIdx = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === seatId);
       if (rollbackIdx >= 0) GL.globalSeats.splice(rollbackIdx, 1);
       flushOptimisticGlobalLayoutUi();
+      GL.pendingLocalSeatIds.delete(seatId);
       alert(layoutGate.message);
       return;
     }
@@ -879,6 +885,9 @@ async function addGlobalSeatCore({ label = "", eventId = "", boxId = "", clearFo
       },
       { merge: true }
     );
+    // setDoc 이 끝났으니 더 이상 "생성 중"으로 보호할 필요가 없다 — 이후 스냅샷은
+    // 이 seatId 를 정상적으로 포함해야 한다.
+    GL.pendingLocalSeatIds.delete(seatId);
 
     await syncLayoutProjection(eid, bid);
     sessionStorage.setItem("eventId", eid);
@@ -913,7 +922,11 @@ async function addGlobalSeatCore({ label = "", eventId = "", boxId = "", clearFo
     const rollbackIdx = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === seatId);
     if (rollbackIdx >= 0) GL.globalSeats.splice(rollbackIdx, 1);
     flushOptimisticGlobalLayoutUi();
+    GL.pendingLocalSeatIds.delete(seatId);
     throw err;
+  } finally {
+    // 위 경로들에서 빠뜨린 게 있어도 여기서 최종적으로 정리한다(플래그 영구 잔류 방지).
+    GL.pendingLocalSeatIds.delete(seatId);
   }
 
   if (clearFormInputs) {

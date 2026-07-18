@@ -400,6 +400,11 @@ function shouldKeepLocalSeatOverRemoteEmpty(prevSeat, nextSeat) {
 }
 
 function isRecentLocalSeatAdd(seat) {
+  const sid = String(seat?.seatId || "").trim();
+  // setDoc 이 아직 안 끝난(pending) 좌석이면 시간 유예와 무관하게 계속 보존한다.
+  // 네트워크가 느려서 12초(RECENT_LOCAL_SEAT_MS)를 넘겨도, 저장이 실제로 끝날 때까지는
+  // "아직 스냅샷에 없다"는 이유만으로 캔버스에서 지우면 안 된다.
+  if (sid && GL.pendingLocalSeatIds?.has(sid)) return true;
   const addedAt = Number(seat?.__localAddedAt || 0);
   if (!addedAt) return false;
   return Date.now() - addedAt < RECENT_LOCAL_SEAT_MS;

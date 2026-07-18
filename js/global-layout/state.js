@@ -38,6 +38,14 @@ export const GL = {
   localMutationUntil: 0,
   /** admin 좌석 삭제 직후 자동 대기 복구 억제 시각(unix ms) */
   skipSeatRecoveryUntil: 0,
+  /**
+   * 방금 생성 요청을 보냈지만 아직 setDoc 이 끝나지 않은 seatId 모음.
+   * realtime 스냅샷 병합(mergeGlobalSeatsFromSnapshot)에서, 이 목록에 있는 좌석은
+   * 시간 기준 유예(RECENT_LOCAL_SEAT_MS)가 지났더라도 스냅샷에 아직 없다는 이유로
+   * 지우지 않는다 — 네트워크가 느려 12초 안에 저장이 안 끝나면 캔버스에서
+   * 좌석이 사라지는 문제를 막기 위함.
+   */
+  pendingLocalSeatIds: new Set(),
   attendanceWaiting: [],
   /** uid → dealer_attendance — 스왑·비우기 시 원래 joinedAt 복원용 */
   attendanceByUid: new Map(),
