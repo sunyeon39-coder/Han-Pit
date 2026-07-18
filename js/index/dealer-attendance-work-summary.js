@@ -42,6 +42,9 @@ function mergeDuplicateWorkSessions(keep, drop) {
   }
   keep.open = Boolean(keep.open || drop.open);
   delete keep.durationMs;
+  // 병합 결과가 실제로 시간대를 가지면 더는 "무활동 유령 세션"이 아니다.
+  keep.noActivityAutoClose =
+    Boolean(keep.noActivityAutoClose) && Boolean(drop.noActivityAutoClose);
   keep.sessionKey = buildWorkSessionKey(keep);
   return keep;
 }
@@ -145,6 +148,8 @@ function applyWorkSessionAdjustments(sessions, logs = []) {
     if (newStart > 0) session.startMs = newStart;
     if (newEnd > 0 && !session.open) session.endMs = newEnd;
     delete session.durationMs;
+    // 관리자/본인이 직접 시각을 수정했다면 더는 "무활동 유령 세션"으로 취급하지 않는다.
+    session.noActivityAutoClose = false;
     session.sessionKey = buildWorkSessionKey(session);
   }
 
@@ -174,10 +179,20 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
   let lastActivity = null;
 
   // 퇴근을 안 누른 채 운영일이 바뀐 세션은 '마지막 활동 시점'으로 자동 마감해 누적에 포함한다.
+  // 출근만 찍히고 그 사이 아무 활동도 없었다면 end === openStart(0분)가 되는데, 이 경우만
+  // "유령 세션" 표시로 남겨서 이후 걸러낸다 — dedupe 등 다른 경로로 만들어진 세션은 절대
+  // 건드리지 않는다(실제 근무 기록이 사라지지 않도록).
   const closeOpenSession = (endMs) => {
     if (openStart == null) return;
     const end = Math.max(Number(openStart), Number(endMs || openStart));
-    sessions.push(withSessionKey({ startMs: openStart, endMs: end, open: false }));
+    sessions.push(
+      withSessionKey({
+        startMs: openStart,
+        endMs: end,
+        open: false,
+        noActivityAutoClose: end <= Number(openStart)
+      })
+    );
     openStart = null;
     lastActivity = null;
   };
@@ -289,9 +304,11 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
   applyWorkSessionAdjustments(sessions, mine);
   const dedupedSessions = dedupeWorkSessions(sessions, nowMs);
   const deletedFiltered = applyWorkSessionDeletions(dedupedSessions, mine);
-  // 출근만 찍고 아무 활동 없이 자동 마감된(운영일 전환 등) 0분짜리 유령 세션은
-  // 근무 목록·근무일수·정산에서 노이즈일 뿐이므로 제외한다. (진행 중인 세션은 유지)
-  const visibleSessions = deletedFiltered.filter((s) => s.open || sessionDurationMs(s) > 0);
+  // 출근만 찍고 아무 활동 없이 자동 마감된(운영일 전환 등) 0분짜리 유령 세션만 제외한다.
+  // 반드시 closeOpenSession 에서 명시적으로 표시된 것만 걸러내고, dedupe 등 다른 경로로
+  // 만들어진 세션은 duration 값만 보고 추측해서 지우지 않는다 — 실제 근무 기록이
+  // 잘못 사라지는 것을 막기 위함.
+  const visibleSessions = deletedFiltered.filter((s) => !s.noActivityAutoClose);
 
   const daySet = new Set();
   let totalMs = 0;
