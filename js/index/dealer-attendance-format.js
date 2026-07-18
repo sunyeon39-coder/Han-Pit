@@ -14,7 +14,7 @@ export function getAttendanceStatusLabel(status) {
  * ms를 그대로 floor 해서 계산하는 formatDuration과 어긋나 보이는 원인이 된다.
  * 화면 표시도 항상 floor 하도록 미리 초를 0으로 잘라서 넘긴다.
  */
-function floorToMinute(ts) {
+export function floorToMinute(ts) {
   const n = Number(ts);
   if (!Number.isFinite(n) || n <= 0) return n;
   return n - (n % 60000);

@@ -1,5 +1,5 @@
 import { getTournamentId } from "./core-utils.js";
-import { formatDuration } from "./dealer-attendance-format.js";
+import { formatDuration, floorToMinute } from "./dealer-attendance-format.js";
 import { getWorkingMs } from "./dealer-attendance-derived.js";
 import { getOperationalDayKey } from "../shared/attendance-operational-day.js";
 import { attendanceLogCreatedAtMs } from "../shared/attendance-log-write.js";
@@ -361,7 +361,7 @@ export function formatWorkSessionDuration(session) {
 
 export function formatWorkSessionRange(session) {
   const fmt = (ms) => {
-    const d = new Date(Number(ms));
+    const d = new Date(floorToMinute(Number(ms)));
     if (!Number.isFinite(d.getTime())) return "-";
     return d.toLocaleString("ko-KR", {
       month: "2-digit",
