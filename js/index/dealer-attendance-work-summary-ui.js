@@ -541,11 +541,22 @@ async function openWorkSummaryModal() {
 }
 
 async function applyWorkSummarySessionTime(row, field, pickedMs) {
-  if (!canEditWorkSummarySessions()) return;
-  if (!row || !Number.isFinite(pickedMs) || pickedMs <= 0) return;
+  // 아래 가드들은 예전엔 그냥 조용히 return 해서, 실패해도 사용자 눈에는 "확인을 눌러도
+  // 아무 반응이 없다"로만 보였다. 원인을 바로 알 수 있도록 실패 사유를 alert 로 보여준다.
+  if (!canEditWorkSummarySessions()) {
+    alert("근무 시간을 수정할 권한이 없습니다. 새로고침 후 다시 시도해 주세요.");
+    return;
+  }
+  if (!row || !Number.isFinite(pickedMs) || pickedMs <= 0) {
+    alert("선택한 시각을 읽지 못했습니다. 다시 시도해 주세요.");
+    return;
+  }
 
   const ctx = getWorkSummaryContext();
-  if (!ctx?.uid) return;
+  if (!ctx?.uid) {
+    alert("사용자 정보를 확인하지 못했습니다. 창을 닫고 다시 열어 주세요.");
+    return;
+  }
 
   const isOpen = row.dataset.open === "1";
   const previousStartMs = Number(row.dataset.prevStart || 0);
@@ -564,40 +575,51 @@ async function applyWorkSummarySessionTime(row, field, pickedMs) {
 
   const previousMs = field === "start" ? previousStartMs : previousEndMs;
 
-  const result = ctx.isAdminTarget
-    ? await adjustUserWorkSession({
-        targetUid: ctx.uid,
-        targetNickname: ctx.nickname,
-        ...sessionArgs
-      })
-    : await adjustMyWorkSession(sessionArgs);
+  try {
+    const result = ctx.isAdminTarget
+      ? await adjustUserWorkSession({
+          targetUid: ctx.uid,
+          targetNickname: ctx.nickname,
+          ...sessionArgs
+        })
+      : await adjustMyWorkSession(sessionArgs);
 
-  if (!result?.ok) {
-    alert("근무 시간 수정에 실패했습니다.");
-    return;
-  }
+    if (!result?.ok) {
+      // adjust*WorkSession 내부에서 이미 alert 를 띄운 실패(권한 없음/유효성 검증 등)와
+      // canAdjustAttendanceTimes() 처럼 조용히 fail() 만 반환하는 경우를 구분해 보여준다.
+      alert("근무 시간 수정에 실패했습니다. (권한 확인 또는 잠시 후 다시 시도)");
+      return;
+    }
 
-  if (!result.log && pickedMs !== previousMs) {
-    alert("선택한 시간이 반영되지 않았습니다. 다시 시도해 주세요.");
-    return;
-  }
+    if (!result.log && pickedMs !== previousMs) {
+      alert("선택한 시간이 반영되지 않았습니다. 다시 시도해 주세요.");
+      return;
+    }
 
-  if (result.log) {
-    mergeAttendanceLogs([result.log]);
-  }
+    if (result.log) {
+      mergeAttendanceLogs([result.log]);
+    }
 
-  if (result.attendancePatched) {
-    await loadDealerAttendanceOnce();
-    scheduleRenderDealerOps();
-  }
+    if (result.attendancePatched) {
+      await loadDealerAttendanceOnce();
+      scheduleRenderDealerOps();
+    }
 
-  const logs = await withTimeout(loadAttendanceLogsForUid(ctx.uid), 8000);
-  if (Array.isArray(logs)) {
-    mergeAttendanceLogs(logs);
-  }
+    const logs = await withTimeout(loadAttendanceLogsForUid(ctx.uid), 8000);
+    if (Array.isArray(logs)) {
+      mergeAttendanceLogs(logs);
+    } else {
+      console.warn("applyWorkSummarySessionTime: 로그 재조회 실패/타임아웃 — 방금 반영한 로그만 반영된 상태일 수 있습니다.");
+    }
 
-  if (IX.workSummaryModal?.classList.contains("show")) {
-    renderWorkSummaryModal();
+    if (IX.workSummaryModal?.classList.contains("show")) {
+      renderWorkSummaryModal();
+    }
+  } catch (err) {
+    // 이전에는 여기서 예외가 나면 아무 알림 없이 그냥 실패했다 — 콘솔에만 남고
+    // 사용자에게는 "확인을 눌러도 반응이 없는" 것처럼 보였다.
+    console.error("applyWorkSummarySessionTime error:", err);
+    alert("근무 시간 수정 중 오류가 발생했습니다. 콘솔 로그를 확인해 주세요.");
   }
 }
 
