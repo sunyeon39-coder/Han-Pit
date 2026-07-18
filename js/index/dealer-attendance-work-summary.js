@@ -185,14 +185,19 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
   for (const log of mine) {
     const action = String(log.action || "").trim();
     const at = Number(log.createdAt || 0) || 0;
+    // checked_in/checked_out 로그는 setDoc 이후 await 없이(fire-and-forget) 기록되는 경우가
+    // 있어, 로그 문서가 실제로 쓰여진 시각(createdAt)이 백그라운드 탭 지연 등으로 실제
+    // 출퇴근 시각과 어긋날 수 있다. attendance 문서에 반영한 실제 시각(newCheckedInAt /
+    // newCheckedOutAt)이 있으면 그 값을 우선 사용한다.
+    const sessionStartAt = Number(log.newCheckedInAt || 0) || at;
 
     if (SESSION_START.has(action)) {
       // 이전 세션이 다른 운영일에서 안 닫혔으면(퇴근 누락) 먼저 자동 마감
-      if (openStart != null && localDateKey(openStart) !== localDateKey(at)) {
+      if (openStart != null && localDateKey(openStart) !== localDateKey(sessionStartAt)) {
         closeOpenSession(lastActivity ?? openStart);
       }
-      if (openStart == null) openStart = at;
-      lastActivity = at;
+      if (openStart == null) openStart = sessionStartAt;
+      lastActivity = sessionStartAt;
       continue;
     }
     if (action === "adjust_check_in") {
@@ -227,7 +232,7 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
     }
     if (action === "checked_out") {
       if (openStart != null) {
-        const endMs = at || Date.now();
+        const endMs = Number(log.newCheckedOutAt || 0) || at || Date.now();
         sessions.push(withSessionKey({ startMs: openStart, endMs, open: false }));
         openStart = null;
         lastActivity = null;
@@ -283,7 +288,10 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
 
   applyWorkSessionAdjustments(sessions, mine);
   const dedupedSessions = dedupeWorkSessions(sessions, nowMs);
-  const visibleSessions = applyWorkSessionDeletions(dedupedSessions, mine);
+  const deletedFiltered = applyWorkSessionDeletions(dedupedSessions, mine);
+  // 출근만 찍고 아무 활동 없이 자동 마감된(운영일 전환 등) 0분짜리 유령 세션은
+  // 근무 목록·근무일수·정산에서 노이즈일 뿐이므로 제외한다. (진행 중인 세션은 유지)
+  const visibleSessions = deletedFiltered.filter((s) => s.open || sessionDurationMs(s) > 0);
 
   const daySet = new Set();
   let totalMs = 0;

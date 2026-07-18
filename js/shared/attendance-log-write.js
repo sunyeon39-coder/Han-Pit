@@ -29,7 +29,8 @@ export async function writeAttendanceLog({
   newSessionStartMs = null,
   previousSessionEndMs = null,
   newSessionEndMs = null,
-  detail = ""
+  detail = "",
+  createdAt = null
 }) {
   try {
     const logId = `log_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -42,7 +43,12 @@ export async function writeAttendanceLog({
       boxId,
       seatId,
       seatLabel,
-      createdAt: Date.now()
+      // 호출자가 실제 상태 변경 시각(attendance 문서에 쓴 시각)을 넘겨주면 그 값을 사용한다.
+      // 넘겨받지 못한 경우에만 fallback으로 지금 이 줄이 실행되는 시각을 쓴다 —
+      // 이 함수는 setDoc 이후 await 없이 fire-and-forget 으로 호출되는 경우가 많아
+      // 탭이 백그라운드로 넘어가는 등 실행이 지연되면 Date.now() 가 실제 클릭 시각과
+      // 크게 어긋날 수 있다(근무 요약에 표시되는 종료 시각이 밀려 보이는 원인).
+      createdAt: Number.isFinite(Number(createdAt)) && Number(createdAt) > 0 ? Number(createdAt) : Date.now()
     };
     if (previousCheckedInAt != null) payload.previousCheckedInAt = Number(previousCheckedInAt) || 0;
     if (newCheckedInAt != null) payload.newCheckedInAt = Number(newCheckedInAt) || 0;

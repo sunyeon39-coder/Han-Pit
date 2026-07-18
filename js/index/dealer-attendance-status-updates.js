@@ -147,7 +147,12 @@ export async function updateMyAttendanceStatus(nextStatus, options = {}) {
       eventId: payload.currentEventId || "",
       boxId: payload.currentBoxId || "",
       seatId: payload.currentSeatId || "",
-      seatLabel: payload.currentSeatLabel || ""
+      seatLabel: payload.currentSeatLabel || "",
+      // 근무 요약 화면이 이 값으로 세션 시작/종료를 재구성하므로, 로그가 실제로 기록되는
+      // 시각이 아니라 attendance 문서에 반영한 시각을 그대로 넘긴다.
+      newCheckedInAt: payload.checkedInAt || null,
+      newCheckedOutAt: payload.checkedOutAt || null,
+      createdAt: payload.updatedAt
     }).catch((err) => console.warn("writeAttendanceLog:", err));
   } catch (err) {
     if (optimistic) restoreAttendanceSnapshot(tournamentId, user.uid, prevSnap);
@@ -184,7 +189,10 @@ export async function updateAdminAttendanceStatus(uid, nextStatus, options = {})
       eventId: payload.currentEventId || "",
       boxId: payload.currentBoxId || "",
       seatId: payload.currentSeatId || "",
-      seatLabel: payload.currentSeatLabel || ""
+      seatLabel: payload.currentSeatLabel || "",
+      newCheckedInAt: payload.checkedInAt || null,
+      newCheckedOutAt: payload.checkedOutAt || null,
+      createdAt: payload.updatedAt
     }).catch((err) => console.warn("writeAttendanceLog:", err));
     return true;
   } catch (err) {
