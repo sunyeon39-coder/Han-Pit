@@ -7,7 +7,7 @@ import {
   shouldUseOptimisticSeatAlertOnMobile,
   wasOptimisticSeatAlertShown
 } from "../shared/optimistic-seat-assigned-notify.js";
-import { buildSeatNotifyTag, seatNotificationKey } from "../shared/seat-notification-push.js";
+import { buildSeatNotifyTag, isStaleSeatNotification, seatNotificationKey } from "../shared/seat-notification-push.js";
 import { db, getMessagingSafe } from "../firebase.js";
 import {
   FCM_VAPID_KEY,
@@ -351,6 +351,11 @@ export function createLayoutSeatNotifyController({
       String(data.type || "").trim() === "seat_assigned" && data.acknowledged !== true;
 
     if (!shouldShow) {
+      resetSeatNotificationUi();
+      return;
+    }
+
+    if (isStaleSeatNotification(Number(data.createdAt))) {
       resetSeatNotificationUi();
       return;
     }
