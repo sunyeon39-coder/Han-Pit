@@ -534,37 +534,44 @@ export async function applyGlobalSeatRename(
   const newRef = doc(db, "tournaments", GL.tournamentId, "global_seats", newDocId);
   const now = Date.now();
 
-  if (!moved) {
-    await setDoc(
-      oldRef,
-      {
-        label: nextLabel,
-        updatedAt: now,
-        updatedAtServer: serverTimestamp()
-      },
-      { merge: true }
-    );
+  // rename/이동은 여러 번의 순차 Firestore 읽기·쓰기를 거치는 긴 비동기 작업이라,
+  // 그 사이 실시간 global_seats 스냅샷(자신의 쓰기가 트리거한 것 포함)이 GL.globalSeats를
+  // 통째로 덮어써 방금 수정 중인 Seat가 목록에서 사라지는 사고가 날 수 있다.
+  // addGlobalSeatCore/deleteGlobalSeat와 동일하게 작업 내내 가드를 걸어둔다.
+  GL.seatMutationInFlight = true;
+  markGlobalLayoutLocalMutation();
+  markSkipSeatRecovery();
+  try {
+    if (!moved) {
+      await setDoc(
+        oldRef,
+        {
+          label: nextLabel,
+          updatedAt: now,
+          updatedAtServer: serverTimestamp()
+        },
+        { merge: true }
+      );
 
-    const idxLabel = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === targetSeatId);
-    if (idxLabel >= 0) GL.globalSeats[idxLabel] = { ...GL.globalSeats[idxLabel], label: nextLabel };
-    refreshGlobalLayoutPcOpsPanel();
-    renderSeats(GL.globalSeats);
-    await syncLayoutProjection(resolvedNextEventId, nextBoxId);
-    return { ok: true, shouldOfferLayout: null };
-  }
+      const idxLabel = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === targetSeatId);
+      if (idxLabel >= 0) GL.globalSeats[idxLabel] = { ...GL.globalSeats[idxLabel], label: nextLabel };
+      refreshGlobalLayoutPcOpsPanel();
+      renderSeats(GL.globalSeats);
+      await syncLayoutProjection(resolvedNextEventId, nextBoxId);
+      return { ok: true, shouldOfferLayout: null };
+    }
 
-  await ensureLayoutEventShellForGlobalOps(resolvedNextEventId, nextBoxId);
-  if (prevEventId !== resolvedNextEventId || prevBoxId !== nextBoxId) {
-    await ensureLayoutEventShellForGlobalOps(prevEventId, prevBoxId);
-  }
+    await ensureLayoutEventShellForGlobalOps(resolvedNextEventId, nextBoxId);
+    if (prevEventId !== resolvedNextEventId || prevBoxId !== nextBoxId) {
+      await ensureLayoutEventShellForGlobalOps(prevEventId, prevBoxId);
+    }
 
-  const syncPrevParsed =
-    parseGlobalSeatDocId(foundDoc.ref.id, targetSeatId) || {
-      eventId: prevEventId,
-      boxId: prevBoxId
-    };
+    const syncPrevParsed =
+      parseGlobalSeatDocId(foundDoc.ref.id, targetSeatId) || {
+        eventId: prevEventId,
+        boxId: prevBoxId
+      };
 
-  if (moved) {
     const oldDocId = foundDoc.ref.id;
     if (oldDocId === newDocId) {
       await setDoc(
@@ -609,119 +616,123 @@ export async function applyGlobalSeatRename(
       );
       await deleteOrphanGlobalSeatDocsForSeatId(targetSeatId, newDocId);
     }
-  }
 
-  const personName = String(seat.person || "").trim();
-  const projectionKeys = new Set();
-  if (moved && !isEmptyPerson(personName)) {
-    const dupKeys = await clearDuplicatePersonSeatsExcept(
-      {
-        uid: String(seat.personUid || "").trim(),
-        email: String(seat.personEmail || "").trim(),
-        name: personName
-      },
-      targetSeatId,
-      now
-    );
-    dupKeys.forEach((k) => projectionKeys.add(k));
-  }
+    const personName = String(seat.person || "").trim();
+    const projectionKeys = new Set();
+    if (!isEmptyPerson(personName)) {
+      const dupKeys = await clearDuplicatePersonSeatsExcept(
+        {
+          uid: String(seat.personUid || "").trim(),
+          email: String(seat.personEmail || "").trim(),
+          name: personName
+        },
+        targetSeatId,
+        now
+      );
+      dupKeys.forEach((k) => projectionKeys.add(k));
+    }
 
-  const uid = String(seat.personUid || "").trim();
-  if (uid) {
-    const eventCardLabel = await resolveTournamentEventCardId(resolvedNextEventId);
-    await setDoc(
-      getAttendanceRef(db, GL.tournamentId, uid),
-      {
-        uid,
-        tournamentId: GL.tournamentId,
-        currentSeatLabel: nextLabel,
-        currentEventId: resolvedNextEventId,
-        currentBoxId: nextBoxId,
-        currentSeatId: targetSeatId,
-        updatedAt: now,
-        updatedAtServer: serverTimestamp()
-      },
-      { merge: true }
-    );
-
-    await setDoc(
-      doc(db, "layout_notifications", uid),
-      {
-        ...buildSeatAssignedNotificationWrite(uid, {
+    const uid = String(seat.personUid || "").trim();
+    if (uid) {
+      const eventCardLabel = await resolveTournamentEventCardId(resolvedNextEventId);
+      await setDoc(
+        getAttendanceRef(db, GL.tournamentId, uid),
+        {
+          uid,
           tournamentId: GL.tournamentId,
-          eventId: resolvedNextEventId,
-          eventTitle: eventCardLabel,
-          boxId: nextBoxId,
-          seatId: targetSeatId,
-          seatLabel: nextLabel,
-          targetUrl: `./layout.html?tournamentId=${encodeURIComponent(GL.tournamentId)}&eventId=${encodeURIComponent(resolvedNextEventId)}&boxId=${encodeURIComponent(nextBoxId)}&focusSeatId=${encodeURIComponent(targetSeatId)}`,
-          message: `${eventCardLabel} / Seat ${nextLabel} ${
-            moved ? "배치(카드·Box)가 변경되었습니다." : "라벨이 변경되었습니다."
-          }`,
-          createdAt: now,
+          currentSeatLabel: nextLabel,
+          currentEventId: resolvedNextEventId,
+          currentBoxId: nextBoxId,
+          currentSeatId: targetSeatId,
           updatedAt: now,
           updatedAtServer: serverTimestamp()
-        })
-      },
-      { merge: true }
-    );
-  }
+        },
+        { merge: true }
+      );
 
-  const oldDocId = foundDoc.ref.id;
-  const idx = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === targetSeatId);
-  const updatedSeat = {
-    ...(idx >= 0 ? GL.globalSeats[idx] : seat),
-    seatId: targetSeatId,
-    label: nextLabel,
-    currentEventId: resolvedNextEventId,
-    mappedEventId: resolvedNextEventId,
-    boxId: nextBoxId,
-    sourceLayoutDocId: getProjectionDocId(resolvedNextEventId, nextBoxId),
-    __firestoreDocId: moved && oldDocId !== newDocId ? newDocId : foundDoc.ref.id
-  };
-  if (idx >= 0) {
-    GL.globalSeats[idx] = updatedSeat;
-  }
-  GL.globalSeats = GL.globalSeats.filter((s, i, arr) => {
-    const sid = String(s.seatId || "").trim();
-    if (sid !== targetSeatId) return true;
-    const eid = String(s.currentEventId || s.mappedEventId || "").trim();
-    const bx = String(s.boxId || "").trim();
-    const isCanonical =
-      eid === resolvedNextEventId && bx === nextBoxId;
-    if (!isCanonical) return false;
-    const firstCanon = arr.findIndex((x) => {
-      if (String(x.seatId || "").trim() !== sid) return false;
-      const xe = String(x.currentEventId || x.mappedEventId || "").trim();
-      const xb = String(x.boxId || "").trim();
-      return xe === resolvedNextEventId && xb === nextBoxId;
+      await setDoc(
+        doc(db, "layout_notifications", uid),
+        {
+          ...buildSeatAssignedNotificationWrite(uid, {
+            tournamentId: GL.tournamentId,
+            eventId: resolvedNextEventId,
+            eventTitle: eventCardLabel,
+            boxId: nextBoxId,
+            seatId: targetSeatId,
+            seatLabel: nextLabel,
+            targetUrl: `./layout.html?tournamentId=${encodeURIComponent(GL.tournamentId)}&eventId=${encodeURIComponent(resolvedNextEventId)}&boxId=${encodeURIComponent(nextBoxId)}&focusSeatId=${encodeURIComponent(targetSeatId)}`,
+            message: `${eventCardLabel} / Seat ${nextLabel} ${
+              oldDocId !== newDocId ? "배치(카드·Box)가 변경되었습니다." : "라벨이 변경되었습니다."
+            }`,
+            createdAt: now,
+            updatedAt: now,
+            updatedAtServer: serverTimestamp()
+          })
+        },
+        { merge: true }
+      );
+    }
+
+    const idx = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === targetSeatId);
+    const updatedSeat = {
+      ...(idx >= 0 ? GL.globalSeats[idx] : seat),
+      seatId: targetSeatId,
+      label: nextLabel,
+      currentEventId: resolvedNextEventId,
+      mappedEventId: resolvedNextEventId,
+      boxId: nextBoxId,
+      sourceLayoutDocId: getProjectionDocId(resolvedNextEventId, nextBoxId),
+      __firestoreDocId: oldDocId !== newDocId ? newDocId : foundDoc.ref.id
+    };
+    if (idx >= 0) {
+      GL.globalSeats[idx] = updatedSeat;
+    } else {
+      // 비동기 처리 도중 실시간 스냅샷이 로컬 배열을 갈아치워 targetSeatId 항목이 없어졌을 수 있다.
+      // 이 경우에도 방금 수정한 Seat를 목록에서 잃지 않도록 다시 추가한다.
+      GL.globalSeats.push(updatedSeat);
+    }
+    GL.globalSeats = GL.globalSeats.filter((s, i, arr) => {
+      const sid = String(s.seatId || "").trim();
+      if (sid !== targetSeatId) return true;
+      const eid = String(s.currentEventId || s.mappedEventId || "").trim();
+      const bx = String(s.boxId || "").trim();
+      const isCanonical =
+        eid === resolvedNextEventId && bx === nextBoxId;
+      if (!isCanonical) return false;
+      const firstCanon = arr.findIndex((x) => {
+        if (String(x.seatId || "").trim() !== sid) return false;
+        const xe = String(x.currentEventId || x.mappedEventId || "").trim();
+        const xb = String(x.boxId || "").trim();
+        return xe === resolvedNextEventId && xb === nextBoxId;
+      });
+      return i === firstCanon;
     });
-    return i === firstCanon;
-  });
 
-  if (moved && oldDocId !== newDocId) {
-    projectionKeys.add(`${syncPrevParsed.eventId}__${syncPrevParsed.boxId}`);
-    projectionKeys.add(`${resolvedNextEventId}__${nextBoxId}`);
-  } else {
-    projectionKeys.add(`${resolvedNextEventId}__${nextBoxId}`);
+    if (oldDocId !== newDocId) {
+      projectionKeys.add(`${syncPrevParsed.eventId}__${syncPrevParsed.boxId}`);
+      projectionKeys.add(`${resolvedNextEventId}__${nextBoxId}`);
+    } else {
+      projectionKeys.add(`${resolvedNextEventId}__${nextBoxId}`);
+    }
+    for (const key of projectionKeys) {
+      const sep = key.lastIndexOf("__");
+      if (sep < 0) continue;
+      const e = key.slice(0, sep).trim();
+      const b = key.slice(sep + 2).trim();
+      if (e && b) await syncLayoutProjection(e, b);
+    }
+
+    refreshGlobalLayoutPcOpsPanel();
+    renderSeats(GL.globalSeats);
+
+    const shouldOfferLayout =
+      oldDocId !== newDocId ? { eventId: resolvedNextEventId, boxId: nextBoxId } : null;
+
+    return { ok: true, shouldOfferLayout };
+  } finally {
+    GL.seatMutationInFlight = false;
+    flushOptimisticGlobalLayoutUi();
   }
-  for (const key of projectionKeys) {
-    const sep = key.lastIndexOf("__");
-    if (sep < 0) continue;
-    const e = key.slice(0, sep).trim();
-    const b = key.slice(sep + 2).trim();
-    if (e && b) await syncLayoutProjection(e, b);
-  }
-
-  refreshGlobalLayoutPcOpsPanel();
-  renderSeats(GL.globalSeats);
-
-  const shouldOfferLayout =
-    moved && oldDocId !== newDocId
-      ? { eventId: resolvedNextEventId, boxId: nextBoxId }
-      : null;
-
-  return { ok: true, shouldOfferLayout };
 }
 
 export async function addGlobalSeatQuick(rawLabel = "") {

@@ -14,7 +14,8 @@ import {
   query,
   where,
   orderBy,
-  limit
+  limit,
+  startAfter
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 import { escapeHtml } from "../shared/dom-utils.js";
@@ -31,20 +32,37 @@ const XLSX_CDN_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs";
 const PAYROLL_VIEW_PAY = "pay";
 const PAYROLL_VIEW_HOURS = "hours";
 
+/**
+ * 대회 전체 인건비 계산에 쓰는 로그는 "최근 N건"이 아니라 전체 기간의 로그가 전부 필요합니다.
+ * 단일 limit(5000) 조회만 쓰면 로그가 5000건을 넘는(오래 진행되는/인원 많은) 대회에서
+ * orderBy asc + limit 특성상 가장 오래된 5000건만 가져오고 최근 근무일 로그가 통째로
+ * 누락되어 최근 날짜 인건비가 0으로 계산되는 사고가 납니다 — startAfter로 끝까지 페이지네이션합니다.
+ */
 async function fetchAllTournamentLogs(tournamentId) {
+  const out = [];
+  let cursor = null;
   try {
-    const snap = await getDocs(
-      query(
+    for (;;) {
+      const constraints = [
         collection(db, "dealer_attendance_logs"),
         where("tournamentId", "==", tournamentId),
-        orderBy("createdAt", "asc"),
-        limit(LOG_FETCH_LIMIT)
-      )
-    );
-    return snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
+        orderBy("createdAt", "asc")
+      ];
+      if (cursor) constraints.push(startAfter(cursor));
+      constraints.push(limit(LOG_FETCH_LIMIT));
+
+      const snap = await getDocs(query(...constraints));
+      if (snap.empty) break;
+
+      snap.docs.forEach((d) => out.push({ id: d.id, ...(d.data() || {}) }));
+
+      if (snap.docs.length < LOG_FETCH_LIMIT) break;
+      cursor = snap.docs[snap.docs.length - 1];
+    }
+    return out;
   } catch (err) {
     console.warn("fetchAllTournamentLogs:", err?.code || err);
-    return [];
+    return out;
   }
 }
 
