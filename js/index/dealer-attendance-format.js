@@ -7,9 +7,22 @@ export function getAttendanceStatusLabel(status) {
   return "출근 전";
 }
 
+/**
+ * 초 단위를 버리고 "분"까지만 남긴다. toLocaleString/toLocaleTimeString 에
+ * second 옵션을 안 넘기면 엔진(브라우저)에 따라 초를 버림(truncate)이 아니라
+ * 반올림(round)해서 표시하는 경우가 있어 — 예: 01:30:31 → "01:31" — 총 근무시간은
+ * ms를 그대로 floor 해서 계산하는 formatDuration과 어긋나 보이는 원인이 된다.
+ * 화면 표시도 항상 floor 하도록 미리 초를 0으로 잘라서 넘긴다.
+ */
+function floorToMinute(ts) {
+  const n = Number(ts);
+  if (!Number.isFinite(n) || n <= 0) return n;
+  return n - (n % 60000);
+}
+
 export function formatClock(ts) {
   if (!ts) return "-";
-  const d = new Date(ts);
+  const d = new Date(floorToMinute(ts));
   return d.toLocaleTimeString("ko-KR", {
     hour: "2-digit",
     minute: "2-digit"
@@ -52,7 +65,7 @@ export function datetimeLocalValueToMs(value) {
 export function formatDatetimeKorean(ms) {
   const n = Number(ms);
   if (!Number.isFinite(n) || n <= 0) return "-";
-  return new Date(n).toLocaleString("ko-KR", {
+  return new Date(floorToMinute(n)).toLocaleString("ko-KR", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
