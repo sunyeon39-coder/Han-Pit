@@ -152,6 +152,15 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten(
       const cur = snap.data() || {};
       if (String(cur.fcmSeatNotifyDedupKey || "") === dedupKey) return false;
       if (String(cur.fcmSeatNotifySending || "") === dedupKey) return false;
+      // 연속 배치(빠르게 다시 배정)로 이 트리거가 처리되는 사이 문서가 이미 더 최신
+      // createdAt(다음 배치)으로 덮어써졌다면, 이 이벤트는 지나간 배치다 — 그대로 보내면
+      // "방금 온 알림"이 최신 배치가 아니라 한 단계 전 배치를 가리키는 것처럼 보인다.
+      // 최신 배치는 자신의 트리거 이벤트에서 별도로 알림을 보내므로 여기선 건너뛴다.
+      const curCreatedMs = toMillis(cur.createdAt);
+      if (curCreatedMs > createdMs) {
+        console.info("[notifyLayoutSeatAssigned] skip superseded FCM", uid, createdMs, "-> latest", curCreatedMs);
+        return false;
+      }
       tx.set(notifyRef, {fcmSeatNotifySending: dedupKey}, {merge: true});
       return true;
     });
