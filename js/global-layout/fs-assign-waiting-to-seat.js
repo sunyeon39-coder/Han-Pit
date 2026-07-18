@@ -89,6 +89,30 @@ function clearDupSeatsInTransaction(tx, dupRefs, dupSnaps, person, targetSeatId,
     const kEvent = String(data.currentEventId || data.mappedEventId || "").trim();
     const kBox = String(data.boxId || "").trim();
     if (kEvent && kBox) touchedProjectionKeys.add(`${kEvent}__${kBox}`);
+
+    // 이 중복 좌석을 비우는 것만으로는 그 사람의 dealer_attendance 문서가 갱신되지 않는다.
+    // 이 좌석의 실제 점유자(uid가 있는 경우)를 기준으로 대기 상태로 동기화해 둔다 —
+    // 이 사람이 이번 배정의 waiting/prevUid 당사자라면 트랜잭션 뒤쪽에서 정확한 최종
+    // 상태로 다시 덮어써지고(같은 트랜잭션 내 마지막 tx.set이 적용됨), 이름만 같은
+    // 제3자였다면 이 동기화가 없으면 "배치중"인데 실제로는 어디에도 없는 상태로 남는다.
+    const occupantUid = String(data.personUid || "").trim();
+    const occupantName = String(data.person || "").trim();
+    if (occupantUid && !isEmptyPerson(occupantName)) {
+      tx.set(
+        getAttendanceRef(db, GL.tournamentId, occupantUid),
+        {
+          uid: occupantUid,
+          email: String(data.personEmail || "").trim(),
+          name: occupantName,
+          tournamentId: GL.tournamentId,
+          status: "waiting",
+          statusChangedAt: now,
+          updatedAt: now,
+          updatedAtServer: serverTimestamp()
+        },
+        { merge: true }
+      );
+    }
   }
 }
 
