@@ -806,7 +806,17 @@ export function bindRealtime() {
     collection(db, "tournaments", GL.tournamentId, "global_seats"),
     (snap) => {
       seatSnapshotReceived = true;
-      if (GL.seatMutationInFlight && snap.metadata?.fromCache) return;
+      // addGlobalSeatCore/deleteGlobalSeat/applyGlobalSeatRename(이동 포함)는 하나의 논리적
+      // 작업을 위해 순차적으로 여러 번 Firestore에 쓴다(새 문서 생성 → 이전 문서 삭제 →
+      // 중복 좌석 정리 등). 이 중간 단계마다 이 좌석 컬렉션 리스너가 다시 트리거되는데,
+      // 예전에는 fromCache 스냅샷만 걸러서 "서버에서 온" 중간 단계 스냅샷은 그대로
+      // GL.globalSeats를 통째로 덮어썼다 — 작업이 끝나기 전의 불완전한 상태(예: 이전 문서는
+      // 지워졌지만 새 문서는 아직 반영 전)가 화면에 그대로 반영되어 수정 중이던 Seat나
+      // 다른 Seat 박스가 잠깐(때로는 다음 실제 변경 전까지 계속) 사라져 보이는 원인이었다.
+      // 대기 목록 워처(GL.stopWaitingWatch)는 이미 fromCache와 무관하게 통째로 건너뛰므로
+      // 그것과 동일하게 맞춘다 — 작업이 끝나면(finally에서 플래그 해제) 다음 스냅샷이
+      // 정상적으로 최신 상태를 반영한다.
+      if (GL.seatMutationInFlight) return;
       if (shouldIgnoreStaleGlobalLayoutSnapshot(snap)) return;
       if (snap.empty && snap.metadata?.fromCache && GL.globalSeats.length > 0) {
         return;
