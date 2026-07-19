@@ -15,7 +15,12 @@ import { getTournamentId } from "./core-utils.js";
 import { getDerivedAttendance } from "./dealer-attendance-derived.js";
 import { getAdminAttendanceList } from "./dealer-attendance-admin-list.js";
 import { formatDatetimeKorean, getNowMs } from "./dealer-attendance-format.js";
-import { adjustMyWorkSession, adjustUserWorkSession, deleteUserWorkSession } from "./dealer-attendance-adjust-session.js";
+import {
+  addUserWorkSession,
+  adjustMyWorkSession,
+  adjustUserWorkSession,
+  deleteUserWorkSession
+} from "./dealer-attendance-adjust-session.js";
 import { loadDealerAttendanceOnce } from "./dealer-attendance-load-once.js";
 import { scheduleRenderDealerOps } from "./dealer-attendance-render.js";
 import {
@@ -479,6 +484,13 @@ function renderWorkSummaryModal() {
       ? ""
       : renderWorkSummaryPaySection(payProfile, payBreakdown, canEditPay);
 
+  const sessionsHead = canEditSessions
+    ? `<div class="work-summary-sessions-head">
+        <h3>근무 기록</h3>
+        <button type="button" class="mini-btn" data-session-add>+ 근무 구간 추가</button>
+      </div>`
+    : "";
+
   const sessionRows =
     summary.sessions.length === 0
       ? `<p class="work-summary-empty">이 대회에서 집계된 근무 기록이 없습니다.</p>`
@@ -498,6 +510,7 @@ function renderWorkSummaryModal() {
       </div>
     </div>
     ${paySection}
+    ${sessionsHead}
     ${sessionRows}
   `;
 }
@@ -718,6 +731,74 @@ async function handleWorkSummarySessionDelete(row) {
   }
 }
 
+/**
+ * 관리자 전용 — 퇴근을 안 누르고 다음 운영일로 넘어가는 등의 이유로 근무합계에
+ * 반영되지 못한 날짜를 시작~종료 시각을 직접 골라 근무 구간으로 보충한다.
+ */
+async function handleWorkSummarySessionAdd() {
+  if (!canEditWorkSummarySessions()) return;
+
+  const ctx = getWorkSummaryContext();
+  if (!ctx?.uid) {
+    alert("사용자 정보를 확인하지 못했습니다. 창을 닫고 다시 열어 주세요.");
+    return;
+  }
+
+  const now = getNowMs();
+  const minMs = now - LOG_RETENTION_MS;
+
+  const startMs = await openDatetimeScrollPicker({
+    initialMs: now,
+    minMs,
+    maxMs: now,
+    title: "추가할 근무 시작 시각"
+  });
+  if (startMs == null) return;
+
+  const endMs = await openDatetimeScrollPicker({
+    initialMs: now,
+    minMs: startMs,
+    maxMs: now,
+    title: "추가할 근무 종료 시각"
+  });
+  if (endMs == null) return;
+
+  if (!(endMs > startMs)) {
+    alert("종료 시각은 시작 시각보다 이후여야 합니다.");
+    return;
+  }
+
+  try {
+    const result = await addUserWorkSession({
+      targetUid: ctx.uid,
+      targetNickname: ctx.nickname,
+      startMs,
+      endMs
+    });
+
+    if (!result?.ok) {
+      alert("근무 구간 추가에 실패했습니다. (권한 확인 또는 잠시 후 다시 시도)");
+      return;
+    }
+
+    if (result.log) {
+      mergeAttendanceLogs([result.log]);
+    }
+
+    const logs = await withTimeout(loadAttendanceLogsForUid(ctx.uid), 8000);
+    if (Array.isArray(logs)) {
+      mergeAttendanceLogs(logs);
+    }
+
+    if (IX.workSummaryModal?.classList.contains("show")) {
+      renderWorkSummaryModal();
+    }
+  } catch (err) {
+    console.error("handleWorkSummarySessionAdd error:", err);
+    alert("근무 구간 추가 중 오류가 발생했습니다. 콘솔 로그를 확인해 주세요.");
+  }
+}
+
 function closeWorkSummaryModal() {
   IX.workSummaryTarget = null;
   resetWorkSummaryPayState();
@@ -830,6 +911,12 @@ async function handleWorkSummaryModalClick(e) {
   if (deleteBtn) {
     const row = deleteBtn.closest("[data-session-key]");
     void handleWorkSummarySessionDelete(row);
+    return;
+  }
+
+  const addSessionBtn = e.target.closest("[data-session-add]");
+  if (addSessionBtn) {
+    void handleWorkSummarySessionAdd();
     return;
   }
 

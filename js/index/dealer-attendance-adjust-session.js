@@ -336,6 +336,68 @@ export async function adjustUserWorkSession({
 }
 
 /**
+ * admin — 근무 구간을 새로 추가 (예: 퇴근을 안 눌러 다음날로 넘어가 근무합계에
+ * 반영되지 못한 날짜를 수기로 보충). 운영 로그만 기록하며, 출석 문서는 건드리지
+ * 않는다 — computeMyTournamentWorkSummary 가 add_work_session 로그를 읽어
+ * 새 근무 구간으로 반영한다.
+ * @returns {Promise<{ok: boolean, log?: object|null}>}
+ */
+export async function addUserWorkSession({
+  targetUid = "",
+  targetNickname = "",
+  startMs = 0,
+  endMs = 0
+} = {}) {
+  if (!canAdjustAttendanceTimes()) return fail();
+
+  const tournamentId = getTournamentId();
+  const user = auth.currentUser;
+  const safeUid = String(targetUid || "").trim();
+  if (!user || !tournamentId || !safeUid) return fail();
+
+  const start = Number(startMs || 0);
+  const end = Number(endMs || 0);
+  const now = getNowMs();
+
+  if (!Number.isFinite(start) || start <= 0) {
+    alert("올바른 시작 시각을 선택해 주세요.");
+    return fail();
+  }
+  if (!Number.isFinite(end) || end <= start) {
+    alert("종료 시각은 시작 시각보다 이후여야 합니다.");
+    return fail();
+  }
+  if (start > now + 60_000 || end > now + 60_000) {
+    alert("미래 시각으로 근무 구간을 추가할 수 없습니다.");
+    return fail();
+  }
+
+  const adminName = String(IX.currentUserProfile?.nickname || user.displayName || "").trim();
+  const detailParts = [`추가 ${formatClock(start)} ~ ${formatClock(end)}`];
+  if (adminName) {
+    detailParts.push(`관리자 ${adminName} 추가`);
+  }
+
+  try {
+    const log = await writeAttendanceLog({
+      uid: safeUid,
+      nickname: String(targetNickname || "").trim(),
+      action: "add_work_session",
+      tournamentId,
+      newSessionStartMs: start,
+      newSessionEndMs: end,
+      detail: detailParts.join(" · ")
+    });
+
+    return { ok: !!log, log };
+  } catch (err) {
+    console.error("addUserWorkSession error:", err);
+    alert("근무 구간 추가에 실패했습니다.");
+    return fail();
+  }
+}
+
+/**
  * admin — 중복·겹침 근무 구간 중 하나 삭제 (운영 로그만, 집계에서 제외)
  * @returns {Promise<{ok: boolean}>}
  */

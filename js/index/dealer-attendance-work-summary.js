@@ -12,7 +12,11 @@ const SESSION_DEDUPE_TOLERANCE_MS = 120_000;
 // 폴백에 걸리면 안 된다. 걸리면 아직 checked_out 로그가 없는(=아직 open인) 세션의 종료
 // 시각이 "방금 이 수정 로그를 쓴 시각"으로 계속 밀리는 버그가 생긴다 — 수정을 시도할
 // 때마다 세션이 "지금"까지 늘어나 보이는 원인.
-const NON_ACTIVITY_LOG_ACTIONS = new Set(["adjust_work_session", "delete_work_session"]);
+const NON_ACTIVITY_LOG_ACTIONS = new Set([
+  "adjust_work_session",
+  "delete_work_session",
+  "add_work_session"
+]);
 
 function localDateKey(ms) {
   return getOperationalDayKey(Number(ms) || Date.now());
@@ -138,6 +142,26 @@ function applyWorkSessionDeletions(sessions, logs = []) {
   return sessions.filter(
     (session) => !deletions.some((del) => sessionMatchesWorkSessionRef(session, del))
   );
+}
+
+/**
+ * 관리자가 수기로 추가한 근무 구간(add_work_session 로그)을 새 근무 구간으로 반영한다.
+ * 퇴근을 안 눌러 다음 운영일로 넘어가는 바람에 근무합계(정산일 목록)에 빠진 날짜를
+ * 보충할 때 쓴다 — 기존 구간과 겹치면 아래 dedupeWorkSessions 가 자동으로 병합한다.
+ */
+function applyWorkSessionAdditions(sessions, logs = []) {
+  const additions = (Array.isArray(logs) ? logs : [])
+    .filter((log) => String(log.action || "").trim() === "add_work_session")
+    .sort((a, b) => attendanceLogCreatedAtMs(a.createdAt) - attendanceLogCreatedAtMs(b.createdAt));
+
+  for (const add of additions) {
+    const startMs = Number(add.newSessionStartMs || 0);
+    const endMs = Number(add.newSessionEndMs || 0);
+    if (!startMs || !endMs || endMs <= startMs) continue;
+    sessions.push(withSessionKey({ startMs, endMs, open: false }));
+  }
+
+  return sessions;
 }
 
 function applyWorkSessionAdjustments(sessions, logs = []) {
@@ -324,6 +348,7 @@ export function computeMyTournamentWorkSummary(user, logs = [], derived = null) 
     }
   }
 
+  applyWorkSessionAdditions(sessions, mine);
   applyWorkSessionAdjustments(sessions, mine);
   const dedupedSessions = dedupeWorkSessions(sessions, nowMs);
   const deletedFiltered = applyWorkSessionDeletions(dedupedSessions, mine);

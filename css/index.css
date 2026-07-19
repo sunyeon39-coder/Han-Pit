@@ -1550,6 +1550,21 @@ button.dealer-time-chip--editable{
   letter-spacing:-.02em;
 }
 
+.work-summary-sessions-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:8px;
+}
+
+.work-summary-sessions-head h3{
+  margin:0;
+  font-size:14px;
+  font-weight:900;
+  color:var(--text-1);
+}
+
 .work-summary-sessions{
   list-style:none;
   margin:0;
