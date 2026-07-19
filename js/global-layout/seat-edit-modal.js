@@ -182,6 +182,7 @@ export async function openSeatEditModal(seatId = "") {
   const lb = String(seat.label ?? seat.no ?? "").trim();
 
   els.label.value = lb;
+  if (els.boxId) els.boxId.value = bx;
   if (els.seatIdDisplay) els.seatIdDisplay.textContent = sid;
   setEventSelection(els, ev, "");
 
@@ -212,12 +213,25 @@ export async function openSeatEditModal(seatId = "") {
     renderEventList(els, events, resolvedEv || ev);
     els.eventId.value = resolvedEv || ev;
     syncTriggerLabel(els, events, resolvedEv || ev);
-    const boxFromCard = resolveBoxIdForEventId(
-      resolvedEv || ev,
-      events.find((e) => String(e.id || "") === String(resolvedEv || ev)),
-      events
-    );
-    if (els.boxId) els.boxId.value = boxFromCard || bx;
+    // 카드(eventId)가 열었을 때와 그대로면 이 Seat가 실제로 있는 Box(bx)를 최우선으로 쓴다.
+    // resolveBoxIdForEventId는 "그 카드의 기본/대표 Box"를 돌려주는데, 한 카드에 Box가
+    // 여러 개(1, 2, 99...)인 경우 이 값이 지금 편집 중인 Seat의 실제 Box와 다를 수 있다.
+    // 예전에는 이 기본값이 무조건 덮어써서, 모달만 열었다가 그대로 저장해도 Seat가
+    // 엉뚱한 Box로 조용히 이동(사실상 사라짐)하는 사고가 났다. 카드를 실제로 바꿨을 때는
+    // (resolvedEv가 원래 ev와 다름) 새 카드의 기본 Box를 쓰는 게 맞다.
+    const eventChanged = String(resolvedEv || ev || "").trim() !== String(ev || "").trim();
+    if (els.boxId) {
+      if (!eventChanged && bx) {
+        els.boxId.value = bx;
+      } else {
+        const boxFromCard = resolveBoxIdForEventId(
+          resolvedEv || ev,
+          events.find((e) => String(e.id || "") === String(resolvedEv || ev)),
+          events
+        );
+        els.boxId.value = boxFromCard || bx;
+      }
+    }
   })();
 }
 
