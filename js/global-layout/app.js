@@ -30,6 +30,7 @@ import {
 } from "./panel-ui.js";
 import { getCurrentTournamentWaiting } from "./waiting.js";
 import { updateGlobalMetaToolbar } from "./toolbar.js";
+import { restoreGlobalUndoStackFromSession } from "./undo-stack.js";
 import {
   bindRealtime,
   disposeGlobalLayoutRealtime,
@@ -132,6 +133,9 @@ export function startGlobalLayoutApp() {
   ensureDocumentShellBackground();
   initGlFromUrl();
   initGlDomRefs();
+  // index.html 등 다른 페이지로 이동했다 되돌아와도(뒤로가기 포함) 되돌리기 기록이
+  // 남아있도록 sessionStorage 에 저장된 undo/redo 스택을 복원한다.
+  restoreGlobalUndoStackFromSession();
   instantDismissAllBootLoaders();
   markPageBootLoaded(GL.app);
   // 진입 즉시 마지막으로 본 좌석을 캔버스에 그려 반응성을 높인다(이후 realtime 이 최신값으로 교체).

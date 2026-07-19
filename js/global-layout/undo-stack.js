@@ -1,4 +1,5 @@
 import { GL } from "./state.js";
+import { writeGlobalUndoSessionCache, readGlobalUndoSessionCache } from "./global-undo-session-cache.js";
 
 const GLOBAL_UNDO_STACK_MAX = 20;
 const GLOBAL_REDO_STACK_MAX = 20;
@@ -24,6 +25,24 @@ function refreshUndoToolbar() {
     .catch(() => {});
 }
 
+/** 현재 undo/redo 스택을 sessionStorage 에 반영 — index.html 등으로 이동했다 돌아와도 유지되도록 */
+function persistUndoSession() {
+  writeGlobalUndoSessionCache(GL.tournamentId, ensureUndoStack(), ensureRedoStack());
+}
+
+/**
+ * 페이지 진입 시(startGlobalLayoutApp) 호출 — sessionStorage 에 저장된 되돌리기 기록이
+ * 있으면 복원한다. GL.tournamentId 가 세팅된 뒤(initGlFromUrl 이후)에 호출해야 한다.
+ */
+export function restoreGlobalUndoStackFromSession() {
+  const cached = readGlobalUndoSessionCache(GL.tournamentId);
+  if (!cached) return;
+  GL.globalUndoStack = Array.isArray(cached.undo) ? cached.undo.slice(-GLOBAL_UNDO_STACK_MAX) : [];
+  GL.globalRedoStack = Array.isArray(cached.redo) ? cached.redo.slice(-GLOBAL_REDO_STACK_MAX) : [];
+  syncLastUndoCompat();
+  refreshUndoToolbar();
+}
+
 export function pushGlobalUndo(action, { clearRedo = true } = {}) {
   if (!action || typeof action !== "object") return;
   const stack = ensureUndoStack();
@@ -33,6 +52,7 @@ export function pushGlobalUndo(action, { clearRedo = true } = {}) {
   }
   if (clearRedo) clearGlobalRedoStack({ refresh: false });
   syncLastUndoCompat();
+  persistUndoSession();
   refreshUndoToolbar();
 }
 
@@ -40,6 +60,7 @@ export function popGlobalUndo() {
   const stack = ensureUndoStack();
   const action = stack.pop() || null;
   syncLastUndoCompat();
+  persistUndoSession();
   refreshUndoToolbar();
   return action;
 }
@@ -52,6 +73,7 @@ export function restoreGlobalUndo(action) {
     stack.splice(0, stack.length - GLOBAL_UNDO_STACK_MAX);
   }
   syncLastUndoCompat();
+  persistUndoSession();
   refreshUndoToolbar();
 }
 
@@ -64,6 +86,7 @@ export function clearGlobalUndoStack() {
   GL.globalUndoStack = [];
   GL.lastGlobalUndo = null;
   clearGlobalRedoStack({ refresh: false });
+  persistUndoSession();
   refreshUndoToolbar();
 }
 
@@ -74,12 +97,14 @@ export function pushGlobalRedo(action) {
   if (stack.length > GLOBAL_REDO_STACK_MAX) {
     stack.splice(0, stack.length - GLOBAL_REDO_STACK_MAX);
   }
+  persistUndoSession();
   refreshUndoToolbar();
 }
 
 export function popGlobalRedo() {
   const stack = ensureRedoStack();
   const action = stack.pop() || null;
+  persistUndoSession();
   refreshUndoToolbar();
   return action;
 }
@@ -91,6 +116,7 @@ export function restoreGlobalRedo(action) {
   if (stack.length > GLOBAL_REDO_STACK_MAX) {
     stack.splice(0, stack.length - GLOBAL_REDO_STACK_MAX);
   }
+  persistUndoSession();
   refreshUndoToolbar();
 }
 
@@ -101,6 +127,7 @@ export function peekGlobalRedo() {
 
 export function clearGlobalRedoStack({ refresh = true } = {}) {
   GL.globalRedoStack = [];
+  persistUndoSession();
   if (refresh) refreshUndoToolbar();
 }
 
