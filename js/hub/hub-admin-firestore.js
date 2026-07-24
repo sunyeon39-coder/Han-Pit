@@ -21,6 +21,7 @@ import {
 } from "../shared/auth-helpers.js";
 import {
   buildOpsProfilePatch,
+  isDirectOpsAdmin,
   syncLoginCacheForOpsProfile
 } from "../shared/tournament-ops-access.js";
 import { clearOpsSessionSnapshot } from "../shared/login-profile-cache.js";
@@ -46,9 +47,11 @@ function buildOpsTournamentIds(nextAllowed = {}) {
   return Object.keys(sanitizeAllowedEvents(nextAllowed));
 }
 
+/** 대회 관리(생성·삭제)·유저 직접 허용·코드 관리 — 시스템 admin 또는 직접 허용 admin (Firestore rules 의 isAdmin() 과 동일 기준) */
 function requireHubSystemAdmin(actionLabel = "이 작업") {
   if (getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) return true;
-  alert(`${actionLabel}은(는) 시스템 admin 계정만 가능합니다.`);
+  if (isDirectOpsAdmin(hubState.currentUser?.email, hubState.currentUserProfile)) return true;
+  alert(`${actionLabel}은(는) admin 계정만 가능합니다.`);
   return false;
 }
 
