@@ -3,7 +3,7 @@ import { getIsAdminUser } from "./hub-helpers.js";
 import { hubRefs, initHubRefs } from "./hub-dom-refs.js";
 import { hubState } from "./hub-state.js";
 
-/** 직접 허용 admin — 허브 UI 표시 (Access Manage 는 시스템 admin 전용) */
+/** 시스템 admin·직접 허용 admin 모두 Access Manage 접근 가능 (Firestore rules 의 isAdmin() 과 동일 기준) */
 export function applyHubOpsChrome(user = hubState.currentUser) {
   if (!hubRefs.eventListEl) initHubRefs();
 
@@ -12,7 +12,7 @@ export function applyHubOpsChrome(user = hubState.currentUser) {
   const system = getIsAdminUser(user, profile);
   const ops = isDirectOpsAdmin(user?.email || profile?.email, profile);
 
-  if (system) adminBtn?.classList.remove("hidden");
+  if (system || ops) adminBtn?.classList.remove("hidden");
   else adminBtn?.classList.add("hidden");
 
   profileBtn?.classList.toggle("top-btn--ops-admin", ops);

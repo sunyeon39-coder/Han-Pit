@@ -12,6 +12,7 @@ import {
 } from "../shared/login-profile-cache.js";
 import { getIsAdminUser } from "./hub-helpers.js";
 import { isSystemAdminEmail } from "../shared/auth-helpers.js";
+import { isDirectOpsAdmin } from "../shared/tournament-ops-access.js";
 import { closeModal, openModal } from "../shared/dom-utils.js";
 import { isAppDebugEnabled } from "../shared/app-debug.js";
 import { ensureDocumentShellBackground, instantDismissAllBootLoaders, markPageBootLoaded } from "../shared/page-boot-shell.js";
@@ -181,10 +182,12 @@ profileBtn?.addEventListener("click", () => {
 
 adminBtn?.addEventListener("click", () => {
   releaseStuckHubAdminAction();
-  const isAdmin = getIsAdminUser(hubState.currentUser, hubState.currentUserProfile);
+  const isAdmin =
+    getIsAdminUser(hubState.currentUser, hubState.currentUserProfile) ||
+    isDirectOpsAdmin(hubState.currentUser?.email, hubState.currentUserProfile);
 
   if (!isAdmin) {
-    alert("Access Manage는 시스템 admin 계정만 사용할 수 있습니다.");
+    alert("Access Manage는 admin 계정만 사용할 수 있습니다.");
     return;
   }
 
