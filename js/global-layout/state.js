@@ -24,8 +24,14 @@ export const GL = {
   stopSeatWatch: null,
   stopWaitingWatch: null,
   stopAttendanceWatch: null,
+  stopTopicWatch: null,
+  topicBar: null,
+  topicBarText: null,
+  topicEditBtn: null,
 
   currentTournament: null,
+  /** tournaments/{id}.topicText — 상단 공지 배너 */
+  topicText: "",
   globalSeats: [],
   globalWaiting: [],
   /** realtime 스냅샷마다 증가 — getCurrentTournamentWaiting 캐시 무효화 */
@@ -121,4 +127,7 @@ export function initGlDomRefs() {
   GL.mobileSheet = document.getElementById("mobileSheet");
   GL.mobileAddSeatBtn = document.getElementById("mobileAddSeat");
   GL.mobileAddWaitingBtn = document.getElementById("mobileAddWaiting");
+  GL.topicBar = document.getElementById("topicBar");
+  GL.topicBarText = document.getElementById("topicBarText");
+  GL.topicEditBtn = document.getElementById("topicEditBtn");
 }

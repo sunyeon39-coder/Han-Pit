@@ -299,11 +299,19 @@
     </div>
 
     <div class="top-right">
+      <button id="topicEditBtn" class="pill-btn" type="button">TOPIC</button>
       <div id="canvasZoomBar" class="layout-canvas-zoom-bar layout-canvas-zoom-bar--topbar" role="toolbar" aria-label="캔버스 보기"></div>
       <button id="enablePushBtn" class="pill-btn" type="button">알림 켜기</button>
       <button id="backBtn" class="pill-btn" type="button">Back</button>
     </div>
   </header>
+
+  <div id="topicBar" class="gl-topic-bar" hidden aria-hidden="true">
+    <span class="gl-topic-bar__badge">TOPIC</span>
+    <div class="gl-topic-bar__track">
+      <span id="topicBarText" class="gl-topic-bar__text"></span>
+    </div>
+  </div>
 
   <main id="app">
     <div class="page-boot-loading" role="status" aria-live="polite">

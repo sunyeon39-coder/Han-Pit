@@ -64,6 +64,7 @@ import { invalidateWaitingPanelFingerprint } from "./panel-ui.js";
 import { resolveAttendanceWaitingJoinMs } from "../shared/attendance-operational-day.js";
 import { mergeIncomingGlobalWaiting, replaceGlobalWaitingLocal } from "./waiting.js";
 import { dedupeGlobalWaitingRows } from "../shared/tournament-waiting-queue.js";
+import { renderGlobalLayoutTopicBar } from "./topic-bar.js";
 
 /** Firestore 전파 전 캐시 스냅샷이 방금 배치한 좌석을 비우는 것 방지 */
 const RECENT_LOCAL_SEAT_MS = 12000;
@@ -145,6 +146,10 @@ function disposeGlobalLayoutRealtime() {
   if (GL.stopAttendanceWatch) {
     GL.stopAttendanceWatch();
     GL.stopAttendanceWatch = null;
+  }
+  if (GL.stopTopicWatch) {
+    GL.stopTopicWatch();
+    GL.stopTopicWatch = null;
   }
   if (seatRecoverDebounceTimer) {
     clearTimeout(seatRecoverDebounceTimer);
@@ -798,6 +803,14 @@ export function bindRealtime() {
 
   let prevSeats = [];
   const prevSeatsRef = { value: prevSeats };
+
+  GL.stopTopicWatch = onSnapshot(doc(db, "tournaments", GL.tournamentId), (snap) => {
+    if (!snap.exists()) return;
+    const next = String(snap.data()?.topicText || "");
+    if (next === GL.topicText) return;
+    GL.topicText = next;
+    renderGlobalLayoutTopicBar();
+  });
 
   // onSnapshot 첫 스냅샷이 곧 서버 데이터를 전달하고, 캐시가 비면 아래 fallback 이 서버를 읽으므로
   // 여기서 별도 getDocsFromServer 를 또 호출하지 않는다(중복 읽기로 Firestore quota 소모 방지).

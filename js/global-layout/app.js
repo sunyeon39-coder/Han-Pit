@@ -47,6 +47,7 @@ import {
   wireGlobalLayoutZoomBarOnce
 } from "./canvas-viewport.js";
 import { refreshGlobalLayoutMobileTimers, wireGlobalLayoutMobileEventsOnce } from "./mobile-panel-render.js";
+import { initGlobalLayoutTopicBarDom, renderGlobalLayoutTopicBar } from "./topic-bar.js";
 import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
 import { normalizeAndPersistUserRole } from "../login/user-sync.js";
 import {
@@ -154,6 +155,7 @@ export function startGlobalLayoutApp() {
   }
   initGlobalLayoutZoomBarDom();
   wireGlobalLayoutZoomBarOnce();
+  initGlobalLayoutTopicBarDom();
   bindGlobalLayoutPushUiOnce();
   bindGlobalLayoutEventHandlers();
   const flushAppBadgeIfVisible = bindAppBadgeClearOnForeground(db, auth);
@@ -341,6 +343,8 @@ export function startGlobalLayoutApp() {
         applyGlobalLayoutOpsPermissions(user, meta);
       }
     });
+    GL.topicText = String(GL.currentTournament?.topicText || "");
+    renderGlobalLayoutTopicBar();
     syncGlobalLayoutMobileChrome();
     if (GL.urlEventId && GL.urlBoxId) {
       sessionStorage.setItem("eventId", GL.urlEventId);
