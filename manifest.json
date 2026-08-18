@@ -3,7 +3,7 @@
   "short_name": "Han Pit",
   "description": "Dealer & table management",
   "id": "./",
-  "start_url": "./login.html?_hanpit_v=20260818135148",
+  "start_url": "./login.html?_hanpit_v=20260818140506",
   "scope": "./",
   "display": "standalone",
   "background_color": "#0a1022",

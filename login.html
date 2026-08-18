@@ -8,7 +8,7 @@
     document.documentElement.style.backgroundColor="#060c17";
     document.documentElement.style.colorScheme="dark";
   }catch(e){}
-  var BUILD="20260818135148";
+  var BUILD="20260818140506";
   var KEY="hanPitAppVersion";
   var LAST_TARGET="hanPitReloadTarget";
   var meta=document.querySelector('meta[name="han-pit-build"]');
@@ -28,10 +28,17 @@
     return false;
   }
 
+  function isMobileDevice(){
+    try{
+      return /Android|iPhone|iPad|iPod/i.test(window.navigator.userAgent||"");
+    }catch(e){return false;}
+  }
+
   var IS_PWA=isPwaStandalone();
-  var MIN_CHECK_MS=IS_PWA?500:15000;
-  var POLL_MS=IS_PWA?5000:60000;
-  var BOOT_CHECK_MS=IS_PWA?100:3000;
+  var IS_FAST_UPDATE=IS_PWA||isMobileDevice();
+  var MIN_CHECK_MS=IS_FAST_UPDATE?500:15000;
+  var POLL_MS=IS_FAST_UPDATE?5000:60000;
+  var BOOT_CHECK_MS=IS_FAST_UPDATE?100:3000;
 
   function swScope(){
     var p=location.pathname||"/";
@@ -247,23 +254,23 @@
 })();
 </script>
   <!-- /han-pit-asset-fix -->
-  <meta name="han-pit-build" content="20260818135148" />
+  <meta name="han-pit-build" content="20260818140506" />
   <!-- han-pit-perf-hints -->
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
   <link rel="preconnect" href="https://firebase.googleapis.com" crossorigin />
   <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin />
   <link rel="dns-prefetch" href="https://www.gstatic.com" />
-  <link rel="modulepreload" href="./js/login.js?v=20260818135148" crossorigin />
+  <link rel="modulepreload" href="./js/login.js?v=20260818140506" crossorigin />
   <!-- /han-pit-perf-hints -->
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>HAN Pit Login</title>
-  <link rel="manifest" href="./manifest.json?v=20260818135148" />
+  <link rel="manifest" href="./manifest.json?v=20260818140506" />
   <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
   <meta name="theme-color" content="#090a0d" />
-  <link rel="stylesheet" href="./css/login.css?v=20260818135148" />
-  <link rel="stylesheet" href="./css/add-to-home-hint.css?v=20260818135148" />
+  <link rel="stylesheet" href="./css/login.css?v=20260818140506" />
+  <link rel="stylesheet" href="./css/add-to-home-hint.css?v=20260818140506" />
 </head>
 <body>
   <!-- han-pit-boot-dismiss -->
@@ -352,6 +359,6 @@
     </div>
   </div>
 
-  <script type="module" src="./js/login.js?v=20260818135148"></script>
+  <script type="module" src="./js/login.js?v=20260818140506"></script>
 </body>
 </html>
