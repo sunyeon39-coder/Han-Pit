@@ -20,7 +20,7 @@
     document.documentElement.style.backgroundColor="#060c17";
     document.documentElement.style.colorScheme="dark";
   }catch(e){}
-  var BUILD="20260818132629";
+  var BUILD="20260818134943";
   var KEY="hanPitAppVersion";
   var LAST_TARGET="hanPitReloadTarget";
   var meta=document.querySelector('meta[name="han-pit-build"]');
@@ -41,9 +41,9 @@
   }
 
   var IS_PWA=isPwaStandalone();
-  var MIN_CHECK_MS=IS_PWA?2000:15000;
-  var POLL_MS=IS_PWA?15000:60000;
-  var BOOT_CHECK_MS=IS_PWA?400:3000;
+  var MIN_CHECK_MS=IS_PWA?800:15000;
+  var POLL_MS=IS_PWA?5000:60000;
+  var BOOT_CHECK_MS=IS_PWA?200:3000;
 
   function swScope(){
     var p=location.pathname||"/";
@@ -259,13 +259,13 @@
 })();
 </script>
   <!-- /han-pit-asset-fix -->
-  <meta name="han-pit-build" content="20260818132629" />
+  <meta name="han-pit-build" content="20260818134943" />
   <!-- han-pit-perf-hints -->
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
   <link rel="preconnect" href="https://firebase.googleapis.com" crossorigin />
   <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin />
   <link rel="dns-prefetch" href="https://www.gstatic.com" />
-  <link rel="modulepreload" href="./js/index.js?v=20260818132629" crossorigin />
+  <link rel="modulepreload" href="./js/index.js?v=20260818134943" crossorigin />
   <!-- /han-pit-perf-hints -->
   <meta charset="UTF-8" />
   <meta
@@ -273,14 +273,14 @@
     content="width=device-width, initial-scale=1.0, viewport-fit=cover"
   />
   <title>Han Pit - Index</title>
-  <link rel="manifest" href="./manifest.json?v=20260818132629" />
+  <link rel="manifest" href="./manifest.json?v=20260818134943" />
   <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png" />
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
   <meta name="theme-color" content="#090a0d" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <link rel="stylesheet" href="./css/app-shared.css?v=20260818132629" />
-  <link rel="stylesheet" href="./css/index.css?v=20260818132629" />
+  <link rel="stylesheet" href="./css/app-shared.css?v=20260818134943" />
+  <link rel="stylesheet" href="./css/index.css?v=20260818134943" />
 </head>
 <body>
   <!-- han-pit-boot-dismiss -->
@@ -475,6 +475,6 @@
   </div>
 </div>
 
-  <script type="module" src="./js/index.js?v=20260818132629"></script>
+  <script type="module" src="./js/index.js?v=20260818134943"></script>
 </body>
 </html>
