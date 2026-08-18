@@ -62,8 +62,8 @@ body.page-global-layout.has-topic-bar #app {
   white-space: nowrap;
   padding-left: 100%;
   color: #f2f5ff;
-  font-weight: 700;
-  font-size: 15px;
+  font-weight: 800;
+  font-size: 20px;
   animation-name: gl-topic-marquee;
   animation-timing-function: linear;
   animation-iteration-count: infinite;
