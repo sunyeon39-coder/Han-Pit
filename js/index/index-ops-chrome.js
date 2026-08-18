@@ -34,7 +34,8 @@ export function syncIndexOpsToolbar(canOps) {
 
   if (indexOpsVerified) return;
 
-  IX.globalLayoutBtn?.classList.add("hidden");
+  // 운영 권한이 없어도 통합배치도는 PC 화면에서 조회 전용으로 노출(모바일은 숨김)
+  IX.globalLayoutBtn?.classList.toggle("hidden", window.innerWidth <= 1180);
   IX.seatMapOpenEditorBtn?.classList.add("hidden");
   IX.eventAdminBtn?.classList.add("hidden");
   IX.attendanceLogBtn?.classList.add("hidden");

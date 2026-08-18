@@ -74,6 +74,17 @@ body.page-global-layout .pc-panel .global-pc-ops-tabs {
   display: none !important;
 }
 
+/* 운영 권한 없는 PC 조회 전용 사용자 — 캔버스만 노출, 대기/Seat 패널은 숨김 */
+body.page-global-layout.gl-view-only #pcPanel,
+body.page-global-layout.gl-view-only #mobileSheet,
+body.page-global-layout.gl-view-only #menuBtn {
+  display: none !important;
+}
+
+body.page-global-layout.gl-view-only #app.with-panel {
+  padding-right: 14px;
+}
+
 body.page-global-layout .pc-panel {
   width: min(48vw, 640px);
 }

@@ -70,6 +70,7 @@ import {
   raceFirestoreTimeout
 } from "../shared/load-user-profile.js";
 import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
+import { canManageGlobalLayoutOps } from "./ops-access.js";
 import { isSystemAdminEmail } from "../shared/auth-helpers.js";
 import {
   globalLayoutTournamentMeta,
@@ -160,6 +161,7 @@ export function startGlobalLayoutApp() {
 
   function refreshGlobalLayoutAdminUi() {
     syncGlobalLayoutMobileChrome();
+    document.body.classList.toggle("gl-view-only", !canManageGlobalLayoutOps());
     renderSeats(GL.globalSeats);
     renderWaiting(getCurrentTournamentWaiting());
     renderSeatPanel();
@@ -455,10 +457,16 @@ export function startGlobalLayoutApp() {
         return;
       }
 
-      alert(
-        "운영 권한이 없습니다. 허브에서「직접 허용」을 받았는지, 같은 대회로 들어왔는지 확인해 주세요."
-      );
-      location.replace("./index.html");
+      if (layoutIsMobile()) {
+        alert("통합 배치도는 PC에서만 볼 수 있습니다.");
+        location.replace("./index.html");
+        return;
+      }
+
+      // 운영 권한은 없지만 PC 사용자 — 캔버스만 보이는 조회 전용 세션 시작
+      GL.opsServerVerified = false;
+      startGlobalLayoutSession(user);
+      void refreshGlobalLayoutOpsProfileBackground(user);
     } catch (err) {
       console.error("global layout init error:", err);
       const detail = String(err?.message || err || "").trim();
