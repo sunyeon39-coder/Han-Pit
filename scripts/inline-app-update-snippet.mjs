@@ -98,10 +98,17 @@ export function buildInlineAppUpdateSnippet(v) {
     return false;
   }
 
+  function isMobileDevice(){
+    try{
+      return /Android|iPhone|iPad|iPod/i.test(window.navigator.userAgent||"");
+    }catch(e){return false;}
+  }
+
   var IS_PWA=isPwaStandalone();
-  var MIN_CHECK_MS=IS_PWA?500:15000;
-  var POLL_MS=IS_PWA?5000:60000;
-  var BOOT_CHECK_MS=IS_PWA?100:3000;
+  var IS_FAST_UPDATE=IS_PWA||isMobileDevice();
+  var MIN_CHECK_MS=IS_FAST_UPDATE?500:15000;
+  var POLL_MS=IS_FAST_UPDATE?5000:60000;
+  var BOOT_CHECK_MS=IS_FAST_UPDATE?100:3000;
 
   function swScope(){
     var p=location.pathname||"/";
