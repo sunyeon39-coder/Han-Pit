@@ -13,7 +13,7 @@ export function renderGlobalLayoutTopicBar() {
   if (GL.topicBar) GL.topicBar.hidden = !text;
   if (GL.topicBarText) {
     GL.topicBarText.textContent = text;
-    const seconds = Math.min(60, Math.max(10, text.length * 0.22));
+    const seconds = Math.min(80, Math.max(14, text.length * 0.32));
     GL.topicBarText.style.animationDuration = `${seconds}s`;
   }
 }

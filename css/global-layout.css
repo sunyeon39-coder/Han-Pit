@@ -63,11 +63,11 @@ body.page-global-layout.has-topic-bar #app {
   padding-left: 100%;
   color: #f2f5ff;
   font-weight: 800;
-  font-size: 20px;
+  font-size: 25px;
   animation-name: gl-topic-marquee;
   animation-timing-function: linear;
   animation-iteration-count: infinite;
-  animation-duration: 18s;
+  animation-duration: 24s;
 }
 
 @keyframes gl-topic-marquee {
