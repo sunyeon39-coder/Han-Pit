@@ -269,6 +269,10 @@ body.page-global-layout .pc-panel .global-meta-actions {
   body.page-global-layout #app {
     padding-right: min(calc(48vw + 14px), 654px);
   }
+
+  body.page-global-layout.gl-view-only #app {
+    padding-right: 14px;
+  }
 }
 
 .pc-panel .global-meta-actions .seat-meta-btn {
