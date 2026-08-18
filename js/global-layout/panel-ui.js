@@ -265,6 +265,12 @@ export function getDefaultEventBoxForNewSeat() {
   return { eventId: "", boxId: "" };
 }
 
+function canvasViewportHint() {
+  return canManageGlobalLayoutOps()
+    ? "빈 영역을 드래그하면 화면을 이동합니다. 상단 버튼으로 확대·축소. Seat 위에서 옮기려면 Shift를 누른 채 드래그하세요."
+    : "";
+}
+
 export function renderSeats(seats = []) {
   if (!GL.app) return;
   updateGlobalLayoutMetaCounts(seats);
@@ -275,7 +281,7 @@ export function renderSeats(seats = []) {
   }
   if (!seats.length) {
     GL.app.innerHTML = `
-      <div class="layout-canvas-viewport" title="빈 영역을 드래그하면 화면을 이동합니다. 상단 버튼으로 확대·축소. Seat 위에서 옮기려면 Shift를 누른 채 드래그하세요.">
+      <div class="layout-canvas-viewport" title="${escapeHtml(canvasViewportHint())}">
         <div class="canvas pc-canvas">
           <div class="canvas-inner">
             <div class="empty-panel" style="position:absolute;left:24px;top:24px;width:260px;">
@@ -316,7 +322,7 @@ export function renderSeats(seats = []) {
   }).join("");
 
   GL.app.innerHTML = `
-    <div class="layout-canvas-viewport" title="빈 영역을 드래그하면 화면을 이동합니다. 상단 버튼으로 확대·축소. Seat 위에서 옮기려면 Shift를 누른 채 드래그하세요.">
+    <div class="layout-canvas-viewport" title="${escapeHtml(canvasViewportHint())}">
       <div class="canvas pc-canvas">
         <div class="canvas-inner">
           ${seatHtml}
