@@ -99,9 +99,9 @@ export function buildInlineAppUpdateSnippet(v) {
   }
 
   var IS_PWA=isPwaStandalone();
-  var MIN_CHECK_MS=IS_PWA?800:15000;
+  var MIN_CHECK_MS=IS_PWA?500:15000;
   var POLL_MS=IS_PWA?5000:60000;
-  var BOOT_CHECK_MS=IS_PWA?200:3000;
+  var BOOT_CHECK_MS=IS_PWA?100:3000;
 
   function swScope(){
     var p=location.pathname||"/";
