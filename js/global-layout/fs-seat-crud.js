@@ -1,4 +1,7 @@
-import { buildSeatAssignedNotificationWrite } from "../shared/seat-notification-push.js";
+import {
+  buildSeatAssignedNotificationWrite,
+  buildSeatClearedNotificationWrite
+} from "../shared/seat-notification-push.js";
 import { db } from "../firebase.js";
 import {
   deleteDoc,
@@ -419,12 +422,7 @@ async function clearDuplicatePersonSeatsExcept(
       writes.push(
         setDoc(
           doc(db, "layout_notifications", dataUid),
-          {
-            type: "seat_cleared",
-            acknowledged: true,
-            updatedAt: now,
-            updatedAtServer: serverTimestamp()
-          },
+          buildSeatClearedNotificationWrite({ createdAt: now, updatedAtServer: serverTimestamp() }),
           { merge: true }
         ).catch((err) => console.warn("clearDuplicatePersonSeatsExcept notification sync:", err))
       );

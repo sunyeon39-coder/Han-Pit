@@ -1,4 +1,8 @@
-import { buildSeatAssignedNotificationWrite, buildSeatAssignedTargetUrl } from "../shared/seat-notification-push.js";
+import {
+  buildSeatAssignedNotificationWrite,
+  buildSeatAssignedTargetUrl,
+  buildSeatClearedNotificationWrite
+} from "../shared/seat-notification-push.js";
 import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
 import { auth, db } from "../firebase.js";
 import {
@@ -112,19 +116,12 @@ function clearDupSeatsInTransaction(tx, dupRefs, dupSnaps, person, targetSeatId,
         },
         { merge: true }
       );
-      // dealer_attendance는 위에서 "대기"로 되돌리지만 layout_notifications는 그대로
-      // "seat_assigned"로 남아있어서, index/layout의 "내 배치됨 · Seat n" 배지가
-      // 실제로는 비워진 좌석을 가리키며 계속 남아있는 문제가 있었다.
-      tx.set(
-        doc(db, "layout_notifications", occupantUid),
-        {
-          type: "seat_cleared",
-          acknowledged: true,
-          updatedAt: now,
-          updatedAtServer: serverTimestamp()
-        },
-        { merge: true }
-      );
+      // layout_notifications는 여기서 건드리지 않는다 — 이 함수는 waitingUid/prevUid
+      // 두 사람에 대해서만 호출되는데, waitingUid는 이 트랜잭션 뒤쪽에서 새 좌석 기준
+      // seat_assigned 알림을 다시 쓰고, prevUid는 더 아래(bumpedPrevHasOtherSeat 계산 후)
+      // 정확한 문맥으로 알림을 정리한다. 여기서 무조건 "seat_cleared"를 쓰면, prevUid가
+      // 실제로 다른 좌석에 남아있는 경우(bumpedPrevHasOtherSeat=true, attendance는
+      // "assigned"로 유지됨)에도 알림만 "seat_cleared"로 남아 서로 모순되는 상태가 됐다.
     }
   }
 }
@@ -497,19 +494,17 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
         if (!bumpedPrevHasOtherSeat) {
           tx.set(
             doc(db, "layout_notifications", prevUid),
-            {
-              type: "seat_cleared",
-              acknowledged: true,
+            buildSeatClearedNotificationWrite({
+              createdAt: now,
+              updatedAtServer: serverTimestamp(),
               seatId: "",
               seatLabel: "",
               eventId: "",
               eventTitle: "",
               boxId: "",
               targetUrl: "",
-              message: "",
-              updatedAt: now,
-              updatedAtServer: serverTimestamp()
-            },
+              message: ""
+            }),
             { merge: true }
           );
         }

@@ -47,6 +47,22 @@ export function buildSeatAssignedNotificationWrite(uid, fields = {}) {
   };
 }
 
+/**
+ * layout_notifications/{uid} 에 merge 할 seat_cleared 페이로드 — 좌석이 비워졌을 때
+ * (직접 비우기 / 배정 중 중복 좌석 정리 / 좌석 이동 시 중복 정리) 공통으로 사용해서,
+ * 세 곳에 각자 손으로 맞춰 쓰다 필드 하나가 빠져 index/layout의 "내 배치됨" 배지가
+ * 계속 남는 사고를 막는다.
+ */
+export function buildSeatClearedNotificationWrite(fields = {}) {
+  const now = Number(fields.createdAt ?? fields.updatedAt) || Date.now();
+  return {
+    type: "seat_cleared",
+    acknowledged: true,
+    ...fields,
+    updatedAt: now
+  };
+}
+
 export function buildSeatAssignedTargetUrl(tournamentId, eventId, boxId, seatId) {
   return `./layout.html?tournamentId=${encodeURIComponent(String(tournamentId || "").trim())}&eventId=${encodeURIComponent(String(eventId || "").trim())}&boxId=${encodeURIComponent(String(boxId || "").trim())}&focusSeatId=${encodeURIComponent(String(seatId || "").trim())}`;
 }

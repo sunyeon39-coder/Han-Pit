@@ -12,6 +12,7 @@ import {
   resolveSeatEventBox
 } from "./utils.js";
 import { getCandidateSeatRefsForPerson } from "./seat-candidates.js";
+import { buildSeatClearedNotificationWrite } from "../shared/seat-notification-push.js";
 import { scheduleSyncLayoutProjection } from "./fs-layout-projection.js";
 import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
 import { pushGlobalUndo } from "./undo-stack.js";
@@ -183,12 +184,7 @@ export async function clearSeat(seatId = "") {
 
         tx.set(
           doc(db, "layout_notifications", prevUid),
-          {
-            type: "seat_cleared",
-            acknowledged: true,
-            updatedAt: now,
-            updatedAtServer: serverTimestamp()
-          },
+          buildSeatClearedNotificationWrite({ createdAt: now, updatedAtServer: serverTimestamp() }),
           { merge: true }
         );
       }
