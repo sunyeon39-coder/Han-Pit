@@ -71,7 +71,7 @@ function waitingPanelFingerprint(waiting = []) {
       return `${index}:${wid}|${String(w.name || w.uid || "").trim()}|${blocked}|${pickUi.isSelected ? 1 : 0}|${Number(w.blockAccumulatedMs || 0)}|${Number(w.blockCheckedAt || 0)}`;
     })
     .join(";");
-  return `S:${seatedKey}|W:${waitingKey}`;
+  return `S:${seatedKey}|W:${waitingKey}|M:${GL.waitingViewMode}`;
 }
 
 export function invalidateWaitingPanelFingerprint() {
@@ -433,23 +433,27 @@ export function renderWaiting(_waiting) {
   };
 
   const { normal: normalWaiting, blocked: blockedWaiting } = partitionWaitingForMobileDisplay(sortedWaiting);
-  let waitingRows = "";
-  if (normalWaiting.length) {
-    if (blockedWaiting.length) waitingRows += `<div class="wait-group-label">대기</div>`;
-    waitingRows += normalWaiting.map(buildWaitRowHtml).join("");
-  }
-  if (blockedWaiting.length) {
-    waitingRows += `<div class="wait-group-label wait-group-label--block">BLOCK</div>`;
-    waitingRows += blockedWaiting.map(buildWaitRowHtml).join("");
-  }
+  if (GL.waitingViewMode !== "block") GL.waitingViewMode = "wait";
+  const activeGroup = GL.waitingViewMode === "block" ? blockedWaiting : normalWaiting;
+  const waitingRows = activeGroup.map(buildWaitRowHtml).join("");
+  const waitTabRowHtml = `
+    <div class="wait-tab-row">
+      <button id="waitTabNormalBtn" class="pill-inline ${GL.waitingViewMode === "wait" ? "active" : ""}" type="button">대기</button>
+      <button id="waitTabBlockBtn" class="pill-inline ${GL.waitingViewMode === "block" ? "active" : ""}" type="button">BLOCK</button>
+    </div>
+  `;
 
-  const listHtml = waitingRows || `<div class="empty-panel">현재 대기자가 없습니다.</div>`;
+  const emptyMessage = GL.waitingViewMode === "block" ? "BLOCK된 인원이 없습니다." : "현재 대기자가 없습니다.";
+  const listHtml = waitingRows || `<div class="empty-panel">${emptyMessage}</div>`;
   if (existingList && existingManual) {
     existingList.innerHTML = listHtml;
     const legend = waitCol.querySelector(".gl-operator-legend");
     const nextLegend = buildOperatorLegendHtml();
     if (legend && nextLegend) legend.outerHTML = nextLegend;
     else if (!legend && nextLegend) existingList.insertAdjacentHTML("beforebegin", nextLegend);
+    const existingTabRow = waitCol.querySelector(".wait-tab-row");
+    if (existingTabRow) existingTabRow.outerHTML = waitTabRowHtml.trim();
+    else existingList.insertAdjacentHTML("beforebegin", waitTabRowHtml);
     restorePanelScroll();
     updateGlobalMetaToolbar();
     refreshGlobalLayoutAlignButtonState();
@@ -462,6 +466,7 @@ export function renderWaiting(_waiting) {
       <button id="addManualWaitingBtn" class="pill-inline full" type="button">+ 대기</button>
     </div>
     ${buildOperatorLegendHtml()}
+    ${waitTabRowHtml}
     <div class="global-pc-ops-scroll" data-pc-scroll="wait">
       <div class="global-list">
         ${listHtml}

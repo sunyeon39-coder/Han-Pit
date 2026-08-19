@@ -83,6 +83,8 @@ export const GL = {
   dragState: null,
   suppressSeatClickUntil: 0,
   seatSortMode: "seat",
+  /** PC 대기 패널 탭: "wait" | "block" */
+  waitingViewMode: "wait",
   timerHandle: null,
   panelOpen: false,
   /** 최근 작업 undo stack (최신이 끝) */

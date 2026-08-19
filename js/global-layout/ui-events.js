@@ -196,6 +196,19 @@ export function bindGlobalLayoutEventHandlers() {
       return;
     }
 
+    const waitTabNormalBtn = e.target.closest("#waitTabNormalBtn");
+    if (waitTabNormalBtn) {
+      GL.waitingViewMode = "wait";
+      renderWaiting(getCurrentTournamentWaiting());
+      return;
+    }
+    const waitTabBlockBtn = e.target.closest("#waitTabBlockBtn");
+    if (waitTabBlockBtn) {
+      GL.waitingViewMode = "block";
+      renderWaiting(getCurrentTournamentWaiting());
+      return;
+    }
+
     const sortSeatOrderBtn = e.target.closest("#sortSeatOrderBtn");
     if (sortSeatOrderBtn) {
       GL.seatSortMode = "seat";
