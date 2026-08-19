@@ -60,6 +60,7 @@ export function createLayoutBootstrap(deps) {
       waitingState.version = remoteWaiting.version || 2;
       waitingState.waiting = Array.isArray(remoteWaiting.waiting) ? remoteWaiting.waiting : [];
       waitingState.updatedAt = Number(remoteWaiting.updatedAt || Date.now());
+      waitingState.__serverRows = waitingState.waiting.map((r) => ({ ...r }));
     }
 
     waitingState.waiting.forEach((w) => {

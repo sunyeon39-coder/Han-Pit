@@ -12,6 +12,8 @@ import {
   resolveSeatEventBox
 } from "./utils.js";
 import { getCandidateSeatRefsForPerson } from "./seat-candidates.js";
+import { findGlobalWaitingEntryRefs, diffGlobalWaitingRows } from "./waiting-entry-refs.js";
+import { globalWaitingDocRef } from "../shared/tournament-waiting-queue.js";
 import { buildSeatClearedNotificationWrite } from "../shared/seat-notification-push.js";
 import { scheduleSyncLayoutProjection } from "./fs-layout-projection.js";
 import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
@@ -50,7 +52,6 @@ export async function clearSeat(seatId = "") {
   markGlobalLayoutLocalMutation();
 
   const now = Date.now();
-  const waitingRef = doc(db, "layout_shared", "global_waiting");
   let undoWaitingBefore = null;
   let undoSeatBefore = null;
   let undoEventId = "";
@@ -87,17 +88,25 @@ export async function clearSeat(seatId = "") {
         { uid: prevUid, email: prevEmail, name: prevName },
         targetSeatId
       );
+      const personWaitingRefs = !isEmptyPerson(prevName)
+        ? findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, {
+            uid: prevUid,
+            email: prevEmail,
+            name: prevName
+          })
+        : [];
 
-      const [waitingSnap, ...otherSnaps] = await Promise.all([
-        tx.get(waitingRef),
-        ...otherRefs.map((r) => tx.get(r))
+      const [otherSnaps, waitingSnaps] = await Promise.all([
+        Promise.all(otherRefs.map((r) => tx.get(r))),
+        Promise.all(personWaitingRefs.map((r) => tx.get(r)))
       ]);
 
-      const waitingData = waitingSnap.exists() ? waitingSnap.data() || {} : { waiting: [] };
-      const waitingArr = Array.isArray(waitingData.waiting) ? waitingData.waiting : [];
+      const existingWaitingRows = waitingSnaps
+        .map((s, i) => (s.exists() ? { id: personWaitingRefs[i].id, ...s.data() } : null))
+        .filter(Boolean);
       let hasOtherSeat = false;
 
-      undoWaitingBefore = JSON.parse(JSON.stringify(waitingArr));
+      undoWaitingBefore = JSON.parse(JSON.stringify(existingWaitingRows));
       undoSeatBefore = {
         person: prevName,
         personUid: prevUid,
@@ -145,24 +154,20 @@ export async function clearSeat(seatId = "") {
 
         if (!hasOtherSeat) {
           returnedJoinedAt = now;
-          const nextWaiting = rebuildWaitingAfterSeatToWait(
-            waitingArr,
+          const nextWaitingRows = rebuildWaitingAfterSeatToWait(
+            existingWaitingRows,
             GL.tournamentId,
             { uid: prevUid, email: prevEmail, name: prevName },
             now,
             { source: "seat_clear", resetJoinedAt: true }
           );
-          tx.set(
-            waitingRef,
-            {
-              ...waitingData,
-              version: 2,
-              waiting: nextWaiting,
-              updatedAt: now,
-              updatedAtServer: serverTimestamp()
-            },
-            { merge: true }
-          );
+          const { toSet, toDelete } = diffGlobalWaitingRows(existingWaitingRows, nextWaitingRows);
+          for (const { id, data } of toSet) {
+            tx.set(globalWaitingDocRef(db, GL.tournamentId, id), data, { merge: true });
+          }
+          for (const id of toDelete) {
+            tx.delete(globalWaitingDocRef(db, GL.tournamentId, id));
+          }
         }
       }
 

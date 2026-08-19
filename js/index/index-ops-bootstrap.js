@@ -1,12 +1,10 @@
 import { db } from "../firebase.js";
 import {
   collection,
-  doc,
-  getDoc,
-  getDocFromServer,
   getDocs,
   getDocsFromServer
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { globalWaitingCollectionRef } from "../shared/tournament-waiting-queue.js";
 
 import {
   isFirestoreQuotaCoolingDown,
@@ -118,10 +116,9 @@ export async function prefetchIndexOpsFromFirestoreCache() {
   if (!tournamentId) return;
 
   try {
-    const snap = await getDoc(doc(db, "layout_shared", "global_waiting"));
-    if (!snap.exists()) return;
-    const data = snap.data() || {};
-    const nextWaiting = Array.isArray(data.waiting) ? data.waiting : [];
+    const snap = await getDocs(globalWaitingCollectionRef(db, tournamentId));
+    if (snap.empty) return;
+    const nextWaiting = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     if (!nextWaiting.length && IX.globalWaiting.length) return;
     IX.globalWaiting = nextWaiting;
     writeIndexGlobalWaitingCache(tournamentId, nextWaiting);
@@ -150,9 +147,8 @@ export async function refreshIndexOpsDataFromServer() {
   if (!tournamentId || isFirestoreQuotaCoolingDown()) return;
 
   try {
-    const snap = await getDocFromServer(doc(db, "layout_shared", "global_waiting"));
-    const data = snap.exists() ? snap.data() || {} : {};
-    const nextWaiting = Array.isArray(data.waiting) ? data.waiting : [];
+    const snap = await getDocsFromServer(globalWaitingCollectionRef(db, tournamentId));
+    const nextWaiting = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     IX.globalWaiting = nextWaiting;
     writeIndexGlobalWaitingCache(tournamentId, nextWaiting);
     scheduleRenderDealerOps();

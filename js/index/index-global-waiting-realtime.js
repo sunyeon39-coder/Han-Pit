@@ -1,5 +1,6 @@
 import { db } from "../firebase.js";
-import { doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { globalWaitingCollectionRef } from "../shared/tournament-waiting-queue.js";
 import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
 import { scheduleRenderDealerOps } from "./dealer-attendance-render.js";
@@ -10,13 +11,13 @@ function shouldKeepCachedGlobalWaiting(snap, nextWaiting = []) {
   if (snap?.metadata?.hasPendingWrites) return false;
   if (!snap?.metadata?.fromCache) return false;
   if (!IX.globalWaiting.length) return false;
-  if (!snap.exists()) return true;
+  if (snap.empty) return true;
   return nextWaiting.length === 0;
 }
 
 function shouldRefreshWaitingFromServer(snap, nextWaiting = []) {
   if (!snap?.metadata?.fromCache) return false;
-  return !snap.exists() || nextWaiting.length === 0;
+  return snap.empty || nextWaiting.length === 0;
 }
 
 export function bindIndexGlobalWaitingRealtime() {
@@ -31,10 +32,9 @@ export function bindIndexGlobalWaitingRealtime() {
   }
 
   IX.stopGlobalWaitingWatch = onSnapshot(
-    doc(db, "layout_shared", "global_waiting"),
+    globalWaitingCollectionRef(db, tournamentId),
     (snap) => {
-      const data = snap.exists() ? snap.data() || {} : {};
-      const nextWaiting = Array.isArray(data.waiting) ? data.waiting : [];
+      const nextWaiting = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       if (shouldKeepCachedGlobalWaiting(snap, nextWaiting)) {
         if (shouldRefreshWaitingFromServer(snap, nextWaiting)) {
           void bootstrapIndexDealerOps();

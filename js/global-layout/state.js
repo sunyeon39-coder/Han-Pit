@@ -23,6 +23,7 @@ export const GL = {
   mobileAddWaitingBtn: null,
   stopSeatWatch: null,
   stopWaitingWatch: null,
+  stopOperatorPicksWatch: null,
   stopAttendanceWatch: null,
   stopTopicWatch: null,
   topicBar: null,
@@ -73,7 +74,7 @@ export const GL = {
   currentUser: null,
   /** users.layoutAccentColor — 직접 허용 시 Hub에서 부여 */
   layoutAccentColor: "#4DA3FF",
-  /** layout_shared/global_waiting.operatorPicks */
+  /** tournaments/{tid}/global_waiting_meta/operatorPicks.operatorPicks */
   operatorPicks: {},
   /** 본인 좌석 강조용 (users 프로필 스냅샷) */
   userProfile: null,

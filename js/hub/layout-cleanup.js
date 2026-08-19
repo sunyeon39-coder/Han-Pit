@@ -1,15 +1,17 @@
 import { db } from "../firebase.js";
 import {
   collection,
-  doc,
   getDocs,
+  query,
+  where,
   writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
-import { runSerializedGlobalWaitingWrite } from "../global-layout/global-waiting-write-lock.js";
+import {
+  globalWaitingCollectionRef,
+  globalWaitingCollectionGroupRef
+} from "../shared/tournament-waiting-queue.js";
 
 const LAYOUT_EVENTS_REF = collection(db, "layout_events");
-const GLOBAL_WAITING_REF = doc(db, "layout_shared", "global_waiting");
 
 export async function removeUserFromEventWaiting(user, selectedTournamentId = "") {
   if (!user) return 0;
@@ -21,55 +23,26 @@ export async function removeUserFromEventWaiting(user, selectedTournamentId = ""
   if (!targetUid && !targetName) return 0;
 
   try {
-    let removedCount = 0;
+    const collRef = tournamentId
+      ? globalWaitingCollectionRef(db, tournamentId)
+      : globalWaitingCollectionGroupRef(db);
 
-    await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
-      const snap = await tx.get(GLOBAL_WAITING_REF);
-      if (!snap.exists()) return;
+    const snaps = targetUid
+      ? [await getDocs(query(collRef, where("uid", "==", targetUid)))]
+      : [await getDocs(query(collRef, where("name", "==", targetName)))];
 
-      const data = snap.data() || {};
-      const waiting = Array.isArray(data.waiting) ? data.waiting : [];
-      if (!waiting.length) return;
+    const refsToDelete = new Map();
+    for (const snap of snaps) {
+      snap.docs.forEach((d) => refsToDelete.set(d.ref.path, d.ref));
+    }
 
-      const nextWaiting = waiting.filter((item) => {
-        if (!item || typeof item !== "object") return false;
+    if (!refsToDelete.size) return 0;
 
-        const itemUid = String(item.uid || "").trim();
-        const itemName = String(item.name || "").trim();
-        const itemTournamentId = String(item.tournamentId || "").trim();
+    const batch = writeBatch(db);
+    for (const ref of refsToDelete.values()) batch.delete(ref);
+    await batch.commit();
 
-        if (tournamentId && itemTournamentId && itemTournamentId !== tournamentId) {
-          return true;
-        }
-
-        if (targetUid && itemUid && itemUid === targetUid) {
-          removedCount += 1;
-          return false;
-        }
-
-        if (!targetUid && targetName && itemName === targetName) {
-          removedCount += 1;
-          return false;
-        }
-
-        return true;
-      });
-
-      if (removedCount > 0) {
-        tx.set(
-          GLOBAL_WAITING_REF,
-          {
-            ...data,
-            version: 2,
-            waiting: nextWaiting,
-            updatedAt: Date.now()
-          },
-          { merge: true }
-        );
-      }
-    }));
-
-    return removedCount;
+    return refsToDelete.size;
   } catch (err) {
     console.error("removeUserFromEventWaiting error:", err);
     return 0;

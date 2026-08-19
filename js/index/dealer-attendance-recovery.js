@@ -1,5 +1,5 @@
 import { db } from "../firebase.js";
-import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { doc, getDoc, getDocs, setDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
 import { runSerializedGlobalWaitingWrite } from "../global-layout/global-waiting-write-lock.js";
 
@@ -11,7 +11,12 @@ import { getAttendanceRef } from "./dealer-attendance-refs.js";
 import { joinSharedWaitingOnCheckIn } from "./dealer-attendance-waiting.js";
 import { getBaseAttendance, getDerivedAttendance } from "./dealer-attendance-derived.js";
 import { isStaleOperationalDayAttendance } from "../shared/attendance-operational-day.js";
-import { getWaitingRowJoinMs } from "../shared/tournament-waiting-queue.js";
+import {
+  getWaitingRowJoinMs,
+  globalWaitingCollectionRef,
+  globalWaitingDocRef
+} from "../shared/tournament-waiting-queue.js";
+import { findGlobalWaitingEntryRefs, diffGlobalWaitingRows } from "../global-layout/waiting-entry-refs.js";
 import { renderDealerOps } from "./dealer-attendance-render.js";
 import { loadDealerAttendanceOnce } from "./dealer-attendance-load-once.js";
 
@@ -21,25 +26,21 @@ export function getMySeatInfo(uid) {
   return IX.dealerSeatMap.get(uid) || null;
 }
 
-export async function getSharedWaitingState() {
-  const waitingRef = doc(db, "layout_shared", "global_waiting");
-  const snap = await getDoc(waitingRef);
-
-  if (!snap.exists()) {
-    return {
-      ref: waitingRef,
-      state: { version: 2, waiting: [], updatedAt: Date.now() }
-    };
+export async function getSharedWaitingState(tournamentId = "") {
+  const tid = String(tournamentId || "").trim();
+  if (!tid) {
+    return { collRef: null, state: { version: 2, waiting: [], updatedAt: Date.now() } };
   }
 
-  const data = snap.data() || {};
+  const collRef = globalWaitingCollectionRef(db, tid);
+  const snap = await getDocs(collRef);
+
   return {
-    ref: waitingRef,
+    collRef,
     state: {
-      ...data,
       version: 2,
-      waiting: Array.isArray(data.waiting) ? data.waiting : [],
-      updatedAt: Number(data.updatedAt || Date.now())
+      waiting: snap.docs.map((d) => ({ id: d.id, ...d.data() })),
+      updatedAt: Date.now()
     }
   };
 }
@@ -90,7 +91,7 @@ export async function ensureMeRecovered(user) {
   const raw = getBaseAttendance(user);
   const seatInfo = getMySeatInfo(user.uid);
 
-  const { ref: waitingRef, state: waitingStateDoc } = await getSharedWaitingState();
+  const { state: waitingStateDoc } = await getSharedWaitingState(tournamentId);
   const waitingList = Array.isArray(waitingStateDoc.waiting) ? waitingStateDoc.waiting : [];
 
   const nickname =
@@ -178,29 +179,32 @@ export async function ensureMeRecovered(user) {
     );
 
     if (!inWaiting) {
-      // 대기 목록을 앞서 읽은 스냅샷 그대로 다시 저장하면, 그 사이 다른 클라이언트가 반영한
-      // 변경을 덮어써버릴 수 있다(lost update). 실제 쓰기 직전에 트랜잭션으로 다시 읽어 반영한다.
+      // 후보 문서를 미리 추려두고, 실제 쓰기 직전에 트랜잭션으로 다시 읽어 반영한다
+      // (그 사이 다른 클라이언트가 반영한 변경을 덮어쓰는 lost update 방지).
+      const person = {
+        uid: user.uid,
+        email: String(IX.currentUserProfile?.email || user.email || "").trim(),
+        name: nickname
+      };
+      const canonicalRef = globalWaitingDocRef(db, tournamentId, `w_${user.uid}`);
+      const matchRefs = findGlobalWaitingEntryRefs(db, tournamentId, waitingList, person);
+      const refs = matchRefs.some((r) => r.path === canonicalRef.path)
+        ? matchRefs
+        : [canonicalRef, ...matchRefs];
+
       await runSerializedGlobalWaitingWrite(() =>
         runFirestoreTransactionWithRetry(db, async (tx) => {
-          const freshSnap = await tx.get(waitingRef);
-          const freshData = freshSnap.exists() ? freshSnap.data() || {} : {};
-          const freshList = Array.isArray(freshData.waiting) ? [...freshData.waiting] : [];
+          const snaps = await Promise.all(refs.map((r) => tx.get(r)));
+          const prevRows = snaps
+            .map((s, i) => (s.exists() ? { id: refs[i].id, ...s.data() } : null))
+            .filter(Boolean);
+          const existingByPerson = prevRows[0] || null;
 
           const recoverNow = Date.now();
-          const existingByPerson =
-            freshList.find((item) => {
-              if (!item || typeof item !== "object") return false;
-              const itemTournamentId = String(item.tournamentId || "").trim();
-              if (itemTournamentId && itemTournamentId !== tournamentId) return false;
-              const itemUid = String(item.uid || "").trim();
-              const itemName = String(item.name || "").trim();
-              if (itemUid && itemUid === String(user.uid).trim()) return true;
-              return !!(nickname && itemName && itemName === nickname);
-            }) || null;
           const recoverRow = {
             id: String(existingByPerson?.id || `w_${user.uid}`).trim(),
             uid: user.uid,
-            email: String(IX.currentUserProfile?.email || user.email || "").trim(),
+            email: person.email,
             name: nickname,
             addedAt: Number(existingByPerson?.addedAt || existingByPerson?.joinedAt || recoverNow) || recoverNow,
             joinedAt: Number(existingByPerson?.joinedAt || existingByPerson?.addedAt || recoverNow) || recoverNow,
@@ -211,24 +215,15 @@ export async function ensureMeRecovered(user) {
             blockCheckedAt: existingByPerson?.blockCheckedAt ?? null,
             blockAccumulatedMs: Number(existingByPerson?.blockAccumulatedMs || 0) || 0
           };
-          if (existingByPerson) {
-            const idx = freshList.findIndex((item) => String(item?.id || "").trim() === recoverRow.id);
-            if (idx >= 0) freshList[idx] = { ...existingByPerson, ...recoverRow };
-            else freshList.push(recoverRow);
-          } else {
-            freshList.push(recoverRow);
-          }
 
-          tx.set(
-            waitingRef,
-            {
-              ...freshData,
-              version: 2,
-              waiting: freshList,
-              updatedAt: Date.now()
-            },
-            { merge: true }
-          );
+          const nextRows = [{ ...existingByPerson, ...recoverRow }];
+          const { toSet, toDelete } = diffGlobalWaitingRows(prevRows, nextRows);
+          for (const { id, data } of toSet) {
+            tx.set(globalWaitingDocRef(db, tournamentId, id), data, { merge: true });
+          }
+          for (const id of toDelete) {
+            tx.delete(globalWaitingDocRef(db, tournamentId, id));
+          }
         })
       );
     }

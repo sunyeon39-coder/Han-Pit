@@ -1,17 +1,13 @@
 import { db } from "../firebase.js";
 import {
   collection,
-  doc,
   getDocs,
   query,
   serverTimestamp,
   where,
   writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { runFirestoreTransactionWithRetry } from "./firestore-transaction-retry.js";
-import { runSerializedGlobalWaitingWrite } from "../global-layout/global-waiting-write-lock.js";
-
-const WAITING_REF = () => doc(db, "layout_shared", "global_waiting");
+import { globalWaitingCollectionGroupRef } from "./tournament-waiting-queue.js";
 
 /**
  * 닉네임 변경 후 대기 목록·출석 대기 병합에 쓰이는 표시명을 Firestore에 맞춥니다.
@@ -32,37 +28,36 @@ export async function syncUserDisplayNameAfterNicknameChange(uid = "", nickname 
 async function syncGlobalWaitingNameForUser(userUid, name) {
   let updated = 0;
   try {
-    await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
-      const snap = await tx.get(WAITING_REF());
-      if (!snap.exists()) return;
+    const snap = await getDocs(
+      query(globalWaitingCollectionGroupRef(db), where("uid", "==", userUid))
+    );
+    if (snap.empty) return 0;
 
-      const data = snap.data() || {};
-      const list = Array.isArray(data.waiting) ? data.waiting : [];
-      let changed = false;
+    let batch = writeBatch(db);
+    let ops = 0;
 
-      const next = list.map((item) => {
-        if (!item || typeof item !== "object") return item;
-        if (String(item.uid || "").trim() !== userUid) return item;
-        if (String(item.name || "").trim() === name) return item;
-        changed = true;
-        updated += 1;
-        return { ...item, name };
-      });
+    const commitIfNeeded = async (force = false) => {
+      if (!ops) return;
+      if (!force && ops < 400) return;
+      await batch.commit();
+      batch = writeBatch(db);
+      ops = 0;
+    };
 
-      if (!changed) return;
-
-      tx.set(
-        WAITING_REF(),
-        {
-          ...data,
-          version: 2,
-          waiting: next,
-          updatedAt: Date.now(),
-          updatedAtServer: serverTimestamp()
-        },
+    for (const d of snap.docs) {
+      const data = d.data() || {};
+      if (String(data.name || "").trim() === name) continue;
+      batch.set(
+        d.ref,
+        { name, updatedAt: Date.now(), updatedAtServer: serverTimestamp() },
         { merge: true }
       );
-    }));
+      ops += 1;
+      updated += 1;
+      if (ops >= 400) await commitIfNeeded(true);
+    }
+
+    await commitIfNeeded(true);
   } catch (err) {
     console.error("syncGlobalWaitingNameForUser error:", err);
   }

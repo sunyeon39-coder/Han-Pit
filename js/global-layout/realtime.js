@@ -1,6 +1,7 @@
 import { db, auth } from "../firebase.js";
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocFromServer,
@@ -16,7 +17,6 @@ import {
   buildCheckedOutAttendanceUidSet,
   filterAttendanceRowsForWaitingMerge
 } from "../shared/attendance-waiting-filter.js";
-import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
 import {
   isWaitingBlockSavePending,
   isGlobalWaitingWriteInFlight,
@@ -58,13 +58,30 @@ import {
   purgeInactiveFromGlobalWaitingRows,
   buildMissingGlobalWaitingRestoreList,
   personExistsInGlobalWaiting,
-  isPersonSeatedInGlobalSeats
+  isPersonSeatedInGlobalSeats,
+  globalWaitingCollectionRef,
+  globalWaitingDocRef,
+  operatorPicksDocRef
 } from "../shared/tournament-waiting-queue.js";
 import { invalidateWaitingPanelFingerprint } from "./panel-ui.js";
 import { resolveAttendanceWaitingJoinMs } from "../shared/attendance-operational-day.js";
 import { mergeIncomingGlobalWaiting, replaceGlobalWaitingLocal } from "./waiting.js";
 import { dedupeGlobalWaitingRows } from "../shared/tournament-waiting-queue.js";
 import { renderGlobalLayoutTopicBar } from "./topic-bar.js";
+import { diffGlobalWaitingRows } from "./waiting-entry-refs.js";
+
+/**
+ * 힐링/복구성 백그라운드 작업은 완벽한 원자성보다 "바뀐 것만 건드리기"가 더 중요해서
+ * 트랜잭션 대신 병렬 setDoc/deleteDoc으로 처리한다(다음 힐링 패스에서 자연히 수렴한다).
+ */
+async function applyGlobalWaitingArrayDiff(tournamentId, prevArr = [], nextArr = []) {
+  const { toSet, toDelete } = diffGlobalWaitingRows(prevArr, nextArr);
+  const writes = [
+    ...toSet.map(({ id, data }) => setDoc(globalWaitingDocRef(db, tournamentId, id), data)),
+    ...toDelete.map((id) => deleteDoc(globalWaitingDocRef(db, tournamentId, id)))
+  ];
+  if (writes.length) await Promise.all(writes);
+}
 
 /** Firestore 전파 전 캐시 스냅샷이 방금 배치한 좌석을 비우는 것 방지 */
 const RECENT_LOCAL_SEAT_MS = 12000;
@@ -142,6 +159,10 @@ function disposeGlobalLayoutRealtime() {
   if (GL.stopWaitingWatch) {
     GL.stopWaitingWatch();
     GL.stopWaitingWatch = null;
+  }
+  if (GL.stopOperatorPicksWatch) {
+    GL.stopOperatorPicksWatch();
+    GL.stopOperatorPicksWatch = null;
   }
   if (GL.stopAttendanceWatch) {
     GL.stopAttendanceWatch();
@@ -271,27 +292,15 @@ async function healInactiveRowsOutOfGlobalWaiting() {
   if (localNext.length === (GL.globalWaiting || []).length) return;
 
   try {
-    const waitingRef = doc(db, "layout_shared", "global_waiting");
-    const snap = await getDoc(waitingRef);
-    if (!snap.exists()) return;
-    const state = snap.data() || {};
-    const list = Array.isArray(state.waiting) ? state.waiting : [];
+    const snap = await getDocs(globalWaitingCollectionRef(db, GL.tournamentId));
+    const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     const healed = purgeInactiveFromGlobalWaitingRows(list, checkedOut, GL.tournamentId);
     if (healed.length === list.length) return;
 
     GL.waitingMutationInFlight = true;
-    await runSerializedGlobalWaitingWrite(async () => {
-      await setDoc(
-        waitingRef,
-        {
-          ...state,
-          version: 2,
-          waiting: healed,
-          updatedAt: Date.now()
-        },
-        { merge: true }
-      );
-    });
+    await runSerializedGlobalWaitingWrite(() =>
+      applyGlobalWaitingArrayDiff(GL.tournamentId, list, healed)
+    );
     replaceGlobalWaitingLocal(mergeIncomingGlobalWaiting(healed, GL.globalWaiting));
     bumpGlobalLayoutDataRevision();
     scheduleGlobalLayoutRealtimeUi({ waiting: true });
@@ -332,17 +341,13 @@ async function healMissingWaitingFromAttendance() {
 
   if (!missing.length) return;
 
-  const waitingRef = doc(db, "layout_shared", "global_waiting");
   try {
     GL.waitingMutationInFlight = true;
     let healed = null;
-    await runSerializedGlobalWaitingWrite(() =>
-      runFirestoreTransactionWithRetry(db, async (tx) => {
-      const waitingSnap = await tx.get(waitingRef);
-      const waitingData = waitingSnap.exists()
-        ? waitingSnap.data() || {}
-        : { version: 2, waiting: [], updatedAt: Date.now() };
-      let waitingArr = Array.isArray(waitingData.waiting) ? [...waitingData.waiting] : [];
+    await runSerializedGlobalWaitingWrite(async () => {
+      const snap = await getDocs(globalWaitingCollectionRef(db, GL.tournamentId));
+      const startArr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      let waitingArr = [...startArr];
       const now = Date.now();
       let changed = false;
 
@@ -361,19 +366,8 @@ async function healMissingWaitingFromAttendance() {
 
       waitingArr = dedupeGlobalWaitingRows(waitingArr, GL.tournamentId);
       healed = waitingArr;
-      tx.set(
-        waitingRef,
-        {
-          ...waitingData,
-          version: 2,
-          waiting: waitingArr,
-          updatedAt: now,
-          updatedAtServer: serverTimestamp()
-        },
-        { merge: true }
-      );
-    })
-    );
+      await applyGlobalWaitingArrayDiff(GL.tournamentId, startArr, waitingArr);
+    });
 
     if (healed) {
       console.info(
@@ -492,47 +486,41 @@ async function recoverRemovedSeatPeopleToWaiting(removedSeats = [], currentSeats
   }
   if (!people.length) return;
 
-  const waitingRef = doc(db, "layout_shared", "global_waiting");
   const now = Date.now();
-  await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
-    const waitingSnap = await tx.get(waitingRef);
-    const waitingData = waitingSnap.exists() ? waitingSnap.data() || {} : {};
-    const waitingArr = Array.isArray(waitingData.waiting) ? waitingData.waiting : [];
-    let nextWaiting = waitingArr;
+  await runSerializedGlobalWaitingWrite(async () => {
+    const snap = await getDocs(globalWaitingCollectionRef(db, GL.tournamentId));
+    const startArr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    let nextWaiting = startArr;
+    const attendanceWrites = [];
     for (const p of people) {
-      if (waitingArr.some((w) => waitingRowMatchesPerson(w, GL.tournamentId, p))) continue;
+      if (startArr.some((w) => waitingRowMatchesPerson(w, GL.tournamentId, p))) continue;
       nextWaiting = rebuildWaitingAfterSeatToWait(nextWaiting, GL.tournamentId, p, now, {
         source: "seat_removed_recovery",
         resetJoinedAt: true
       });
       if (!p.uid) continue;
-      tx.set(
-        getAttendanceRef(db, GL.tournamentId, p.uid),
-        {
-          uid: p.uid,
-          email: p.email,
-          name: p.name,
-          tournamentId: GL.tournamentId,
-          status: "waiting",
-          statusChangedAt: now,
-          updatedAt: now,
-          updatedAtServer: serverTimestamp()
-        },
-        { merge: true }
+      attendanceWrites.push(
+        setDoc(
+          getAttendanceRef(db, GL.tournamentId, p.uid),
+          {
+            uid: p.uid,
+            email: p.email,
+            name: p.name,
+            tournamentId: GL.tournamentId,
+            status: "waiting",
+            statusChangedAt: now,
+            updatedAt: now,
+            updatedAtServer: serverTimestamp()
+          },
+          { merge: true }
+        )
       );
     }
-    tx.set(
-      waitingRef,
-      {
-        ...waitingData,
-        version: 2,
-        waiting: nextWaiting,
-        updatedAt: now,
-        updatedAtServer: serverTimestamp()
-      },
-      { merge: true }
-    );
-  }));
+    await Promise.all([
+      ...attendanceWrites,
+      applyGlobalWaitingArrayDiff(GL.tournamentId, startArr, nextWaiting)
+    ]);
+  });
 }
 
 function seatPersonIsSame(prev, next) {
@@ -690,15 +678,11 @@ async function refreshGlobalWaitingFromServer() {
   if (isFirestoreQuotaCoolingDown()) return;
   if (GL.waitingMutationInFlight) return;
   try {
-    const snap = await getDocFromServer(doc(db, "layout_shared", "global_waiting"));
-    const data = snap.exists() ? snap.data() || {} : {};
-    const nextWaiting = mergeIncomingGlobalWaiting(
-      Array.isArray(data.waiting) ? data.waiting : [],
-      GL.globalWaiting
-    );
+    const snap = await getDocsFromServer(globalWaitingCollectionRef(db, GL.tournamentId));
+    const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const nextWaiting = mergeIncomingGlobalWaiting(rows, GL.globalWaiting);
     GL.globalWaiting = nextWaiting;
     purgeSeatedPeopleFromGlobalWaitingLocal();
-    applyOperatorPicksFromDoc(data, snap.metadata || {});
     bumpGlobalLayoutDataRevision();
     lastWaitingUiFingerprint = globalWaitingUiFingerprint(nextWaiting);
     updateGlobalLayoutWaitingMeta();
@@ -886,20 +870,16 @@ export function bindRealtime() {
   );
 
   GL.stopWaitingWatch = onSnapshot(
-    doc(db, "layout_shared", "global_waiting"),
+    globalWaitingCollectionRef(db, GL.tournamentId),
     (snap) => {
       if (shouldIgnoreStaleGlobalLayoutSnapshot(snap)) return;
       if (GL.waitingMutationInFlight || GL.seatMutationInFlight) return;
-      const data = snap.exists() ? snap.data() || {} : {};
-      const nextWaiting = mergeIncomingGlobalWaiting(
-        Array.isArray(data.waiting) ? data.waiting : [],
-        GL.globalWaiting
-      );
+      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const nextWaiting = mergeIncomingGlobalWaiting(rows, GL.globalWaiting);
       const nextFp = globalWaitingUiFingerprint(nextWaiting);
 
       GL.globalWaiting = nextWaiting;
       const purgedSeatedWaiting = purgeSeatedPeopleFromGlobalWaitingLocal();
-      applyOperatorPicksFromDoc(data, snap.metadata || {});
       rebuildGlobalLayoutAttendanceInactiveUids();
 
       if (nextFp === lastWaitingUiFingerprint && !purgedSeatedWaiting) {
@@ -907,10 +887,7 @@ export function bindRealtime() {
         if (GL.attendanceFilterReady) {
           scheduleHealMissingWaitingFromAttendance();
         }
-        if (
-          snap.metadata?.fromCache &&
-          (!snap.exists() || !nextWaiting.length)
-        ) {
+        if (snap.metadata?.fromCache && !nextWaiting.length) {
           void refreshGlobalWaitingFromServer();
         }
         return;
@@ -924,16 +901,23 @@ export function bindRealtime() {
         scheduleHealMissingWaitingFromAttendance();
       }
 
-      if (
-        snap.metadata?.fromCache &&
-        (!snap.exists() || !nextWaiting.length)
-      ) {
+      if (snap.metadata?.fromCache && !nextWaiting.length) {
         void refreshGlobalWaitingFromServer();
       }
     },
     (err) => {
       logFirestoreWatchError("global waiting watch error", err);
       void refreshGlobalWaitingFromServer();
+    }
+  );
+
+  GL.stopOperatorPicksWatch = onSnapshot(
+    operatorPicksDocRef(db, GL.tournamentId),
+    (snap) => {
+      applyOperatorPicksFromDoc(snap.exists() ? snap.data() || {} : {}, snap.metadata || {});
+    },
+    (err) => {
+      logFirestoreWatchError("operator picks watch error", err);
     }
   );
 

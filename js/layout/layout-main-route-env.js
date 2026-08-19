@@ -1,5 +1,6 @@
 import { db } from "../firebase.js";
 import { collection, doc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { globalWaitingCollectionRef } from "../shared/tournament-waiting-queue.js";
 
 export { FCM_VAPID_KEY as VAPID_KEY } from "../shared/fcm-web-push.js";
 export const ALERT_VOLUME = 0.4;
@@ -26,7 +27,9 @@ export function createLayoutMainRouteEnv() {
   const EVENT_DOC_ID = `${EVENT_ID}__${BOX_ID}`;
   const LAYOUT_CANVAS_VIEW_KEY = `layout_canvas_view_v1_${EVENT_DOC_ID}`;
   const EVENT_REF = doc(db, "layout_events", EVENT_DOC_ID);
-  const WAITING_REF = doc(db, "layout_shared", "global_waiting");
+  const WAITING_COLLECTION_REF = TOURNAMENT_ID
+    ? globalWaitingCollectionRef(db, TOURNAMENT_ID)
+    : null;
   const GLOBAL_SEATS_REF = TOURNAMENT_ID
     ? collection(db, "tournaments", TOURNAMENT_ID, "global_seats")
     : null;
@@ -64,7 +67,7 @@ export function createLayoutMainRouteEnv() {
     EVENT_DOC_ID,
     LAYOUT_CANVAS_VIEW_KEY,
     EVENT_REF,
-    WAITING_REF,
+    WAITING_COLLECTION_REF,
     GLOBAL_SEATS_REF,
     getCurrentTournamentId,
     isValidDocId,

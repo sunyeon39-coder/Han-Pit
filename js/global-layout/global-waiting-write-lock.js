@@ -1,4 +1,4 @@
-/** layout_shared/global_waiting 단일 문서 — 클라이언트 내 Firestore 쓰기 직렬화 */
+/** global_waiting 관련 문서들 — 클라이언트 내 Firestore 쓰기 직렬화 */
 let writeTail = Promise.resolve();
 let writesInFlight = 0;
 let blockSavePending = false;

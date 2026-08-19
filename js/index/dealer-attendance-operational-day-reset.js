@@ -1,4 +1,4 @@
-import { setDoc, getDoc, doc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { setDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 import { db } from "../firebase.js";
 import { getTournamentId } from "./core-utils.js";
@@ -12,6 +12,7 @@ import {
 import {
   findGlobalWaitingRowForUid,
   getWaitingRowJoinMs,
+  globalWaitingCollectionRef,
   hasFreshGlobalWaitingForUid
 } from "../shared/tournament-waiting-queue.js";
 import { removeFromSharedWaitingOnCheckOut } from "./dealer-attendance-waiting.js";
@@ -20,12 +21,12 @@ import { getNowMs } from "./dealer-attendance-format.js";
 
 const resetInflight = new Set();
 
-async function loadGlobalWaitingRows() {
+async function loadGlobalWaitingRows(tournamentId = "") {
+  const tid = String(tournamentId || "").trim();
+  if (!tid) return IX.globalWaiting || [];
   try {
-    const snap = await getDoc(doc(db, "layout_shared", "global_waiting"));
-    if (!snap.exists()) return [];
-    const data = snap.data() || {};
-    return Array.isArray(data.waiting) ? data.waiting : [];
+    const snap = await getDocs(globalWaitingCollectionRef(db, tid));
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   } catch (err) {
     console.warn("loadGlobalWaitingRows:", err?.code || err);
     return IX.globalWaiting || [];
@@ -91,7 +92,7 @@ export async function persistOperationalDayResetForUid(uid = "", prevRow = null)
   if (String(current.status || "").trim() === "checked_out") return false;
   if (!isStaleOperationalDayAttendance(current)) return false;
 
-  const globalWaiting = await loadGlobalWaitingRows();
+  const globalWaiting = await loadGlobalWaitingRows(tournamentId);
   if (hasFreshGlobalWaitingForUid(globalWaiting, tournamentId, safeUid)) {
     const waitRow = findGlobalWaitingRowForUid(globalWaiting, tournamentId, safeUid);
     resetInflight.add(safeUid);

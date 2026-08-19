@@ -4,7 +4,7 @@ import {
   deleteField,
   getDoc,
   getDocFromServer,
-  updateDoc
+  setDoc
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { canUseTournamentOps, isSystemAdminEmail, normalizeUserProfile } from "../shared/auth-helpers.js";
 import { resolveLayoutAccentColor } from "../shared/layout-operator-colors.js";
@@ -14,8 +14,9 @@ import { flushOptimisticGlobalLayoutUi } from "./optimistic-seat-mutation.js";
 import { canManageGlobalLayoutOps } from "./ops-access.js";
 import { releaseStuckGlobalLayoutMutationFlags } from "./layout-mutation-guard.js";
 import { runSerializedGlobalWaitingWrite } from "./global-waiting-write-lock.js";
+import { operatorPicksDocRef } from "../shared/tournament-waiting-queue.js";
 
-const WAITING_REF = () => doc(db, "layout_shared", "global_waiting");
+const WAITING_REF = () => operatorPicksDocRef(db, GL.tournamentId);
 
 /** ops 없는 uid · waitingId 없는 항목 제거 */
 const deniedOperatorPickUids = new Set();
@@ -69,7 +70,7 @@ export async function refreshOperatorPicksFromServer() {
   }
 }
 
-/** layout_shared/global_waiting.operatorPicks — ops 권한 없는 uid 자동 삭제 */
+/** tournaments/{tid}/global_waiting_meta/operatorPicks.operatorPicks — ops 권한 없는 uid 자동 삭제 */
 export async function pruneOperatorPicksWithoutOps() {
   if (!canManageGlobalLayoutOps() && !GL.opsServerVerified) return;
 
@@ -147,7 +148,7 @@ export async function pruneOperatorPicksWithoutOps() {
       deniedOperatorPickUids.add(uid);
     }
     try {
-      await runSerializedGlobalWaitingWrite(() => updateDoc(WAITING_REF(), patch));
+      await runSerializedGlobalWaitingWrite(() => setDoc(WAITING_REF(), patch, { merge: true }));
     } catch (err) {
       console.warn("pruneOperatorPicksWithoutOps write:", err?.code || err);
     }
@@ -188,7 +189,7 @@ export async function clearOperatorPickForUid(uid = "") {
   deniedOperatorPickUids.add(id);
   try {
     await runSerializedGlobalWaitingWrite(() =>
-      updateDoc(WAITING_REF(), { [`operatorPicks.${id}`]: deleteField() })
+      setDoc(WAITING_REF(), { [`operatorPicks.${id}`]: deleteField() }, { merge: true })
     );
   } catch (err) {
     console.warn("clearOperatorPickForUid:", err?.code || err);
@@ -342,22 +343,26 @@ export async function syncMyWaitingPick(waitingId = "") {
   const wid = String(waitingId || "").trim();
   applyOptimisticMyWaitingPick(wid);
   try {
-    // 좌석 배치/스왑 트랜잭션과 같은 layout_shared/global_waiting 문서를 건드리므로,
+    // 좌석 배치/스왑 트랜잭션도 같은 global_waiting_meta/operatorPicks 문서를 건드리므로,
     // 직렬화 큐를 거치지 않으면 두 쓰기가 동시에 부딪혀 트랜잭션이 실패-재시도를 반복해
     // (특히 스왑처럼 트랜잭션이 큰 경우) 체감 지연이 커진다.
     await runSerializedGlobalWaitingWrite(() => {
       if (!wid) {
-        return updateDoc(WAITING_REF(), { [`operatorPicks.${uid}`]: deleteField() });
+        return setDoc(WAITING_REF(), { [`operatorPicks.${uid}`]: deleteField() }, { merge: true });
       }
-      return updateDoc(WAITING_REF(), {
-        [`operatorPicks.${uid}`]: {
-          waitingId: wid,
-          tournamentId: String(GL.tournamentId || "").trim(),
-          displayName: getOperatorDisplayName(GL.userProfile, GL.currentUser),
-          color: GL.layoutAccentColor,
-          updatedAt: Date.now()
-        }
-      });
+      return setDoc(
+        WAITING_REF(),
+        {
+          [`operatorPicks.${uid}`]: {
+            waitingId: wid,
+            tournamentId: String(GL.tournamentId || "").trim(),
+            displayName: getOperatorDisplayName(GL.userProfile, GL.currentUser),
+            color: GL.layoutAccentColor,
+            updatedAt: Date.now()
+          }
+        },
+        { merge: true }
+      );
     });
   } catch (err) {
     console.warn("syncMyWaitingPick:", err?.code || err);

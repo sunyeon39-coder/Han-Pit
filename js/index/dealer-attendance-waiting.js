@@ -4,7 +4,10 @@ import {
   doc,
   getDoc,
   getDocs,
-  setDoc
+  query,
+  where,
+  setDoc,
+  writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 import { mergeOpsProfile, normalizeUserProfile } from "../shared/auth-helpers.js";
@@ -13,6 +16,7 @@ import {
   mergeCheckInRowIntoLocalWaiting,
   upsertCheckInIntoGlobalWaiting
 } from "../shared/global-waiting-checkin.js";
+import { globalWaitingCollectionRef } from "../shared/tournament-waiting-queue.js";
 import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
 import { writeIndexGlobalWaitingCache } from "./index-ops-session-cache.js";
@@ -164,44 +168,30 @@ export async function removeFromSharedWaitingOnCheckOut(user) {
   );
 
   try {
-    const waitingRef = doc(db, "layout_shared", "global_waiting");
-    const waitingSnap = await getDoc(waitingRef);
-    if (!waitingSnap.exists()) return true;
+    const collRef = globalWaitingCollectionRef(db, tournamentId);
+    const refsToDelete = new Map();
 
-    const waitingState = waitingSnap.data() || {};
-    const waitingList = Array.isArray(waitingState.waiting) ? waitingState.waiting : [];
+    if (uid) {
+      const snap = await getDocs(query(collRef, where("uid", "==", uid)));
+      snap.docs.forEach((d) => refsToDelete.set(d.ref.path, d.ref));
+    }
+    if (names.size) {
+      const snap = await getDocs(query(collRef, where("name", "in", [...names])));
+      snap.docs.forEach((d) => refsToDelete.set(d.ref.path, d.ref));
+    }
+    if (email) {
+      const snap = await getDocs(collRef);
+      snap.docs.forEach((d) => {
+        const itemEmail = String(d.data()?.email || "").trim().toLowerCase();
+        if (itemEmail === email) refsToDelete.set(d.ref.path, d.ref);
+      });
+    }
 
-    const nextWaiting = waitingList.filter((item) => {
-      if (!item || typeof item !== "object") return true;
+    if (!refsToDelete.size) return true;
 
-      const itemUid = String(item.uid || "").trim();
-      const itemTournamentId = String(item.tournamentId || "").trim();
-      const sameTournament = !itemTournamentId || itemTournamentId === tournamentId;
-      if (!sameTournament) return true;
-
-      if (uid && itemUid && itemUid === uid) return false;
-
-      const itemEmail = String(item.email || "").trim().toLowerCase();
-      if (email && itemEmail && email === itemEmail) return false;
-
-      const itemName = String(item.name || "").trim();
-      if (itemName && names.has(itemName)) return false;
-
-      return true;
-    });
-
-    if (nextWaiting.length === waitingList.length) return true;
-
-    await setDoc(
-      waitingRef,
-      {
-        ...waitingState,
-        version: 2,
-        waiting: nextWaiting,
-        updatedAt: Date.now()
-      },
-      { merge: true }
-    );
+    const batch = writeBatch(db);
+    for (const ref of refsToDelete.values()) batch.delete(ref);
+    await batch.commit();
 
     return true;
   } catch (error) {

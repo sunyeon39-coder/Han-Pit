@@ -1,8 +1,32 @@
 import {
+  collection,
+  collectionGroup,
+  doc
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import {
   buildAttendanceInactiveUidSet,
   filterAttendanceRowsForWaitingMerge,
   isInactiveWaitingEntry
 } from "./attendance-waiting-filter.js";
+
+/** 대기자 1명 = 문서 1개 (tournaments/{tid}/global_waiting/{entryId}) */
+export function globalWaitingCollectionRef(db, tournamentId) {
+  return collection(db, "tournaments", String(tournamentId || "").trim(), "global_waiting");
+}
+
+export function globalWaitingDocRef(db, tournamentId, entryId) {
+  return doc(db, "tournaments", String(tournamentId || "").trim(), "global_waiting", String(entryId || "").trim());
+}
+
+/** 모든 대회에 걸쳐 uid로 찾을 때 (예: 닉네임 동기화) */
+export function globalWaitingCollectionGroupRef(db) {
+  return collectionGroup(db, "global_waiting");
+}
+
+/** 운영자별 "찜한 대기자" 등 — global_waiting 문서 쓰기와 절대 같은 문서를 공유하지 않는다 */
+export function operatorPicksDocRef(db, tournamentId) {
+  return doc(db, "tournaments", String(tournamentId || "").trim(), "global_waiting_meta", "operatorPicks");
+}
 
 function isEmptySeatPerson(name = "") {
   const v = String(name || "").trim();

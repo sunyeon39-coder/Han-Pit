@@ -1,7 +1,7 @@
 import { runTransaction } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 const RETRYABLE = new Set(["failed-precondition", "aborted"]);
-// layout_shared/global_waiting 처럼 여러 운영자가 동시에 같은 문서를 트랜잭션으로
+// global_waiting_meta/operatorPicks 처럼 여러 운영자가 동시에 같은 문서를 트랜잭션으로
 // 건드리는 "핫 도큐먼트"는 순간적으로 몰리면 resource-exhausted 가 날 수 있다 —
 // 이건 진짜 조합 오류가 아니라 "잠깐 몰렸으니 조금 쉬었다 다시" 신호라, contention
 // 재시도보다 더 길게 기다렸다가 재시도한다.

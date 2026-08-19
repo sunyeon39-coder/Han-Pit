@@ -17,7 +17,7 @@ import {
 export function createLayoutRealtimeBind(deps) {
   const {
     EVENT_REF,
-    WAITING_REF,
+    WAITING_COLLECTION_REF,
     TOURNAMENT_ID,
     attendanceWaitingState,
     eventState,
@@ -99,30 +99,29 @@ export function createLayoutRealtimeBind(deps) {
       }
     );
 
-    onSnapshot(
-      WAITING_REF,
-      (snap) => {
-        if (!snap.exists()) return;
-        if (typeof isLayoutOptimisticMutationInFlight === "function" && isLayoutOptimisticMutationInFlight()) {
-          return;
+    if (WAITING_COLLECTION_REF) {
+      onSnapshot(
+        WAITING_COLLECTION_REF,
+        (snap) => {
+          if (typeof isLayoutOptimisticMutationInFlight === "function" && isLayoutOptimisticMutationInFlight()) {
+            return;
+          }
+
+          const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+          waitingState.version = 2;
+          waitingState.waiting = rows.map((raw) => normalizeWaitingEntry(raw)).filter(Boolean);
+          waitingState.updatedAt = Date.now();
+          waitingState.__serverRows = waitingState.waiting.map((r) => ({ ...r }));
+
+          rebuildLayoutAttendanceInactiveUids(tid);
+          onAfterWaitingRemoteSnapshot();
+        },
+        (err) => {
+          console.error("WAITING_COLLECTION_REF snapshot error:", err);
         }
-
-        const nextW = snap.data() || {};
-        const nextUpdatedAt = Number(nextW.updatedAt || 0);
-
-        waitingState.version = nextW.version || 2;
-        waitingState.waiting = Array.isArray(nextW.waiting)
-          ? nextW.waiting.map((raw) => normalizeWaitingEntry(raw)).filter(Boolean)
-          : [];
-        waitingState.updatedAt = nextUpdatedAt || Date.now();
-
-        rebuildLayoutAttendanceInactiveUids(tid);
-        onAfterWaitingRemoteSnapshot();
-      },
-      (err) => {
-        console.error("WAITING_REF snapshot error:", err);
-      }
-    );
+      );
+    }
 
     if (tid && attendanceWaitingState) {
       onSnapshot(

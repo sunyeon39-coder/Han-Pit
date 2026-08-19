@@ -119,7 +119,7 @@ import {
     EVENT_DOC_ID,
     LAYOUT_CANVAS_VIEW_KEY,
     EVENT_REF,
-    WAITING_REF,
+    WAITING_COLLECTION_REF,
     GLOBAL_SEATS_REF,
     getCurrentTournamentId,
     hasValidLayoutRouteContext,
@@ -318,7 +318,7 @@ import {
     eventDocId: EVENT_DOC_ID,
     globalSeatsRef: GLOBAL_SEATS_REF,
     eventRef: EVENT_REF,
-    waitingRef: WAITING_REF,
+    waitingCollectionRef: WAITING_COLLECTION_REF,
     eventState,
     waitingState,
     clone,
@@ -424,7 +424,7 @@ import {
 
   const layoutRealtime = createLayoutRealtimeBind({
     EVENT_REF,
-    WAITING_REF,
+    WAITING_COLLECTION_REF,
     TOURNAMENT_ID,
     attendanceWaitingState,
     eventState,
@@ -533,7 +533,7 @@ import {
   }
 
   async function loadWaitingStateRemote() {
-    return layoutLoadWaitingStateRemote(WAITING_REF);
+    return layoutLoadWaitingStateRemote(WAITING_COLLECTION_REF);
   }
 
   async function acknowledgeMyNotification() {

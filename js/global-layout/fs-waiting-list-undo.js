@@ -1,7 +1,6 @@
 import { db } from "../firebase.js";
 import {
   deleteDoc,
-  doc,
   setDoc,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
@@ -18,7 +17,13 @@ import {
   resolveWaitingEntryById,
   setPendingWaitingBlock
 } from "./waiting.js";
-import { dedupeGlobalWaitingRows, personIdentityMatches, waitingPersonIdentityKey } from "../shared/tournament-waiting-queue.js";
+import {
+  dedupeGlobalWaitingRows,
+  personIdentityMatches,
+  waitingPersonIdentityKey,
+  globalWaitingDocRef
+} from "../shared/tournament-waiting-queue.js";
+import { findGlobalWaitingEntryRefs, diffGlobalWaitingRows } from "./waiting-entry-refs.js";
 import { flushOptimisticGlobalLayoutUi } from "./optimistic-seat-mutation.js";
 import { invalidateWaitingPanelFingerprint } from "./panel-ui.js";
 import { canManageGlobalLayoutOps } from "./ops-access.js";
@@ -355,43 +360,18 @@ function syncGlobalWaitingFromPayload(payload = {}, mode = "undo") {
   replaceGlobalWaitingLocal(nextWaiting);
 }
 
-export async function updateGlobalWaiting(nextWaiting = []) {
-  await runSerializedGlobalWaitingWrite(() =>
-    setDoc(
-      doc(db, "layout_shared", "global_waiting"),
-      {
-        version: 2,
-        waiting: nextWaiting,
-        updatedAt: Date.now(),
-        updatedAtServer: serverTimestamp()
-      },
-      { merge: true }
-    )
-  );
-}
-
 async function undoAssignPayload(payload) {
-  const waitingRef = doc(db, "layout_shared", "global_waiting");
   const seatRef = resolveUndoSeatRef(payload);
   const now = Date.now();
   const waitingRow = payload.waiting && typeof payload.waiting === "object" ? payload.waiting : null;
   if (!waitingRow) throw new Error("undo_assign_missing_waiting");
+  const waitingId = String(waitingRow.id || "").trim();
   const waitingBefore = Array.isArray(payload.waitingBefore) ? payload.waitingBefore : null;
+  const restoredWaitingRow =
+    (waitingId && waitingBefore?.find((w) => String(w?.id || "").trim() === waitingId)) || waitingRow;
   const seatBefore = payload.seatBefore && typeof payload.seatBefore === "object" ? payload.seatBefore : null;
 
   await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
-    const wSnap = await tx.get(waitingRef);
-    const wData = wSnap.exists() ? wSnap.data() || {} : {};
-    const arr = Array.isArray(wData.waiting) ? [...wData.waiting] : [];
-    const nextWaiting = waitingBefore
-      ? JSON.parse(JSON.stringify(waitingBefore))
-      : (() => {
-          const wid = String(waitingRow.id || "").trim();
-          const filtered = wid ? arr.filter((w) => String(w?.id || "").trim() !== wid) : arr;
-          filtered.push(waitingRow);
-          return filtered;
-        })();
-
     tx.set(
       seatRef,
       appendSeatShellFields(
@@ -419,17 +399,10 @@ async function undoAssignPayload(payload) {
       { merge: true }
     );
 
-    tx.set(
-      waitingRef,
-      {
-        ...wData,
-        version: 2,
-        waiting: nextWaiting,
-        updatedAt: now,
-        updatedAtServer: serverTimestamp()
-      },
-      { merge: true }
-    );
+    if (waitingId) {
+      const { id: _drop, ...rest } = restoredWaitingRow;
+      tx.set(globalWaitingDocRef(db, GL.tournamentId, waitingId), rest, { merge: true });
+    }
 
     const uid = String(waitingRow.uid || "").trim();
     if (uid) {
@@ -472,21 +445,21 @@ async function undoAssignPayload(payload) {
 }
 
 async function undoClearSeatPayload(payload) {
-  const waitingRef = doc(db, "layout_shared", "global_waiting");
   const seatRef = resolveUndoSeatRef(payload);
   const seatBefore = payload.seatBefore && typeof payload.seatBefore === "object" ? payload.seatBefore : null;
   if (!seatBefore) throw new Error("undo_clear_missing_seat");
-  const waitingBefore = Array.isArray(payload.waitingBefore) ? payload.waitingBefore : null;
   const now = Date.now();
+  // 좌석을 비운 결과 대기로 돌아갔던 사람을 되돌리는 것 — 그 사람의 대기 문서(들)를 찾아
+  // 좌석 복원과 같은 트랜잭션에서 지운다.
+  const restoredPerson = {
+    uid: String(seatBefore.personUid || "").trim(),
+    email: String(seatBefore.personEmail || "").trim(),
+    name: String(seatBefore.person || "").trim()
+  };
+  const waitingRefsToRemove = findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, restoredPerson);
 
   await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
-    const wSnap = await tx.get(waitingRef);
-    const wData = wSnap.exists() ? wSnap.data() || {} : {};
-    const nextWaiting = waitingBefore
-      ? JSON.parse(JSON.stringify(waitingBefore))
-      : Array.isArray(wData.waiting)
-        ? [...wData.waiting]
-        : [];
+    const waitingSnaps = await Promise.all(waitingRefsToRemove.map((r) => tx.get(r)));
 
     tx.set(
       seatRef,
@@ -505,17 +478,9 @@ async function undoClearSeatPayload(payload) {
       { merge: true }
     );
 
-    tx.set(
-      waitingRef,
-      {
-        ...wData,
-        version: 2,
-        waiting: nextWaiting,
-        updatedAt: now,
-        updatedAtServer: serverTimestamp()
-      },
-      { merge: true }
-    );
+    waitingSnaps.forEach((snap, i) => {
+      if (snap.exists()) tx.delete(waitingRefsToRemove[i]);
+    });
 
     const uid = String(seatBefore.personUid || "").trim();
     if (uid) {
@@ -549,7 +514,6 @@ async function redoAssignPayload(payload) {
   if (!targetSeatId || !eventId || !boxId) throw new Error("redo_assign_bad_ref");
 
   const seatBefore = payload.seatBefore && typeof payload.seatBefore === "object" ? payload.seatBefore : null;
-  const waitingRef = doc(db, "layout_shared", "global_waiting");
   const seatRef = resolveUndoSeatRef({
     targetSeatId,
     eventId,
@@ -560,46 +524,25 @@ async function redoAssignPayload(payload) {
   const seatedAt = resolveAssignedSeatedAt(payload, now);
   const waitingId = String(waitingRow.id || "").trim();
   const waitingUid = String(waitingRow.uid || "").trim();
-  const waitingEmail = String(waitingRow.email || "").trim();
-  const waitingName = String(waitingRow.name || "").trim();
-  const waitingTournamentId = String(waitingRow.tournamentId || GL.tournamentId).trim();
+
+  const prevUid = String(seatBefore?.personUid || "").trim();
+  const prevEmail = String(seatBefore?.personEmail || "").trim();
+  const prevName = String(seatBefore?.person || "").trim();
+  const bumpJoinedAt = Number(payload.swapReturnedJoinedAt || 0) || now;
+  const prevWaitingRow =
+    seatBefore && !isEmptyPerson(prevName)
+      ? rebuildWaitingAfterSeatToWait(
+          [],
+          GL.tournamentId,
+          { uid: prevUid, email: prevEmail, name: prevName },
+          bumpJoinedAt,
+          { source: "seat_swap", resetJoinedAt: true, ...(prevUid ? { id: `w_${prevUid}` } : {}) }
+        )[0]
+      : null;
 
   await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
-    const [wSnap, seatSnap] = await Promise.all([tx.get(waitingRef), tx.get(seatRef)]);
+    const seatSnap = await tx.get(seatRef);
     if (!seatSnap?.exists()) throw new Error("seat_not_found");
-
-    const wData = wSnap.exists() ? wSnap.data() || {} : {};
-    const arr = Array.isArray(wData.waiting) ? [...wData.waiting] : [];
-
-    let nextWaiting = arr.filter((w) => {
-      if (!w || typeof w !== "object") return false;
-      const wId = String(w.id || "").trim();
-      const wUid = String(w.uid || "").trim();
-      const wEmail = String(w.email || "").trim();
-      const wName = String(w.name || "").trim();
-      const wTid = String(w.tournamentId || "").trim();
-      const sameTournament = !wTid || wTid === waitingTournamentId;
-      if (!sameTournament) return true;
-      if (waitingId && wId === waitingId) return false;
-      if (waitingUid && wUid && wUid === waitingUid) return false;
-      if (waitingEmail && wEmail && wEmail === waitingEmail) return false;
-      if (!waitingUid && !waitingEmail && waitingName && wName === waitingName) return false;
-      return true;
-    });
-
-    const prevUid = String(seatBefore?.personUid || "").trim();
-    const prevEmail = String(seatBefore?.personEmail || "").trim();
-    const prevName = String(seatBefore?.person || "").trim();
-    if (seatBefore && !isEmptyPerson(prevName)) {
-      const bumpJoinedAt = Number(payload.swapReturnedJoinedAt || 0) || now;
-      nextWaiting = rebuildWaitingAfterSeatToWait(
-        nextWaiting,
-        GL.tournamentId,
-        { uid: prevUid, email: prevEmail, name: prevName },
-        bumpJoinedAt,
-        { source: "seat_swap", resetJoinedAt: true }
-      );
-    }
 
     tx.set(
       seatRef,
@@ -618,17 +561,11 @@ async function redoAssignPayload(payload) {
       { merge: true }
     );
 
-    tx.set(
-      waitingRef,
-      {
-        ...wData,
-        version: 2,
-        waiting: nextWaiting,
-        updatedAt: now,
-        updatedAtServer: serverTimestamp()
-      },
-      { merge: true }
-    );
+    if (waitingId) tx.delete(globalWaitingDocRef(db, GL.tournamentId, waitingId));
+    if (prevWaitingRow) {
+      const { id: prevId, ...prevRest } = prevWaitingRow;
+      tx.set(globalWaitingDocRef(db, GL.tournamentId, prevId), prevRest, { merge: true });
+    }
 
     if (waitingUid) {
       tx.set(
@@ -676,7 +613,6 @@ async function redoClearSeatPayload(payload) {
   const seatBefore = payload.seatBefore && typeof payload.seatBefore === "object" ? payload.seatBefore : null;
   if (!targetSeatId || !eventId || !boxId || !seatBefore) throw new Error("redo_clear_missing_seat");
 
-  const waitingRef = doc(db, "layout_shared", "global_waiting");
   const seatRef = resolveUndoSeatRef({
     targetSeatId,
     eventId,
@@ -697,15 +633,12 @@ async function redoClearSeatPayload(payload) {
   );
 
   await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
-    const [waitingSnap, seatSnap, ...otherSnaps] = await Promise.all([
-      tx.get(waitingRef),
+    const [seatSnap, ...otherSnaps] = await Promise.all([
       tx.get(seatRef),
       ...otherRefs.map((r) => tx.get(r))
     ]);
     if (!seatSnap?.exists()) throw new Error("seat_not_found");
 
-    const waitingData = waitingSnap.exists() ? waitingSnap.data() || {} : { waiting: [] };
-    const waitingArr = Array.isArray(waitingData.waiting) ? waitingData.waiting : [];
     let hasOtherSeat = false;
 
     if (!isEmptyPerson(prevName)) {
@@ -742,22 +675,15 @@ async function redoClearSeatPayload(payload) {
 
     if (!isEmptyPerson(prevName) && !hasOtherSeat) {
       const bumpJoinedAt = resolveReturnedJoinedAt(payload, now);
-      const nextWaiting = rebuildWaitingAfterSeatToWait(waitingArr, GL.tournamentId, {
-        uid: prevUid,
-        email: prevEmail,
-        name: prevName
-      }, bumpJoinedAt);
-      tx.set(
-        waitingRef,
-        {
-          ...waitingData,
-          version: 2,
-          waiting: nextWaiting,
-          updatedAt: now,
-          updatedAtServer: serverTimestamp()
-        },
-        { merge: true }
+      const [newRow] = rebuildWaitingAfterSeatToWait(
+        [],
+        GL.tournamentId,
+        { uid: prevUid, email: prevEmail, name: prevName },
+        bumpJoinedAt,
+        prevUid ? { id: `w_${prevUid}` } : {}
       );
+      const { id: newId, ...newRest } = newRow;
+      tx.set(globalWaitingDocRef(db, GL.tournamentId, newId), newRest, { merge: true });
     }
 
     if (prevUid) {
@@ -849,40 +775,6 @@ async function redoAddSeatPayload(payload) {
   await syncLayoutProjection(eventId, boxId);
 }
 
-async function redoRemoveWaitingPayload(payload) {
-  const removed =
-    payload.removedWaiting && typeof payload.removedWaiting === "object"
-      ? payload.removedWaiting
-      : null;
-  const wid = String(removed?.id || payload.waitingId || "").trim();
-  if (!wid) throw new Error("redo_remove_waiting_bad_ref");
-
-  const waitingRef = doc(db, "layout_shared", "global_waiting");
-  const now = Date.now();
-
-  await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
-    const snap = await tx.get(waitingRef);
-    const data = snap.exists() ? snap.data() || {} : {};
-    const arr = Array.isArray(data.waiting) ? [...data.waiting] : [];
-    const next = arr.filter((w) => String(w?.id || "").trim() !== wid);
-    if (next.length === arr.length) throw new Error("redo_remove_waiting_missing_row");
-    tx.set(
-      waitingRef,
-      {
-        ...data,
-        version: 2,
-        waiting: next,
-        updatedAt: now,
-        updatedAtServer: serverTimestamp()
-      },
-      { merge: true }
-    );
-  }));
-
-  // undo의 remove_waiting 처리(replaceGlobalWaitingLocal)와 대칭 — 서버 스냅샷 도착 전에도 즉시 반영
-  replaceGlobalWaitingLocal((GL.globalWaiting || []).filter((w) => String(w?.id || "").trim() !== wid));
-}
-
 function finishUndoRedoUiRefresh(snap = null) {
   resetGlobalLayoutSelectionAfterUndo(snap);
   markGlobalLayoutLocalMutation();
@@ -934,9 +826,8 @@ export async function undoLastGlobalAction() {
       );
       await syncLayoutProjection(eid, bid);
     } else if (snap.kind === "remove_waiting") {
-      const restored = Array.isArray(snap.snapshotBefore) ? snap.snapshotBefore : [];
-      await updateGlobalWaiting(restored);
-      replaceGlobalWaitingLocal(JSON.parse(JSON.stringify(restored)));
+      // 대기자 추가/삭제는 더 이상 배열 스냅샷으로 되돌릴 수 없다(문서 단위 저장으로 전환).
+      throw new Error("undo_unavailable_remove_waiting");
     } else {
       throw new Error("undo_unknown_kind");
     }
@@ -988,7 +879,7 @@ export async function redoLastGlobalAction() {
       removeSeatFromGlobalLayoutLocal({ targetSeatId: sid, firestoreDocId: snap.firestoreDocId });
       await syncLayoutProjection(eid, bid);
     } else if (snap.kind === "remove_waiting") {
-      await redoRemoveWaitingPayload(snap);
+      throw new Error("redo_unavailable_remove_waiting");
     } else {
       throw new Error("redo_unknown_kind");
     }
@@ -1042,7 +933,10 @@ export async function addManualWaiting() {
   GL.waitingMutationInFlight = true;
   markGlobalLayoutLocalMutation();
   try {
-    await updateGlobalWaiting([...(GL.globalWaiting || [])]);
+    const { id, ...rest } = row;
+    await runSerializedGlobalWaitingWrite(() =>
+      setDoc(globalWaitingDocRef(db, GL.tournamentId, id), rest)
+    );
   } catch (err) {
     console.error("addManualWaiting error:", err);
     replaceGlobalWaitingLocal(snapshotBefore);
@@ -1072,15 +966,14 @@ export async function removeManualWaiting(waitingId = "") {
   }
 
   try {
-    await updateGlobalWaiting([...(GL.globalWaiting || [])]);
+    await runSerializedGlobalWaitingWrite(() =>
+      deleteDoc(globalWaitingDocRef(db, GL.tournamentId, wid))
+    );
     // "내 선택 표시" 서버 해제는 이 삭제 저장이 끝난 뒤에 큐에 넣는다 — 먼저 넣으면
-    // 같은 직렬화 큐를 쓰는 updateGlobalWaiting이 그 쓰기를 기다리게 되어 매번 지연이 생긴다.
+    // 같은 직렬화 큐를 쓰는 삭제 쓰기를 기다리게 되어 매번 지연이 생긴다.
     if (hadSelectedWaiting) void clearMyWaitingPick();
-    pushGlobalUndo({
-      kind: "remove_waiting",
-      snapshotBefore,
-      removedWaiting: { ...row }
-    });
+    // 대기자 삭제는 문서 단위로 나뉘면서 "배열 전체 스냅샷" 되돌리기가 더는 성립하지
+    // 않아 되돌리기 스택에는 넣지 않는다(좌석 관련 되돌리기는 그대로 동작).
   } catch (err) {
     console.error("removeManualWaiting error:", err);
     replaceGlobalWaitingLocal(snapshotBefore);
@@ -1116,7 +1009,6 @@ async function setWaitingBlockedOnce(waitingId = "", checked = false, seedTarget
   let target = resolveWaitingEntryById(wid) || seedTarget;
   if (!target) return;
 
-  const waitingRef = doc(db, "layout_shared", "global_waiting");
   const now = Date.now();
   const nextChecked = checked === true;
   const snapshotBefore = JSON.parse(JSON.stringify(GL.globalWaiting || []));
@@ -1130,13 +1022,18 @@ async function setWaitingBlockedOnce(waitingId = "", checked = false, seedTarget
   let blockSaved = false;
   try {
     target = resolveWaitingEntryById(wid) || target;
+    const widRef = globalWaitingDocRef(db, GL.tournamentId, wid);
+    const matchRefs = findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, target);
+    const refs = matchRefs.some((r) => r.path === widRef.path) ? matchRefs : [widRef, ...matchRefs];
+
     await runSerializedGlobalWaitingWrite(() =>
       runFirestoreTransactionWithRetry(
         db,
         async (tx) => {
-          const snap = await tx.get(waitingRef);
-          const data = snap.exists() ? snap.data() || {} : {};
-          const arr = Array.isArray(data.waiting) ? [...data.waiting] : [];
+          const snaps = await Promise.all(refs.map((r) => tx.get(r)));
+          const arr = snaps
+            .map((s, i) => (s.exists() ? { id: refs[i].id, ...s.data() } : null))
+            .filter(Boolean);
           const { next: blockedNext, changed } = applyWaitingBlockToWaitingArray(
             arr,
             wid,
@@ -1144,31 +1041,15 @@ async function setWaitingBlockedOnce(waitingId = "", checked = false, seedTarget
             nextChecked,
             now
           );
+          if (!changed) return;
           const next = dedupeGlobalWaitingRows(blockedNext, GL.tournamentId);
-          if (!changed && next.length === arr.length) {
-            let same = next.length === arr.length;
-            if (same) {
-              for (let i = 0; i < next.length; i++) {
-                if (String(next[i]?.id || "") !== String(arr[i]?.id || "")) {
-                  same = false;
-                  break;
-                }
-              }
-            }
-            if (same) return;
+          const { toSet, toDelete } = diffGlobalWaitingRows(arr, next);
+          for (const { id, data } of toSet) {
+            tx.set(globalWaitingDocRef(db, GL.tournamentId, id), data, { merge: true });
           }
-
-          tx.set(
-            waitingRef,
-            {
-              ...data,
-              version: 2,
-              waiting: next,
-              updatedAt: now,
-              updatedAtServer: serverTimestamp()
-            },
-            { merge: true }
-          );
+          for (const id of toDelete) {
+            tx.delete(globalWaitingDocRef(db, GL.tournamentId, id));
+          }
         },
         8
       )

@@ -16,9 +16,15 @@ import {
   getAttendanceRef,
   getGlobalSeatDocRef,
   isEmptyPerson,
+  makeUid,
   resolveSeatEventBox
 } from "./utils.js";
 import { getCandidateSeatRefsForPerson } from "./seat-candidates.js";
+import { findGlobalWaitingEntryRefs } from "./waiting-entry-refs.js";
+import {
+  globalWaitingDocRef,
+  operatorPicksDocRef
+} from "../shared/tournament-waiting-queue.js";
 import { getCurrentTournamentWaiting, resolveSelectedWaitingForAssign } from "./waiting.js";
 import { renderWaiting } from "./panel-ui.js";
 import {
@@ -170,7 +176,6 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   // 기다리게 되어 배정마다 불필요한 지연이 매번 생긴다.)
 
   const now = Date.now();
-  const waitingRef = doc(db, "layout_shared", "global_waiting");
   const touchedProjectionKeys = new Set();
 
   markGlobalLayoutLocalMutation();
@@ -239,7 +244,6 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
       const waitingEmail = String(waiting.email || "").trim();
       const waitingEmailLc = waitingEmail.toLowerCase();
       const waitingName = String(waiting.name || "").trim();
-      const waitingTournamentId = String(waiting.tournamentId || GL.tournamentId).trim();
 
       const seatSnap = await tx.get(seatRef);
       if (!seatSnap?.exists()) throw new Error("seat_not_found");
@@ -286,13 +290,31 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
           : null;
 
       const dupRefs = uniqueDocRefs([...waitingDupRefs, ...prevDupRefs]);
-      const readRefs = [waitingRef, ...(eventRef ? [eventRef] : []), ...dupRefs];
+
+      // 배정 대상(waiting)의 대기 문서(들) — 보통 하나지만 중복 행이 있으면 여러 개일 수 있다
+      const assigneeWaitingRefs = uniqueDocRefs([
+        globalWaitingDocRef(db, GL.tournamentId, waitingId || makeUid("wait")),
+        ...findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, {
+          uid: waitingUid,
+          email: waiting.email,
+          name: waitingName
+        })
+      ]);
+      const opPicksRef = operatorPicksDocRef(db, GL.tournamentId);
+
+      const readRefs = [
+        opPicksRef,
+        ...(eventRef ? [eventRef] : []),
+        ...dupRefs,
+        ...assigneeWaitingRefs
+      ];
       const readSnaps = await Promise.all(readRefs.map((r) => tx.get(r)));
 
-      const waitingSnap = readSnaps[0];
+      const opPicksSnap = readSnaps[0];
       const eventSnap = eventRef ? readSnaps[1] : null;
       const dupSnapOffset = eventRef ? 2 : 1;
-      const dupSnaps = readSnaps.slice(dupSnapOffset);
+      const dupSnaps = readSnaps.slice(dupSnapOffset, dupSnapOffset + dupRefs.length);
+      const assigneeWaitingSnaps = readSnaps.slice(dupSnapOffset + dupRefs.length);
 
       let eventCardLabel =
         getEventCardIdFromRecord({ id: canonicalSeatEventId }) || canonicalSeatEventId || "이벤트";
@@ -326,15 +348,18 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
         );
       }
 
-      const waitingData = waitingSnap.exists() ? waitingSnap.data() || {} : { waiting: [] };
-      const waitingArr = Array.isArray(waitingData.waiting) ? waitingData.waiting : [];
-      undoWaitingBefore = JSON.parse(JSON.stringify(waitingArr));
+      // 배정 대상의 기존 대기 문서(들) — 되돌리기용 스냅샷 + 이 트랜잭션에서 지울 목록
+      const assigneeExistingRows = assigneeWaitingSnaps
+        .map((s, i) => (s.exists() ? { id: assigneeWaitingRefs[i].id, ...s.data() } : null))
+        .filter(Boolean);
+      undoWaitingBefore = JSON.parse(JSON.stringify(assigneeExistingRows));
 
-      // 이 트랜잭션이 이미 같은 문서(global_waiting)를 읽고 쓰는 김에, 이 배정을 요청한
+      // 이 트랜잭션이 이미 운영자 찜(operatorPicks) 문서도 같이 읽으니, 배정을 요청한
       // 운영자의 "내 선택 표시"도 여기서 같이 지운다. 별도 쓰기로 빼면 직렬화 큐 때문에
       // 이 트랜잭션이 그 쓰기를 기다리게 되어 배정마다 지연이 생긴다.
       const myUid = String(GL.currentUser?.uid || auth.currentUser?.uid || "").trim();
-      let nextOperatorPicks = waitingData.operatorPicks;
+      const opPicksData = opPicksSnap.exists() ? opPicksSnap.data() || {} : {};
+      let nextOperatorPicks = opPicksData.operatorPicks;
       if (
         myUid &&
         nextOperatorPicks &&
@@ -344,22 +369,6 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
         nextOperatorPicks = { ...nextOperatorPicks };
         delete nextOperatorPicks[myUid];
       }
-
-      let nextWaiting = waitingArr.filter((w) => {
-        if (!w || typeof w !== "object") return false;
-        const wId = String(w.id || "").trim();
-        const wUid = String(w.uid || "").trim();
-        const wEmail = String(w.email || "").trim();
-        const wName = String(w.name || "").trim();
-        const wTid = String(w.tournamentId || "").trim();
-        const sameTournament = !wTid || wTid === waitingTournamentId;
-        if (!sameTournament) return true;
-        if (waitingId && wId === waitingId) return false;
-        if (waitingUid && wUid && wUid === waitingUid) return false;
-        if (waitingEmail && wEmail && wEmail === waitingEmail) return false;
-        if (!waitingUid && !waitingEmail && waitingName && wName === waitingName) return false;
-        return true;
-      });
 
       let bumpedPrevHasOtherSeat = false;
       if (wasOccupied && !isEmptyPerson(prevName)) {
@@ -375,15 +384,18 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
         }
         if (!bumpedPrevHasOtherSeat) {
           swapReturnedJoinedAt = now;
-          nextWaiting = rebuildWaitingAfterSeatToWait(
-            nextWaiting,
-            GL.tournamentId,
-            { uid: prevUid, email: prevEmail, name: prevName },
-            now,
-            { source: "seat_swap", resetJoinedAt: true }
-          );
         }
       }
+      const prevReturnsToWaitingRow =
+        wasOccupied && !isEmptyPerson(prevName) && !bumpedPrevHasOtherSeat
+          ? rebuildWaitingAfterSeatToWait(
+              [],
+              GL.tournamentId,
+              { uid: prevUid, email: prevEmail, name: prevName },
+              now,
+              { source: "seat_swap", resetJoinedAt: true, ...(prevUid ? { id: `w_${prevUid}` } : {}) }
+            )[0]
+          : null;
 
       undoSeatSnapshot = captureSeatShellSnapshot(seat, seatData);
       undoSeatBefore = {
@@ -414,18 +426,20 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
         { merge: true }
       );
 
-      tx.set(
-        waitingRef,
-        {
-          ...waitingData,
-          version: 2,
-          waiting: nextWaiting,
-          ...(nextOperatorPicks !== waitingData.operatorPicks ? { operatorPicks: nextOperatorPicks } : {}),
-          updatedAt: now,
-          updatedAtServer: serverTimestamp()
-        },
-        { merge: true }
-      );
+      for (const ref of assigneeWaitingRefs) {
+        tx.delete(ref);
+      }
+      if (prevReturnsToWaitingRow) {
+        const { id: prevId, ...prevRest } = prevReturnsToWaitingRow;
+        tx.set(globalWaitingDocRef(db, GL.tournamentId, prevId), prevRest, { merge: true });
+      }
+      if (nextOperatorPicks !== opPicksData.operatorPicks) {
+        tx.set(
+          opPicksRef,
+          { operatorPicks: nextOperatorPicks, updatedAt: now, updatedAtServer: serverTimestamp() },
+          { merge: true }
+        );
+      }
 
       if (waiting.uid) {
         tx.set(

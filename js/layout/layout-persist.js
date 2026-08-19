@@ -1,7 +1,9 @@
 import { db } from "../firebase.js";
 import { buildSeatAssignedNotificationWrite } from "../shared/seat-notification-push.js";
-import { doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { doc, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { syncLayoutGlobalSeatsForCurrentLayout } from "./global-seat-sync.js";
+import { globalWaitingDocRef } from "../shared/tournament-waiting-queue.js";
+import { diffGlobalWaitingRows } from "../global-layout/waiting-entry-refs.js";
 
 const SAVE_EVENT_DEBOUNCE_MS = 50;
 const SAVE_WAITING_DEBOUNCE_MS = 40;
@@ -13,7 +15,7 @@ export function createLayoutPersistServices({
   eventDocId,
   globalSeatsRef,
   eventRef,
-  waitingRef,
+  waitingCollectionRef,
   eventState,
   waitingState,
   clone,
@@ -72,24 +74,31 @@ export function createLayoutPersistServices({
   }
 
   async function saveWaitingState() {
-    if (!hasWritableLayoutContext()) return;
+    if (!hasWritableLayoutContext() || !waitingCollectionRef) return;
     if (typeof beginLayoutOptimisticMutation === "function") beginLayoutOptimisticMutation();
     try {
       const sanitizedWaitingState = sanitizeLayoutState({
         seats: clone(eventState.seats),
         waiting: clone(waitingState.waiting)
       });
+      const nextRows = sanitizedWaitingState.waiting;
+      const prevRows = Array.isArray(waitingState.__serverRows) ? waitingState.__serverRows : [];
+      const { toSet, toDelete } = diffGlobalWaitingRows(prevRows, nextRows);
 
-      await setDoc(
-        waitingRef,
-        {
-          ...clone(waitingState),
-          waiting: sanitizedWaitingState.waiting,
-          updatedAt: Date.now(),
-          updatedAtServer: serverTimestamp()
-        },
-        { merge: true }
-      );
+      if (toSet.length || toDelete.length) {
+        await Promise.all([
+          ...toSet.map(({ id, data }) =>
+            setDoc(
+              globalWaitingDocRef(db, tournamentId, id),
+              { ...data, updatedAt: Date.now(), updatedAtServer: serverTimestamp() },
+              { merge: true }
+            )
+          ),
+          ...toDelete.map((id) => deleteDoc(globalWaitingDocRef(db, tournamentId, id)))
+        ]);
+      }
+
+      waitingState.__serverRows = nextRows.map((r) => ({ ...r }));
     } catch (err) {
       console.error("saveWaitingState error:", err);
     } finally {

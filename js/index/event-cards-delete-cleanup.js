@@ -4,6 +4,8 @@ import {
   doc,
   getDoc,
   getDocs,
+  query,
+  where,
   setDoc,
   writeBatch
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
@@ -18,48 +20,34 @@ import { IX } from "./state.js";
 import { getAttendanceRef } from "./dealer-attendance-refs.js";
 import { writeAttendanceLog } from "./dealer-attendance-logs.js";
 import { getLayoutEventDocByEventAndBox } from "./layout-events.js";
-import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
-import { runSerializedGlobalWaitingWrite } from "../global-layout/global-waiting-write-lock.js";
+import { globalWaitingCollectionRef } from "../shared/tournament-waiting-queue.js";
 
-export async function removeUsersFromSharedWaitingByUids(targetUids = []) {
+export async function removeUsersFromSharedWaitingByUids(targetUids = [], tournamentId = "") {
   const uidSet = new Set(
     (Array.isArray(targetUids) ? targetUids : [])
       .map((uid) => String(uid || "").trim())
       .filter(Boolean)
   );
+  const tid = String(tournamentId || "").trim();
 
-  if (!uidSet.size) return;
+  if (!uidSet.size || !tid) return;
 
-  const waitingRef = doc(db, "layout_shared", "global_waiting");
+  const collRef = globalWaitingCollectionRef(db, tid);
+  const uidChunks = chunkArray([...uidSet], 30);
 
-  await runSerializedGlobalWaitingWrite(() =>
-    runFirestoreTransactionWithRetry(db, async (tx) => {
-      const snap = await tx.get(waitingRef);
-      if (!snap.exists()) return;
+  const refsToDelete = new Map();
+  for (const chunk of uidChunks) {
+    const snap = await getDocs(query(collRef, where("uid", "in", chunk)));
+    snap.docs.forEach((d) => refsToDelete.set(d.ref.path, d.ref));
+  }
 
-      const data = snap.data() || {};
-      const waiting = Array.isArray(data.waiting) ? data.waiting : [];
+  if (!refsToDelete.size) return;
 
-      const nextWaiting = waiting.filter((item) => {
-        if (!item || typeof item !== "object") return false;
-        const uid = String(item.uid || "").trim();
-        return !uidSet.has(uid);
-      });
-
-      if (nextWaiting.length === waiting.length) return;
-
-      tx.set(
-        waitingRef,
-        {
-          ...data,
-          version: 2,
-          waiting: nextWaiting,
-          updatedAt: Date.now()
-        },
-        { merge: true }
-      );
-    })
-  );
+  for (const refsChunk of chunkArray([...refsToDelete.values()], 400)) {
+    const batch = writeBatch(db);
+    refsChunk.forEach((ref) => batch.delete(ref));
+    await commitBatchWithRetry(batch, { maxRetries: 1, retryDelayMs: 250 });
+  }
 }
 
 function mergeAffectedUser(map, user) {
@@ -206,7 +194,7 @@ export async function forceCheckOutUsersForDeletedEvent({ eventId = "", boxId = 
       )
     );
 
-    await removeUsersFromSharedWaitingByUids(affectedUsers.map((u) => u.uid));
+    await removeUsersFromSharedWaitingByUids(affectedUsers.map((u) => u.uid), tournamentId);
   }
 
   if (layoutDoc) {

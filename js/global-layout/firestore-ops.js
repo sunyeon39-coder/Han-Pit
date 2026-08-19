@@ -8,7 +8,6 @@ export {
   syncLayoutProjection
 } from "./fs-layout-projection.js";
 export {
-  updateGlobalWaiting,
   undoLastGlobalAction,
   redoLastGlobalAction,
   addManualWaiting,

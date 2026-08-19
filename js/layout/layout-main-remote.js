@@ -55,11 +55,13 @@ export async function layoutLoadEventStateRemote(eventRef) {
   }
 }
 
-export async function layoutLoadWaitingStateRemote(waitingRef) {
+export async function layoutLoadWaitingStateRemote(waitingCollectionRef) {
+  if (!waitingCollectionRef) return null;
   try {
-    const snap = await getDoc(waitingRef);
-    if (!snap.exists()) return null;
-    return snap.data() || null;
+    const snap = await getDocs(waitingCollectionRef);
+    if (snap.empty) return null;
+    const waiting = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return { version: 2, waiting, updatedAt: Date.now() };
   } catch (err) {
     console.error("loadWaitingStateRemote error:", err);
     return null;
