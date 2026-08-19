@@ -390,6 +390,16 @@ export function startGlobalLayoutApp() {
     }, 1000);
   }
 
+  /**
+   * 모바일 PWA 가 백그라운드에 오래 머물면 layout_notifications onSnapshot 이 끊긴 채
+   * 복귀하는 경우가 있어, 배치 알림 모달이 다시 뜨지 않을 수 있다(layout.html과 동일 원인).
+   * 포그라운드 복귀 시 getDoc 으로 한 번 더 직접 확인해 놓친 알림을 잡아준다.
+   */
+  function recheckGlobalLayoutSeatNotifyOnResume() {
+    if (!layoutIsMobile() || !globalLayoutMobileSeatNotify) return;
+    void globalLayoutMobileSeatNotify.showPendingSeatNotificationOnce();
+  }
+
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") {
       if (GL.timerHandle) {
@@ -401,7 +411,10 @@ export function startGlobalLayoutApp() {
     if (globalLayoutSessionStarted && !GL.timerHandle) {
       startGlobalLayoutTimer();
     }
+    recheckGlobalLayoutSeatNotifyOnResume();
   });
+  window.addEventListener("pageshow", recheckGlobalLayoutSeatNotifyOnResume);
+  window.addEventListener("focus", recheckGlobalLayoutSeatNotifyOnResume);
 
   window.addEventListener("beforeunload", () => {
     globalLayoutSessionStarted = false;

@@ -620,7 +620,22 @@ import {
       (urlTournamentId && urlTournamentId !== TOURNAMENT_ID) ||
       (urlEventId && urlEventId !== EVENT_ID) ||
       (urlBoxId && urlBoxId !== BOX_ID);
-    if (changed) location.reload();
+    if (changed) {
+      location.reload();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * 모바일 PWA 는 백그라운드에 오래 머물면 onSnapshot 연결이 끊긴 채 복귀하는 경우가 있어
+   * (배치 알림 layout_notifications 실시간 구독 포함), "확인" 을 누른 뒤 새로 배치돼도
+   * 알림 모달이 다시 뜨지 않는 원인이 된다. 포그라운드 복귀 시 route 변경이 없으면
+   * 최소한 getDoc 으로 한 번 더 직접 확인해 놓친 알림을 잡아준다.
+   */
+  function recheckLayoutOnResume() {
+    if (reloadIfLayoutRouteParamsChanged()) return;
+    void seatNotify.showPendingSeatNotificationOnce();
   }
 
   document.addEventListener("visibilitychange", () => {
@@ -631,11 +646,11 @@ import {
       }
       return;
     }
-    reloadIfLayoutRouteParamsChanged();
+    recheckLayoutOnResume();
     if (!timerHandle) startTick();
   });
-  window.addEventListener("pageshow", reloadIfLayoutRouteParamsChanged);
-  window.addEventListener("focus", reloadIfLayoutRouteParamsChanged);
+  window.addEventListener("pageshow", recheckLayoutOnResume);
+  window.addEventListener("focus", recheckLayoutOnResume);
 
   ({ scheduleLayoutRealtimeUi } = createLayoutRealtimeUi({
     render,
