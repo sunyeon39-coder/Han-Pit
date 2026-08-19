@@ -605,6 +605,24 @@ import {
     }, 1000);
   }
 
+  /**
+   * PWA를 백그라운드에 둔 채 알림(client.navigate)으로 다른 이벤트/대회로 이동시키려는
+   * 시도가 실패·부분 반영되면, 화면은 예전 tournamentId/eventId/boxId 로 초기화된 채로
+   * 남아 좌석·대기 명단이 전부 비어 보인다(강제 종료 후 재실행하면 정상화되는 이유).
+   * 포그라운드로 돌아올 때마다 실제 주소창 파라미터와 비교해 다르면 새로고침해 복구한다.
+   */
+  function reloadIfLayoutRouteParamsChanged() {
+    const params = new URLSearchParams(location.search);
+    const urlTournamentId = params.get("tournamentId");
+    const urlEventId = params.get("eventId");
+    const urlBoxId = params.get("boxId");
+    const changed =
+      (urlTournamentId && urlTournamentId !== TOURNAMENT_ID) ||
+      (urlEventId && urlEventId !== EVENT_ID) ||
+      (urlBoxId && urlBoxId !== BOX_ID);
+    if (changed) location.reload();
+  }
+
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") {
       if (timerHandle) {
@@ -613,8 +631,11 @@ import {
       }
       return;
     }
+    reloadIfLayoutRouteParamsChanged();
     if (!timerHandle) startTick();
   });
+  window.addEventListener("pageshow", reloadIfLayoutRouteParamsChanged);
+  window.addEventListener("focus", reloadIfLayoutRouteParamsChanged);
 
   ({ scheduleLayoutRealtimeUi } = createLayoutRealtimeUi({
     render,

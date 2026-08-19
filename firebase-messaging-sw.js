@@ -141,7 +141,12 @@ self.addEventListener("notificationclick", (event) => {
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
         if (typeof client.navigate === "function") {
-          return client.navigate(targetUrl).then(() => client.focus());
+          // iOS WebKit 등에서 navigate() 가 조용히 실패/부분 반영되면 예전 화면에
+          // 그대로 focus 만 되는 경우가 있어, 실패 시 새 창을 여는 걸로 대체한다.
+          return client
+            .navigate(targetUrl)
+            .then((navigated) => (navigated || client).focus())
+            .catch(() => (clients.openWindow ? clients.openWindow(targetUrl) : client.focus()));
         }
         if ("focus" in client) {
           return client.focus();
