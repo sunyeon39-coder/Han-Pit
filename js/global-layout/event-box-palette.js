@@ -23,14 +23,17 @@ export function buildEventBoxPaletteMap(seats = []) {
   return map;
 }
 
-export function getEventBoxPaletteClass(seat = {}, paletteMap = null) {
+/**
+ * 항상 key 자체에서만 색을 뽑는다(같은 카드/박스는 항상 같은 색).
+ * 예전에는 현재 화면에 있는 좌석들의 key 정렬 순서로 색을 매겼는데(paletteMap),
+ * 캔버스가 바뀐 Seat만 부분적으로 다시 그리다 보니 같은 카드+박스인데도
+ * 어떤 좌석은 예전 렌더링 때의 색이 그대로 남아있어 서로 다른 색으로 보이는
+ * 문제가 있었다. paletteMap 인자는 이전 호출부와의 호환을 위해 남겨두되 더는 쓰지 않는다.
+ */
+export function getEventBoxPaletteClass(seat = {}) {
   const key = getSeatEventBoxKey(seat);
   if (!key) return "eb-palette-0";
-  const idx =
-    paletteMap instanceof Map && paletteMap.has(key)
-      ? paletteMap.get(key)
-      : fallbackPaletteIndex(key);
-  return `eb-palette-${idx}`;
+  return `eb-palette-${fallbackPaletteIndex(key)}`;
 }
 
 function fallbackPaletteIndex(key = "") {
