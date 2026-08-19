@@ -671,6 +671,23 @@ body.page-global-layout .pc-panel .global-list > .gl-panel-list-row {
   margin-bottom: 0;
 }
 
+.wait-group-label {
+  margin: 10px 0 6px;
+  padding: 0 2px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(186, 220, 255, 0.88);
+}
+
+.wait-group-label--block {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 180, 120, 0.95);
+}
+
 /* 통합 배치도 Seat 행: 긴 이름/메타에서도 레이아웃 깨짐 방지 */
 body.page-global-layout .seat-manage-main--oneline {
   display: grid;

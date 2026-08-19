@@ -25,7 +25,14 @@ import {
   getPcWaitColEl,
   getPcWaitScrollEl
 } from "./pc-panel-split.js";
-import { getWaitingDisplayStartMs, isWaitingBlocked, sortWaitingForDisplay, resolveSelectedWaitingForAssign, getCurrentTournamentWaiting } from "./waiting.js";
+import {
+  getWaitingDisplayStartMs,
+  isWaitingBlocked,
+  sortWaitingForDisplay,
+  resolveSelectedWaitingForAssign,
+  getCurrentTournamentWaiting,
+  partitionWaitingForMobileDisplay
+} from "./waiting.js";
 import {
   buildOperatorLegendHtml,
   buildWaitingPickBadgesHtml,
@@ -370,36 +377,35 @@ export function renderWaiting(_waiting) {
   }
   GL._waitingPanelFp = nextFp;
 
-  const waitingRows = sortedWaiting
-    .map((w) => {
-      const wid = String(w.id || "");
-      const pickUi = waitingRowPickClass(wid);
-      const selected = pickUi.isSelected;
-      const blocked = isWaitingBlocked(w);
-      const startMs = getWaitingDisplayStartMs(w);
-      const elapsed = Date.now() - startMs;
-      const tClass = timerClass(elapsed);
-      const blockCheck = canManageGlobalLayoutOps()
-        ? `<label class="wait-check-slot" title="체크 시 배치 블락 + 체크 시각 기준 타이머">
-            <input type="checkbox" class="wait-block-check" data-block-wid="${escapeHtml(wid)}" ${blocked ? "checked" : ""} />
-          </label>`
-        : "";
-      const blockBadge = blocked ? `<span class="wait-block-badge">BLOCK</span>` : "";
-      const joinedAtMs =
-        toMillis(
-          w.joinedAt ||
-            w.createdAt ||
-            w.joinedAtServer ||
-            w.addedAt ||
-            w.carryStartedAt ||
-            0
-        ) || 0;
-      const blockAccumulatedMs = Number(w.blockAccumulatedMs || 0) || 0;
-      const blockCheckedAtMs = Number(w.blockCheckedAt || 0) || 0;
-      const deleteBtn = canManageGlobalLayoutOps()
-        ? `<button class="pill-inline danger" type="button" data-delete-wid="${escapeHtml(wid)}">삭제</button>`
-        : "";
-      return `
+  const buildWaitRowHtml = (w) => {
+    const wid = String(w.id || "");
+    const pickUi = waitingRowPickClass(wid);
+    const selected = pickUi.isSelected;
+    const blocked = isWaitingBlocked(w);
+    const startMs = getWaitingDisplayStartMs(w);
+    const elapsed = Date.now() - startMs;
+    const tClass = timerClass(elapsed);
+    const blockCheck = canManageGlobalLayoutOps()
+      ? `<label class="wait-check-slot" title="체크 시 배치 블락 + 체크 시각 기준 타이머">
+          <input type="checkbox" class="wait-block-check" data-block-wid="${escapeHtml(wid)}" ${blocked ? "checked" : ""} />
+        </label>`
+      : "";
+    const blockBadge = blocked ? `<span class="wait-block-badge">BLOCK</span>` : "";
+    const joinedAtMs =
+      toMillis(
+        w.joinedAt ||
+          w.createdAt ||
+          w.joinedAtServer ||
+          w.addedAt ||
+          w.carryStartedAt ||
+          0
+      ) || 0;
+    const blockAccumulatedMs = Number(w.blockAccumulatedMs || 0) || 0;
+    const blockCheckedAtMs = Number(w.blockCheckedAt || 0) || 0;
+    const deleteBtn = canManageGlobalLayoutOps()
+      ? `<button class="pill-inline danger" type="button" data-delete-wid="${escapeHtml(wid)}">삭제</button>`
+      : "";
+    return `
     <div
       class="seat-manage-row wait-panel-row gl-panel-list-row ${selected ? "selected" : ""} ${blocked ? "is-blocked" : ""} ${pickUi.classes}"
       style="--wait-pick-color:${escapeHtml(pickUi.pickColor)}"
@@ -424,8 +430,18 @@ export function renderWaiting(_waiting) {
       </div>
     </div>
   `;
-    })
-    .join("");
+  };
+
+  const { normal: normalWaiting, blocked: blockedWaiting } = partitionWaitingForMobileDisplay(sortedWaiting);
+  let waitingRows = "";
+  if (normalWaiting.length) {
+    if (blockedWaiting.length) waitingRows += `<div class="wait-group-label">대기</div>`;
+    waitingRows += normalWaiting.map(buildWaitRowHtml).join("");
+  }
+  if (blockedWaiting.length) {
+    waitingRows += `<div class="wait-group-label wait-group-label--block">BLOCK</div>`;
+    waitingRows += blockedWaiting.map(buildWaitRowHtml).join("");
+  }
 
   const listHtml = waitingRows || `<div class="empty-panel">현재 대기자가 없습니다.</div>`;
   if (existingList && existingManual) {
