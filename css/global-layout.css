@@ -78,6 +78,11 @@ body.page-global-layout .pc-panel .global-pc-ops-tabs {
   display: none !important;
 }
 
+/* 메뉴(☰) 버튼으로 대기/Seat 패널 접기·펼치기 */
+body.page-global-layout:not(.gl-view-only) #pcPanel:not(.open) {
+  display: none !important;
+}
+
 /* 운영 권한 없는 PC 조회 전용 사용자 — 캔버스만 노출, 대기/Seat 패널은 숨김 */
 body.page-global-layout.gl-view-only #pcPanel,
 body.page-global-layout.gl-view-only #mobileSheet,
@@ -267,11 +272,7 @@ body.page-global-layout .pc-panel .global-meta-actions {
     pointer-events: none !important;
   }
 
-  body.page-global-layout .pc-panel {
-    transform: translateX(0) !important;
-  }
-
-  body.page-global-layout #app {
+  body.page-global-layout #app.with-panel {
     padding-right: min(calc(48vw + 14px), 654px);
   }
 
