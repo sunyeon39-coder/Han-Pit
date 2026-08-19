@@ -3,10 +3,6 @@ html, body {
   padding: 0;
 }
 
-:root {
-  --gl-topic-h: 53px;
-}
-
 #app {
   height: calc(100vh - var(--topbar-h));
   padding: 14px;
@@ -18,65 +14,6 @@ html, body {
 
 body.page-global-layout.has-topic-bar #app {
   height: calc(100vh - var(--topbar-h) - var(--gl-topic-h));
-}
-
-.gl-topic-bar {
-  display: flex;
-  align-items: stretch;
-  height: var(--gl-topic-h);
-  border-top: 1px solid var(--accent-gold);
-  border-bottom: 1px solid var(--accent-gold);
-  background: var(--chrome-bg);
-  overflow: hidden;
-}
-
-.gl-topic-bar[hidden] {
-  display: none;
-}
-
-.gl-topic-bar__badge {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 144px;
-  padding: 0 26px;
-  background: linear-gradient(180deg, var(--accent-gold-strong), var(--accent-gold));
-  color: #241400;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  font-size: 16px;
-}
-
-.gl-topic-bar__track {
-  position: relative;
-  flex: 1 1 auto;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  padding-left: 20px;
-}
-
-.gl-topic-bar__text {
-  display: inline-block;
-  white-space: nowrap;
-  padding-left: 100%;
-  color: #f2f5ff;
-  font-weight: 800;
-  font-size: 25px;
-  animation-name: gl-topic-marquee;
-  animation-timing-function: linear;
-  animation-iteration-count: infinite;
-  animation-duration: 24s;
-}
-
-@keyframes gl-topic-marquee {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-100%);
-  }
 }
 
 #app.with-panel {

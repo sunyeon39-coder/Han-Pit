@@ -34,6 +34,8 @@ export const IX = {
   deleteEventCardBtn: null,
   eventCardList: null,
   dealerOpsMount: null,
+  topicBar: null,
+  topicBarText: null,
 
   enablePushBtn: null,
   seatMapBtn: null,
@@ -157,6 +159,8 @@ export function refreshIndexDomRefs() {
   IX.deleteEventCardBtn = $("deleteEventCardBtn");
   IX.eventCardList = $("eventCardList");
   IX.dealerOpsMount = $("dealerOpsMount");
+  IX.topicBar = $("topicBar");
+  IX.topicBarText = $("topicBarText");
 
   IX.enablePushBtn = $("enablePushBtn");
   IX.seatMapBtn = $("seatMapBtn");

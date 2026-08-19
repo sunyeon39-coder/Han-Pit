@@ -12,6 +12,7 @@ import { IX } from "./state.js";
 import { escapeHtml } from "../shared/dom-utils.js";
 import { readIndexEventsPersistedCache } from "./index-events-session-cache.js";
 import { render } from "./event-cards-render.js";
+import { renderIndexTopicBar } from "./topic-bar.js";
 import {
   isFirestoreQuotaCoolingDown,
   noteFirestoreQuotaExceeded
@@ -78,6 +79,7 @@ function applyTournamentDoc(docSnap) {
     String(prev.startAt || "") !== String(next.startAt || "");
 
   IX.currentTournament = next;
+  renderIndexTopicBar();
   const code = String(next.requiredCode || "").trim();
   if (code && next.id) {
     sessionStorage.setItem(`tournamentRequiredCode:${next.id}`, code);
