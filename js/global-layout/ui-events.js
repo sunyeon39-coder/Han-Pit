@@ -615,6 +615,13 @@ export function bindGlobalLayoutEventHandlers() {
   window.addEventListener("keydown", async (e) => {
     if (!canManageGlobalLayoutOps()) return;
     if (e.key !== "Delete" && e.key !== "Backspace") return;
+    // 입력창(예: Seat 수정 모달의 라벨 입력)에서 텍스트를 지우려고 Backspace를 누른 것도
+    // 이 전역 단축키에 같이 걸려서, 좌석이 선택된 상태면 타이핑 중에 조용히 삭제되는
+    // 문제가 있었다 — 편집 가능한 요소에 포커스가 있으면 단축키를 무시한다.
+    const target = e.target;
+    const isEditableTarget =
+      target?.closest?.("input, textarea, select, [contenteditable], [contenteditable='true']") != null;
+    if (isEditableTarget) return;
     if (GL.selectedWaitingId && (layoutIsMobile() ? GL.activeTab === "wait" : true)) {
       try {
         await removeManualWaiting(GL.selectedWaitingId);
