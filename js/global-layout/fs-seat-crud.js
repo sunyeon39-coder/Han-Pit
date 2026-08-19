@@ -414,6 +414,20 @@ async function clearDuplicatePersonSeatsExcept(
           { merge: true }
         ).catch((err) => console.warn("clearDuplicatePersonSeatsExcept attendance sync:", err))
       );
+      // dealer_attendance만 "대기"로 되돌리고 layout_notifications를 안 건드리면
+      // index/layout의 "내 배치됨 · Seat n" 배지가 이미 비워진 좌석을 계속 가리킨다.
+      writes.push(
+        setDoc(
+          doc(db, "layout_notifications", dataUid),
+          {
+            type: "seat_cleared",
+            acknowledged: true,
+            updatedAt: now,
+            updatedAtServer: serverTimestamp()
+          },
+          { merge: true }
+        ).catch((err) => console.warn("clearDuplicatePersonSeatsExcept notification sync:", err))
+      );
     }
 
     if (otherSeatId) {

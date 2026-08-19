@@ -112,6 +112,19 @@ function clearDupSeatsInTransaction(tx, dupRefs, dupSnaps, person, targetSeatId,
         },
         { merge: true }
       );
+      // dealer_attendance는 위에서 "대기"로 되돌리지만 layout_notifications는 그대로
+      // "seat_assigned"로 남아있어서, index/layout의 "내 배치됨 · Seat n" 배지가
+      // 실제로는 비워진 좌석을 가리키며 계속 남아있는 문제가 있었다.
+      tx.set(
+        doc(db, "layout_notifications", occupantUid),
+        {
+          type: "seat_cleared",
+          acknowledged: true,
+          updatedAt: now,
+          updatedAtServer: serverTimestamp()
+        },
+        { merge: true }
+      );
     }
   }
 }
