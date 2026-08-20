@@ -529,20 +529,41 @@ async function redoAssignPayload(payload) {
   const prevEmail = String(seatBefore?.personEmail || "").trim();
   const prevName = String(seatBefore?.person || "").trim();
   const bumpJoinedAt = Number(payload.swapReturnedJoinedAt || 0) || now;
-  const prevWaitingRow =
+  // 밀려나는 기존 점유자가 예전에 남긴 대기 문서(들) — BLOCK 상태를 잃지 않으려면
+  // 새로 만들기 전에 반드시 먼저 찾아봐야 한다.
+  const prevWaitingRefs =
     seatBefore && !isEmptyPerson(prevName)
-      ? rebuildWaitingAfterSeatToWait(
-          [],
-          GL.tournamentId,
-          { uid: prevUid, email: prevEmail, name: prevName },
-          bumpJoinedAt,
-          { source: "seat_swap", resetJoinedAt: true, ...(prevUid ? { id: `w_${prevUid}` } : {}) }
-        )[0]
-      : null;
+      ? findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, {
+          uid: prevUid,
+          email: prevEmail,
+          name: prevName
+        })
+      : [];
 
   await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
     const seatSnap = await tx.get(seatRef);
     if (!seatSnap?.exists()) throw new Error("seat_not_found");
+
+    const prevWaitingSnaps = await Promise.all(prevWaitingRefs.map((r) => tx.get(r)));
+    const prevExistingRows = prevWaitingSnaps
+      .map((s, i) => (s.exists() ? { id: prevWaitingRefs[i].id, ...s.data() } : null))
+      .filter(Boolean);
+    const prevWaitingRow =
+      seatBefore && !isEmptyPerson(prevName)
+        ? rebuildWaitingAfterSeatToWait(
+            prevExistingRows,
+            GL.tournamentId,
+            { uid: prevUid, email: prevEmail, name: prevName },
+            bumpJoinedAt,
+            {
+              source: "seat_swap",
+              resetJoinedAt: true,
+              ...(prevExistingRows[0]?.id || prevUid
+                ? { id: prevExistingRows[0]?.id || `w_${prevUid}` }
+                : {})
+            }
+          )[0]
+        : null;
 
     tx.set(
       seatRef,
@@ -562,9 +583,17 @@ async function redoAssignPayload(payload) {
     );
 
     if (waitingId) tx.delete(globalWaitingDocRef(db, GL.tournamentId, waitingId));
-    if (prevWaitingRow) {
-      const { id: prevId, ...prevRest } = prevWaitingRow;
-      tx.set(globalWaitingDocRef(db, GL.tournamentId, prevId), prevRest, { merge: true });
+    if (seatBefore && !isEmptyPerson(prevName)) {
+      const { toSet: prevToSet, toDelete: prevToDelete } = diffGlobalWaitingRows(
+        prevExistingRows,
+        prevWaitingRow ? [prevWaitingRow] : []
+      );
+      for (const { id, data } of prevToSet) {
+        tx.set(globalWaitingDocRef(db, GL.tournamentId, id), data, { merge: true });
+      }
+      for (const id of prevToDelete) {
+        tx.delete(globalWaitingDocRef(db, GL.tournamentId, id));
+      }
     }
 
     if (waitingUid) {
@@ -631,6 +660,15 @@ async function redoClearSeatPayload(payload) {
     { uid: prevUid, email: prevEmail, name: prevName },
     targetSeatId
   );
+  // 이 사람이 예전에 남긴 대기 문서(들) — BLOCK 상태를 잃지 않으려면 새로 만들기
+  // 전에 반드시 먼저 찾아봐야 한다.
+  const prevWaitingRefs = !isEmptyPerson(prevName)
+    ? findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, {
+        uid: prevUid,
+        email: prevEmail,
+        name: prevName
+      })
+    : [];
 
   await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
     const [seatSnap, ...otherSnaps] = await Promise.all([
@@ -638,6 +676,11 @@ async function redoClearSeatPayload(payload) {
       ...otherRefs.map((r) => tx.get(r))
     ]);
     if (!seatSnap?.exists()) throw new Error("seat_not_found");
+
+    const prevWaitingSnaps = await Promise.all(prevWaitingRefs.map((r) => tx.get(r)));
+    const prevExistingRows = prevWaitingSnaps
+      .map((s, i) => (s.exists() ? { id: prevWaitingRefs[i].id, ...s.data() } : null))
+      .filter(Boolean);
 
     let hasOtherSeat = false;
 
@@ -676,14 +719,21 @@ async function redoClearSeatPayload(payload) {
     if (!isEmptyPerson(prevName) && !hasOtherSeat) {
       const bumpJoinedAt = resolveReturnedJoinedAt(payload, now);
       const [newRow] = rebuildWaitingAfterSeatToWait(
-        [],
+        prevExistingRows,
         GL.tournamentId,
         { uid: prevUid, email: prevEmail, name: prevName },
         bumpJoinedAt,
-        prevUid ? { id: `w_${prevUid}` } : {}
+        prevExistingRows[0]?.id || prevUid
+          ? { id: prevExistingRows[0]?.id || `w_${prevUid}` }
+          : {}
       );
-      const { id: newId, ...newRest } = newRow;
-      tx.set(globalWaitingDocRef(db, GL.tournamentId, newId), newRest, { merge: true });
+      const { toSet, toDelete } = diffGlobalWaitingRows(prevExistingRows, [newRow]);
+      for (const { id, data } of toSet) {
+        tx.set(globalWaitingDocRef(db, GL.tournamentId, id), data, { merge: true });
+      }
+      for (const id of toDelete) {
+        tx.delete(globalWaitingDocRef(db, GL.tournamentId, id));
+      }
     }
 
     if (prevUid) {

@@ -20,7 +20,7 @@ import {
   resolveSeatEventBox
 } from "./utils.js";
 import { getCandidateSeatRefsForPerson } from "./seat-candidates.js";
-import { findGlobalWaitingEntryRefs } from "./waiting-entry-refs.js";
+import { findGlobalWaitingEntryRefs, diffGlobalWaitingRows } from "./waiting-entry-refs.js";
 import {
   globalWaitingDocRef,
   operatorPicksDocRef
@@ -283,6 +283,16 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
             targetSeatId
           )
         : [];
+      // 밀려나는 기존 점유자(prevUid)가 예전에 남긴 대기 문서(들) — BLOCK 상태 등을
+      // 잃지 않고 재사용하려면 새로 만들기 전에 반드시 먼저 찾아봐야 한다.
+      const prevWaitingRefs =
+        wasOccupied && !isEmptyPerson(prevName)
+          ? findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, {
+              uid: prevUid,
+              email: prevEmail,
+              name: prevName
+            })
+          : [];
 
       const eventRef =
         canonicalSeatEventId && GL.tournamentId
@@ -306,7 +316,8 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
         opPicksRef,
         ...(eventRef ? [eventRef] : []),
         ...dupRefs,
-        ...assigneeWaitingRefs
+        ...assigneeWaitingRefs,
+        ...prevWaitingRefs
       ];
       const readSnaps = await Promise.all(readRefs.map((r) => tx.get(r)));
 
@@ -314,7 +325,15 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
       const eventSnap = eventRef ? readSnaps[1] : null;
       const dupSnapOffset = eventRef ? 2 : 1;
       const dupSnaps = readSnaps.slice(dupSnapOffset, dupSnapOffset + dupRefs.length);
-      const assigneeWaitingSnaps = readSnaps.slice(dupSnapOffset + dupRefs.length);
+      const assigneeSnapOffset = dupSnapOffset + dupRefs.length;
+      const assigneeWaitingSnaps = readSnaps.slice(
+        assigneeSnapOffset,
+        assigneeSnapOffset + assigneeWaitingRefs.length
+      );
+      const prevWaitingSnaps = readSnaps.slice(assigneeSnapOffset + assigneeWaitingRefs.length);
+      const prevExistingRows = prevWaitingSnaps
+        .map((s, i) => (s.exists() ? { id: prevWaitingRefs[i].id, ...s.data() } : null))
+        .filter(Boolean);
 
       let eventCardLabel =
         getEventCardIdFromRecord({ id: canonicalSeatEventId }) || canonicalSeatEventId || "이벤트";
@@ -389,11 +408,17 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
       const prevReturnsToWaitingRow =
         wasOccupied && !isEmptyPerson(prevName) && !bumpedPrevHasOtherSeat
           ? rebuildWaitingAfterSeatToWait(
-              [],
+              prevExistingRows,
               GL.tournamentId,
               { uid: prevUid, email: prevEmail, name: prevName },
               now,
-              { source: "seat_swap", resetJoinedAt: true, ...(prevUid ? { id: `w_${prevUid}` } : {}) }
+              {
+                source: "seat_swap",
+                resetJoinedAt: true,
+                ...(prevExistingRows[0]?.id || prevUid
+                  ? { id: prevExistingRows[0]?.id || `w_${prevUid}` }
+                  : {})
+              }
             )[0]
           : null;
 
@@ -429,9 +454,17 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
       for (const ref of assigneeWaitingRefs) {
         tx.delete(ref);
       }
-      if (prevReturnsToWaitingRow) {
-        const { id: prevId, ...prevRest } = prevReturnsToWaitingRow;
-        tx.set(globalWaitingDocRef(db, GL.tournamentId, prevId), prevRest, { merge: true });
+      if (wasOccupied && !isEmptyPerson(prevName) && !bumpedPrevHasOtherSeat) {
+        const { toSet: prevToSet, toDelete: prevToDelete } = diffGlobalWaitingRows(
+          prevExistingRows,
+          prevReturnsToWaitingRow ? [prevReturnsToWaitingRow] : []
+        );
+        for (const { id, data } of prevToSet) {
+          tx.set(globalWaitingDocRef(db, GL.tournamentId, id), data, { merge: true });
+        }
+        for (const id of prevToDelete) {
+          tx.delete(globalWaitingDocRef(db, GL.tournamentId, id));
+        }
       }
       if (nextOperatorPicks !== opPicksData.operatorPicks) {
         tx.set(
