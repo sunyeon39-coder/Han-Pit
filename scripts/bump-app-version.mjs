@@ -139,6 +139,13 @@ const manifestPath = join(root, "manifest.json");
 try {
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   manifest.start_url = `./login.html?_hanpit_v=${v}`;
+  if (Array.isArray(manifest.icons)) {
+    manifest.icons = manifest.icons.map((icon) => {
+      if (!icon?.src) return icon;
+      const base = String(icon.src).split("?")[0];
+      return { ...icon, src: `${base}?v=${v}` };
+    });
+  }
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 } catch {
   /* ignore */
