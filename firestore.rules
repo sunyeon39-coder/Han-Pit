@@ -122,6 +122,15 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    // global_waiting은 tournaments/{tid}/global_waiting 서브컬렉션으로 이전 완료 —
+    // 이 옛 문서는 롤백 안전망으로만 남겨두고, 구버전 캐시된 클라이언트가 계속 잘못된
+    // 값을 써넣지 못하도록 일반 로그인 사용자의 쓰기를 막는다.
+    match /layout_shared/global_waiting {
+      allow read: if signedIn();
+      allow create, update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
     match /layout_shared/{docId} {
       allow read: if signedIn();
       allow create, update: if signedIn();
