@@ -2,7 +2,7 @@ importScripts("https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js
 importScripts("https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js");
 
 /** 배포마다 1 올리면 브라우저가 새 SW 로 인식해 controllerchange → 홈 화면 자동 새로고침이 걸립니다. */
-const SW_DEPLOY_REVISION = 382;
+const SW_DEPLOY_REVISION = 383;
 
 /** SW 갱신 — 새 배포 즉시 활성화 (페이지 reload 루프는 LAST_TARGET 가드로 방지) */
 self.addEventListener("install", (event) => {
