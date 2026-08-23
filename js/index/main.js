@@ -589,6 +589,11 @@ function wireIndexPageControls() {
         if (!action) return;
 
         if (action === "waiting") {
+          if (typeof window.hanPitEnsureFreshBuild === "function") {
+            const fresh = await window.hanPitEnsureFreshBuild().catch(() => true);
+            if (!fresh) return;
+          }
+
           const prevSnap = snapshotAttendanceEntry(tid, user.uid);
           try {
             await updateMyAttendanceStatus("waiting", { optimistic: true });

@@ -123,12 +123,14 @@ service cloud.firestore {
     }
 
     // global_waiting은 tournaments/{tid}/global_waiting 서브컬렉션으로 이전 완료 —
-    // 이 옛 문서는 롤백 안전망으로만 남겨두고, 구버전 캐시된 클라이언트가 계속 잘못된
-    // 값을 써넣지 못하도록 일반 로그인 사용자의 쓰기를 막는다.
+    // 이 옛 문서는 롤백 안전망으로만 남겨두고 완전히 읽기 전용으로 잠근다. admin 계정도
+    // 예외 없이 막아야 하는 이유: isAdmin()엔 일반 운영진 계정도 포함되는데, 마이그레이션
+    // 후에도 구버전 캐시된 운영진 클라이언트가 계속 이 죽은 문서에 쓰기를 시도해 행 수가
+    // 계속 바뀌는 게 실제로 확인됐다 (근무자 출근 상태가 화면마다 다르게 보이는 원인).
+    // 콘솔/스크립트로 만지려면 Admin SDK(rules 우회)를 쓴다.
     match /layout_shared/global_waiting {
       allow read: if signedIn();
-      allow create, update: if isAdmin();
-      allow delete: if isAdmin();
+      allow create, update, delete: if false;
     }
 
     match /layout_shared/{docId} {

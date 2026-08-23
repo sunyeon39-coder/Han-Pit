@@ -258,6 +258,26 @@ export function buildInlineAppUpdateSnippet(v) {
     checkRemoteVersion(force===true||IS_PWA);
   }
 
+  // 출근하기처럼 되돌리기 어려운 중요한 쓰기 직전에, 백그라운드 폴링을 기다리지 않고
+  // 즉시 한 번 더 버전을 확인한다 — 오래 열어둔 탭이 자동 갱신을 놓쳤어도 여기서 걸러낸다.
+  function ensureFreshBuild(){
+    var host=String(location.hostname||"").toLowerCase();
+    if(!pageBuild||host==="localhost"||host==="127.0.0.1"||host==="0.0.0.0"){
+      return Promise.resolve(true);
+    }
+    return fetch("./app-version.json?t="+Date.now(),{cache:"no-store",credentials:"same-origin"})
+      .then(function(r){return r.ok?r.json():null;})
+      .then(function(d){
+        var remote=String((d&&(d.v||d.version))||"").trim();
+        if(!remote||remote===pageBuild)return true;
+        updateSw();
+        reloadTo(remote);
+        return false;
+      })
+      .catch(function(){return true;});
+  }
+  window.hanPitEnsureFreshBuild=ensureFreshBuild;
+
   if("serviceWorker" in navigator){
     navigator.serviceWorker.addEventListener("controllerchange",function(){
       if(swReloadGuard)return;
