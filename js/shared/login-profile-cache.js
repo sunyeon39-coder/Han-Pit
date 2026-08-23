@@ -2,9 +2,7 @@ import { isAdminEmail } from "../app_config.js";
 import {
   hasAnyDirectEventAllow,
   hasPersistedDirectOpsAllow,
-  mergeAllowedEventsMaps,
   normalizeUserProfile,
-  opsAllowedEventsFromProfile,
   resolveStoredUserRole,
   sanitizeAllowedEvents
 } from "./auth-helpers.js";
@@ -165,38 +163,15 @@ export function readLoginProfileCache(uid = "") {
   return null;
 }
 
+// 이 함수를 부르는 쪽은 항상 "지금 막 서버에서 읽었거나 그에 준하는 최신 프로필"을
+// 넘긴다는 게 전제다. 예전엔 여기서 기존 캐시(existing)의 allowedEvents 와 새 값을
+// merge(합집합)했는데, 그러면 관리자가 허용을 회수해도(allowedEvents 에서 제거해도)
+// 예전에 한 번이라도 캐시에 남았던 허용이 로컬에서 영원히 되살아나 — 회수가 그 기기에는
+// 절대 반영되지 않는 보안 구멍이었다. 서버에서 온 값을 그대로 신뢰하고 덮어쓴다.
 export function writeLoginProfileCache(uid = "", profile = null) {
   const id = String(uid || "").trim();
   if (!id || !profile) return;
-  let normalized = normalizeUserProfile(profile, profile.email || "");
-  const mail = String(normalized.email || "").trim();
-  const existing = readLoginProfileCache(id);
-  const opsSnap = readOpsSessionSnapshot(id);
-  const mergedAllowed = mergeAllowedEventsMaps(
-    sanitizeAllowedEvents(existing?.allowedEvents),
-    mergeAllowedEventsMaps(
-      sanitizeAllowedEvents(opsSnap?.allowedEvents),
-      sanitizeAllowedEvents(normalized.allowedEvents)
-    )
-  );
-
-  if (!isAdminEmail(mail) && !hasPersistedDirectOpsAllow(normalized)) {
-    if (hasAnyDirectEventAllow(mergedAllowed)) {
-      normalized = normalizeUserProfile({ ...normalized, allowedEvents: mergedAllowed }, mail);
-    } else {
-      normalized = normalizeUserProfile(
-        {
-          ...normalized,
-          role: "user",
-          allowedEvents: {},
-          opsTournamentIds: []
-        },
-        mail
-      );
-    }
-  } else if (hasAnyDirectEventAllow(mergedAllowed)) {
-    normalized = normalizeUserProfile({ ...normalized, allowedEvents: mergedAllowed }, mail);
-  }
+  const normalized = normalizeUserProfile(profile, profile.email || "");
   const payload = {
     uid: id,
     savedAt: Date.now(),
