@@ -173,9 +173,9 @@ export function startGlobalLayoutApp() {
   }
 
   function syncGlobalLayoutOpsFromProfile(user = GL.currentUser, meta = {}) {
-    if (!user) return false;
+    if (!user) return GL.isAdminUser === true;
     GL.userProfile = GL.userProfile || {};
-    const canOps = canShowTournamentOpsUi(
+    const rawCanOps = canShowTournamentOpsUi(
       user.email,
       GL.userProfile,
       GL.tournamentId,
@@ -183,6 +183,12 @@ export function startGlobalLayoutApp() {
       user.uid
     );
     const wasAdmin = GL.isAdminUser === true;
+    // 세션 중 이미 서버로 한 번 확인된 ops 권한은, 백그라운드 재확인이 캐시 지연·경쟁
+    // 등으로 일시적으로 false가 나와도 곧바로 뺏지 않는다 — 안 그러면 대기자를 막
+    // 선택한 순간에 뒤에서 도는 재확인 때문에 선택이 풀리는 등 조작 중간에 UI가
+    // 끊기는 현상이 생긴다(대기자 선택 클릭이 곧바로 풀리던 원인).
+    const protectedFromDemotion = wasAdmin && globalLayoutSessionStarted && GL.opsServerVerified;
+    const canOps = rawCanOps || protectedFromDemotion;
     GL.isAdminUser = canOps;
     GL.layoutAccentColor = resolveLayoutAccentColor(
       GL.userProfile,
