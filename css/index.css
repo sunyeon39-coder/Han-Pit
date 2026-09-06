@@ -42,7 +42,9 @@ body {
   min-height: var(--topbar-h);
   height: var(--topbar-h);
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  /* 3번째 트랙을 minmax(0, auto) 로 — 버튼줄이 화면을 넘칠 때 트랙이 줄고
+     .topbar-right 안에서 좌우 스크롤이 되도록(트랙이 auto 면 통째로 넘쳐서 못 잡음) */
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, auto);
   align-items: center;
   gap: 12px;
   padding: var(--topbar-pad-y) var(--topbar-pad-x);
@@ -72,12 +74,26 @@ body {
 }
 
 .topbar-right {
-  justify-content: flex-end;
+  /* flex-end + overflow 는 넘친 부분이 왼쪽으로 잘려 스크롤로 못 잡는 버그가 있어
+     flex-start 로 두고, ::before 스페이서가 여백을 먹어 평소엔 우측 정렬되게 한다 */
+  justify-content: flex-start;
   gap: 8px;
   flex-wrap: nowrap;
   min-width: 0;
   overflow-x: auto;
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
+  /* 갤럭시/안드로이드에서 이 줄을 손가락으로 좌우로 못 끌던 문제 —
+     브라우저에 "여긴 가로 팬을 내가 처리한다"고 명시 */
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.topbar-right::before {
+  content: "";
+  flex: 0 0 auto;
+  margin-inline-start: auto;
 }
 
 .topbar-right::-webkit-scrollbar {
@@ -1030,7 +1046,7 @@ body {
 
 @media (max-width: 900px) {
   .index-topbar {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, auto);
     gap: 10px;
     height: auto;
     padding: var(--topbar-pad-y) 14px;
@@ -1046,11 +1062,14 @@ body {
   }
 
   .topbar-right {
-    justify-content: flex-end;
+    justify-content: flex-start;
     gap: 6px;
     flex-wrap: nowrap;
     overflow-x: auto;
+    overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-x;
+    overscroll-behavior-x: contain;
   }
 
   .topbar-right::-webkit-scrollbar {
