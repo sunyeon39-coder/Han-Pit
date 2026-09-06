@@ -3,7 +3,7 @@
   "short_name": "Han Pit",
   "description": "Dealer & table management",
   "id": "./",
-  "start_url": "./login.html?_hanpit_v=20260906051830",
+  "start_url": "./login.html?_hanpit_v=20260906052358",
   "scope": "./",
   "display": "standalone",
   "background_color": "#0a1022",
@@ -11,13 +11,13 @@
   "lang": "ko",
   "icons": [
     {
-      "src": "./icons/icon-192.png?v=20260906051830",
+      "src": "./icons/icon-192.png?v=20260906052358",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "./icons/icon-512.png?v=20260906051830",
+      "src": "./icons/icon-512.png?v=20260906052358",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
