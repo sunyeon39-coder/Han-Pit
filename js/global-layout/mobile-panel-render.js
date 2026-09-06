@@ -40,6 +40,7 @@ import {
 } from "./meta-ui.js";
 import { invalidateWaitingPanelFingerprint } from "./panel-ui.js";
 import { canManageGlobalLayoutOps } from "./ops-access.js";
+import { seatShowsAlert } from "../shared/seat-alert.js";
 import { tryOpenSeatHistoryFromPersonClick } from "./seat-history-modal.js";
 
 function formatMobileSeatEventBoxMeta(seat = {}) {
@@ -165,7 +166,8 @@ function syncMobileSeatRow(row, seat, selectedWaiting, paletteMap) {
   const elapsed = seatedAt ? Date.now() - seatedAt : 0;
   const tClass = occupied ? timerClass(elapsed) : "";
 
-  row.className = `mobile-seat-row compact ${paletteClass} ${isSel ? "selected" : ""}`;
+  const alertClass = seatShowsAlert(seat, canManageGlobalLayoutOps()) ? "seat-alert-on" : "";
+  row.className = `mobile-seat-row compact ${paletteClass} ${isSel ? "selected" : ""} ${alertClass}`;
   const personEl = row.querySelector(".mobile-seat-person");
   if (personEl) {
     personEl.textContent = name;
@@ -611,7 +613,7 @@ export function renderGlobalLayoutMobile(options = {}) {
       const tClass = occupied ? timerClass(elapsed) : "";
       const ebMeta = occupied ? "" : formatMobileSeatEventBoxMeta(s);
       seatCard.innerHTML += `
-        <div class="mobile-seat-row compact ${paletteClass} ${isSel ? "selected" : ""}" data-mobile-seat="${escapeHtml(rowKey)}" data-firestore-doc="${escapeHtml(firestoreDocId)}">
+        <div class="mobile-seat-row compact ${paletteClass} ${isSel ? "selected" : ""} ${seatShowsAlert(s, canManageGlobalLayoutOps()) ? "seat-alert-on" : ""}" data-mobile-seat="${escapeHtml(rowKey)}" data-firestore-doc="${escapeHtml(firestoreDocId)}">
           <div class="mobile-seat-mainline">
             <div class="mobile-seat-name-cluster">
               <span class="mobile-seat-num">${escapeHtml(seatCanvasDigitsOnly(s.label, s.no))}</span>

@@ -2,6 +2,7 @@
  * layout.html: 모바일 Seat/대기 카드 UI
  */
 import { LAYOUT_SEAT_DOUBLE_ACTIVATE_MS } from "./layout-core-utils.js";
+import { seatShowsAlert } from "../shared/seat-alert.js";
 
 export function createLayoutMobilePanelRender(deps) {
   const {
@@ -72,6 +73,7 @@ export function createLayoutMobilePanelRender(deps) {
       const hasPerson = !isEmptyPerson(s.person);
       const isSel = ui.selectedSeatId === sid;
       row.classList.toggle("selected", isSel);
+      row.classList.toggle("seat-alert-on", seatShowsAlert(s, canManageLayout?.()));
       const personEl = row.querySelector(".mobile-seat-person");
       if (personEl) {
         personEl.textContent = isEmptyPerson(s.person) ? "비어있음" : String(s.person);
@@ -271,7 +273,7 @@ export function createLayoutMobilePanelRender(deps) {
           ? escapeHtml(`${selectedWaiting.name} 이 Seat에 배치`)
           : "";
         seatCard.innerHTML += `
-            <div class="mobile-seat-row compact ${isSel ? "selected" : ""}" data-mobile-seat="${s.id}">
+            <div class="mobile-seat-row compact ${isSel ? "selected" : ""} ${seatShowsAlert(s, manage) ? "seat-alert-on" : ""}" data-mobile-seat="${s.id}">
               <div class="mobile-seat-mainline">
                 <div class="mobile-seat-name-cluster">
                   <span class="mobile-seat-num">${escapeHtml(seatCanvasDigitsOnly(s.label, s.no))}</span>

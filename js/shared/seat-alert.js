@@ -44,6 +44,13 @@ function seatIdFromEl(el) {
   ).trim();
 }
 
+export const SEAT_ALERT_CLASS = "seat-alert-on";
+
+/** 렌더러에서 좌석 행/박스 클래스에 넣을지 판단 — 운영 권한자에게만 보인다. */
+export function seatShowsAlert(seat, canManage) {
+  return canManage === true && !!seat && seat.alertActive === true;
+}
+
 let activeTid = "";
 let activeHandle = null;
 
@@ -123,26 +130,25 @@ export function initSeatAlerts({ db, tournamentId, getUid, canManage, onLocalTog
       const seen = new Set();
       snap.forEach((d) => {
         const data = d.data() || {};
-        const sid = String(data.seatId || "").trim();
-        if (!sid) return;
-        seen.add(sid);
         const active = data.alertActive === true;
         const at = Number(data.alertAt || 0) || 0;
         const by = String(data.alertBy || "").trim();
-        const prev = state.get(sid);
-        state.set(sid, { docId: d.id, active, at, by });
-        if (
-          active &&
-          !(prev && prev.active) &&
-          by &&
-          by !== uid &&
-          Date.now() - at < CUE_MAX_AGE_MS
-        ) {
+        const rec = { docId: d.id, active, at, by };
+        // seatId 와 Firestore 문서 ID 양쪽으로 색인 — DOM 요소가 어느 쪽 값을
+        // 들고 있어도(getGlobalSeatRowKey 는 seatId 없으면 docId 를 준다) 찾히도록.
+        const keys = [String(data.seatId || "").trim(), String(d.id || "").trim()].filter(Boolean);
+        let wasActive = false;
+        for (const k of keys) {
+          if (state.get(k)?.active) wasActive = true;
+          state.set(k, rec);
+          seen.add(k);
+        }
+        if (active && !wasActive && by && by !== uid && Date.now() - at < CUE_MAX_AGE_MS) {
           cue = true;
         }
       });
-      for (const sid of [...state.keys()]) {
-        if (!seen.has(sid)) state.delete(sid);
+      for (const k of [...state.keys()]) {
+        if (!seen.has(k)) state.delete(k);
       }
       repaint();
       if (cue && canSee()) playCue();
@@ -170,11 +176,13 @@ export function initSeatAlerts({ db, tournamentId, getUid, canManage, onLocalTog
 
     const rec = state.get(sid);
     if (!rec?.docId) {
-      console.warn("seat-alert: seat doc not found for", sid);
+      console.warn("seat-alert: seat doc not found for", sid, "(is the seat saved?)");
       return;
     }
     const next = !rec.active;
-    state.set(sid, { ...rec, active: next, at: Date.now(), by: myUid() });
+    const optimistic = { ...rec, active: next, at: Date.now(), by: myUid() };
+    state.set(sid, optimistic);
+    if (rec.docId && rec.docId !== sid) state.set(rec.docId, optimistic);
     repaint();
     try {
       navigator.vibrate?.(next ? 30 : 12);
@@ -196,7 +204,9 @@ export function initSeatAlerts({ db, tournamentId, getUid, canManage, onLocalTog
     } catch (err) {
       console.error("seat-alert toggle write error:", err);
       state.set(sid, rec);
+      if (rec.docId && rec.docId !== sid) state.set(rec.docId, rec);
       repaint();
+      alert("비상 표시 저장에 실패했습니다(권한 또는 연결 확인).");
     }
   }
 
