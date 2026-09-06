@@ -272,8 +272,7 @@ async function collectTournamentAdminUids(tournamentId) {
 exports.notifyGlobalSeatAlert = onDocumentWritten(
   {
     document: "tournaments/{tournamentId}/global_seats/{seatDocId}",
-    region: "asia-northeast3",
-    minInstances: 1
+    region: "asia-northeast3"
   },
   async (event) => {
     const change = event.data;
