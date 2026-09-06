@@ -164,10 +164,27 @@ function waitingPersonIdentityKey(row = {}) {
 
 export { waitingPersonIdentityKey };
 
+const SEAT_RETURN_SOURCES = new Set(["seat_clear", "seat_swap", "seat_removed_recovery"]);
+/** 한쪽 joinedAt 이 다른 쪽보다 이만큼 오래됐으면 "좌석에 있던 시간을 끌고온" 유령 행으로 본다 */
+const STALE_JOIN_GAP_MS = 30 * 60 * 1000;
+
 function preferWaitingDisplayRow(a = {}, b = {}) {
   const blockedA = a?.blockChecked === true;
   const blockedB = b?.blockChecked === true;
   if (blockedA !== blockedB) return blockedA ? a : b;
+
+  // 좌석에서 방금 돌아온 행(타이머 리셋된 정본) 우선 — 예전 대기 문서가 안 지워져
+  // 좌석 착석 시간을 그대로 표시하는 유령 행보다 이쪽을 남긴다.
+  const retA = SEAT_RETURN_SOURCES.has(String(a?.source || "").trim());
+  const retB = SEAT_RETURN_SOURCES.has(String(b?.source || "").trim());
+  if (retA !== retB) return retA ? a : b;
+
+  const joinA = getWaitingRowJoinMs(a);
+  const joinB = getWaitingRowJoinMs(b);
+  // source 태그가 없어도, joinedAt 이 크게 벌어지면 최근에 큐에 다시 들어온 쪽을 정본으로.
+  if (joinA && joinB && Math.abs(joinA - joinB) > STALE_JOIN_GAP_MS) {
+    return joinA > joinB ? a : b;
+  }
 
   const idA = String(a?.id || "").trim();
   const idB = String(b?.id || "").trim();
@@ -179,10 +196,24 @@ function preferWaitingDisplayRow(a = {}, b = {}) {
   };
   if (score(idA) !== score(idB)) return score(idA) > score(idB) ? a : b;
 
-  const joinA = getWaitingRowJoinMs(a);
-  const joinB = getWaitingRowJoinMs(b);
   if (joinA !== joinB) return joinA <= joinB ? a : b;
   return a;
+}
+
+/** uid 가 달라 1차 병합에서 빠진 동명(同名) 행을 한 번 더 합친다 */
+function collapseWaitingRowsByName(rows = []) {
+  const out = [];
+  for (const row of rows) {
+    const nm = String(row?.name || row?.nickname || "").trim();
+    if (!nm) {
+      out.push(row);
+      continue;
+    }
+    const idx = out.findIndex((prev) => String(prev?.name || prev?.nickname || "").trim() === nm);
+    if (idx < 0) out.push(row);
+    else out[idx] = preferWaitingDisplayRow(out[idx], row);
+  }
+  return out;
 }
 
 /** 화면 목록 — 같은 사람 중복 행 제거, BLOCK 행 우선 (uid·이름-only 포함) */
@@ -204,7 +235,10 @@ export function dedupeWaitingDisplayRows(list = []) {
     if (idx < 0) merged.push(row);
     else merged[idx] = preferWaitingDisplayRow(merged[idx], row);
   }
-  return [...passthrough, ...merged];
+
+  // 2차: uid 가 서로 달라(또는 한쪽만 있어) 1차에서 안 합쳐졌지만 표시 이름이 같은 행 —
+  // 좌석에서 돌아온 뒤 예전 대기 문서가 남아 "김도영 2개" 처럼 보이던 문제 대응.
+  return [...passthrough, ...collapseWaitingRowsByName(merged)];
 }
 
 /** Firestore 저장 전 — 같은 사람 중복 global_waiting 행 병합 (uid·이름-only 포함) */
