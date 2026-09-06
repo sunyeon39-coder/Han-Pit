@@ -23,7 +23,9 @@ import { getCandidateSeatRefsForPerson } from "./seat-candidates.js";
 import { findGlobalWaitingEntryRefs, diffGlobalWaitingRows } from "./waiting-entry-refs.js";
 import {
   globalWaitingDocRef,
-  operatorPicksDocRef
+  operatorPicksDocRef,
+  isPersonSeatedInGlobalSeats,
+  waitingRowBelongsToTournament
 } from "../shared/tournament-waiting-queue.js";
 import { getCurrentTournamentWaiting, resolveSelectedWaitingForAssign } from "./waiting.js";
 import { renderWaiting } from "./panel-ui.js";
@@ -35,7 +37,7 @@ import {
 } from "./fs-layout-projection.js";
 import { getEventCardIdFromRecord } from "../shared/tournament-event-instance.js";
 import { buildSeatAssignedNotifyMessage } from "../shared/seat-notification-label.js";
-import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
+import { rebuildWaitingAfterSeatToWait, waitingRowMatchesPerson } from "./fs-waiting-merge.js";
 import { pushGlobalUndo } from "./undo-stack.js";
 import { captureSeatShellSnapshot } from "./utils.js";
 import { applyOptimisticMyWaitingPick, clearMyWaitingPick } from "./waiting-picks.js";
@@ -310,6 +312,45 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
           name: waitingName
         })
       ]);
+      // 이미 좌석에 앉아 있는 사람이 대기열에도 남아 있는 잔여 global_waiting 문서.
+      // 배정 이외 경로(수동 좌석 추가·좌석 수정 등)로 좌석에 올라간 뒤 대기 문서가
+      // 안 지워진 경우다. 배정 대상 본인과, 이번에 밀려나 대기로 돌아갈 기존 점유자는
+      // 제외한다. 정상 상태에서는 배열이 비므로 추가 read 가 없다.
+      const staleSeatedWaitingRefs = uniqueDocRefs(
+        (GL.globalWaiting || [])
+          .filter((w) => {
+            const rid = String(w?.id || "").trim();
+            if (!rid) return false;
+            if (!waitingRowBelongsToTournament(w, GL.tournamentId)) return false;
+            if (
+              waitingRowMatchesPerson(w, GL.tournamentId, {
+                uid: waitingUid,
+                email: waiting.email,
+                name: waitingName
+              })
+            ) {
+              return false;
+            }
+            if (
+              wasOccupied &&
+              !isEmptyPerson(prevName) &&
+              waitingRowMatchesPerson(w, GL.tournamentId, {
+                uid: prevUid,
+                email: prevEmail,
+                name: prevName
+              })
+            ) {
+              return false;
+            }
+            return isPersonSeatedInGlobalSeats(GL.globalSeats, {
+              uid: w?.uid,
+              email: w?.email,
+              name: w?.name
+            });
+          })
+          .map((w) => globalWaitingDocRef(db, GL.tournamentId, String(w.id).trim()))
+      );
+
       const opPicksRef = operatorPicksDocRef(db, GL.tournamentId);
 
       const readRefs = [
@@ -317,7 +358,8 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
         ...(eventRef ? [eventRef] : []),
         ...dupRefs,
         ...assigneeWaitingRefs,
-        ...prevWaitingRefs
+        ...prevWaitingRefs,
+        ...staleSeatedWaitingRefs
       ];
       const readSnaps = await Promise.all(readRefs.map((r) => tx.get(r)));
 
@@ -330,7 +372,13 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
         assigneeSnapOffset,
         assigneeSnapOffset + assigneeWaitingRefs.length
       );
-      const prevWaitingSnaps = readSnaps.slice(assigneeSnapOffset + assigneeWaitingRefs.length);
+      const prevSnapOffset = assigneeSnapOffset + assigneeWaitingRefs.length;
+      const prevWaitingSnaps = readSnaps.slice(prevSnapOffset, prevSnapOffset + prevWaitingRefs.length);
+      const staleSnapOffset = prevSnapOffset + prevWaitingRefs.length;
+      const staleSeatedWaitingSnaps = readSnaps.slice(
+        staleSnapOffset,
+        staleSnapOffset + staleSeatedWaitingRefs.length
+      );
       const prevExistingRows = prevWaitingSnaps
         .map((s, i) => (s.exists() ? { id: prevWaitingRefs[i].id, ...s.data() } : null))
         .filter(Boolean);
@@ -453,6 +501,13 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
 
       for (const ref of assigneeWaitingRefs) {
         tx.delete(ref);
+      }
+      // 좌석에 이미 앉아 있는데 대기열에 남아 있던 잔여 문서 정리.
+      // 잘못된 상태였으므로 되돌리기(undo) 스냅샷에는 포함하지 않는다.
+      for (let i = 0; i < staleSeatedWaitingRefs.length; i++) {
+        if (staleSeatedWaitingSnaps[i]?.exists()) {
+          tx.delete(staleSeatedWaitingRefs[i]);
+        }
       }
       if (wasOccupied && !isEmptyPerson(prevName) && !bumpedPrevHasOtherSeat) {
         const { toSet: prevToSet, toDelete: prevToDelete } = diffGlobalWaitingRows(
