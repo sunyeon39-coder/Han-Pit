@@ -248,3 +248,34 @@ a.app-mark {
     transform: translateX(-100%);
   }
 }
+
+/* ===== 비상 표시(Seat Alert) — admin 이 seat 를 길게 눌러 켠 빨간 깜박임 =====
+   통합 배치도·일반 배치도 공통. JS(js/shared/seat-alert.js)가 .seat-alert-on 을 토글한다. */
+@keyframes seat-alert-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px rgba(255, 45, 45, 0.6), 0 0 10px 1px rgba(255, 45, 45, 0.35);
+    border-color: rgba(255, 70, 70, 0.9);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(255, 40, 40, 0.98), 0 0 24px 6px rgba(255, 40, 40, 0.85);
+    border-color: #ff2626;
+  }
+}
+
+.seat-alert-on {
+  animation: seat-alert-pulse 0.8s ease-in-out infinite !important;
+  border-color: #ff2626 !important;
+}
+
+.mobile-seat-row.seat-alert-on,
+.seat-manage-row.seat-alert-on,
+.gl-panel-list-row.seat-alert-on {
+  background: rgba(255, 45, 45, 0.16) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seat-alert-on {
+    animation-duration: 1.6s !important;
+  }
+}

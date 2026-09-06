@@ -29,6 +29,7 @@ import { createLayoutHealUndo } from "./layout-heal-undo.js";
 import { createLayoutUiRender } from "./layout-ui-render.js";
 import { createLayoutBootstrap } from "./layout-bootstrap.js";
 import { initLayoutTopicBar } from "./layout-topic-bar.js";
+import { initSeatAlerts } from "../shared/seat-alert.js";
 import { createLayoutPanelRenderers } from "./layout-panel-render.js";
 import {
   clone,
@@ -770,6 +771,18 @@ import {
   applyLayoutOpsPermissions();
 
   initLayoutTopicBar(TOURNAMENT_ID);
+  initSeatAlerts({
+    db,
+    tournamentId: TOURNAMENT_ID,
+    getUid: () => auth.currentUser?.uid || currentUser?.uid || "",
+    canManage: canManageLayout,
+    onLocalToggle: () => {
+      ui.lastMouseSeatId = "";
+      ui.lastMouseClickAt = 0;
+      ui.lastMobileSeatId = "";
+      ui.lastMobileTapAt = 0;
+    }
+  });
 
   markPageBootLoaded(app);
   if (layoutUi) {

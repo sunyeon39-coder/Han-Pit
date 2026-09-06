@@ -48,6 +48,7 @@ import {
 } from "./canvas-viewport.js";
 import { refreshGlobalLayoutMobileTimers, wireGlobalLayoutMobileEventsOnce } from "./mobile-panel-render.js";
 import { initGlobalLayoutTopicBarDom, renderGlobalLayoutTopicBar } from "./topic-bar.js";
+import { initSeatAlerts } from "../shared/seat-alert.js";
 import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
 import { normalizeAndPersistUserRole } from "../login/user-sync.js";
 import {
@@ -363,6 +364,18 @@ export function startGlobalLayoutApp() {
 
     setPanelOpen(!layoutIsMobile());
     bindRealtime();
+    initSeatAlerts({
+      db,
+      tournamentId: GL.tournamentId,
+      getUid: () => auth.currentUser?.uid || GL.currentUser?.uid || "",
+      canManage: canManageGlobalLayoutOps,
+      onLocalToggle: () => {
+        GL.dragState = null;
+        GL.lastSeatTapId = "";
+        GL.lastSeatTapAt = 0;
+        GL.suppressSeatClickUntil = Date.now() + 800;
+      }
+    });
     void refreshGlobalLayoutOpsDataFromServer().then(() => refreshGlobalLayoutAdminUi());
     armFirestoreStallWatchdog({
       timeoutMs: 8000,
