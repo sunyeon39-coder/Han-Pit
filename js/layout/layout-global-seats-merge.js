@@ -82,12 +82,18 @@ export function createLayoutGlobalSeatsMerge(deps) {
       const seatId = String(data.seatId || "").trim();
       if (!seatId) return;
 
+      const alertKind = ["emergency", "break"].includes(String(data.alertKind || "").trim())
+        ? String(data.alertKind).trim()
+        : data.alertActive === true
+          ? "emergency"
+          : "";
       next.set(seatId, {
         person,
         personUid: String(data.personUid || "").trim(),
         personEmail: String(data.personEmail || "").trim(),
         seatedAt: data.seatedAt != null ? Number(data.seatedAt) : null,
-        alertActive: data.alertActive === true,
+        alertKind,
+        alertActive: alertKind !== "",
         alertAt: Number(data.alertAt || 0) || 0
       });
     });
@@ -111,10 +117,11 @@ export function createLayoutGlobalSeatsMerge(deps) {
       const gPerson = String(g?.person || "").trim();
       const gEmpty = isEmptyPerson(gPerson) || gPerson === "비어있음";
 
-      // 비상 표시(alertActive)는 착석 여부와 무관하게 전역 좌석 상태를 그대로 반영
-      const gAlert = g?.alertActive === true;
-      if ((seat.alertActive === true) !== gAlert) {
-        seat.alertActive = gAlert;
+      // 좌석 상태 표시(alertKind: emergency/break)는 착석 여부와 무관하게 그대로 반영
+      const gKind = String(g?.alertKind || "").trim();
+      if (String(seat.alertKind || "").trim() !== gKind) {
+        seat.alertKind = gKind;
+        seat.alertActive = gKind !== "";
         seat.alertAt = Number(g?.alertAt || 0) || 0;
         changed = true;
       }

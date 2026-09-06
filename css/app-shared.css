@@ -249,9 +249,10 @@ a.app-mark {
   }
 }
 
-/* ===== 비상 표시(Seat Alert) — admin 이 seat 를 길게 눌러 켠 빨간 깜박임 =====
-   통합 배치도·일반 배치도 공통. JS(js/shared/seat-alert.js)가 .seat-alert-on 을 토글한다. */
-@keyframes seat-alert-pulse {
+/* ===== 좌석 상태 표시(Seat Alert) — admin 이 seat 를 길게 눌러 고른 깜박임 =====
+   통합 배치도·일반 배치도 공통. JS(js/shared/seat-alert.js)가
+   .seat-alert-on + .seat-alert-emergency / .seat-alert-break 를 토글한다. */
+@keyframes seat-alert-pulse-red {
   0%,
   100% {
     box-shadow: 0 0 0 2px rgba(255, 45, 45, 0.6), 0 0 10px 1px rgba(255, 45, 45, 0.35);
@@ -263,19 +264,125 @@ a.app-mark {
   }
 }
 
-.seat-alert-on {
-  animation: seat-alert-pulse 0.8s ease-in-out infinite !important;
-  border-color: #ff2626 !important;
+@keyframes seat-alert-pulse-blue {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px rgba(47, 125, 255, 0.6), 0 0 10px 1px rgba(47, 125, 255, 0.35);
+    border-color: rgba(90, 150, 255, 0.9);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(47, 125, 255, 0.98), 0 0 24px 6px rgba(47, 125, 255, 0.85);
+    border-color: #2f7dff;
+  }
 }
 
-.mobile-seat-row.seat-alert-on,
-.seat-manage-row.seat-alert-on,
-.gl-panel-list-row.seat-alert-on {
+.seat-alert-on {
+  animation: seat-alert-pulse-red 0.8s ease-in-out infinite !important;
+}
+
+.seat-alert-on.seat-alert-emergency {
+  animation-name: seat-alert-pulse-red !important;
+  border-color: #ff2626 !important;
+}
+.seat-alert-on.seat-alert-break {
+  animation-name: seat-alert-pulse-blue !important;
+  border-color: #2f7dff !important;
+}
+
+.mobile-seat-row.seat-alert-emergency,
+.seat-manage-row.seat-alert-emergency,
+.gl-panel-list-row.seat-alert-emergency {
   background: rgba(255, 45, 45, 0.16) !important;
+}
+.mobile-seat-row.seat-alert-break,
+.seat-manage-row.seat-alert-break,
+.gl-panel-list-row.seat-alert-break {
+  background: rgba(47, 125, 255, 0.16) !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .seat-alert-on {
     animation-duration: 1.6s !important;
   }
+}
+
+/* ── 좌석 상태 선택 모달 ── */
+.seat-alert-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(6, 10, 20, 0.62);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+.seat-alert-modal {
+  width: min(360px, 100%);
+  border-radius: 18px;
+  padding: 22px 20px 16px;
+  background: #12151c;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+
+.seat-alert-modal-title {
+  font-size: 17px;
+  font-weight: 900;
+  color: #fff;
+}
+
+.seat-alert-modal-status {
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.seat-alert-modal-actions {
+  display: flex;
+  gap: 12px;
+  margin: 18px 0 6px;
+}
+
+.seat-alert-modal-btn {
+  flex: 1 1 0;
+  min-height: 68px;
+  border-radius: 14px;
+  border: 2px solid transparent;
+  font-size: 18px;
+  font-weight: 900;
+  color: #fff;
+  cursor: pointer;
+  transition: transform 0.08s ease, filter 0.12s ease;
+}
+.seat-alert-modal-btn:active {
+  transform: scale(0.96);
+}
+.seat-alert-modal-btn.is-emergency {
+  background: linear-gradient(180deg, #ff3b3b, #d81f1f);
+}
+.seat-alert-modal-btn.is-break {
+  background: linear-gradient(180deg, #3f8bff, #1f5fd8);
+}
+.seat-alert-modal-btn.is-active {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+  filter: brightness(1.08);
+}
+
+.seat-alert-modal-close {
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
 }

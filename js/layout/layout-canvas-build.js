@@ -3,7 +3,7 @@
  */
 import { LAYOUT_SEAT_DOUBLE_ACTIVATE_MS } from "./layout-core-utils.js";
 import { syncSeatBoxesInContainer } from "../shared/sync-seat-box-dom.js";
-import { seatShowsAlert } from "../shared/seat-alert.js";
+import { seatAlertClass } from "../shared/seat-alert.js";
 
 export function createLayoutCanvasBuild(deps) {
   const {
@@ -47,7 +47,7 @@ export function createLayoutCanvasBuild(deps) {
         hasPerson ? "is-occupied" : "",
         timerCls,
         isSel ? "selected" : "",
-        seatShowsAlert(seat, canManageLayout?.()) ? "seat-alert-on" : ""
+        seatAlertClass(seat, canManageLayout?.())
       ]
         .filter(Boolean)
         .join(" "),

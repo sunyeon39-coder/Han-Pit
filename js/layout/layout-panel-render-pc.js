@@ -1,7 +1,7 @@
 /**
  * layout.html: PC 우측 패널 — 대기 목록 + Seat 탭
  */
-import { seatShowsAlert } from "../shared/seat-alert.js";
+import { seatAlertClass } from "../shared/seat-alert.js";
 
 export function createLayoutPcPanelRender(deps) {
   const {
@@ -272,7 +272,7 @@ export function createLayoutPcPanelRender(deps) {
         const isSelf = hasPerson && !!isSeatMine?.(s);
 
         listRows.push(`
-            <div class="seat-manage-row ${isSel ? "selected" : ""} ${seatShowsAlert(s, canManageLayout?.()) ? "seat-alert-on" : ""}" data-sid="${s.id}" style="cursor:pointer;">
+            <div class="seat-manage-row ${isSel ? "selected" : ""} ${seatAlertClass(s, canManageLayout?.())}" data-sid="${s.id}" style="cursor:pointer;">
               <div class="seat-manage-main seat-manage-main--oneline">
                 <div class="seat-manage-namewrap seat-manage-namewrap--with-num">
                   <span class="seat-manage-num">${escapeHtml(seatCanvasDigitsOnly(s.label, s.no))}</span>

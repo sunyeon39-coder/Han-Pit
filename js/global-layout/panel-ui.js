@@ -51,7 +51,7 @@ import { resolveSeatEventBox } from "./utils.js";
 import { buildEventBoxPaletteMap, getEventBoxPaletteClass } from "./event-box-palette.js";
 import { syncSeatBoxesInContainer } from "../shared/sync-seat-box-dom.js";
 import { canManageGlobalLayoutOps, canViewGlobalLayoutSeatHistory } from "./ops-access.js";
-import { seatShowsAlert } from "../shared/seat-alert.js";
+import { seatAlertClass } from "../shared/seat-alert.js";
 
 function buildGlobalSeatsByIdMap() {
   const map = new Map();
@@ -107,7 +107,7 @@ function buildGlobalSeatBoxState(s, idx, paletteMap) {
   const elapsedMs = occupied ? (seatedAtMs > 0 ? Date.now() - seatedAtMs : 0) : 0;
   const timerCls = occupied ? timerClass(elapsedMs) : "";
   const paletteClass = getEventBoxPaletteClass(s, paletteMap);
-  const alertClass = seatShowsAlert(s, canManageGlobalLayoutOps()) ? "seat-alert-on" : "";
+  const alertClass = seatAlertClass(s, canManageGlobalLayoutOps());
   const seatBoxClass = ["seat-box", paletteClass, occupied ? "is-occupied" : "", timerCls, selectedClass, alertClass]
     .filter(Boolean)
     .join(" ");
@@ -552,7 +552,7 @@ export function renderSeatPanel() {
       const tClass = timerClass(elapsed);
       const ebMeta = !occupied ? formatSeatPanelEventBoxMeta(s) : "";
       return `
-      <div class="seat-manage-row gl-panel-list-row ${paletteClass} ${selectedRowClass} ${seatShowsAlert(s, canManageGlobalLayoutOps()) ? "seat-alert-on" : ""}" data-select-seat="${escapeHtml(rowKey)}" data-firestore-doc="${escapeHtml(firestoreDocId)}">
+      <div class="seat-manage-row gl-panel-list-row ${paletteClass} ${selectedRowClass} ${seatAlertClass(s, canManageGlobalLayoutOps())}" data-select-seat="${escapeHtml(rowKey)}" data-firestore-doc="${escapeHtml(firestoreDocId)}">
         <div class="seat-manage-main seat-manage-main--oneline">
           <div class="seat-manage-namewrap seat-manage-namewrap--with-num">
             <span class="seat-manage-num">${escapeHtml(seatCanvasDigitsOnly(s.label, s.no))}</span>
