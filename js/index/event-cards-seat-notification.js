@@ -45,11 +45,29 @@ export function bindMySeatAssignment(user) {
   let seatModalAudioTimer = null;
   let activeSeatNotificationId = "";
 
+  /** 배치 알림 진동 — 소리와 함께 (미지원 브라우저/데스크톱에서는 무시됨) */
+  const SEAT_MODAL_VIBRATE_PATTERN = [400, 200, 400];
+  function pulseSeatModalVibration() {
+    try {
+      navigator.vibrate?.(SEAT_MODAL_VIBRATE_PATTERN);
+    } catch {
+      /* noop */
+    }
+  }
+  function stopSeatModalVibration() {
+    try {
+      navigator.vibrate?.(0);
+    } catch {
+      /* noop */
+    }
+  }
+
   function stopSeatModalSoundLoop() {
     if (seatModalAudioTimer) {
       clearInterval(seatModalAudioTimer);
       seatModalAudioTimer = null;
     }
+    stopSeatModalVibration();
   }
 
   function hasSavedSoundPreference() {
@@ -114,8 +132,10 @@ export function bindMySeatAssignment(user) {
     playSeatModalBeep();
     if (!hasSavedSoundPreference()) return;
     stopSeatModalSoundLoop();
+    pulseSeatModalVibration();
     seatModalAudioTimer = setInterval(() => {
       playSeatModalBeep();
+      pulseSeatModalVibration();
     }, 1000);
   }
 
@@ -170,6 +190,8 @@ export function bindMySeatAssignment(user) {
 
     overlay.classList.add("show");
     void overlay.offsetHeight;
+    // 모달이 뜨는 순간 최소 한 번은 진동 (소리 미설정 사용자도 체감되도록)
+    pulseSeatModalVibration();
     void startSeatModalSoundLoop();
 
     const acknowledge = async () => {

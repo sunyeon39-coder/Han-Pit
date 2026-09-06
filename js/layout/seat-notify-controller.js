@@ -147,11 +147,29 @@ export function createLayoutSeatNotifyController({
     return ok;
   }
 
+  /** 배치 알림 진동 — 소리와 함께 (미지원 브라우저/데스크톱에서는 무시됨) */
+  const SEAT_ALERT_VIBRATE_PATTERN = [400, 200, 400];
+  function pulseSeatAlertVibration() {
+    try {
+      navigator.vibrate?.(SEAT_ALERT_VIBRATE_PATTERN);
+    } catch {
+      /* noop */
+    }
+  }
+  function stopSeatAlertVibration() {
+    try {
+      navigator.vibrate?.(0);
+    } catch {
+      /* noop */
+    }
+  }
+
   function stopAlertSoundLoop() {
     if (audioRepeatTimer) {
       clearInterval(audioRepeatTimer);
       audioRepeatTimer = null;
     }
+    stopSeatAlertVibration();
   }
 
   async function startAlertSoundLoop() {
@@ -159,8 +177,10 @@ export function createLayoutSeatNotifyController({
 
     await playAlertSound();
     stopAlertSoundLoop();
+    pulseSeatAlertVibration();
     audioRepeatTimer = setInterval(() => {
       void playAlertSound();
+      pulseSeatAlertVibration();
     }, 1000);
   }
 
@@ -257,6 +277,8 @@ export function createLayoutSeatNotifyController({
       location.href = targetUrl;
     });
 
+    // 모달이 뜨는 순간 최소 한 번은 진동 (소리 미설정 사용자도 체감되도록)
+    pulseSeatAlertVibration();
     void startAlertSoundLoop();
   }
 
@@ -281,7 +303,9 @@ export function createLayoutSeatNotifyController({
   }
 
   function hideSeatAlert() {
-    document.getElementById("seatAlertOverlay")?.remove();
+    const existed = document.getElementById("seatAlertOverlay");
+    existed?.remove();
+    if (existed) stopSeatAlertVibration();
   }
 
   function resetSeatNotificationUi() {
