@@ -17,7 +17,7 @@ const {setGlobalOptions} = require("firebase-functions/v2");
 const {onDocumentWritten} = require("firebase-functions/v2/firestore");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {initializeApp} = require("firebase-admin/app");
-const {getFirestore, FieldValue} = require("firebase-admin/firestore");
+const {getFirestore, FieldValue, FieldPath} = require("firebase-admin/firestore");
 const {getMessaging} = require("firebase-admin/messaging");
 
 setGlobalOptions({region: "asia-northeast3"});
@@ -234,6 +234,159 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten(
     throw err;
   }
 });
+
+/* =====================================================================
+ * 좌석 상태 표시(비상 / Break) — global_seats.alertKind 가 켜지면
+ * 그 대회를 관리하는 admin/운영자 전원에게 백그라운드 FCM 전송.
+ * (foreground 깜박임/소리는 클라이언트가 이미 처리 — 여기는 잠금화면·앱 종료 대비)
+ * ===================================================================== */
+const SEAT_ALERT_MAX_AGE_MS = 5 * 60 * 1000;
+
+function normAlertKind(data = {}) {
+  const k = String(data && data.alertKind || "").trim();
+  if (k === "emergency" || k === "break") return k;
+  return data && data.alertActive === true ? "emergency" : "";
+}
+
+/** 이 대회를 조작할 수 있는 사용자 uid 집합 (firestore.rules isAdmin() 과 동일 기준) */
+async function collectTournamentAdminUids(tournamentId) {
+  const tid = String(tournamentId || "").trim();
+  const uids = new Set();
+  if (!tid) return uids;
+  const queries = [
+    db.collection("users").where("opsTournamentIds", "array-contains", tid),
+    db.collection("users").where(new FieldPath("allowedEvents", tid), "==", true),
+    db.collection("users").where("role", "==", "admin")
+  ];
+  const results = await Promise.allSettled(queries.map((q) => q.get()));
+  results.forEach((r, i) => {
+    if (r.status !== "fulfilled") {
+      console.warn("[notifyGlobalSeatAlert] admin query failed", i, r.reason && r.reason.message);
+      return;
+    }
+    r.value.forEach((d) => uids.add(d.id));
+  });
+  return uids;
+}
+
+exports.notifyGlobalSeatAlert = onDocumentWritten(
+  {
+    document: "tournaments/{tournamentId}/global_seats/{seatDocId}",
+    region: "asia-northeast3",
+    minInstances: 1
+  },
+  async (event) => {
+    const change = event.data;
+    if (!change || !change.after || !change.after.exists) return;
+
+    const after = change.after.data() || {};
+    const before = change.before && change.before.exists ? change.before.data() || {} : {};
+
+    const kind = normAlertKind(after);
+    if (!kind) return;                       // 꺼짐 / 원래 안 켜짐
+    if (kind === normAlertKind(before)) return; // 좌표·타이머 등 무관한 쓰기
+
+    const alertAtMs = toMillis(after.alertAt);
+    if (alertAtMs && Date.now() - alertAtMs > SEAT_ALERT_MAX_AGE_MS) return; // 늦은 트리거·재시도
+
+    const pushKey = `${kind}|${alertAtMs}`;
+    if (String(after.alertPushKey || "") === pushKey) return;
+
+    // 중복 전송 방지 — 이 pushKey 를 먼저 문서에 claim
+    let claimed = false;
+    try {
+      claimed = await db.runTransaction(async (tx) => {
+        const snap = await tx.get(change.after.ref);
+        if (!snap.exists) return false;
+        const cur = snap.data() || {};
+        if (normAlertKind(cur) !== kind) return false;
+        if (String(cur.alertPushKey || "") === pushKey) return false;
+        tx.set(change.after.ref, {alertPushKey: pushKey}, {merge: true});
+        return true;
+      });
+    } catch (e) {
+      console.error("[notifyGlobalSeatAlert] claim tx failed", e);
+      return;
+    }
+    if (!claimed) return;
+
+    const tid = String(event.params.tournamentId || "").trim();
+    const byUid = String(after.alertBy || "").trim();
+
+    const adminUids = await collectTournamentAdminUids(tid);
+    const targets = [...adminUids].filter((u) => u && u !== byUid);
+    if (!targets.length) return;
+
+    const kindLabel = kind === "emergency" ? "비상" : "Break";
+    const seatLabel = String(after.label || after.no || after.seatId || change.after.id || "").trim();
+    const person = String(after.person || "").trim();
+    const detail = [seatLabel ? `Seat ${seatLabel}` : "", person && person !== "비어있음" ? person : ""]
+      .filter(Boolean)
+      .join(" · ");
+    const title = `Han Pit · ${kindLabel}`;
+    const body = `${detail || "좌석"} — ${kindLabel} 표시`;
+    const targetUrl = resolveTargetUrlForPush(
+      `./global-layout.html?tournamentId=${encodeURIComponent(tid)}`
+    );
+    const notifyTag = `hanpit-seatalert-${tid}-${String(after.seatId || change.after.id || "").trim()}`;
+
+    const userSnaps = await db.getAll(...targets.map((u) => db.doc(`users/${u}`)));
+    const sends = [];
+    for (const snap of userSnaps) {
+      if (!snap.exists) continue;
+      const uid = snap.id;
+      const token = String(snap.get("fcmToken") || "").trim();
+      if (!token) continue;
+
+      void db
+        .doc(`users/${uid}`)
+        .set({appBadgeCount: FieldValue.increment(1)}, {merge: true})
+        .catch(() => {});
+
+      sends.push(
+        messaging
+          .send({
+            token,
+            data: {
+              title,
+              body,
+              targetUrl,
+              appBadgeCount: "1",
+              notifyTag,
+              uid,
+              seatAlert: "1",
+              alertKind: kind
+            },
+            android: {priority: "high"},
+            apns: {
+              headers: {"apns-priority": "10"},
+              payload: {aps: {contentAvailable: true}}
+            },
+            webpush: {
+              fcmOptions: {link: targetUrl},
+              headers: {Urgency: "high", TTL: "3600"}
+            }
+          })
+          .catch((err) => {
+            const code = String(err && err.code || "");
+            void db
+              .doc(`users/${uid}`)
+              .set({appBadgeCount: FieldValue.increment(-1)}, {merge: true})
+              .catch(() => {});
+            if (
+              code === "messaging/invalid-registration-token" ||
+              code === "messaging/registration-token-not-registered"
+            ) {
+              return db.doc(`users/${uid}`).set({fcmToken: ""}, {merge: true}).catch(() => {});
+            }
+            console.error("[notifyGlobalSeatAlert] send failed", uid, code, err && err.message);
+          })
+      );
+    }
+    await Promise.allSettled(sends);
+    console.info("[notifyGlobalSeatAlert]", tid, kind, "targets", targets.length, "sent", sends.length);
+  }
+);
 
 const ATTENDANCE_LOGS = "dealer_attendance_logs";
 const LOG_RETENTION_DAYS = 45;
