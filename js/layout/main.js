@@ -28,6 +28,7 @@ import { createLayoutUpdateTimers } from "./layout-update-timers.js";
 import { createLayoutHealUndo } from "./layout-heal-undo.js";
 import { createLayoutUiRender } from "./layout-ui-render.js";
 import { createLayoutBootstrap } from "./layout-bootstrap.js";
+import { initLayoutTopicBar } from "./layout-topic-bar.js";
 import { createLayoutPanelRenderers } from "./layout-panel-render.js";
 import {
   clone,
@@ -767,6 +768,8 @@ import {
   currentUserProfile = readBootUserProfile(user);
   seedMyUserProfileCache(currentUserProfile);
   applyLayoutOpsPermissions();
+
+  initLayoutTopicBar(TOURNAMENT_ID);
 
   markPageBootLoaded(app);
   if (layoutUi) {

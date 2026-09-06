@@ -2100,6 +2100,12 @@ input:focus{
   min-height: 0;
 }
 
+/* 상단 공지(TOPIC) 배너가 헤더와 #app 사이에 인라인으로 들어가면
+   그 높이(--gl-topic-h)만큼 #app 을 줄여 화면 넘침을 막는다. (통합 배치도와 동일) */
+body.has-topic-bar #app {
+  height: calc(100vh - var(--topbar-h) - var(--gl-topic-h));
+}
+
 #app.with-panel {
   padding-right: 414px;
 }
