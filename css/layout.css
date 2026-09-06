@@ -1378,6 +1378,8 @@ body.page-global-layout .pc-panel .global-list > .mobile-wait-row {
   gap: 5px;
   min-width: 0;
   overflow-x: auto;
+  /* overflow-x:auto 만 주면 overflow-y 가 auto 로 승격돼 우측에 유령 세로 스크롤바가 생긴다. */
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
 }

@@ -883,6 +883,9 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     gap: 5px;
     min-width: 0;
     overflow-x: auto;
+    /* overflow-x:auto 를 주면 overflow-y 가 visible → auto 로 승격돼
+       Seat·대기 행 우측(타이머 칩 옆)에 유령 세로 스크롤바가 생긴다. 세로는 고정. */
+    overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: thin;
   }
