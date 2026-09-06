@@ -98,11 +98,27 @@ export function personIdentityMatches(left = {}, right = {}) {
   return false;
 }
 
-/** 좌석 점유 판정 */
+/**
+ * 좌석 점유 판정 — 대기열에서 "이미 배치된 사람" 을 숨기는 용도.
+ * personIdentityMatches 는 양쪽 uid 가 다르면 이름이 같아도 즉시 false 를 반환한다.
+ * 좌석 personUid 가 비었거나(수동 좌석) 옛 점유자 uid 로 남아 있으면, 같은 사람이
+ * 대기+배치에 동시에 보이는 사고가 난다. 여기서는 uid·email·이름 중 하나라도
+ * 일치하면 "배치됨" 으로 본다(단락 없이 OR). 표시명이 완전히 동일한 서로 다른
+ * 딜러는 한쪽이 배치돼 있으면 대기에서 가려질 수 있으나, 운영상 그 편이 안전하다.
+ */
 export function isPersonSeatedInGlobalSeats(seats = [], person = {}) {
+  const uid = String(person?.uid || person?.personUid || "").trim();
+  const email = String(person?.email || person?.personEmail || "").trim().toLowerCase();
+  const name = String(person?.name || person?.nickname || person?.person || "").trim();
+  if (!uid && !email && !name) return false;
   for (const s of seats || []) {
     if (isEmptySeatPerson(s?.person)) continue;
-    if (personIdentityMatches(person, s)) return true;
+    const sUid = String(s?.personUid || s?.uid || "").trim();
+    const sEmail = String(s?.personEmail || s?.email || "").trim().toLowerCase();
+    const sName = String(s?.person || s?.name || s?.nickname || "").trim();
+    if (uid && sUid && uid === sUid) return true;
+    if (email && sEmail && email === sEmail) return true;
+    if (name && sName && name === sName) return true;
   }
   return false;
 }
