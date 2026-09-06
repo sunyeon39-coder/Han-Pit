@@ -500,6 +500,8 @@ import {
     assignWaitingToSeat,
     clearSeat,
     touchEvent,
+    EVENT_ID,
+    BOX_ID,
     isSeatMine: (seat) => isSeatAssignedToCurrentUser(seat, currentUser, currentUserProfile),
     onFullRender: () => render(),
     onCanvasSync: () => {

@@ -20,7 +20,9 @@ export function createLayoutCanvasBuild(deps) {
     touchEvent,
     onFullRender,
     onCanvasSync,
-    isSeatMine
+    isSeatMine,
+    EVENT_ID = "",
+    BOX_ID = ""
   } = deps;
 
   const dragBySeatId = new Map();
@@ -51,12 +53,33 @@ export function createLayoutCanvasBuild(deps) {
     };
   }
 
+  /**
+   * eventState.seats가 비어 있으면(layout_events / global_seats 매핑 모두 못 찾은 경우)
+   * 캔버스가 아무 안내 없이 텅 비어 보였다 — 어떤 event/box를 찾고 있었는지 그대로
+   * 보여줘서, 통합배치도에 등록된 좌석의 카드 ID·Box ID와 바로 비교할 수 있게 한다.
+   */
+  function syncCanvasEmptyState(inner, isEmpty) {
+    if (!inner) return;
+    const existing = inner.querySelector(".empty-panel");
+    if (!isEmpty) {
+      if (existing) existing.remove();
+      return;
+    }
+    if (existing) return;
+    const msg = document.createElement("div");
+    msg.className = "empty-panel";
+    msg.style.cssText = "position:absolute;left:24px;top:24px;width:280px;";
+    msg.textContent = `현재 이벤트(${EVENT_ID})/Box(${BOX_ID})에 등록된 Seat이 없습니다. 통합배치도에서 같은 카드·Box로 좌석을 등록했는지 확인하세요.`;
+    inner.appendChild(msg);
+  }
+
   function syncCanvasInner(inner) {
     if (!inner) return false;
     const result = syncSeatBoxesInContainer(inner, eventState.seats, {
       getSeatId: (box) => box.getAttribute("data-seatid"),
       buildBoxState: (seat) => buildLayoutSeatBoxState(seat)
     });
+    syncCanvasEmptyState(inner, !!result.empty);
     return !result.rebuilt;
   }
 
