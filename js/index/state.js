@@ -5,7 +5,6 @@ export const IX = {
   topbarTournamentName: null,
 
   eventAdminBtn: null,
-  globalLayoutBtn: null,
   attendanceLogBtn: null,
   attendanceLogModal: null,
   closeAttendanceLogBtn: null,
@@ -125,7 +124,6 @@ export function refreshIndexDomRefs() {
   IX.topbarTournamentName = $("topbarTournamentName");
 
   IX.eventAdminBtn = $("eventAdminBtn");
-  IX.globalLayoutBtn = $("globalLayoutBtn");
   IX.attendanceLogBtn = $("attendanceLogBtn");
   IX.attendanceLogModal = $("attendanceLogModal");
   IX.closeAttendanceLogBtn = $("closeAttendanceLogBtn");

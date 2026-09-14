@@ -466,11 +466,9 @@ function wireIndexPageControls() {
     if (href) location.href = href;
   };
 
-  [IX.globalLayoutBtn, IX.topicGlobalLayoutBtn].forEach((btn) => {
-    btn?.addEventListener("pointerenter", prefetchGlobalLayout, { passive: true });
-    btn?.addEventListener("focus", prefetchGlobalLayout, { passive: true });
-    btn?.addEventListener("click", goToGlobalLayout);
-  });
+  IX.topicGlobalLayoutBtn?.addEventListener("pointerenter", prefetchGlobalLayout, { passive: true });
+  IX.topicGlobalLayoutBtn?.addEventListener("focus", prefetchGlobalLayout, { passive: true });
+  IX.topicGlobalLayoutBtn?.addEventListener("click", goToGlobalLayout);
 
   IX.eventAdminBtn?.addEventListener("click", () => {
     populateEventSelect();
