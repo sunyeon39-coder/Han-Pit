@@ -27,7 +27,7 @@ function clearPendingRevealTimer() {
 
 function isDedicatedLayoutNotificationPage() {
   const path = String(location.pathname || "").toLowerCase();
-  return path.endsWith("/layout.html") || path.endsWith("/global-layout.html");
+  return path.endsWith("/global-layout.html");
 }
 
 function isPageBackgroundForPush() {

@@ -87,7 +87,7 @@ export function buildSeatClearedNotificationWrite(fields = {}) {
   };
 }
 
-/** 근무자는 개별 layout.html이 아닌 통합 배치도(global-layout.html)에서만 확인한다 */
+/** 근무자는 통합 배치도(global-layout.html)에서만 확인한다 */
 export function buildSeatAssignedTargetUrl(tournamentId, eventId, boxId) {
   const q = new URLSearchParams();
   const t = String(tournamentId || "").trim();
