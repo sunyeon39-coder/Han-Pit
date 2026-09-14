@@ -398,7 +398,10 @@ async function finalizeOneIncomingSwap(seatDocSnap) {
         person: incomingName,
         personUid: incomingUid,
         personEmail: incomingEmail,
-        seatedAt: incomingAtMs,
+        // 실제로 자리를 넘겨받는 지금(finalize 시점)부터 새로 시작 — incomingAt(배치확인
+        // 누른 시점)을 쓰면 그 10분 동안 실제로는 기존 점유자가 앉아 있었는데도 새
+        // 사람의 착석 시간이 이미 10분 지난 것처럼 보였다.
+        seatedAt: now,
         status: "occupied",
         incomingPerson: FieldValue.delete(),
         incomingPersonUid: FieldValue.delete(),
