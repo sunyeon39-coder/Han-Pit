@@ -29,6 +29,8 @@ export const GL = {
   topicBar: null,
   topicBarText: null,
   topicEditBtn: null,
+  shiftRevealBanner: null,
+  shiftRevealBannerText: null,
 
   currentTournament: null,
   /** tournaments/{id}.topicText — 상단 공지 배너 */
@@ -139,4 +141,6 @@ export function initGlDomRefs() {
   GL.topicBar = document.getElementById("topicBar");
   GL.topicBarText = document.getElementById("topicBarText");
   GL.topicEditBtn = document.getElementById("topicEditBtn");
+  GL.shiftRevealBanner = document.getElementById("shiftRevealBanner");
+  GL.shiftRevealBannerText = document.getElementById("shiftRevealBannerText");
 }

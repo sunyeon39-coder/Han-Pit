@@ -74,6 +74,7 @@ import {
 } from "../shared/load-user-profile.js";
 import { canShowTournamentOpsUi } from "../shared/tournament-ops-access.js";
 import { canManageGlobalLayoutOps } from "./ops-access.js";
+import { updateShiftRevealBanner } from "./shift-reveal-banner.js";
 import { isSystemAdminEmail } from "../shared/auth-helpers.js";
 import {
   globalLayoutTournamentMeta,
@@ -171,6 +172,7 @@ export function startGlobalLayoutApp() {
     renderSeatPanel();
     updateGlobalMetaToolbar();
     checkGlobalLayoutOptimisticSeatAlert();
+    updateShiftRevealBanner();
     scheduleHealMissingWaitingFromAttendance();
   }
 
@@ -399,7 +401,9 @@ export function startGlobalLayoutApp() {
   function startGlobalLayoutTimer() {
     if (GL.timerHandle) clearInterval(GL.timerHandle);
     GL.timerHandle = setInterval(() => {
-      if (document.visibilityState === "hidden" || isTypingInPanel()) return;
+      if (document.visibilityState === "hidden") return;
+      updateShiftRevealBanner();
+      if (isTypingInPanel()) return;
       if (layoutIsMobile()) {
         refreshGlobalLayoutMobileTimers();
         return;
