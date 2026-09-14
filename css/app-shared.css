@@ -182,43 +182,36 @@ a.app-mark {
 /* 상단 공지(TOPIC) 배너 — index / global-layout 공통 */
 :root {
   --gl-topic-h: 53px;
-  --gl-shift-banner-h: 40px;
 }
 
-/* 교대 5분 전 배너 — global-layout 전용, 보고 있는 사람 전원에게 표시(계정 무관) */
+/*
+ * 교대 5분 전 배너 — global-layout 전용, 보고 있는 사람 전원에게 표시(계정 무관).
+ * 화면 하단 중앙에 떠 있는 토스트라 레이아웃 흐름에 자리를 차지하지 않는다(position: fixed).
+ */
 .gl-shift-banner {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  z-index: 500;
   display: flex;
   align-items: center;
-  gap: 10px;
-  height: var(--gl-shift-banner-h);
-  padding: 0 16px;
-  border-top: 1px solid rgba(255, 176, 32, 0.4);
-  border-bottom: 1px solid rgba(255, 176, 32, 0.4);
-  background: rgba(255, 176, 32, 0.1);
+  padding: 10px 22px;
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(255, 77, 94, 0.55);
+  background: rgba(30, 8, 11, 0.92);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
 }
 
 .gl-shift-banner[hidden] {
   display: none;
 }
 
-.gl-shift-banner__badge {
-  flex: 0 0 auto;
-  padding: 3px 10px;
-  border-radius: var(--radius-pill);
-  background: linear-gradient(180deg, var(--accent-gold-strong), var(--accent-gold));
-  color: #241400;
-  font-weight: 800;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-}
-
 .gl-shift-banner__text {
-  color: var(--accent-gold-strong);
-  font-weight: 700;
-  font-size: 13px;
+  color: var(--danger);
+  font-weight: 800;
+  font-size: 14px;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .gl-topic-bar {

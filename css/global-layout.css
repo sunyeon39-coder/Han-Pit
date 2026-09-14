@@ -16,14 +16,6 @@ body.page-global-layout.has-topic-bar #app {
   height: calc(100vh - var(--topbar-h) - var(--gl-topic-h));
 }
 
-body.page-global-layout.has-shift-banner #app {
-  height: calc(100vh - var(--topbar-h) - var(--gl-shift-banner-h));
-}
-
-body.page-global-layout.has-topic-bar.has-shift-banner #app {
-  height: calc(100vh - var(--topbar-h) - var(--gl-topic-h) - var(--gl-shift-banner-h));
-}
-
 #app.with-panel {
   padding-right: min(calc(48vw + 14px), 654px);
 }

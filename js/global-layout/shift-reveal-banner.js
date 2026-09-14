@@ -20,7 +20,6 @@ export function updateShiftRevealBanner() {
     return getSeatConfirmHighlightState(toMillis(s?.seatedAt)).isBlinkPhase;
   });
 
-  document.body.classList.toggle("has-shift-banner", hasActive);
   el.hidden = !hasActive;
   el.setAttribute("aria-hidden", hasActive ? "false" : "true");
   if (hasActive) textEl.textContent = BANNER_TEXT;
