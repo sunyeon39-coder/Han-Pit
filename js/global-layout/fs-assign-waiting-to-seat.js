@@ -321,6 +321,32 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
               name: existingIncomingName
             })
           : [];
+        // 이미 어딘가 앉아 있는데 대기열에도 유령처럼 남아있는 잔여 문서 — 이번 배정
+        // 당사자는 위에서 별도로 지우니 제외. 다른 경로(예: finalize 스케줄러)로 생긴
+        // 잔여물도 여기서 같이 정리된다.
+        const staleSeatedWaitingRefs = uniqueDocRefs(
+          (GL.globalWaiting || [])
+            .filter((w) => {
+              const rid = String(w?.id || "").trim();
+              if (!rid) return false;
+              if (!waitingRowBelongsToTournament(w, GL.tournamentId)) return false;
+              if (
+                waitingRowMatchesPerson(w, GL.tournamentId, {
+                  uid: waitingUid,
+                  email: waiting.email,
+                  name: waitingName
+                })
+              ) {
+                return false;
+              }
+              return isPersonSeatedInGlobalSeats(GL.globalSeats, {
+                uid: w?.uid,
+                email: w?.email,
+                name: w?.name
+              });
+            })
+            .map((w) => globalWaitingDocRef(db, GL.tournamentId, String(w.id).trim()))
+        );
         const opPicksRef = operatorPicksDocRef(db, GL.tournamentId);
 
         const readRefs = [
@@ -328,7 +354,8 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
           ...(eventRef ? [eventRef] : []),
           ...waitingDupRefs,
           ...assigneeWaitingRefs,
-          ...existingIncomingWaitingRefs
+          ...existingIncomingWaitingRefs,
+          ...staleSeatedWaitingRefs
         ];
         const readSnaps = await Promise.all(readRefs.map((r) => tx.get(r)));
 
@@ -342,6 +369,11 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
         const existingIncomingWaitingSnaps = readSnaps.slice(
           existingIncomingOffset,
           existingIncomingOffset + existingIncomingWaitingRefs.length
+        );
+        const staleSnapOffset = existingIncomingOffset + existingIncomingWaitingRefs.length;
+        const staleSeatedWaitingSnaps = readSnaps.slice(
+          staleSnapOffset,
+          staleSnapOffset + staleSeatedWaitingRefs.length
         );
 
         let eventCardLabel =
@@ -426,6 +458,11 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
 
         for (const ref of assigneeWaitingRefs) {
           tx.delete(ref);
+        }
+        for (let i = 0; i < staleSeatedWaitingRefs.length; i++) {
+          if (staleSeatedWaitingSnaps[i]?.exists()) {
+            tx.delete(staleSeatedWaitingRefs[i]);
+          }
         }
 
         if (nextOperatorPicks !== opPicksData.operatorPicks) {

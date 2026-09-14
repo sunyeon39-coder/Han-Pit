@@ -310,8 +310,18 @@ exports.sendDueLayoutSeatNotifications = onSchedule(
 const SEAT_SWAP_SETTLE_MS = 10 * 60 * 1000;
 const INCOMING_SWAP_FINALIZE_LIMIT = 100;
 
-function randomWaitingIdSuffix() {
-  return Math.random().toString(36).slice(2, 10);
+/**
+ * uid 없는(계정 없이 수동 추가된) 사람을 위한 대기 문서 id — 이름 기반으로 결정적이어야
+ * 한다. 매번 랜덤 id를 쓰면 같은 사람이 배치→교체를 반복할 때마다 예전 대기 문서가
+ * 안 지워진 채 계속 쌓여, 실제로는 이미 다른 자리에 앉아 있는데도 대기 목록에 유령처럼
+ * 계속 남아 보이는 원인이 됐다.
+ */
+function manualWaitingIdForName(name = "") {
+  const safe = String(name || "")
+    .trim()
+    .replace(/[/\s]+/g, "_")
+    .slice(0, 120);
+  return `w_manual_${safe || "unnamed"}`;
 }
 
 /** 이 사람이 이 좌석 말고 다른 좌석에도 이미 앉아 있는지 — 대기로 되돌릴지 판단용 */
@@ -431,7 +441,7 @@ async function finalizeOneIncomingSwap(seatDocSnap) {
 
     if (prevName && prevName !== "비어있음") {
       if (!prevHasOtherSeat) {
-        const waitingDocId = prevUid ? `w_${prevUid}` : `w_manual_${randomWaitingIdSuffix()}`;
+        const waitingDocId = prevUid ? `w_${prevUid}` : manualWaitingIdForName(prevName);
         tx.set(
           db.doc(`tournaments/${tournamentId}/global_waiting/${waitingDocId}`),
           {
