@@ -104,7 +104,7 @@ body {
 .top-btn.admin {
   border-color: var(--amber-dim, rgba(255, 176, 32, 0.5));
   background: linear-gradient(135deg, var(--amber-strong, #ffcf6b), var(--amber, #ffb020) 70%);
-  color: #14100a;
+  color: var(--btn-accent-ink);
   font-weight: 700;
   text-shadow: none;
 }
@@ -364,7 +364,7 @@ body {
   clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
   border: 1px solid var(--amber-dim);
   background: linear-gradient(135deg, var(--amber-strong), var(--amber) 70%);
-  color: #14100a;
+  color: var(--btn-accent-ink);
   font-size: 14px;
   font-weight: 800;
   cursor: pointer;
@@ -608,7 +608,7 @@ body {
   padding: 0 20px;
   border: 1px solid var(--amber-dim);
   background: linear-gradient(135deg, var(--amber-strong), var(--amber) 70%);
-  color: #14100a;
+  color: var(--btn-accent-ink);
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.01em;
@@ -825,7 +825,7 @@ body {
 
 .btn.primary {
   background: linear-gradient(135deg, var(--amber-strong), var(--amber) 70%);
-  color: #14100a;
+  color: var(--btn-accent-ink);
 }
 
 .btn.ghost {
@@ -940,7 +940,7 @@ body {
 .row-btn.assign {
   background: linear-gradient(135deg, var(--amber-strong), var(--amber) 70%);
   border-color: var(--amber-dim);
-  color: #14100a;
+  color: var(--btn-accent-ink);
 }
 
 .row-btn.remove-code {
@@ -1121,7 +1121,7 @@ body {
 
 .modal-card.admin-modal-card .btn.primary {
   background: linear-gradient(135deg, var(--amber-strong), var(--amber) 70%);
-  color: #14100a;
+  color: var(--btn-accent-ink);
   border: 1px solid var(--amber-dim);
 }
 

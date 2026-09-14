@@ -167,7 +167,7 @@ body {
 .manage-btn:hover {
   background: linear-gradient(135deg, var(--accent-gold-strong), var(--accent-strong) 70%);
   border-color: rgba(255, 207, 107, 0.55);
-  color: #14100a;
+  color: var(--btn-accent-ink);
 }
 
 /* 그 중 가장 자주 쓰는 항목만 은은하게 강조 */

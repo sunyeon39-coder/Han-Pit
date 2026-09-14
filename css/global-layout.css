@@ -42,8 +42,8 @@ body.page-global-layout.has-topic-bar #app {
    반전 대신 눈에 띄는 밝은색 배경으로 표시 */
 .pc-canvas .seat-box.is-pending-assign,
 .pc-canvas .seat-box.is-confirm-blink {
-  background: var(--gl-highlight, #ffffff);
-  border-color: var(--gl-highlight, #ffffff);
+  background: var(--gl-highlight, #fff);
+  border-color: var(--gl-highlight, #fff);
 }
 
 .pc-canvas .seat-box.is-pending-assign .seat-title,
@@ -1124,8 +1124,8 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
 
   /* "배치확인" 후 5~10분 구간 — 30초 간격 강조(교대 임박 경고) */
   body.page-global-layout .global-layout-mobile .mobile-seat-row.is-confirm-blink {
-    background: var(--gl-highlight, #ffffff);
-    border-color: var(--gl-highlight, #ffffff);
+    background: var(--gl-highlight, #fff);
+    border-color: var(--gl-highlight, #fff);
   }
 
   body.page-global-layout .global-layout-mobile .mobile-seat-row.is-confirm-blink .mobile-seat-person,
@@ -1757,7 +1757,6 @@ body.page-global-layout .pc-panel .wait-panel-row .seat-inline-actions .time-chi
   border-radius: 6px;
   border: 1px solid rgba(122, 162, 255, 0.75);
   background: rgba(80, 118, 255, 0.22);
-  color: #cfe2ff;
   font-size: 10px;
   font-weight: 900;
   letter-spacing: 0.08em;
