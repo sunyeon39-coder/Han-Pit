@@ -162,50 +162,62 @@ function seatMatchesPerson(s, dealer) {
   return !uid && !personUid && person === name;
 }
 
-function seatMatchesPreviousPerson(s, dealer) {
+function seatMatchesIncomingPerson(s, dealer) {
   const uid = String(dealer?.uid || "").trim();
   const name = String(dealer?.name || "").trim();
-  const prevPerson = String(s?.previousPerson || "").trim();
-  if (isEmptyPerson(prevPerson)) return false;
-  const prevUid = String(s?.previousPersonUid || "").trim();
-  if (uid && prevUid) return prevUid === uid;
-  return !uid && !prevUid && prevPerson === name;
+  const incomingPerson = String(s?.incomingPerson || "").trim();
+  if (isEmptyPerson(incomingPerson)) return false;
+  const incomingUid = String(s?.incomingPersonUid || "").trim();
+  if (uid && incomingUid) return incomingUid === uid;
+  return !uid && !incomingUid && incomingPerson === name;
 }
 
 /**
- * 다음(NEXT) — 배치확인으로 방금 이 좌석의 실제 occupant가 된 딜러, 전환 구간(확정 후 10분)에만.
- * 현재(CURRENT) — 전환 중이면 스왑으로 밀려난 이전 occupant 의 좌석을 그대로 보여주고,
- * 전환이 끝났거나 애초에 스왑이 아니었으면 실제 occupant 좌석을 보여준다.
- * admin은 확정 즉시(0분부터) 다음 배치를 볼 수 있지만, 근무자는 공개 시점(REVEAL, 5분)
- * 전까지는 교대 사실 자체를 알 수 없어야 한다.
+ * 다음(NEXT) — 스왑이면 이 좌석에 "교대 확정 대기 중"(incomingPerson)으로 올라와 있는
+ * 딜러를 incomingAt 기준으로, 스왑이 아니라 방금 빈 자리에 새로 배치된 경우엔 seatedAt
+ * 기준으로 — 둘 다 확정 전(10분) 구간에만 보여준다. admin은 확정 즉시(0분부터) 볼 수
+ * 있지만, 근무자는 공개 시점(REVEAL, 5분) 전까지는 교대 사실 자체를 알 수 없어야 한다.
  */
 function resolveDealerNextSeat(dealer = {}) {
-  const seat = (GL.globalSeats || []).find((s) => seatMatchesPerson(s, dealer));
-  if (!seat) return null;
-  const { isRecent, isBlinkPhase } = getSeatConfirmHighlightState(toMillis(seat.seatedAt));
+  const incomingSeat = (GL.globalSeats || []).find((s) => seatMatchesIncomingPerson(s, dealer));
+  if (incomingSeat) {
+    const { isRecent, isBlinkPhase } = getSeatConfirmHighlightState(toMillis(incomingSeat.incomingAt));
+    if (!isRecent) return null;
+    if (!canManageGlobalLayoutOps() && !isBlinkPhase) return null;
+    return incomingSeat;
+  }
+
+  const freshSeat = (GL.globalSeats || []).find((s) => seatMatchesPerson(s, dealer));
+  if (!freshSeat) return null;
+  const { isRecent, isBlinkPhase } = getSeatConfirmHighlightState(toMillis(freshSeat.seatedAt));
   if (!isRecent) return null;
   if (!canManageGlobalLayoutOps() && !isBlinkPhase) return null;
-  return seat;
+  return freshSeat;
 }
 
+/**
+ * 현재(CURRENT) — 이 딜러가 실제로 앉아 있는 좌석(seat.person). 교대가 확정 대기 중이어도
+ * 실제 occupant는 finalize 전까지 안 바뀌므로 그냥 정상적으로 보여주면 된다. 스왑이 아니라
+ * 방금 빈 자리에 새로 배치된 경우(incomingPerson 없음)만, 정착 전(0~10분)에는 "다음"에서만
+ * 보여주고 "현재"는 정착 후에 나타나게 한다.
+ */
 function resolveDealerCurrentSeat(dealer = {}) {
-  const prevSeat = (GL.globalSeats || []).find((s) => {
-    // 좌석이 지금 실제로 비어 있으면 "스왑 전환 중"일 수 없다 — previousPerson 필드가
-    // (예: 비우기 직후 한 틱 정도) 남아있어도 여기서 절대 걸리지 않게 방어한다.
-    if (isEmptyPerson(String(s?.person || "").trim())) return false;
-    if (!seatMatchesPreviousPerson(s, dealer)) return false;
-    return getSeatConfirmHighlightState(toMillis(s.seatedAt)).isRecent;
-  });
-  if (prevSeat) return prevSeat;
-
   const seat = (GL.globalSeats || []).find((s) => seatMatchesPerson(s, dealer));
   if (!seat) return null;
+  if (!isEmptyPerson(String(seat.incomingPerson || "").trim())) return seat;
   return getSeatConfirmHighlightState(toMillis(seat.seatedAt)).isRecent ? null : seat;
 }
 
 function resolveDealerCurrentSeatLabel(dealer = {}) {
   const seat = resolveDealerCurrentSeat(dealer);
   return seat ? seatCanvasDigitsOnly(seat.label, seat.no) : "";
+}
+
+/** resolveDealerNextSeat 이 돌려준 좌석의 반전(blink) 기준 시각 — 스왑이면 incomingAt, 아니면 seatedAt */
+function resolveNextSeatBlinkAtMs(nextSeat, dealer = {}) {
+  if (!nextSeat) return 0;
+  if (seatMatchesIncomingPerson(nextSeat, dealer)) return toMillis(nextSeat.incomingAt);
+  return toMillis(nextSeat.seatedAt);
 }
 
 function setMobileSeatSelection(seatId = "") {
@@ -426,6 +438,17 @@ export function wireGlobalLayoutMobileEventsOnce() {
         if (GL.lastSeatTapId === sid && now - Number(GL.lastSeatTapAt || 0) < GLOBAL_MOBILE_SEAT_DOUBLE_MS) {
           GL.lastSeatTapAt = 0;
           GL.lastSeatTapId = "";
+          // 교대 확정 대기 중(10분 전)이면 취소만 — 실제 occupant는 안 건드린다.
+          if (!isEmptyPerson(String(seat?.incomingPerson || "").trim())) {
+            try {
+              const { cancelIncomingSeatSwap } = await loadFirestoreOps();
+              await cancelIncomingSeatSwap(sid);
+            } catch (err) {
+              console.error("mobile cancelIncomingSeatSwap error:", err);
+              fullRender();
+            }
+            return;
+          }
           try {
             const { clearSeat } = await loadFirestoreOps();
             setMobileSeatSelection("");
@@ -476,9 +499,8 @@ export function refreshGlobalLayoutMobileTimers() {
     if (!dealer) return;
     const currentSeat = resolveDealerCurrentSeat(dealer);
     const nextSeat = resolveDealerNextSeat(dealer);
-    const blinkSeat = nextSeat;
-    const { isBlinkOn } = blinkSeat
-      ? getSeatConfirmHighlightState(toMillis(blinkSeat.seatedAt))
+    const { isBlinkOn } = nextSeat
+      ? getSeatConfirmHighlightState(resolveNextSeatBlinkAtMs(nextSeat, dealer))
       : { isBlinkOn: false };
     const currentCol = row.querySelector(".mobile-seat-col--current");
     if (currentCol) {
@@ -548,9 +570,8 @@ export function renderGlobalLayoutMobile(options = {}) {
       const nextSeat = resolveDealerNextSeat(dealer);
       const currentSeatLabel = currentSeat ? seatCanvasDigitsOnly(currentSeat.label, currentSeat.no) : "";
       const nextSeatLabel = nextSeat ? seatCanvasDigitsOnly(nextSeat.label, nextSeat.no) : "";
-      const blinkSeat = nextSeat;
-      const { isBlinkOn } = blinkSeat
-        ? getSeatConfirmHighlightState(toMillis(blinkSeat.seatedAt))
+      const { isBlinkOn } = nextSeat
+        ? getSeatConfirmHighlightState(resolveNextSeatBlinkAtMs(nextSeat, dealer))
         : { isBlinkOn: false };
       seatCard.innerHTML += `
         <div class="mobile-seat-row compact ${isBlinkOn ? "is-confirm-blink" : ""}" data-mobile-dealer="${escapeHtml(dealer.uid || dealer.waitingId || "")}">

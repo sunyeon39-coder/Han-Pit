@@ -28,6 +28,7 @@ import { flushOptimisticGlobalLayoutUi } from "./optimistic-seat-mutation.js";
 import {
   saveSeatPosition,
   clearSeat,
+  cancelIncomingSeatSwap,
   deleteGlobalSeat,
   addGlobalSeat,
   addManualWaiting,
@@ -378,6 +379,15 @@ export function bindGlobalLayoutEventHandlers() {
     if (!seatId) return;
     const seat = getSeatById(seatId);
     if (!seat) return;
+    // 교대 확정 대기 중(10분 전)이면 취소만 — 실제 occupant는 안 건드린다.
+    if (!isEmptyPerson(String(seat.incomingPerson || "").trim())) {
+      try {
+        await cancelIncomingSeatSwap(seatId);
+      } catch (err) {
+        console.error("panel dblclick cancelIncomingSeatSwap error:", err);
+      }
+      return;
+    }
     if (isEmptyPerson(String(seat.person || "").trim())) return;
     try {
       await clearSeat(seatId);
@@ -501,6 +511,17 @@ export function bindGlobalLayoutEventHandlers() {
         GL.lastSeatTapId = "";
         renderSeats(GL.globalSeats);
         renderWaiting(getCurrentTournamentWaiting());
+        return;
+      }
+      // 교대 확정 대기 중(10분 전)이면 취소만 — 실제 occupant는 안 건드린다.
+      if (!isEmptyPerson(String(seat.incomingPerson || "").trim())) {
+        try {
+          await cancelIncomingSeatSwap(sid);
+          GL.lastSeatTapAt = 0;
+          GL.lastSeatTapId = "";
+        } catch (err) {
+          console.error("canvas seat cancelIncomingSeatSwap error:", err);
+        }
         return;
       }
       if (!isEmptyPerson(String(seat.person || "").trim())) {

@@ -120,6 +120,57 @@ export async function clearSeat(seatId = "") {
       const historyEntry = entryFromSeatOccupant(seatData, now, "clear");
       const nextHistory = appendSeatHistoryPatch(seatData.seatHistory, historyEntry);
 
+      // 이 좌석에 "교대 확정 대기 중"(incomingPerson)인 사람이 있었다면, 좌석을 통째로
+      // 비우는 이상 그 사람도 대기로 되돌린다 — 안 그러면 10분 뒤 스케줄러가 이미 없는
+      // occupant를 교체하려는 어중간한 상태로 남는다.
+      const incomingUid = String(seatData.incomingPersonUid || "").trim();
+      const incomingEmail = String(seatData.incomingPersonEmail || "").trim();
+      const incomingName = String(seatData.incomingPerson || "").trim();
+      if (!isEmptyPerson(incomingName)) {
+        const incomingWaitingRefs = findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, {
+          uid: incomingUid,
+          email: incomingEmail,
+          name: incomingName
+        });
+        const incomingWaitingSnaps = await Promise.all(incomingWaitingRefs.map((r) => tx.get(r)));
+        const incomingExistingRows = incomingWaitingSnaps
+          .map((s, i) => (s.exists() ? { id: incomingWaitingRefs[i].id, ...s.data() } : null))
+          .filter(Boolean);
+        const restoredIncomingRow = rebuildWaitingAfterSeatToWait(
+          incomingExistingRows,
+          GL.tournamentId,
+          { uid: incomingUid, email: incomingEmail, name: incomingName },
+          now,
+          { source: "incoming_swap_cancelled", resetJoinedAt: true }
+        )[0];
+        const { toSet: incomingToSet, toDelete: incomingToDelete } = diffGlobalWaitingRows(
+          incomingExistingRows,
+          restoredIncomingRow ? [restoredIncomingRow] : []
+        );
+        for (const { id, data } of incomingToSet) {
+          tx.set(globalWaitingDocRef(db, GL.tournamentId, id), data, { merge: true });
+        }
+        for (const id of incomingToDelete) {
+          tx.delete(globalWaitingDocRef(db, GL.tournamentId, id));
+        }
+        if (incomingUid) {
+          tx.set(
+            getAttendanceRef(db, GL.tournamentId, incomingUid),
+            {
+              uid: incomingUid,
+              email: incomingEmail,
+              name: incomingName,
+              tournamentId: GL.tournamentId,
+              status: "waiting",
+              statusChangedAt: now,
+              updatedAt: now,
+              updatedAtServer: serverTimestamp()
+            },
+            { merge: true }
+          );
+        }
+      }
+
       tx.set(
         seatRef,
         {
@@ -133,6 +184,11 @@ export async function clearSeat(seatId = "") {
           previousPerson: "",
           previousPersonUid: "",
           previousPersonEmail: "",
+          // 교대 확정 대기 중이던 사람도 위에서 대기로 되돌렸으니 같이 지운다.
+          incomingPerson: "",
+          incomingPersonUid: "",
+          incomingPersonEmail: "",
+          incomingAt: null,
           updatedAt: now,
           updatedAtServer: serverTimestamp(),
           ...(nextHistory ? { seatHistory: nextHistory } : {})

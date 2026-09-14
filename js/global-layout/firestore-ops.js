@@ -15,7 +15,7 @@ export {
   removeManualWaiting,
   setWaitingBlocked
 } from "./fs-waiting-list-undo.js";
-export { assignSelectedWaitingToSeat } from "./fs-assign-waiting-to-seat.js";
+export { assignSelectedWaitingToSeat, cancelIncomingSeatSwap } from "./fs-assign-waiting-to-seat.js";
 export { clearSeat } from "./fs-clear-global-seat.js";
 export {
   alignSelectedGlobalSeats,

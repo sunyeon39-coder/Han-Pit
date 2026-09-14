@@ -52,7 +52,12 @@ function clearPersonOnSeatInMemory(seat = {}) {
     // 딜러 명단(현재/다음)이 그 사람을 계속 붙잡고 보여주는 원인이 된다.
     previousPerson: "",
     previousPersonUid: "",
-    previousPersonEmail: ""
+    previousPersonEmail: "",
+    // 교대 확정 대기 중이던 사람도 좌석이 통째로 비면 같이 지운다(호출부에서 대기로 복원).
+    incomingPerson: "",
+    incomingPersonUid: "",
+    incomingPersonEmail: "",
+    incomingAt: null
   };
 }
 
@@ -62,7 +67,12 @@ function matchesPersonOnSeat(seat = {}, person = {}) {
   return personIdentityMatches(person, seat);
 }
 
-/** 배치 클릭 직후 화면 반영 — Firestore 완료 전 */
+/**
+ * 배치 클릭 직후 화면 반영 — Firestore 완료 전.
+ * 좌석이 이미 점유돼 있으면(스왑) 실제 occupant는 그대로 두고 incomingPerson/incomingAt
+ * 으로만 "10분 뒤 확정 예정"을 표시한다 — 실제 person 필드는 finalize(서버 스케줄러)
+ * 전까지 바뀌지 않는다. 빈 좌석에 새로 배치하는 경우만 기존처럼 즉시 반영한다.
+ */
 export function applyOptimisticAssign({ targetSeatId, waiting, seat, now: nowOverride = 0 }) {
   const sid = String(targetSeatId || "").trim();
   const snapshot = {
@@ -81,6 +91,7 @@ export function applyOptimisticAssign({ targetSeatId, waiting, seat, now: nowOve
 
   const incoming = { uid: waitingUid, email: waiting.email, name: waitingName };
 
+  // 새로 배치되는 사람이 다른 좌석에 이미 앉아 있었다면(중복) 그 좌석은 항상 비운다.
   GL.globalSeats = GL.globalSeats.map((s) => {
     const seatId = String(s?.seatId || "").trim();
     if (seatId === sid) return s;
@@ -91,10 +102,9 @@ export function applyOptimisticAssign({ targetSeatId, waiting, seat, now: nowOve
   const seatIdx = GL.globalSeats.findIndex((s) => String(s?.seatId || "").trim() === sid);
   const target = seatIdx >= 0 ? GL.globalSeats[seatIdx] : seat;
   const prevName = String(target?.person || "").trim();
-  const prevUid = String(target?.personUid || "").trim();
-  const prevEmail = String(target?.personEmail || "").trim();
   const wasOccupied = !isEmptyPerson(prevName);
 
+  // 배정 대상은 대기열에서 "찜된" 상태이니 화면에서도 바로 사라져야 한다.
   GL.globalWaiting = GL.globalWaiting.filter((w) => {
     if (!w || typeof w !== "object") return false;
     const wId = String(w.id || "").trim();
@@ -111,41 +121,22 @@ export function applyOptimisticAssign({ targetSeatId, waiting, seat, now: nowOve
     return true;
   });
 
-  if (wasOccupied) {
-    const prevPerson = { uid: prevUid, email: prevEmail, name: prevName };
-    GL.globalSeats = GL.globalSeats.map((s) => {
-      const seatId = String(s?.seatId || "").trim();
-      if (seatId === sid) return s;
-      if (matchesPersonOnSeat(s, prevPerson)) return clearPersonOnSeatInMemory(s);
-      return s;
-    });
-
-    const others = GL.globalSeats.filter((s) => {
-      const seatId = String(s?.seatId || "").trim();
-      if (seatId === sid) return false;
-      return matchesPersonOnSeat(s, prevPerson);
-    });
-    const bumpedPrevHasOtherSeat = others.some((s) => !isEmptyPerson(String(s?.person || "").trim()));
-
-    if (!bumpedPrevHasOtherSeat) {
-      GL.globalWaiting = rebuildWaitingAfterSeatToWait(
-        GL.globalWaiting,
-        GL.tournamentId,
-        prevPerson,
-        now,
-        { source: "seat_swap", resetJoinedAt: true }
-      );
-    }
-  }
-
-  const nextTarget = {
-    ...target,
-    person: waitingName || waitingUid || "-",
-    personUid: waitingUid,
-    personEmail: String(waiting?.email || "").trim(),
-    seatedAt: now,
-    status: "occupied"
-  };
+  const nextTarget = wasOccupied
+    ? {
+        ...target,
+        incomingPerson: waitingName || waitingUid || "-",
+        incomingPersonUid: waitingUid,
+        incomingPersonEmail: waitingEmail,
+        incomingAt: now
+      }
+    : {
+        ...target,
+        person: waitingName || waitingUid || "-",
+        personUid: waitingUid,
+        personEmail: waitingEmail,
+        seatedAt: now,
+        status: "occupied"
+      };
   if (seatIdx >= 0) GL.globalSeats[seatIdx] = nextTarget;
   else GL.globalSeats.push(nextTarget);
 
@@ -159,6 +150,49 @@ export function applyOptimisticAssign({ targetSeatId, waiting, seat, now: nowOve
     GL.globalWaiting = snapshot.globalWaiting;
     GL.selectedWaitingId = snapshot.selectedWaitingId;
     GL.selectedSeatIds = snapshot.selectedSeatIds;
+  };
+}
+
+/** 교대 확정 대기(incomingPerson) 취소 클릭 직후 화면 반영 — 실제 occupant는 안 바뀐다 */
+export function applyOptimisticCancelIncomingSwap({ targetSeatId, seat }) {
+  const sid = String(targetSeatId || "").trim();
+  const snapshot = {
+    globalSeats: cloneSeats(GL.globalSeats),
+    globalWaiting: [...GL.globalWaiting]
+  };
+
+  const seatIdx = GL.globalSeats.findIndex((s) => String(s?.seatId || "").trim() === sid);
+  const target = seatIdx >= 0 ? GL.globalSeats[seatIdx] : seat;
+  const incomingUid = String(target?.incomingPersonUid || "").trim();
+  const incomingEmail = String(target?.incomingPersonEmail || "").trim();
+  const incomingName = String(target?.incomingPerson || "").trim();
+  const now = Date.now();
+
+  if (seatIdx >= 0) {
+    GL.globalSeats[seatIdx] = {
+      ...target,
+      incomingPerson: "",
+      incomingPersonUid: "",
+      incomingPersonEmail: "",
+      incomingAt: null
+    };
+  }
+
+  if (!isEmptyPerson(incomingName)) {
+    GL.globalWaiting = rebuildWaitingAfterSeatToWait(
+      GL.globalWaiting,
+      GL.tournamentId,
+      { uid: incomingUid, email: incomingEmail, name: incomingName },
+      now,
+      { source: "incoming_swap_cancelled", resetJoinedAt: true }
+    );
+  }
+
+  invalidateWaitingPanelFingerprint();
+
+  return () => {
+    GL.globalSeats = snapshot.globalSeats;
+    GL.globalWaiting = snapshot.globalWaiting;
   };
 }
 
@@ -176,6 +210,9 @@ export function applyOptimisticClear({ targetSeatId, seat }) {
   const prevUid = String(target?.personUid || "").trim();
   const prevEmail = String(target?.personEmail || "").trim();
   const prevName = String(target?.person || "").trim();
+  const incomingUid = String(target?.incomingPersonUid || "").trim();
+  const incomingEmail = String(target?.incomingPersonEmail || "").trim();
+  const incomingName = String(target?.incomingPerson || "").trim();
   const now = Date.now();
 
   if (seatIdx >= 0) {
@@ -197,6 +234,15 @@ export function applyOptimisticClear({ targetSeatId, seat }) {
         { source: "seat_clear", resetJoinedAt: true }
       );
     }
+  }
+  if (!isEmptyPerson(incomingName)) {
+    GL.globalWaiting = rebuildWaitingAfterSeatToWait(
+      GL.globalWaiting,
+      GL.tournamentId,
+      { uid: incomingUid, email: incomingEmail, name: incomingName },
+      now,
+      { source: "incoming_swap_cancelled", resetJoinedAt: true }
+    );
   }
 
   GL.selectedSeatIds.delete(sid);

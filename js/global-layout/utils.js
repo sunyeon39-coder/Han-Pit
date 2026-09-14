@@ -456,27 +456,39 @@ export function getSeatConfirmHighlightState(seatedAtMs, nowMs = Date.now()) {
 
 /**
  * PC 캔버스/Seat 목록 — 좌석 하나에 이름을 하나만 보여줄 때의 표시 상태.
- * admin(isAdminView): 0~5분 다음(신규 배치) 이름 흰색 강조 → 5~10분 15초 간격으로 다음(흰색)·
- * 현재(검은색, 스왑으로 밀려난 이전 occupant) 이름 교대 → 10분 이후 정착.
- * 근무자(!isAdminView): 배치 알림이 뜨는 시점(0~5분)까지는 변경 사실을 숨기고 기존 occupant를
- * 그대로 보여준다(강조 없음) — 5분부터는 admin과 동일하게 반전 표시가 시작된다.
- * 스왑이 아니었으면(이전 occupant 없음) 5~10분도 계속 신규 이름을 유지한 채 반전만 15초 간격.
+ *
+ * 스왑(seat.incomingPerson 있음 — 실제 occupant인 seat.person은 finalize 전까지 안 바뀜):
+ * admin: 0~5분 다음(새로 올 사람) 이름 흰색 강조 → 5~10분 15초 간격으로 다음(흰색)·현재
+ * (검은색, 실제 occupant인 seat.person) 이름 교대 → 10분 지나면(곧 finalize) 새 사람으로 정착.
+ * 근무자: 공개 시점(REVEAL, 5분) 전까지는 기존 occupant(seat.person) 그대로, 강조 없음 —
+ * 5분부터는 admin과 동일하게 반전 시작.
+ *
+ * 빈 좌석에 새로 배치(스왑 아님, incomingPerson 없음): seatedAt 기준으로 0~5분 즉시 강조
+ * (admin) / 근무자는 5분부터 공개, 10분 이후 정착 — previousPerson 개념 없이 이름 하나만 반전.
  */
 export function resolveSeatSwapDisplay(seat = {}, nowMs = Date.now(), { isAdminView = true } = {}) {
+  const incomingName = String(seat?.incomingPerson || "").trim();
+  const currentName = String(seat?.person || "").trim();
+
+  if (!isEmptyPerson(incomingName)) {
+    const incomingAt = toMillis(seat?.incomingAt);
+    const { isRecent, isBlinkPhase, isBlinkOn } = getSeatConfirmHighlightState(incomingAt, nowMs);
+    if (!isRecent) return { name: incomingName, highlight: false };
+    if (!isAdminView && !isBlinkPhase) {
+      // 근무자 화면: 공개 시점(REVEAL) 전에는 교대 확정 대기 사실 자체를 숨긴다 —
+      // 실제 occupant(currentName)는 아직 그대로이므로 그걸 보여준다.
+      return { name: currentName, highlight: false };
+    }
+    if (!isBlinkPhase) return { name: incomingName, highlight: true };
+    return isBlinkOn ? { name: incomingName, highlight: true } : { name: currentName, highlight: false };
+  }
+
   const seatedAt = toMillis(seat?.seatedAt);
   const { isRecent, isBlinkPhase, isBlinkOn } = getSeatConfirmHighlightState(seatedAt, nowMs);
-  const incomingName = String(seat?.person || "").trim();
-  const outgoingName = String(seat?.previousPerson || "").trim();
-  const hasOutgoing = !isEmptyPerson(outgoingName);
-
-  if (!isRecent) return { name: incomingName, highlight: false };
-  if (!isAdminView && !isBlinkPhase) {
-    // 근무자 화면: 공개 시점(REVEAL) 전에는 스왑 사실 자체를 숨긴다.
-    return { name: hasOutgoing ? outgoingName : "", highlight: false };
-  }
-  if (!isBlinkPhase) return { name: incomingName, highlight: true };
-  if (!hasOutgoing) return { name: incomingName, highlight: isBlinkOn };
-  return isBlinkOn ? { name: incomingName, highlight: true } : { name: outgoingName, highlight: false };
+  if (!isRecent) return { name: currentName, highlight: false };
+  if (!isAdminView && !isBlinkPhase) return { name: "", highlight: false };
+  if (!isBlinkPhase) return { name: currentName, highlight: true };
+  return { name: currentName, highlight: isBlinkOn };
 }
 
 /** seat의 previousPerson(스왑으로 밀려난 이전 occupant)이 이 사람인지 */

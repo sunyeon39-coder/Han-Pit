@@ -300,6 +300,211 @@ exports.sendDueLayoutSeatNotifications = onSchedule(
 );
 
 /* =====================================================================
+ * 교대(스왑) 확정 대기 — global_seats.incomingPerson 이 확정된 지 10분(SEAT_SWAP_SETTLE_MS)
+ * 지나면 실제로 교체를 마무리한다. 클라이언트(assignSelectedWaitingToSeat)는 좌석이 이미
+ * 점유돼 있으면 실제 person 은 안 건드리고 incomingPerson/incomingAt 으로만 "예약"해 둔다
+ * (0~10분 사이에 문제 있으면 더블클릭으로 취소 — cancelIncomingSeatSwap). 아무 조치가 없으면
+ * 이 스케줄러가 1분마다 훑어서, 10분이 지난 예약 건을 실제 occupant 교체로 확정하고 기존
+ * occupant를 대기열로 돌려보낸다.
+ * ===================================================================== */
+const SEAT_SWAP_SETTLE_MS = 10 * 60 * 1000;
+const INCOMING_SWAP_FINALIZE_LIMIT = 100;
+
+function randomWaitingIdSuffix() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+/** 이 사람이 이 좌석 말고 다른 좌석에도 이미 앉아 있는지 — 대기로 되돌릴지 판단용 */
+async function personHasOtherOccupiedSeat(tournamentId, excludeSeatPath, person) {
+  const uid = String(person.uid || "").trim();
+  const email = String(person.email || "").trim().toLowerCase();
+  const name = String(person.name || "").trim();
+  if (!uid && !email && !name) return false;
+
+  let snap;
+  try {
+    snap = await db
+      .collection(`tournaments/${tournamentId}/global_seats`)
+      .where("status", "==", "occupied")
+      .get();
+  } catch (e) {
+    console.warn("[finalizeIncomingSeatSwaps] personHasOtherOccupiedSeat query failed", e);
+    return false;
+  }
+  return snap.docs.some((d) => {
+    if (d.ref.path === excludeSeatPath) return false;
+    const data = d.data() || {};
+    const dUid = String(data.personUid || "").trim();
+    const dEmail = String(data.personEmail || "").trim().toLowerCase();
+    const dName = String(data.person || "").trim();
+    if (uid && dUid) return dUid === uid;
+    if (email && dEmail) return dEmail === email;
+    return !uid && !dUid && !!name && dName === name;
+  });
+}
+
+async function finalizeOneIncomingSwap(seatDocSnap) {
+  const seatRef = seatDocSnap.ref;
+  const tournamentRef = seatRef.parent.parent;
+  const tournamentId = tournamentRef ? tournamentRef.id : "";
+  if (!tournamentId) return;
+
+  // 트랜잭션 전에 "다른 좌석에도 있는지"부터 확인(트랜잭션 안에서는 쿼리 불가) — 약간의
+  // 레이스는 감수한다(대기 목록 쪽 기존 heal 로직들과 동일한 전제).
+  const data = seatDocSnap.data() || {};
+  const prevName = String(data.person || "").trim();
+  const prevUid = String(data.personUid || "").trim();
+  const prevEmail = String(data.personEmail || "").trim();
+  const prevHasOtherSeat =
+    prevName && prevName !== "비어있음"
+      ? await personHasOtherOccupiedSeat(tournamentId, seatRef.path, {
+          uid: prevUid,
+          email: prevEmail,
+          name: prevName
+        })
+      : false;
+
+  await db.runTransaction(async (tx) => {
+    const freshSnap = await tx.get(seatRef);
+    if (!freshSnap.exists) return;
+    const fresh = freshSnap.data() || {};
+    const incomingName = String(fresh.incomingPerson || "").trim();
+    if (!incomingName) return; // 이미 취소됐거나 다른 실행에서 처리됨
+    const incomingAtMs = toMillis(fresh.incomingAt);
+    if (!incomingAtMs || Date.now() - incomingAtMs < SEAT_SWAP_SETTLE_MS) return; // 레이스 방지
+
+    const incomingUid = String(fresh.incomingPersonUid || "").trim();
+    const incomingEmail = String(fresh.incomingPersonEmail || "").trim();
+    const now = Date.now();
+
+    // 클라이언트(seat-history.js)와 동일한 형태로 "교체" 이력을 남긴다 — 배치 이력 보기에
+    // 스왑이 빠지지 않게.
+    const seatHistory = Array.isArray(fresh.seatHistory) ? fresh.seatHistory.filter(Boolean) : [];
+    if (prevName && prevName !== "비어있음") {
+      seatHistory.push({
+        person: prevName,
+        personUid: prevUid,
+        personEmail: prevEmail,
+        seatedAt: Number(fresh.seatedAt) || now,
+        leftAt: now,
+        reason: "replace"
+      });
+    }
+    const cappedHistory = seatHistory.length <= 40 ? seatHistory : seatHistory.slice(seatHistory.length - 40);
+
+    tx.set(
+      seatRef,
+      {
+        person: incomingName,
+        personUid: incomingUid,
+        personEmail: incomingEmail,
+        seatedAt: incomingAtMs,
+        status: "occupied",
+        incomingPerson: FieldValue.delete(),
+        incomingPersonUid: FieldValue.delete(),
+        incomingPersonEmail: FieldValue.delete(),
+        incomingAt: FieldValue.delete(),
+        seatHistory: cappedHistory,
+        updatedAt: now
+      },
+      {merge: true}
+    );
+
+    if (incomingUid) {
+      tx.set(
+        db.doc(`dealer_attendance/${tournamentId}__${incomingUid}`),
+        {
+          uid: incomingUid,
+          email: incomingEmail,
+          name: incomingName,
+          tournamentId,
+          status: "assigned",
+          statusChangedAt: now,
+          updatedAt: now
+        },
+        {merge: true}
+      );
+    }
+
+    if (prevName && prevName !== "비어있음") {
+      if (!prevHasOtherSeat) {
+        const waitingDocId = prevUid ? `w_${prevUid}` : `w_manual_${randomWaitingIdSuffix()}`;
+        tx.set(
+          db.doc(`tournaments/${tournamentId}/global_waiting/${waitingDocId}`),
+          {
+            id: waitingDocId,
+            uid: prevUid,
+            email: prevEmail,
+            name: prevName,
+            tournamentId,
+            joinedAt: now,
+            createdAt: now,
+            source: "seat_swap_finalized"
+          },
+          {merge: true}
+        );
+      }
+
+      if (prevUid) {
+        tx.set(
+          db.doc(`dealer_attendance/${tournamentId}__${prevUid}`),
+          {
+            uid: prevUid,
+            email: prevEmail,
+            name: prevName,
+            tournamentId,
+            status: prevHasOtherSeat ? "assigned" : "waiting",
+            statusChangedAt: now,
+            updatedAt: now
+          },
+          {merge: true}
+        );
+
+        if (!prevHasOtherSeat) {
+          tx.set(
+            db.doc(`layout_notifications/${prevUid}`),
+            {type: "seat_cleared", acknowledged: true, updatedAt: now},
+            {merge: true}
+          );
+        }
+      }
+    }
+  });
+}
+
+exports.finalizeIncomingSeatSwaps = onSchedule(
+  {
+    schedule: "* * * * *",
+    timeZone: "Asia/Seoul",
+    region: "asia-northeast3"
+  },
+  async () => {
+    const cutoff = Date.now() - SEAT_SWAP_SETTLE_MS;
+    let snap;
+    try {
+      snap = await db
+        .collectionGroup("global_seats")
+        .where("incomingAt", "<=", cutoff)
+        .limit(INCOMING_SWAP_FINALIZE_LIMIT)
+        .get();
+    } catch (e) {
+      console.error("[finalizeIncomingSeatSwaps] query failed", e);
+      return;
+    }
+    if (snap.empty) return;
+
+    for (const docSnap of snap.docs) {
+      try {
+        await finalizeOneIncomingSwap(docSnap);
+      } catch (e) {
+        console.error("[finalizeIncomingSeatSwaps] failed", docSnap.ref.path, e);
+      }
+    }
+    console.info("[finalizeIncomingSeatSwaps] processed", snap.size);
+  }
+);
+
+/* =====================================================================
  * 좌석 상태 표시(비상 / Break) — global_seats.alertKind 가 켜지면
  * 그 대회를 관리하는 admin/운영자 전원에게 백그라운드 FCM 전송.
  * (foreground 깜박임/소리는 클라이언트가 이미 처리 — 여기는 잠금화면·앱 종료 대비)

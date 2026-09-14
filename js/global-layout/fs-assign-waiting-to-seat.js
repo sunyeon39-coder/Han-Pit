@@ -44,6 +44,7 @@ import { captureSeatShellSnapshot } from "./utils.js";
 import { applyOptimisticMyWaitingPick, clearMyWaitingPick } from "./waiting-picks.js";
 import {
   applyOptimisticAssign,
+  applyOptimisticCancelIncomingSwap,
   flushOptimisticGlobalLayoutUi
 } from "./optimistic-seat-mutation.js";
 import { triggerOptimisticMobileSeatAssignedAlert } from "../shared/optimistic-seat-assigned-notify.js";
@@ -125,12 +126,6 @@ function clearDupSeatsInTransaction(tx, dupRefs, dupSnaps, person, targetSeatId,
         },
         { merge: true }
       );
-      // layout_notifications는 여기서 건드리지 않는다 — 이 함수는 waitingUid/prevUid
-      // 두 사람에 대해서만 호출되는데, waitingUid는 이 트랜잭션 뒤쪽에서 새 좌석 기준
-      // seat_assigned 알림을 다시 쓰고, prevUid는 더 아래(bumpedPrevHasOtherSeat 계산 후)
-      // 정확한 문맥으로 알림을 정리한다. 여기서 무조건 "seat_cleared"를 쓰면, prevUid가
-      // 실제로 다른 좌석에 남아있는 경우(bumpedPrevHasOtherSeat=true, attendance는
-      // "assigned"로 유지됨)에도 알림만 "seat_cleared"로 남아 서로 모순되는 상태가 됐다.
     }
   }
 }
@@ -170,6 +165,12 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
   }
 
   const now = Number(nowOverride) || Date.now();
+  // 이 좌석에 지금 실제로 앉아 있는 사람이 있으면(스왑) — 그 사람은 10분 뒤 자동 확정
+  // (sendDueLayoutSeatNotifications 와 같은 방식의 서버 스케줄러, finalizeIncomingSeatSwaps)
+  // 전까지 건드리지 않는다. 새 사람은 seat.incomingPerson 으로만 "대기 확정 중" 표시되고,
+  // 문제가 있으면 확정 전(더블클릭)에 취소해 기존 점유자를 그대로 유지할 수 있다.
+  const wasOccupiedNow = !isEmptyPerson(String(seat.person || "").trim());
+
   // skipOptimistic — 일괄 배치확인(confirmAllPendingSeatAssignments)에서 이미 모든
   // 대상의 화면 반영을 한 번에 끝내고 넘어온 경우. 여기서 다시 적용하면 방금 배치된
   // 사람을 "밀려난 이전 점유자"로 오인해 이중 반영되므로 건너뛴다.
@@ -179,7 +180,12 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
     : applyOptimisticAssign({ targetSeatId, waiting, seat, now });
   applyOptimisticMyWaitingPick("");
   if (!skipOptimistic) flushOptimisticGlobalLayoutUi();
-  notifyOptimisticSeatAssignedForWaiting(waiting, seat, targetSeatId);
+  // 스왑(기존 점유자가 있는 좌석)은 아직 "진짜 배치"가 아니므로, 본인이 스스로에게
+  // 교대해 들어가는 경우에도 "배치됐다" 즉시 알림은 misleading — 건너뛴다. 5분 공개
+  // 시점부터는 다른 사람과 동일하게 layout_notifications 경로로 알게 된다.
+  if (!wasOccupiedNow) {
+    notifyOptimisticSeatAssignedForWaiting(waiting, seat, targetSeatId);
+  }
   // 화면 반영은 위에서 이미 즉시 끝났다. 서버 쪽 "내 선택 표시" 해제는 별도 쓰기로
   // 내보내지 않고, 잠시 뒤 시작하는 배정 트랜잭션 안에서 같은 문서를 쓸 때 같이 반영한다.
   // (직렬화 큐를 공유하는 별도 쓰기로 내보내면, 배정 트랜잭션이 그 쓰기가 끝날 때까지
@@ -195,8 +201,8 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
   let swapReturnedJoinedAt = 0;
   let canonicalSeatEventId = "";
   let canonicalSeatBoxId = "";
-  let assignEventCardLabel = "";
   let assignLogMeta = null;
+  let wasOccupiedResolved = wasOccupiedNow;
 
   GL.seatMutationInFlight = true;
   try {
@@ -262,20 +268,220 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
       canonicalSeatBoxId = String(seatData.boxId || canonicalSeatBoxId || "").trim();
 
       const wasOccupied = !isEmptyPerson(String(seatData.person || "").trim());
+      wasOccupiedResolved = wasOccupied;
       const prevUid = String(seatData.personUid || "").trim();
       const prevEmail = String(seatData.personEmail || "").trim();
       const prevName = String(seatData.person || "").trim();
 
+      const eventRef =
+        canonicalSeatEventId && GL.tournamentId
+          ? doc(db, "tournaments", GL.tournamentId, "events", canonicalSeatEventId)
+          : null;
+
       if (wasOccupied) {
+        // ── 스왑: 실제 점유자는 그대로 두고, "10분 뒤 확정"으로만 예약한다 ──────────
         const seatPersonUid = String(seatData.personUid || "").trim();
-        const seatPersonEmail = String(seatData.personEmail || "").trim();
-        const seatEmailLc = seatPersonEmail.toLowerCase();
+        const seatPersonEmail = String(seatData.personEmail || "").trim().toLowerCase();
         const samePersonOnTargetSeat =
           (waitingUid && seatPersonUid && waitingUid === seatPersonUid) ||
-          (waitingEmailLc && seatEmailLc && waitingEmailLc === seatEmailLc);
+          (waitingEmailLc && seatPersonEmail && waitingEmailLc === seatPersonEmail);
         if (samePersonOnTargetSeat) throw new Error("same_person_noop");
+
+        const existingIncomingUid = String(seatData.incomingPersonUid || "").trim();
+        const existingIncomingEmail = String(seatData.incomingPersonEmail || "").trim().toLowerCase();
+        const existingIncomingName = String(seatData.incomingPerson || "").trim();
+        const hasExistingIncoming = !isEmptyPerson(existingIncomingName);
+        if (
+          hasExistingIncoming &&
+          ((waitingUid && existingIncomingUid && waitingUid === existingIncomingUid) ||
+            (waitingEmailLc && existingIncomingEmail && waitingEmailLc === existingIncomingEmail))
+        ) {
+          throw new Error("same_person_noop");
+        }
+
+        const waitingDupRefs = getCandidateSeatRefsForPerson(
+          db,
+          GL.tournamentId,
+          GL.globalSeats,
+          { uid: waitingUid, email: waiting.email, name: waitingName },
+          targetSeatId
+        );
+        const assigneeWaitingRefs = uniqueDocRefs([
+          globalWaitingDocRef(db, GL.tournamentId, waitingId || makeUid("wait")),
+          ...findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, {
+            uid: waitingUid,
+            email: waiting.email,
+            name: waitingName
+          })
+        ]);
+        const existingIncomingWaitingRefs = hasExistingIncoming
+          ? findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, {
+              uid: existingIncomingUid,
+              email: seatData.incomingPersonEmail,
+              name: existingIncomingName
+            })
+          : [];
+        const opPicksRef = operatorPicksDocRef(db, GL.tournamentId);
+
+        const readRefs = [
+          opPicksRef,
+          ...(eventRef ? [eventRef] : []),
+          ...waitingDupRefs,
+          ...assigneeWaitingRefs,
+          ...existingIncomingWaitingRefs
+        ];
+        const readSnaps = await Promise.all(readRefs.map((r) => tx.get(r)));
+
+        const opPicksSnap = readSnaps[0];
+        const eventSnap = eventRef ? readSnaps[1] : null;
+        const dupOffset = eventRef ? 2 : 1;
+        const dupSnaps = readSnaps.slice(dupOffset, dupOffset + waitingDupRefs.length);
+        const assigneeOffset = dupOffset + waitingDupRefs.length;
+        const assigneeWaitingSnaps = readSnaps.slice(assigneeOffset, assigneeOffset + assigneeWaitingRefs.length);
+        const existingIncomingOffset = assigneeOffset + assigneeWaitingRefs.length;
+        const existingIncomingWaitingSnaps = readSnaps.slice(
+          existingIncomingOffset,
+          existingIncomingOffset + existingIncomingWaitingRefs.length
+        );
+
+        let eventCardLabel =
+          getEventCardIdFromRecord({ id: canonicalSeatEventId }) || canonicalSeatEventId || "이벤트";
+        if (eventSnap?.exists()) {
+          eventCardLabel =
+            getEventCardIdFromRecord({
+              id: canonicalSeatEventId,
+              cardId: (eventSnap.data() || {}).cardId
+            }) || eventCardLabel;
+        }
+
+        // 새로 배치되는 사람이 다른 좌석에 이미 앉아 있었다면(중복) 비운다.
+        clearDupSeatsInTransaction(
+          tx,
+          waitingDupRefs,
+          dupSnaps,
+          { uid: waitingUid, email: waiting.email, name: waitingName },
+          targetSeatId,
+          now,
+          touchedProjectionKeys
+        );
+
+        // 이 좌석에 이미 다른 사람이 "교대 확정 대기 중"이었다면(선택을 바꾼 경우) —
+        // 그 사람을 대기로 되돌리고 새 선택으로 교체한다.
+        if (hasExistingIncoming) {
+          const existingIncomingRows = existingIncomingWaitingSnaps
+            .map((s, i) => (s.exists() ? { id: existingIncomingWaitingRefs[i].id, ...s.data() } : null))
+            .filter(Boolean);
+          const restoredRow = rebuildWaitingAfterSeatToWait(
+            existingIncomingRows,
+            GL.tournamentId,
+            { uid: existingIncomingUid, email: seatData.incomingPersonEmail, name: existingIncomingName },
+            now,
+            { source: "incoming_swap_replaced", resetJoinedAt: true }
+          )[0];
+          const { toSet, toDelete } = diffGlobalWaitingRows(
+            existingIncomingRows,
+            restoredRow ? [restoredRow] : []
+          );
+          for (const { id, data } of toSet) {
+            tx.set(globalWaitingDocRef(db, GL.tournamentId, id), data, { merge: true });
+          }
+          for (const id of toDelete) {
+            tx.delete(globalWaitingDocRef(db, GL.tournamentId, id));
+          }
+        }
+
+        const assigneeExistingRows = assigneeWaitingSnaps
+          .map((s, i) => (s.exists() ? { id: assigneeWaitingRefs[i].id, ...s.data() } : null))
+          .filter(Boolean);
+        undoWaitingBefore = JSON.parse(JSON.stringify(assigneeExistingRows));
+
+        const myUid = String(GL.currentUser?.uid || auth.currentUser?.uid || "").trim();
+        const opPicksData = opPicksSnap.exists() ? opPicksSnap.data() || {} : {};
+        let nextOperatorPicks = opPicksData.operatorPicks;
+        if (
+          myUid &&
+          nextOperatorPicks &&
+          typeof nextOperatorPicks === "object" &&
+          Object.prototype.hasOwnProperty.call(nextOperatorPicks, myUid)
+        ) {
+          nextOperatorPicks = { ...nextOperatorPicks };
+          delete nextOperatorPicks[myUid];
+        }
+
+        undoSeatSnapshot = captureSeatShellSnapshot(seat, seatData);
+        undoSeatBefore = null; // 실제 occupant는 안 바뀌므로 되돌릴 게 없다 — undo 스택엔 안 올린다.
+
+        tx.set(
+          seatRef,
+          {
+            incomingPerson: waitingName,
+            incomingPersonUid: waitingUid,
+            incomingPersonEmail: waitingEmail,
+            incomingAt: now,
+            updatedAt: now,
+            updatedAtServer: serverTimestamp()
+          },
+          { merge: true }
+        );
+
+        for (const ref of assigneeWaitingRefs) {
+          tx.delete(ref);
+        }
+
+        if (nextOperatorPicks !== opPicksData.operatorPicks) {
+          tx.set(
+            opPicksRef,
+            { operatorPicks: nextOperatorPicks, updatedAt: now, updatedAtServer: serverTimestamp() },
+            { merge: true }
+          );
+        }
+
+        if (waitingUid) {
+          tx.set(
+            doc(db, "layout_notifications", waitingUid),
+            {
+              ...buildSeatAssignedNotificationWrite(waitingUid, {
+                tournamentId: GL.tournamentId,
+                eventId: canonicalSeatEventId,
+                eventTitle: eventCardLabel,
+                boxId: canonicalSeatBoxId,
+                seatId: seat.seatId || targetSeatId,
+                seatLabel: seat.label || seat.no || "",
+                targetUrl: buildSeatAssignedTargetUrl(
+                  GL.tournamentId,
+                  canonicalSeatEventId,
+                  canonicalSeatBoxId,
+                  seat.seatId || targetSeatId
+                ),
+                message: buildSeatAssignedNotifyMessage({
+                  eventId: canonicalSeatEventId,
+                  cardId: eventCardLabel,
+                  seatLabel: seat.label || seat.no || ""
+                }),
+                createdAt: now,
+                notifyAt: now + SEAT_SWAP_REVEAL_DELAY_MS,
+                updatedAt: now,
+                updatedAtServer: serverTimestamp()
+              })
+            },
+            { merge: true }
+          );
+        }
+
+        assignLogMeta = {
+          waitingUid,
+          waitingName,
+          wasOccupied: true,
+          incoming: true,
+          seatLabel: String(seat.label || seat.no || "").trim(),
+          targetSeatId,
+          eventId: canonicalSeatEventId,
+          boxId: canonicalSeatBoxId
+        };
+        return;
       }
 
+      // ── 빈 좌석에 새로 배치: 즉시 반영(스왑이 아니므로 지연시킬 대상이 없음) ──────
       const waitingDupRefs = getCandidateSeatRefsForPerson(
         db,
         GL.tournamentId,
@@ -283,34 +489,8 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
         { uid: waitingUid, email: waiting.email, name: waitingName },
         targetSeatId
       );
-      const prevDupRefs = wasOccupied
-        ? getCandidateSeatRefsForPerson(
-            db,
-            GL.tournamentId,
-            GL.globalSeats,
-            { uid: prevUid, email: prevEmail, name: prevName },
-            targetSeatId
-          )
-        : [];
-      // 밀려나는 기존 점유자(prevUid)가 예전에 남긴 대기 문서(들) — BLOCK 상태 등을
-      // 잃지 않고 재사용하려면 새로 만들기 전에 반드시 먼저 찾아봐야 한다.
-      const prevWaitingRefs =
-        wasOccupied && !isEmptyPerson(prevName)
-          ? findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, {
-              uid: prevUid,
-              email: prevEmail,
-              name: prevName
-            })
-          : [];
+      const dupRefs = uniqueDocRefs(waitingDupRefs);
 
-      const eventRef =
-        canonicalSeatEventId && GL.tournamentId
-          ? doc(db, "tournaments", GL.tournamentId, "events", canonicalSeatEventId)
-          : null;
-
-      const dupRefs = uniqueDocRefs([...waitingDupRefs, ...prevDupRefs]);
-
-      // 배정 대상(waiting)의 대기 문서(들) — 보통 하나지만 중복 행이 있으면 여러 개일 수 있다
       const assigneeWaitingRefs = uniqueDocRefs([
         globalWaitingDocRef(db, GL.tournamentId, waitingId || makeUid("wait")),
         ...findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, {
@@ -320,9 +500,6 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
         })
       ]);
       // 이미 좌석에 앉아 있는 사람이 대기열에도 남아 있는 잔여 global_waiting 문서.
-      // 배정 이외 경로(수동 좌석 추가·좌석 수정 등)로 좌석에 올라간 뒤 대기 문서가
-      // 안 지워진 경우다. 배정 대상 본인과, 이번에 밀려나 대기로 돌아갈 기존 점유자는
-      // 제외한다. 정상 상태에서는 배열이 비므로 추가 read 가 없다.
       const staleSeatedWaitingRefs = uniqueDocRefs(
         (GL.globalWaiting || [])
           .filter((w) => {
@@ -334,17 +511,6 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
                 uid: waitingUid,
                 email: waiting.email,
                 name: waitingName
-              })
-            ) {
-              return false;
-            }
-            if (
-              wasOccupied &&
-              !isEmptyPerson(prevName) &&
-              waitingRowMatchesPerson(w, GL.tournamentId, {
-                uid: prevUid,
-                email: prevEmail,
-                name: prevName
               })
             ) {
               return false;
@@ -365,7 +531,6 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
         ...(eventRef ? [eventRef] : []),
         ...dupRefs,
         ...assigneeWaitingRefs,
-        ...prevWaitingRefs,
         ...staleSeatedWaitingRefs
       ];
       const readSnaps = await Promise.all(readRefs.map((r) => tx.get(r)));
@@ -379,16 +544,11 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
         assigneeSnapOffset,
         assigneeSnapOffset + assigneeWaitingRefs.length
       );
-      const prevSnapOffset = assigneeSnapOffset + assigneeWaitingRefs.length;
-      const prevWaitingSnaps = readSnaps.slice(prevSnapOffset, prevSnapOffset + prevWaitingRefs.length);
-      const staleSnapOffset = prevSnapOffset + prevWaitingRefs.length;
+      const staleSnapOffset = assigneeSnapOffset + assigneeWaitingRefs.length;
       const staleSeatedWaitingSnaps = readSnaps.slice(
         staleSnapOffset,
         staleSnapOffset + staleSeatedWaitingRefs.length
       );
-      const prevExistingRows = prevWaitingSnaps
-        .map((s, i) => (s.exists() ? { id: prevWaitingRefs[i].id, ...s.data() } : null))
-        .filter(Boolean);
 
       let eventCardLabel =
         getEventCardIdFromRecord({ id: canonicalSeatEventId }) || canonicalSeatEventId || "이벤트";
@@ -399,7 +559,6 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
             cardId: (eventSnap.data() || {}).cardId
           }) || eventCardLabel;
       }
-      assignEventCardLabel = eventCardLabel;
 
       clearDupSeatsInTransaction(
         tx,
@@ -410,27 +569,12 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
         now,
         touchedProjectionKeys
       );
-      if (wasOccupied) {
-        clearDupSeatsInTransaction(
-          tx,
-          dupRefs,
-          dupSnaps,
-          { uid: prevUid, email: prevEmail, name: prevName },
-          targetSeatId,
-          now,
-          touchedProjectionKeys
-        );
-      }
 
-      // 배정 대상의 기존 대기 문서(들) — 되돌리기용 스냅샷 + 이 트랜잭션에서 지울 목록
       const assigneeExistingRows = assigneeWaitingSnaps
         .map((s, i) => (s.exists() ? { id: assigneeWaitingRefs[i].id, ...s.data() } : null))
         .filter(Boolean);
       undoWaitingBefore = JSON.parse(JSON.stringify(assigneeExistingRows));
 
-      // 이 트랜잭션이 이미 운영자 찜(operatorPicks) 문서도 같이 읽으니, 배정을 요청한
-      // 운영자의 "내 선택 표시"도 여기서 같이 지운다. 별도 쓰기로 빼면 직렬화 큐 때문에
-      // 이 트랜잭션이 그 쓰기를 기다리게 되어 배정마다 지연이 생긴다.
       const myUid = String(GL.currentUser?.uid || auth.currentUser?.uid || "").trim();
       const opPicksData = opPicksSnap.exists() ? opPicksSnap.data() || {} : {};
       let nextOperatorPicks = opPicksData.operatorPicks;
@@ -444,52 +588,16 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
         delete nextOperatorPicks[myUid];
       }
 
-      let bumpedPrevHasOtherSeat = false;
-      if (wasOccupied && !isEmptyPerson(prevName)) {
-        for (let i = 0; i < dupRefs.length; i++) {
-          const ds = dupSnaps[i];
-          if (!ds?.exists()) continue;
-          const d = ds.data() || {};
-          const dName = String(d.person || "").trim();
-          if (isEmptyPerson(dName)) continue;
-          if (!personMatchesSeatData(d, { uid: prevUid, email: prevEmail, name: prevName })) continue;
-          bumpedPrevHasOtherSeat = true;
-          break;
-        }
-        if (!bumpedPrevHasOtherSeat) {
-          swapReturnedJoinedAt = now;
-        }
-      }
-      const prevReturnsToWaitingRow =
-        wasOccupied && !isEmptyPerson(prevName) && !bumpedPrevHasOtherSeat
-          ? rebuildWaitingAfterSeatToWait(
-              prevExistingRows,
-              GL.tournamentId,
-              { uid: prevUid, email: prevEmail, name: prevName },
-              now,
-              {
-                source: "seat_swap",
-                resetJoinedAt: true,
-                ...(prevExistingRows[0]?.id || prevUid
-                  ? { id: prevExistingRows[0]?.id || `w_${prevUid}` }
-                  : {})
-              }
-            )[0]
-          : null;
-
       undoSeatSnapshot = captureSeatShellSnapshot(seat, seatData);
       undoSeatBefore = {
-        person: String(seatData.person || "").trim(),
-        personUid: String(seatData.personUid || "").trim(),
-        personEmail: String(seatData.personEmail || "").trim(),
-        seatedAt: seatData.seatedAt ? Number(seatData.seatedAt) : null,
-        status: isEmptyPerson(String(seatData.person || "").trim()) ? "empty" : "occupied"
+        person: "",
+        personUid: "",
+        personEmail: "",
+        seatedAt: null,
+        status: "empty"
       };
 
-      const replaceHistoryEntry = wasOccupied
-        ? entryFromSeatOccupant(seatData, now, "replace")
-        : null;
-      const nextSeatHistory = appendSeatHistoryPatch(seatData.seatHistory, replaceHistoryEntry);
+      const nextSeatHistory = appendSeatHistoryPatch(seatData.seatHistory, null);
 
       tx.set(
         seatRef,
@@ -501,11 +609,6 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
           status: "occupied",
           updatedAt: now,
           updatedAtServer: serverTimestamp(),
-          // 스왑으로 밀려난 이전 occupant — 딜러 명단에서 전환 구간(현재/다음 표시) 동안
-          // "현재"는 이 사람으로, "다음"은 새로 배치된 사람으로 보여주기 위한 정보.
-          previousPerson: wasOccupied ? prevName : "",
-          previousPersonUid: wasOccupied ? prevUid : "",
-          previousPersonEmail: wasOccupied ? prevEmail : "",
           ...(nextSeatHistory ? { seatHistory: nextSeatHistory } : {})
         },
         { merge: true }
@@ -514,23 +617,9 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
       for (const ref of assigneeWaitingRefs) {
         tx.delete(ref);
       }
-      // 좌석에 이미 앉아 있는데 대기열에 남아 있던 잔여 문서 정리.
-      // 잘못된 상태였으므로 되돌리기(undo) 스냅샷에는 포함하지 않는다.
       for (let i = 0; i < staleSeatedWaitingRefs.length; i++) {
         if (staleSeatedWaitingSnaps[i]?.exists()) {
           tx.delete(staleSeatedWaitingRefs[i]);
-        }
-      }
-      if (wasOccupied && !isEmptyPerson(prevName) && !bumpedPrevHasOtherSeat) {
-        const { toSet: prevToSet, toDelete: prevToDelete } = diffGlobalWaitingRows(
-          prevExistingRows,
-          prevReturnsToWaitingRow ? [prevReturnsToWaitingRow] : []
-        );
-        for (const { id, data } of prevToSet) {
-          tx.set(globalWaitingDocRef(db, GL.tournamentId, id), data, { merge: true });
-        }
-        for (const id of prevToDelete) {
-          tx.delete(globalWaitingDocRef(db, GL.tournamentId, id));
         }
       }
       if (nextOperatorPicks !== opPicksData.operatorPicks) {
@@ -581,8 +670,6 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
                 seatLabel: seat.label || seat.no || ""
               }),
               createdAt: now,
-              // 근무자 공개·모달·백그라운드 푸시는 교대 5분 전(REVEAL)부터 — admin은 화면에서
-              // 이미 즉시 볼 수 있으므로(resolveSeatSwapDisplay) 별도 처리 없음.
               notifyAt: now + SEAT_SWAP_REVEAL_DELAY_MS,
               updatedAt: now,
               updatedAtServer: serverTimestamp()
@@ -592,48 +679,11 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
         );
       }
 
-      if (wasOccupied && prevUid) {
-        tx.set(
-          getAttendanceRef(db, GL.tournamentId, prevUid),
-          {
-            uid: prevUid,
-            email: prevEmail,
-            name: prevName,
-            tournamentId: GL.tournamentId,
-            status: bumpedPrevHasOtherSeat ? "assigned" : "waiting",
-            statusChangedAt: now,
-            updatedAt: now,
-            updatedAtServer: serverTimestamp()
-          },
-          { merge: true }
-        );
-
-        if (!bumpedPrevHasOtherSeat) {
-          tx.set(
-            doc(db, "layout_notifications", prevUid),
-            buildSeatClearedNotificationWrite({
-              createdAt: now,
-              updatedAtServer: serverTimestamp(),
-              seatId: "",
-              seatLabel: "",
-              eventId: "",
-              eventTitle: "",
-              boxId: "",
-              targetUrl: "",
-              message: ""
-            }),
-            { merge: true }
-          );
-        }
-      }
-
       assignLogMeta = {
         waitingUid,
         waitingName,
-        wasOccupied,
-        prevUid,
-        prevName,
-        bumpedPrevHasOtherSeat,
+        wasOccupied: false,
+        incoming: false,
         seatLabel: String(seat.label || seat.no || "").trim(),
         targetSeatId,
         eventId: canonicalSeatEventId,
@@ -645,20 +695,13 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
       logGlobalLayoutAttendance({
         uid: assignLogMeta.waitingUid,
         nickname: assignLogMeta.waitingName,
-        action: "assigned",
+        action: assignLogMeta.incoming ? "incoming" : "assigned",
         eventId: assignLogMeta.eventId,
         boxId: assignLogMeta.boxId,
         seatId: assignLogMeta.targetSeatId,
-        seatLabel: assignLogMeta.seatLabel
+        seatLabel: assignLogMeta.seatLabel,
+        detail: assignLogMeta.incoming ? "교대 확정 대기 시작(10분 뒤 확정)" : ""
       });
-      if (assignLogMeta.wasOccupied && assignLogMeta.prevUid && !assignLogMeta.bumpedPrevHasOtherSeat) {
-        logGlobalLayoutAttendance({
-          uid: assignLogMeta.prevUid,
-          nickname: assignLogMeta.prevName,
-          action: "waiting",
-          detail: "좌석 교체로 대기 복귀"
-        });
-      }
     }
 
     flushOptimisticGlobalLayoutUi();
@@ -680,19 +723,23 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
   flushOptimisticGlobalLayoutUi();
   const ev = String(canonicalSeatEventId || "").trim();
   const bx = String(canonicalSeatBoxId || "").trim();
-  pushGlobalUndo({
-    kind: "assign",
-    targetSeatId,
-    eventId: ev,
-    boxId: bx,
-    firestoreDocId: undoFirestoreDocId,
-    assignedSeatedAt: now,
-    swapReturnedJoinedAt,
-    seatSnapshot: undoSeatSnapshot,
-    waiting: JSON.parse(JSON.stringify(waiting)),
-    waitingBefore: Array.isArray(undoWaitingBefore) ? undoWaitingBefore : [],
-    seatBefore: undoSeatBefore || null
-  });
+  // 스왑(교대 확정 대기) 건은 실제 occupant가 안 바뀌므로 되돌리기 스택에 올리지 않는다 —
+  // 10분 안에 마음이 바뀌면 더블클릭으로 취소(cancelIncomingSeatSwap)하는 게 정확한 경로다.
+  if (!wasOccupiedResolved) {
+    pushGlobalUndo({
+      kind: "assign",
+      targetSeatId,
+      eventId: ev,
+      boxId: bx,
+      firestoreDocId: undoFirestoreDocId,
+      assignedSeatedAt: now,
+      swapReturnedJoinedAt,
+      seatSnapshot: undoSeatSnapshot,
+      waiting: JSON.parse(JSON.stringify(waiting)),
+      waitingBefore: Array.isArray(undoWaitingBefore) ? undoWaitingBefore : [],
+      seatBefore: undoSeatBefore || null
+    });
+  }
   scheduleSyncLayoutProjection(ev, bx);
   for (const k of touchedProjectionKeys) {
     const [e, b] = String(k || "").split("__");
@@ -700,4 +747,123 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
     if (e === ev && b === bx) continue;
     scheduleSyncLayoutProjection(e, b);
   }
+}
+
+/**
+ * 교대 확정 대기 중(seat.incomingPerson)인 새 사람을 취소하고 대기로 되돌린다.
+ * 실제 occupant(seat.person)는 애초에 안 바뀌었으므로 그대로 둔다 — 10분 자동 확정
+ * (finalizeIncomingSeatSwaps 서버 스케줄러) 전에 문제를 발견했을 때 쓰는 경로.
+ */
+export async function cancelIncomingSeatSwap(seatId = "") {
+  releaseStuckGlobalLayoutMutationFlags();
+  const targetSeatId = String(seatId || "").trim();
+  if (!targetSeatId || GL.seatMutationInFlight) return;
+
+  const seat = GL.globalSeats.find((s) => String(s.seatId || "").trim() === targetSeatId);
+  if (!seat) return;
+  if (isEmptyPerson(String(seat.incomingPerson || "").trim())) return;
+
+  const seatRef = getGlobalSeatDocRef(seat, GL.tournamentId);
+  if (!seatRef) return;
+
+  const rollbackOptimistic = applyOptimisticCancelIncomingSwap({ targetSeatId, seat });
+  flushOptimisticGlobalLayoutUi();
+  markGlobalLayoutLocalMutation();
+
+  const now = Date.now();
+  let cancelLogMeta = null;
+  GL.seatMutationInFlight = true;
+  try {
+    await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
+      const seatSnap = await tx.get(seatRef);
+      if (!seatSnap?.exists()) throw new Error("seat_not_found");
+      const seatData = seatSnap.data() || {};
+      const incomingUid = String(seatData.incomingPersonUid || "").trim();
+      const incomingEmail = String(seatData.incomingPersonEmail || "").trim();
+      const incomingName = String(seatData.incomingPerson || "").trim();
+      if (isEmptyPerson(incomingName)) return;
+
+      const incomingWaitingRefs = findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, {
+        uid: incomingUid,
+        email: incomingEmail,
+        name: incomingName
+      });
+      const incomingWaitingSnaps = await Promise.all(incomingWaitingRefs.map((r) => tx.get(r)));
+      const incomingExistingRows = incomingWaitingSnaps
+        .map((s, i) => (s.exists() ? { id: incomingWaitingRefs[i].id, ...s.data() } : null))
+        .filter(Boolean);
+      const restoredRow = rebuildWaitingAfterSeatToWait(
+        incomingExistingRows,
+        GL.tournamentId,
+        { uid: incomingUid, email: incomingEmail, name: incomingName },
+        now,
+        { source: "incoming_swap_cancelled", resetJoinedAt: true }
+      )[0];
+      const { toSet, toDelete } = diffGlobalWaitingRows(
+        incomingExistingRows,
+        restoredRow ? [restoredRow] : []
+      );
+      for (const { id, data } of toSet) {
+        tx.set(globalWaitingDocRef(db, GL.tournamentId, id), data, { merge: true });
+      }
+      for (const id of toDelete) {
+        tx.delete(globalWaitingDocRef(db, GL.tournamentId, id));
+      }
+
+      tx.set(
+        seatRef,
+        {
+          incomingPerson: "",
+          incomingPersonUid: "",
+          incomingPersonEmail: "",
+          incomingAt: null,
+          updatedAt: now,
+          updatedAtServer: serverTimestamp()
+        },
+        { merge: true }
+      );
+
+      if (incomingUid) {
+        tx.set(
+          getAttendanceRef(db, GL.tournamentId, incomingUid),
+          {
+            uid: incomingUid,
+            email: incomingEmail,
+            name: incomingName,
+            tournamentId: GL.tournamentId,
+            status: "waiting",
+            statusChangedAt: now,
+            updatedAt: now,
+            updatedAtServer: serverTimestamp()
+          },
+          { merge: true }
+        );
+        // 5분 공개 알림이 아직 안 나갔으면 취소되게 확인됨으로 표시해 둔다.
+        tx.set(
+          doc(db, "layout_notifications", incomingUid),
+          { acknowledged: true, updatedAt: now, updatedAtServer: serverTimestamp() },
+          { merge: true }
+        );
+      }
+
+      cancelLogMeta = { uid: incomingUid, nickname: incomingName };
+    }));
+  } catch (err) {
+    rollbackOptimistic();
+    flushOptimisticGlobalLayoutUi();
+    throw err;
+  } finally {
+    GL.seatMutationInFlight = false;
+  }
+
+  if (cancelLogMeta) {
+    logGlobalLayoutAttendance({
+      uid: cancelLogMeta.uid,
+      nickname: cancelLogMeta.nickname,
+      action: "waiting",
+      detail: "교대 확정 대기 취소"
+    });
+  }
+
+  flushOptimisticGlobalLayoutUi();
 }
