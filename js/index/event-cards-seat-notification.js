@@ -282,6 +282,10 @@ export function bindMySeatAssignment(user) {
       }),
       uid: myUid
     });
+    // 본인이 직접 배치한 경우(낙관적 알림) — layout_notifications 쪽 스냅샷은
+    // shouldSkipSeatNotificationSnapshotAfterOptimistic 로 건너뛰어 scheduleAutoDismiss가
+    // 안 걸리므로, 여기서 직접 걸어줘야 10분 뒤 자동으로 닫힌다.
+    scheduleAutoDismiss({ createdAt: Date.now() });
     return true;
   }
 
