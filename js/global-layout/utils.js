@@ -496,6 +496,9 @@ export function seatMatchesPreviousPerson(s, person = {}) {
  */
 export function isPersonInPostSwapGrace(seats = [], person = {}) {
   return (seats || []).some((s) => {
+    // 좌석이 지금 실제로 비어 있으면 "스왑 전환 중"일 수 없다 — previousPerson 필드가
+    // (예: 비우기 직후 한 틱 정도) 남아있어도 여기서 절대 걸리지 않게 방어한다.
+    if (isEmptyPerson(String(s?.person || "").trim())) return false;
     if (!seatMatchesPreviousPerson(s, person)) return false;
     return getSeatConfirmHighlightState(toMillis(s.seatedAt)).isRecent;
   });

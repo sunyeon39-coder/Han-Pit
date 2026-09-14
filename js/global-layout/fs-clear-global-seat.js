@@ -128,6 +128,11 @@ export async function clearSeat(seatId = "") {
           personEmail: "",
           seatedAt: null,
           status: "empty",
+          // 스왑 표시용 "이전 점유자" 필드 — merge:true라 안 지우면 그대로 남아, 좌석이
+          // 실제로는 비었는데도 딜러 명단(현재/다음)이 그 사람을 계속 붙잡고 보여준다.
+          previousPerson: "",
+          previousPersonUid: "",
+          previousPersonEmail: "",
           updatedAt: now,
           updatedAtServer: serverTimestamp(),
           ...(nextHistory ? { seatHistory: nextHistory } : {})

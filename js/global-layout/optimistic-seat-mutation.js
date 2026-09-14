@@ -47,7 +47,12 @@ function clearPersonOnSeatInMemory(seat = {}) {
     personUid: "",
     personEmail: "",
     seatedAt: null,
-    status: "empty"
+    status: "empty",
+    // previousPerson 을 지우지 않으면(스왑 표시용 필드) 좌석이 실제로는 비었는데도
+    // 딜러 명단(현재/다음)이 그 사람을 계속 붙잡고 보여주는 원인이 된다.
+    previousPerson: "",
+    previousPersonUid: "",
+    previousPersonEmail: ""
   };
 }
 
