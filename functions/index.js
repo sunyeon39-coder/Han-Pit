@@ -94,7 +94,7 @@ function buildSeatAssignedPushBody(after = {}) {
 }
 
 function resolveTargetUrlForPush(raw) {
-  const u = String(raw || "").trim() || "./layout.html";
+  const u = String(raw || "").trim() || "./global-layout.html";
   const origin = String(process.env.APP_ORIGIN || "").trim();
   if (!origin) return u;
   try {
@@ -105,29 +105,18 @@ function resolveTargetUrlForPush(raw) {
   }
 }
 
-exports.notifyLayoutSeatAssigned = onDocumentWritten(
-  {
-    document: "layout_notifications/{uid}",
-    region: "asia-northeast3",
-    minInstances: 1
-  },
-  async (event) => {
-  const change = event.data;
-  if (!change.after.exists) return;
-
-  const after = change.after.data();
-  if (!after) return;
-
+/**
+ * layout_notifications/{uid} 문서 하나에 대해 dedup 체크 후 실제로 FCM을 보낸다.
+ * onDocumentWritten 트리거(즉시 발송 가능한 경우)와 sendDueLayoutSeatNotifications
+ * 스케줄러(notifyAt 지연 발송) 양쪽에서 공유한다.
+ */
+async function sendSeatAssignedNotificationIfDue(uid, notifyRef, after) {
   if (String(after.type || "").trim() !== "seat_assigned") return;
   if (after.acknowledged === true) return;
-
-  const uid = String(event.params.uid || "").trim();
-  if (!uid) return;
 
   const dedupKey = buildDedupKey(uid, after);
   const notifyTag = buildSeatNotifyTag(uid);
   const createdMs = toMillis(after.createdAt);
-  const notifyRef = change.after.ref;
   const userRef = db.doc(`users/${uid}`);
 
   if (createdMs > 0 && Date.now() - createdMs > STALE_SEAT_NOTIFY_MAX_AGE_MS) {
@@ -140,6 +129,14 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten(
       console.error("[notifyLayoutSeatAssigned] stale notify mark failed", uid, e);
     }
     console.info("[notifyLayoutSeatAssigned] skip stale FCM", uid, createdMs);
+    return;
+  }
+
+  // notifyAt(교대 공개 시점, REVEAL) 이 아직 안 지났으면 여기서는 보내지 않는다 —
+  // sendDueLayoutSeatNotifications 스케줄러가 그 시점 이후에 다시 훑어서 보낸다.
+  // notifyAt 이 없는(예전/다른 경로) 문서는 createdAt 기준으로 즉시 발송(기존 동작 유지).
+  const notifyAtMs = toMillis(after.notifyAt) || createdMs;
+  if (notifyAtMs > Date.now()) {
     return;
   }
 
@@ -233,7 +230,69 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten(
     await notifyRef.set({fcmSeatNotifySending: FieldValue.delete()}, {merge: true});
     throw err;
   }
-});
+}
+
+exports.notifyLayoutSeatAssigned = onDocumentWritten(
+  {
+    document: "layout_notifications/{uid}",
+    region: "asia-northeast3",
+    minInstances: 1
+  },
+  async (event) => {
+    const change = event.data;
+    if (!change.after.exists) return;
+
+    const after = change.after.data();
+    if (!after) return;
+
+    const uid = String(event.params.uid || "").trim();
+    if (!uid) return;
+
+    await sendSeatAssignedNotificationIfDue(uid, change.after.ref, after);
+  }
+);
+
+const SEAT_NOTIFY_SWEEP_LIMIT = 200;
+
+/**
+ * notifyAt(교대 공개 시점, REVEAL) 이 지났지만 아직 못 보낸 배치 알림을 1분마다 훑어 발송한다.
+ * notifyLayoutSeatAssigned 는 문서가 "쓰여질 때"만 실행되므로, notifyAt 이 미래인 채로 쓰여진
+ * 문서는(교대 5분 전 지연) 그 시점에 별도 쓰기가 없는 한 그 트리거만으로는 다시 실행되지 않는다.
+ */
+exports.sendDueLayoutSeatNotifications = onSchedule(
+  {
+    schedule: "* * * * *",
+    timeZone: "Asia/Seoul",
+    region: "asia-northeast3"
+  },
+  async () => {
+    const now = Date.now();
+    let snap;
+    try {
+      snap = await db
+        .collection("layout_notifications")
+        .where("type", "==", "seat_assigned")
+        .where("acknowledged", "==", false)
+        .where("notifyAt", "<=", now)
+        .limit(SEAT_NOTIFY_SWEEP_LIMIT)
+        .get();
+    } catch (e) {
+      console.error("[sendDueLayoutSeatNotifications] query failed", e);
+      return;
+    }
+    if (snap.empty) return;
+
+    for (const docSnap of snap.docs) {
+      const uid = docSnap.id;
+      try {
+        await sendSeatAssignedNotificationIfDue(uid, docSnap.ref, docSnap.data() || {});
+      } catch (e) {
+        console.error("[sendDueLayoutSeatNotifications] failed", uid, e);
+      }
+    }
+    console.info("[sendDueLayoutSeatNotifications] processed", snap.size);
+  }
+);
 
 /* =====================================================================
  * 좌석 상태 표시(비상 / Break) — global_seats.alertKind 가 켜지면

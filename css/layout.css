@@ -1928,14 +1928,26 @@ input:focus{
   border-color: rgba(61, 219, 196, 0.45);
 }
 
-/* ===== PC 배치(Seat) 선택 표시 강화 ===== */
+/* ===== PC 배치(Seat) 선택 표시 강화 =====
+   teal(#3ddbc4)은 앱 전반의 기본 강조색이라 다른 상태와 헷갈려서, 선택 전용으로
+   확실히 구분되는 파란색(좌측 목록의 .seat-manage-row.selected 와 동일 톤)을 사용 */
 .seat-box.selected{
-  border: 2px solid #3ddbc4 !important;
-  background: rgba(61, 219, 196,.12) !important;
+  border: 2px solid #3b82f6 !important;
+  background: rgba(59, 130, 246,.14) !important;
   box-shadow:
-    0 0 0 2px rgba(61, 219, 196,.28),
+    0 0 0 2px rgba(59, 130, 246,.32),
     0 10px 28px rgba(0,0,0,.28) !important;
   z-index: 5;
+}
+
+/* 선택된 좌석이 지금 "다음 근무자"를 보여주는 중(흰색 강조)이면, 클릭 선택 파란색과
+   헷갈리지 않게 분홍색으로 따로 표시 — 클릭했을 때 현재/다음 어느 쪽인지 색으로 구분 */
+.seat-box.selected.is-confirm-blink{
+  border: 2px solid #ff4fa3 !important;
+  background: rgba(255, 79, 163,.16) !important;
+  box-shadow:
+    0 0 0 2px rgba(255, 79, 163,.32),
+    0 10px 28px rgba(0,0,0,.28) !important;
 }
 
 /* 선택 시: 빈 좌석은 은은하게, 배치된 좌석은 대비 유지 */

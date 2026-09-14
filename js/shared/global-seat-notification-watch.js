@@ -8,6 +8,7 @@ import { buildSeatAssignedNotifyMessage } from "./seat-notification-label.js";
 import {
   buildSeatNotifyTag,
   isStaleSeatNotification,
+  seatNotificationDelayMs,
   seatNotificationKey
 } from "./seat-notification-push.js";
 import { showSeatAssignedOsNotification } from "./fcm-web-push.js";
@@ -15,6 +16,14 @@ import { showSeatAssignedOsNotification } from "./fcm-web-push.js";
 let stopWatch = null;
 let watchUid = "";
 let activeNotificationKey = "";
+let pendingRevealTimer = null;
+
+function clearPendingRevealTimer() {
+  if (pendingRevealTimer) {
+    clearTimeout(pendingRevealTimer);
+    pendingRevealTimer = null;
+  }
+}
 
 function isDedicatedLayoutNotificationPage() {
   const path = String(location.pathname || "").toLowerCase();
@@ -28,6 +37,8 @@ function isPageBackgroundForPush() {
 
 async function applySeatNotificationSnap(snap, uid) {
   if (!uid || isDedicatedLayoutNotificationPage()) return;
+
+  clearPendingRevealTimer();
 
   if (!snap.exists()) {
     activeNotificationKey = "";
@@ -43,6 +54,18 @@ async function applySeatNotificationSnap(snap, uid) {
   const createdMs = Number(data.createdAt);
   if (isStaleSeatNotification(createdMs)) return;
 
+  // notifyAt(교대 공개 시점, REVEAL) 전에는 아직 알리지 않는다 — 그 시점에 다시 확인.
+  const delayMs = seatNotificationDelayMs(data);
+  if (delayMs > 0) {
+    pendingRevealTimer = setTimeout(() => {
+      pendingRevealTimer = null;
+      void getDoc(doc(db, "layout_notifications", uid))
+        .then((freshSnap) => applySeatNotificationSnap(freshSnap, uid))
+        .catch((err) => console.warn("[global-seat-notify] delayed recheck:", err));
+    }, delayMs + 250);
+    return;
+  }
+
   const notificationKey = seatNotificationKey(uid, data);
   if (activeNotificationKey === notificationKey) return;
   activeNotificationKey = notificationKey;
@@ -54,7 +77,7 @@ async function applySeatNotificationSnap(snap, uid) {
     eventTitle: data.eventTitle,
     seatLabel: data.seatLabel
   });
-  const targetUrl = String(data.targetUrl || "").trim() || "./layout.html";
+  const targetUrl = String(data.targetUrl || "").trim() || "./global-layout.html";
 
   await showSeatAssignedOsNotification({
     title: "배치 알림",
@@ -101,6 +124,7 @@ export function disposeGlobalSeatNotificationWatch() {
   }
   watchUid = "";
   activeNotificationKey = "";
+  clearPendingRevealTimer();
 }
 
 export function wireGlobalSeatNotificationVisibilityResync(user) {

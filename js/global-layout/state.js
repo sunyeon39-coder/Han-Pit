@@ -67,6 +67,12 @@ export const GL = {
   selectedWaitingId: "",
   /** 다중 선택: Ctrl(Windows/Linux) 또는 ⌘(macOS) + 클릭으로 토글 */
   selectedSeatIds: new Set(),
+  /**
+   * "배치확인" 전 실수 방지용 임시 배치 — seatId → { waiting, stagedAt }.
+   * 이 브라우저 세션에만 존재(Firestore에 아직 안 씀). "배치확인"을 눌러야
+   * 실제 assignSelectedWaitingToSeat 이 실행돼 좌석에 반영된다.
+   */
+  pendingSeatAssignments: new Map(),
 
   isAdminUser: false,
   /** ensureGlobalLayoutOpsChrome 서버 통과 — 캐시만으로 ops UI 내리지 않음 */

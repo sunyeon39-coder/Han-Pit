@@ -7,7 +7,14 @@ import {
   shouldUseOptimisticSeatAlertOnMobile,
   wasOptimisticSeatAlertShown
 } from "../shared/optimistic-seat-assigned-notify.js";
-import { buildSeatNotifyTag, isStaleSeatNotification, seatNotificationKey } from "../shared/seat-notification-push.js";
+import {
+  buildSeatNotifyTag,
+  isStaleSeatNotification,
+  isSeatNotificationPastSettleWindow,
+  seatNotificationDelayMs,
+  seatNotificationKey,
+  SEAT_SWAP_SETTLE_MS
+} from "../shared/seat-notification-push.js";
 import { db, getMessagingSafe } from "../firebase.js";
 import {
   FCM_VAPID_KEY,
@@ -36,6 +43,8 @@ export function createLayoutSeatNotifyController({
   let audioCtx = null;
   let soundPromptShown = false;
   let activeNotificationId = "";
+  let pendingRevealTimer = null;
+  let pendingSettleTimer = null;
 
   function hasSavedSoundPreference() {
     try {
@@ -267,6 +276,7 @@ export function createLayoutSeatNotifyController({
     const moveBtn = document.getElementById("seatAlertMoveBtn");
 
     ackBtn?.addEventListener("click", async () => {
+      clearPendingSettleTimer();
       stopAlertSoundLoop();
       hideSeatAlert();
       await acknowledgeNotification();
@@ -308,10 +318,49 @@ export function createLayoutSeatNotifyController({
     if (existed) stopSeatAlertVibration();
   }
 
+  function clearPendingRevealTimer() {
+    if (pendingRevealTimer) {
+      clearTimeout(pendingRevealTimer);
+      pendingRevealTimer = null;
+    }
+  }
+
+  function clearPendingSettleTimer() {
+    if (pendingSettleTimer) {
+      clearTimeout(pendingSettleTimer);
+      pendingSettleTimer = null;
+    }
+  }
+
   function resetSeatNotificationUi() {
+    clearPendingRevealTimer();
+    clearPendingSettleTimer();
     hideSeatAlert();
     stopAlertSoundLoop();
     activeNotificationId = "";
+  }
+
+  /** 확인 없이도 UI만 닫는다(activeNotificationId는 유지 — 같은 알림이 다시 뜨지 않도록) */
+  function dismissSeatAlertUi() {
+    clearPendingSettleTimer();
+    stopAlertSoundLoop();
+    hideSeatAlert();
+  }
+
+  /** 모달이 뜬 뒤, 교대 구간(SEAT_SWAP_SETTLE_MS)이 끝나면 확인 없이도 자동으로 닫는다 */
+  function scheduleAutoDismiss(data) {
+    clearPendingSettleTimer();
+    if (isSeatNotificationPastSettleWindow(data)) {
+      dismissSeatAlertUi();
+      return;
+    }
+    const createdMs = Number(data.createdAt);
+    if (!Number.isFinite(createdMs) || createdMs <= 0) return;
+    const remaining = createdMs + SEAT_SWAP_SETTLE_MS - Date.now();
+    pendingSettleTimer = setTimeout(() => {
+      pendingSettleTimer = null;
+      dismissSeatAlertUi();
+    }, Math.max(0, remaining) + 250);
   }
 
   function showOptimisticSeatAssignedAlert({
@@ -358,6 +407,8 @@ export function createLayoutSeatNotifyController({
   }
 
   function applySeatNotificationSnapshot(snap) {
+    clearPendingRevealTimer();
+
     const user = getCurrentUser();
     if (!user) {
       resetSeatNotificationUi();
@@ -381,6 +432,16 @@ export function createLayoutSeatNotifyController({
 
     if (isStaleSeatNotification(Number(data.createdAt))) {
       resetSeatNotificationUi();
+      return;
+    }
+
+    // notifyAt(교대 공개 시점, REVEAL) 전에는 아직 보여주지 않는다 — 그 시점에 다시 확인.
+    const delayMs = seatNotificationDelayMs(data);
+    if (delayMs > 0) {
+      pendingRevealTimer = setTimeout(() => {
+        pendingRevealTimer = null;
+        void showPendingSeatNotificationOnce();
+      }, delayMs + 250);
       return;
     }
 
@@ -424,6 +485,7 @@ export function createLayoutSeatNotifyController({
     /* Android 등: 탭이 보이는 동안(document.hidden=false)에는 이전에 OS 알림을 생략해
        소리·오버레이만 있었음. FCM과 동일 tag 로 한 번만 머물도록 시스템 트레이에도 표시. */
     showBrowserNotification("배치 알림", msg, user.uid);
+    scheduleAutoDismiss(data);
   }
 
   async function showPendingSeatNotificationOnce() {
@@ -474,6 +536,8 @@ export function createLayoutSeatNotifyController({
       stopMyNotificationWatch = null;
     }
     myNotificationRef = null;
+    clearPendingRevealTimer();
+    clearPendingSettleTimer();
   }
 
   function maybePromptInitialSound({ isAdminUser }) {

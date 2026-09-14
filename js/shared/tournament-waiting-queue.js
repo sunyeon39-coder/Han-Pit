@@ -178,6 +178,14 @@ function preferWaitingDisplayRow(a = {}, b = {}) {
   const retA = SEAT_RETURN_SOURCES.has(String(a?.source || "").trim());
   const retB = SEAT_RETURN_SOURCES.has(String(b?.source || "").trim());
   if (retA !== retB) return retA ? a : b;
+  if (retA && retB) {
+    // 둘 다 좌석 복귀(스왑 등)로 생성된 행 — 예전 유령 대기 문서가 삭제되지 못하고
+    // 같이 남아있어도, 무조건 가장 최근 교대(joinedAt 이 더 큰 쪽)가 이겨야 한다.
+    // 그렇지 않으면 새로 교대됐는데도 예전 대기 시간이 그대로 표시되는 문제가 생긴다.
+    const retJoinA = getWaitingRowJoinMs(a);
+    const retJoinB = getWaitingRowJoinMs(b);
+    if (retJoinA !== retJoinB) return retJoinA > retJoinB ? a : b;
+  }
 
   const joinA = getWaitingRowJoinMs(a);
   const joinB = getWaitingRowJoinMs(b);

@@ -1,7 +1,8 @@
 import {
   buildSeatAssignedNotificationWrite,
   buildSeatAssignedTargetUrl,
-  buildSeatClearedNotificationWrite
+  buildSeatClearedNotificationWrite,
+  SEAT_SWAP_REVEAL_DELAY_MS
 } from "../shared/seat-notification-push.js";
 import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
 import { auth, db } from "../firebase.js";
@@ -144,11 +145,11 @@ function notifyOptimisticSeatAssignedForWaiting(waiting, seat, targetSeatId) {
     boxId,
     seatId: targetSeatId,
     seatLabel: String(seat.label || seat.no || "").trim(),
-    targetUrl: `./layout.html?tournamentId=${encodeURIComponent(GL.tournamentId)}&eventId=${encodeURIComponent(eventId)}&boxId=${encodeURIComponent(boxId)}&focusSeatId=${encodeURIComponent(targetSeatId)}`
+    targetUrl: buildSeatAssignedTargetUrl(GL.tournamentId, eventId, boxId)
   });
 }
 
-export async function assignSelectedWaitingToSeat(seatId = "") {
+export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride = null, nowOverride = 0, opts = {}) {
   releaseStuckGlobalLayoutMutationFlags();
 
   const targetSeatId = String(seatId || "").trim();
@@ -157,7 +158,7 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
   const seat = GL.globalSeats.find((s) => String(s.seatId || "").trim() === targetSeatId);
   if (!seat) return;
 
-  const waiting = resolveSelectedWaitingForAssign();
+  const waiting = waitingOverride || resolveSelectedWaitingForAssign();
   if (!waiting) {
     GL.selectedWaitingId = "";
     applyOptimisticMyWaitingPick("");
@@ -168,16 +169,22 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
     throw new Error("waiting_blocked");
   }
 
-  const rollbackOptimistic = applyOptimisticAssign({ targetSeatId, waiting, seat });
+  const now = Number(nowOverride) || Date.now();
+  // skipOptimistic — 일괄 배치확인(confirmAllPendingSeatAssignments)에서 이미 모든
+  // 대상의 화면 반영을 한 번에 끝내고 넘어온 경우. 여기서 다시 적용하면 방금 배치된
+  // 사람을 "밀려난 이전 점유자"로 오인해 이중 반영되므로 건너뛴다.
+  const skipOptimistic = opts?.skipOptimistic === true;
+  const rollbackOptimistic = skipOptimistic
+    ? () => {}
+    : applyOptimisticAssign({ targetSeatId, waiting, seat, now });
   applyOptimisticMyWaitingPick("");
-  flushOptimisticGlobalLayoutUi();
+  if (!skipOptimistic) flushOptimisticGlobalLayoutUi();
   notifyOptimisticSeatAssignedForWaiting(waiting, seat, targetSeatId);
   // 화면 반영은 위에서 이미 즉시 끝났다. 서버 쪽 "내 선택 표시" 해제는 별도 쓰기로
   // 내보내지 않고, 잠시 뒤 시작하는 배정 트랜잭션 안에서 같은 문서를 쓸 때 같이 반영한다.
   // (직렬화 큐를 공유하는 별도 쓰기로 내보내면, 배정 트랜잭션이 그 쓰기가 끝날 때까지
   // 기다리게 되어 배정마다 불필요한 지연이 매번 생긴다.)
 
-  const now = Date.now();
   const touchedProjectionKeys = new Set();
 
   markGlobalLayoutLocalMutation();
@@ -494,6 +501,11 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
           status: "occupied",
           updatedAt: now,
           updatedAtServer: serverTimestamp(),
+          // 스왑으로 밀려난 이전 occupant — 딜러 명단에서 전환 구간(현재/다음 표시) 동안
+          // "현재"는 이 사람으로, "다음"은 새로 배치된 사람으로 보여주기 위한 정보.
+          previousPerson: wasOccupied ? prevName : "",
+          previousPersonUid: wasOccupied ? prevUid : "",
+          previousPersonEmail: wasOccupied ? prevEmail : "",
           ...(nextSeatHistory ? { seatHistory: nextSeatHistory } : {})
         },
         { merge: true }
@@ -569,6 +581,9 @@ export async function assignSelectedWaitingToSeat(seatId = "") {
                 seatLabel: seat.label || seat.no || ""
               }),
               createdAt: now,
+              // 근무자 공개·모달·백그라운드 푸시는 교대 5분 전(REVEAL)부터 — admin은 화면에서
+              // 이미 즉시 볼 수 있으므로(resolveSeatSwapDisplay) 별도 처리 없음.
+              notifyAt: now + SEAT_SWAP_REVEAL_DELAY_MS,
               updatedAt: now,
               updatedAtServer: serverTimestamp()
             })

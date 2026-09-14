@@ -1,12 +1,18 @@
 import { db } from "../firebase.js";
-import { doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 import { getEventCardIdFromRecord } from "../shared/tournament-event-instance.js";
 import {
   buildSeatAssignedNotifyMessage,
   resolveSeatNotificationCardLabel
 } from "../shared/seat-notification-label.js";
-import { isStaleSeatNotification, seatNotificationKey } from "../shared/seat-notification-push.js";
+import {
+  isStaleSeatNotification,
+  isSeatNotificationPastSettleWindow,
+  seatNotificationDelayMs,
+  seatNotificationKey,
+  SEAT_SWAP_SETTLE_MS
+} from "../shared/seat-notification-push.js";
 import {
   buildOptimisticSeatAlertKey,
   markOptimisticSeatAlertShown,
@@ -44,6 +50,8 @@ export function bindMySeatAssignment(user) {
   let seatModalAudioUnlocked = false;
   let seatModalAudioTimer = null;
   let activeSeatNotificationId = "";
+  let pendingRevealTimer = null;
+  let pendingSettleTimer = null;
 
   /** 배치 알림 진동 — 소리와 함께 (미지원 브라우저/데스크톱에서는 무시됨) */
   const SEAT_MODAL_VIBRATE_PATTERN = [400, 200, 400];
@@ -168,8 +176,7 @@ export function bindMySeatAssignment(user) {
       <h2>배치 알림</h2>
       <p id="seatAssignmentMessage" style="line-height:1.6; margin:0 0 18px;"></p>
       <div class="modal-actions">
-        <button id="seatAssignmentGoBtn" class="btn primary" type="button">이동</button>
-        <button id="seatAssignmentOkBtn" class="btn ghost" type="button">확인</button>
+        <button id="seatAssignmentOkBtn" class="btn primary" type="button">확인</button>
       </div>
     </div>
   `;
@@ -178,10 +185,9 @@ export function bindMySeatAssignment(user) {
     return overlay;
   }
 
-  async function showSeatAssignmentModal({ message = "", targetUrl = "", uid = "" }) {
+  async function showSeatAssignmentModal({ message = "", uid = "" }) {
     const overlay = ensureSeatAssignmentModalUi();
     const msg = document.getElementById("seatAssignmentMessage");
-    const goBtn = document.getElementById("seatAssignmentGoBtn");
     const okBtn = document.getElementById("seatAssignmentOkBtn");
 
     if (msg) {
@@ -216,13 +222,6 @@ export function bindMySeatAssignment(user) {
         hideSeatAssignmentModal();
         await acknowledge();
         scheduleIndexCardsRender();
-      };
-    }
-
-    if (goBtn) {
-      goBtn.onclick = () => {
-        hideSeatAssignmentModal();
-        location.href = targetUrl || "./layout.html";
       };
     }
   }
@@ -275,7 +274,6 @@ export function bindMySeatAssignment(user) {
         cardId: cardLabel,
         seatLabel
       }),
-      targetUrl: String(targetUrl || "").trim(),
       uid: myUid
     });
     return true;
@@ -283,91 +281,151 @@ export function bindMySeatAssignment(user) {
 
   registerOptimisticSeatAssignedAlertHandler(showOptimisticSeatAssignmentAlert);
 
+  function clearPendingRevealTimer() {
+    if (pendingRevealTimer) {
+      clearTimeout(pendingRevealTimer);
+      pendingRevealTimer = null;
+    }
+  }
+
+  function clearPendingSettleTimer() {
+    if (pendingSettleTimer) {
+      clearTimeout(pendingSettleTimer);
+      pendingSettleTimer = null;
+    }
+  }
+
+  /** 모달이 뜬 뒤, 교대 구간(SEAT_SWAP_SETTLE_MS)이 끝나면 확인 없이도 자동으로 닫는다 */
+  function scheduleAutoDismiss(data) {
+    clearPendingSettleTimer();
+    if (isSeatNotificationPastSettleWindow(data)) {
+      hideSeatAssignmentModal();
+      return;
+    }
+    const createdMs = Number(data.createdAt);
+    if (!Number.isFinite(createdMs) || createdMs <= 0) return;
+    const remaining = createdMs + SEAT_SWAP_SETTLE_MS - Date.now();
+    pendingSettleTimer = setTimeout(() => {
+      pendingSettleTimer = null;
+      hideSeatAssignmentModal();
+    }, Math.max(0, remaining) + 250);
+  }
+
+  function applySeatAssignmentSnap(snap) {
+    clearPendingRevealTimer();
+
+    if (!snap.exists()) {
+      IX.currentSeatAssignment = null;
+      hideSeatAssignmentModal();
+      clearPendingSettleTimer();
+      scheduleIndexCardsRender();
+      return;
+    }
+
+    const data = snap.data() || {};
+    if (data.type !== "seat_assigned") {
+      IX.currentSeatAssignment = null;
+      hideSeatAssignmentModal();
+      clearPendingSettleTimer();
+      scheduleIndexCardsRender();
+      return;
+    }
+
+    if (data.acknowledged !== true) {
+      // notifyAt(교대 공개 시점, REVEAL) 전에는 배지·모달 모두 아직 보여주지 않는다.
+      const delayMs = seatNotificationDelayMs(data);
+      if (delayMs > 0) {
+        pendingRevealTimer = setTimeout(() => {
+          pendingRevealTimer = null;
+          void refetchAndApply();
+        }, delayMs + 250);
+        return;
+      }
+    }
+
+    const eventCardLabel = cardIdForSeatNotification(data);
+
+    IX.currentSeatAssignment = {
+      eventId: String(data.eventId || "").trim(),
+      boxId: String(data.boxId || "").trim(),
+      seatId: String(data.seatId || "").trim(),
+      seatLabel: String(data.seatLabel || "").trim(),
+      eventTitle: eventCardLabel,
+      targetUrl: String(data.targetUrl || "").trim(),
+      acknowledged: data.acknowledged === true
+    };
+
+    scheduleIndexCardsRender();
+
+    if (data.acknowledged !== true) {
+      const notificationKey = seatNotificationKey(user.uid, data);
+      const createdMs = Number(data.createdAt);
+
+      if (isStaleSeatNotification(createdMs)) {
+        if (activeSeatNotificationId !== notificationKey) {
+          hideSeatAssignmentModal();
+        }
+        activeSeatNotificationId = notificationKey;
+        clearPendingSettleTimer();
+        return;
+      }
+
+      if (activeSeatNotificationId && activeSeatNotificationId !== notificationKey) {
+        hideSeatAssignmentModal();
+      }
+
+      if (activeSeatNotificationId === notificationKey) return;
+
+      if (
+        shouldSkipSeatNotificationSnapshotAfterOptimistic({
+          activeNotificationId: activeSeatNotificationId,
+          uid: user.uid,
+          eventId: data.eventId,
+          boxId: data.boxId,
+          seatId: data.seatId
+        })
+      ) {
+        activeSeatNotificationId = notificationKey;
+        return;
+      }
+
+      activeSeatNotificationId = notificationKey;
+
+      const message = buildSeatAssignedNotifyMessage({
+        eventId: data.eventId,
+        eventTitle: data.eventTitle,
+        cardId: eventCardLabel,
+        seatLabel: data.seatLabel
+      });
+
+      if (typeof document !== "undefined" && document.visibilityState === "visible" && document.hasFocus()) {
+        void showSeatAssignmentModal({
+          message,
+          uid: user.uid
+        });
+      }
+      scheduleAutoDismiss(data);
+    } else {
+      hideSeatAssignmentModal();
+      clearPendingSettleTimer();
+    }
+  }
+
+  async function refetchAndApply() {
+    try {
+      const snap = await getDoc(ref);
+      applySeatAssignmentSnap(snap);
+    } catch (err) {
+      console.error("bindMySeatAssignment refetch error:", err);
+    }
+  }
+
   const ref = doc(db, "layout_notifications", user.uid);
 
   IX.stopMySeatNotificationWatch = onSnapshot(
     ref,
     (snap) => {
-      if (!snap.exists()) {
-        IX.currentSeatAssignment = null;
-        hideSeatAssignmentModal();
-        scheduleIndexCardsRender();
-        return;
-      }
-
-      const data = snap.data() || {};
-      if (data.type !== "seat_assigned") {
-        IX.currentSeatAssignment = null;
-        hideSeatAssignmentModal();
-        scheduleIndexCardsRender();
-        return;
-      }
-
-      const eventCardLabel = cardIdForSeatNotification(data);
-
-      IX.currentSeatAssignment = {
-        eventId: String(data.eventId || "").trim(),
-        boxId: String(data.boxId || "").trim(),
-        seatId: String(data.seatId || "").trim(),
-        seatLabel: String(data.seatLabel || "").trim(),
-        eventTitle: eventCardLabel,
-        targetUrl: String(data.targetUrl || "").trim(),
-        acknowledged: data.acknowledged === true
-      };
-
-      scheduleIndexCardsRender();
-
-      if (data.acknowledged !== true) {
-        const notificationKey = seatNotificationKey(user.uid, data);
-        const createdMs = Number(data.createdAt);
-
-        if (isStaleSeatNotification(createdMs)) {
-          if (activeSeatNotificationId !== notificationKey) {
-            hideSeatAssignmentModal();
-          }
-          activeSeatNotificationId = notificationKey;
-          return;
-        }
-
-        if (activeSeatNotificationId && activeSeatNotificationId !== notificationKey) {
-          hideSeatAssignmentModal();
-        }
-
-        if (activeSeatNotificationId === notificationKey) return;
-
-        if (
-          shouldSkipSeatNotificationSnapshotAfterOptimistic({
-            activeNotificationId: activeSeatNotificationId,
-            uid: user.uid,
-            eventId: data.eventId,
-            boxId: data.boxId,
-            seatId: data.seatId
-          })
-        ) {
-          activeSeatNotificationId = notificationKey;
-          return;
-        }
-
-        activeSeatNotificationId = notificationKey;
-
-        const message = buildSeatAssignedNotifyMessage({
-          eventId: data.eventId,
-          eventTitle: data.eventTitle,
-          cardId: eventCardLabel,
-          seatLabel: data.seatLabel
-        });
-        const targetUrl = String(data.targetUrl || "").trim();
-
-        if (typeof document !== "undefined" && document.visibilityState === "visible" && document.hasFocus()) {
-          void showSeatAssignmentModal({
-            message,
-            targetUrl,
-            uid: user.uid
-          });
-        }
-      } else {
-        hideSeatAssignmentModal();
-      }
+      applySeatAssignmentSnap(snap);
     },
     (err) => {
       console.error("bindMySeatAssignment error:", err);

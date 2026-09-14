@@ -14,6 +14,7 @@ import {
   maybeShowOptimisticSeatAlertFromSeats,
   triggerOptimisticMobileSeatAssignedAlert
 } from "../shared/optimistic-seat-assigned-notify.js";
+import { buildSeatAssignedTargetUrl, SEAT_SWAP_REVEAL_DELAY_MS } from "../shared/seat-notification-push.js";
 
 function cloneSeats(seats = []) {
   return seats.map((s) => ({ ...s }));
@@ -28,9 +29,9 @@ export function flushOptimisticGlobalLayoutUi() {
     maybeShowOptimisticSeatAlertFromSeats(GL.globalSeats, {
       user: GL.currentUser || auth.currentUser,
       profile: GL.userProfile,
-      buildTargetUrl: (eventId, boxId, seatId) =>
-        `./layout.html?tournamentId=${encodeURIComponent(GL.tournamentId)}&eventId=${encodeURIComponent(eventId)}&boxId=${encodeURIComponent(boxId)}&focusSeatId=${encodeURIComponent(seatId)}`,
-      showAlert: (payload) => triggerOptimisticMobileSeatAssignedAlert(payload)
+      buildTargetUrl: (eventId, boxId) => buildSeatAssignedTargetUrl(GL.tournamentId, eventId, boxId),
+      showAlert: (payload) => triggerOptimisticMobileSeatAssignedAlert(payload),
+      revealDelayMs: SEAT_SWAP_REVEAL_DELAY_MS
     });
     return;
   }
@@ -57,7 +58,7 @@ function matchesPersonOnSeat(seat = {}, person = {}) {
 }
 
 /** 배치 클릭 직후 화면 반영 — Firestore 완료 전 */
-export function applyOptimisticAssign({ targetSeatId, waiting, seat }) {
+export function applyOptimisticAssign({ targetSeatId, waiting, seat, now: nowOverride = 0 }) {
   const sid = String(targetSeatId || "").trim();
   const snapshot = {
     globalSeats: cloneSeats(GL.globalSeats),
@@ -66,7 +67,7 @@ export function applyOptimisticAssign({ targetSeatId, waiting, seat }) {
     selectedSeatIds: new Set(GL.selectedSeatIds)
   };
 
-  const now = Date.now();
+  const now = Number(nowOverride) || Date.now();
   const waitingId = String(waiting?.id || "").trim();
   const waitingUid = String(waiting?.uid || "").trim();
   const waitingEmail = String(waiting?.email || "").trim();

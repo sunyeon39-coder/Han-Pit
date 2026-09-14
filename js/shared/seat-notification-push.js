@@ -1,6 +1,30 @@
 /** FCM·OS 알림 tag — 사용자당 하나, 잠금 화면에 최신 배치만 표시 */
 export const STALE_SEAT_NOTIFY_MAX_AGE_MS = 30 * 60 * 1000;
 
+/**
+ * 통합 배치도 "교대" 타이밍 — 배치확인(seatedAt) 기준.
+ * 0 ~ REVEAL: admin만 즉시 확인 가능(근무자에게는 숨김, 알림도 아직 안 감).
+ * REVEAL ~ SETTLE: 근무자에게도 공개 + 배치 알림(모달·백그라운드 푸시) 발송, 5~10분 구간은 반전 표시.
+ * SETTLE 이후: 교대 완료 — 정착 표시, 배치 알림 모달은 자동으로 닫힘.
+ * functions/index.js 는 별도 런타임이라 같은 값을 직접 들고 있다 — 바꿀 때 같이 맞출 것.
+ */
+export const SEAT_SWAP_REVEAL_DELAY_MS = 5 * 60 * 1000;
+export const SEAT_SWAP_SETTLE_MS = 10 * 60 * 1000;
+
+/** notifyAt 이 아직 안 지났으면 남은 ms(양수), 지났거나 없으면 0 — 공개 시점 이전 자동 숨김용 */
+export function seatNotificationDelayMs(data = {}, now = Date.now()) {
+  const notifyAt = Number(data?.notifyAt);
+  if (!Number.isFinite(notifyAt) || notifyAt <= 0) return 0;
+  return Math.max(0, notifyAt - now);
+}
+
+/** createdAt(배치확인 시각) 기준 전체 교대 구간(SEAT_SWAP_SETTLE_MS)이 끝났는지 — 모달 자동 종료용 */
+export function isSeatNotificationPastSettleWindow(data = {}, now = Date.now()) {
+  const createdMs = Number(data?.createdAt);
+  if (!Number.isFinite(createdMs) || createdMs <= 0) return false;
+  return now - createdMs >= SEAT_SWAP_SETTLE_MS;
+}
+
 export function buildSeatNotifyTag(uid) {
   const u = String(uid || "").trim();
   return u ? `hanpit-seat-${u}` : "hanpit-seat";
@@ -63,8 +87,16 @@ export function buildSeatClearedNotificationWrite(fields = {}) {
   };
 }
 
-export function buildSeatAssignedTargetUrl(tournamentId, eventId, boxId, seatId) {
-  return `./layout.html?tournamentId=${encodeURIComponent(String(tournamentId || "").trim())}&eventId=${encodeURIComponent(String(eventId || "").trim())}&boxId=${encodeURIComponent(String(boxId || "").trim())}&focusSeatId=${encodeURIComponent(String(seatId || "").trim())}`;
+/** 근무자는 개별 layout.html이 아닌 통합 배치도(global-layout.html)에서만 확인한다 */
+export function buildSeatAssignedTargetUrl(tournamentId, eventId, boxId) {
+  const q = new URLSearchParams();
+  const t = String(tournamentId || "").trim();
+  const e = String(eventId || "").trim();
+  const b = String(boxId || "").trim();
+  if (t) q.set("tournamentId", t);
+  if (e) q.set("eventId", e);
+  if (b) q.set("boxId", b);
+  return `./global-layout.html?${q.toString()}`;
 }
 
 /** FCM 트리거용 — await 없이 즉시 layout_notifications 기록 (트랜잭션·검증과 병렬) */

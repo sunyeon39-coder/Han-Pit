@@ -15,6 +15,7 @@ import {
   triggerOptimisticMobileSeatAssignedAlert,
   RECENT_SEAT_ASSIGN_ALERT_MS
 } from "../shared/optimistic-seat-assigned-notify.js";
+import { buildSeatAssignedTargetUrl, SEAT_SWAP_REVEAL_DELAY_MS } from "../shared/seat-notification-push.js";
 import { getTournamentId } from "./core-utils.js";
 import { IX } from "./state.js";
 import {
@@ -79,21 +80,23 @@ function maybeTriggerOptimisticSeatAlertFromDealerSeatMap(user, previousSeatKey 
 
   const tournamentId = getTournamentId();
   const seatedAt = Number(mine.seatedAt || 0);
+  const elapsed = seatedAt > 0 ? Date.now() - seatedAt : 0;
+  // global_seats(통합 배치도)는 seatedAt이 즉시 갱신되므로, 교대 공개 시점(REVEAL) 전에는
+  // 이 낙관적 경로도 같이 숨긴다 — 안 그러면 layout_notifications의 지연(notifyAt)보다
+  // 먼저 이 대기맵 스냅샷으로 새어나간다.
+  const pastReveal = !seatedAt || elapsed >= SEAT_SWAP_REVEAL_DELAY_MS;
   const recentAssign =
-    seatedAt > 0 && Date.now() - seatedAt <= RECENT_SEAT_ASSIGN_ALERT_MS;
-  const seatChangedWhileOpen = !!previousSeatKey;
+    pastReveal && seatedAt > 0 && elapsed - SEAT_SWAP_REVEAL_DELAY_MS <= RECENT_SEAT_ASSIGN_ALERT_MS;
+  const seatChangedWhileOpen = !!previousSeatKey && pastReveal;
 
   if (seatChangedWhileOpen || recentAssign) {
-    const qs = tournamentId
-      ? `tournamentId=${encodeURIComponent(tournamentId)}&eventId=${encodeURIComponent(mine.eventId)}&boxId=${encodeURIComponent(mine.boxId)}&focusSeatId=${encodeURIComponent(mine.seatId)}`
-      : `eventId=${encodeURIComponent(mine.eventId)}&boxId=${encodeURIComponent(mine.boxId)}&focusSeatId=${encodeURIComponent(mine.seatId)}`;
     triggerOptimisticMobileSeatAssignedAlert({
       uid: user.uid,
       eventId: mine.eventId,
       boxId: mine.boxId,
       seatId: mine.seatId,
       seatLabel: mine.seatLabel,
-      targetUrl: `./layout.html?${qs}`
+      targetUrl: buildSeatAssignedTargetUrl(tournamentId, mine.eventId, mine.boxId)
     });
   }
 

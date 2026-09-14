@@ -17,6 +17,7 @@ import {
   maybeShowOptimisticSeatAlertFromSeats,
   registerOptimisticSeatAssignedAlertHandler
 } from "../shared/optimistic-seat-assigned-notify.js";
+import { buildSeatAssignedTargetUrl } from "../shared/seat-notification-push.js";
 import { createLayoutCanvasViewport } from "./layout-canvas-viewport.js";
 import { createLayoutCanvasBuild } from "./layout-canvas-build.js";
 import { createLayoutLocalStateReconcile } from "./layout-local-state-reconcile.js";
@@ -252,16 +253,8 @@ import {
     await layoutRefreshCachedEventCardTitle(TOURNAMENT_ID, EVENT_ID, eventTitleCache);
   }
 
-  function buildSeatTargetUrl(eventId, boxId, seatId = "") {
-    const tournamentId = getCurrentTournamentId();
-    const params = new URLSearchParams();
-
-    if (tournamentId) params.set("tournamentId", tournamentId);
-    if (eventId) params.set("eventId", eventId);
-    if (boxId) params.set("boxId", boxId);
-    if (seatId) params.set("focusSeatId", seatId);
-
-    return `./layout.html?${params.toString()}`;
+  function buildSeatTargetUrl(eventId, boxId) {
+    return buildSeatAssignedTargetUrl(getCurrentTournamentId(), eventId, boxId);
   }
 
   function canManageLayout() {

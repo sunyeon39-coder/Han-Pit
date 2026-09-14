@@ -13,13 +13,20 @@ import { canManageGlobalLayoutOps, canViewGlobalLayoutSeatHistory } from "./ops-
 import {
   applyOptimisticWaitingBlockRow,
   applyWaitingBlockLocal,
-  getCurrentTournamentWaiting
+  getCurrentTournamentWaiting,
+  resolveSelectedWaitingForAssign
 } from "./waiting.js";
+import {
+  stagePendingSeatAssignment,
+  cancelPendingSeatAssignment,
+  getPendingSeatAssignment,
+  confirmAllPendingSeatAssignments,
+  hasPendingSeatAssignments
+} from "./pending-seat-assignments.js";
 import { updateGlobalLayoutWaitingMeta } from "./meta-ui.js";
 import { flushOptimisticGlobalLayoutUi } from "./optimistic-seat-mutation.js";
 import {
   saveSeatPosition,
-  assignSelectedWaitingToSeat,
   clearSeat,
   deleteGlobalSeat,
   addGlobalSeat,
@@ -209,6 +216,30 @@ export function bindGlobalLayoutEventHandlers() {
       return;
     }
 
+    const confirmAssignBtn = e.target.closest("#waitConfirmAssignBtn");
+    if (confirmAssignBtn) {
+      if (!hasPendingSeatAssignments() || confirmAssignBtn.disabled) return;
+      confirmAssignBtn.disabled = true;
+      try {
+        const { confirmedCount, failed } = await confirmAllPendingSeatAssignments();
+        if (failed.length) {
+          const lines = failed.map(({ waiting, err }) => {
+            const msg = String(err?.message || "").trim();
+            if (msg === "same_person_noop") return `${waiting.name || waiting.uid}: 이미 그 Seat에 있습니다.`;
+            if (msg === "waiting_blocked") return `${waiting.name || waiting.uid}: BLOCK 상태라 배치할 수 없습니다.`;
+            if (msg === "waiting_not_found") return `${waiting.name || waiting.uid}: 대기자가 이미 처리되었습니다.`;
+            if (msg === "seat_not_found") return `${waiting.name || waiting.uid}: Seat 정보를 찾을 수 없습니다.`;
+            return `${waiting.name || waiting.uid}: 배치 실패${assignSeatFailureHint(err)}`;
+          });
+          alert(`${confirmedCount}건 확정, ${failed.length}건 실패:\n${lines.join("\n")}`);
+        }
+      } finally {
+        renderSeats(GL.globalSeats);
+        renderWaiting(getCurrentTournamentWaiting());
+      }
+      return;
+    }
+
     const sortSeatOrderBtn = e.target.closest("#sortSeatOrderBtn");
     if (sortSeatOrderBtn) {
       GL.seatSortMode = "seat";
@@ -251,22 +282,15 @@ export function bindGlobalLayoutEventHandlers() {
       syncSelectedWaitingFromMyOperatorPick();
       if (!String(GL.selectedWaitingId || "").trim()) return;
       const sid = String(assignBtn.getAttribute("data-assign-seat") || "");
-      try {
-        await assignSelectedWaitingToSeat(sid);
-      } catch (err) {
-        if (String(err?.message || "").includes("same_person_noop")) {
-          alert("이미 이 Seat에 있는 사람입니다. 다른 Seat를 선택하세요.");
-        } else if (String(err?.message || "").includes("waiting_blocked")) {
-          alert("BLOCK 체크된 대기자는 배치할 수 없습니다.");
-        } else if (String(err?.message || "").includes("waiting_not_found")) {
-          alert("해당 대기자가 이미 처리되었습니다.");
-        } else if (String(err?.message || "").includes("seat_not_found")) {
-          alert("Seat 정보를 찾을 수 없습니다. 잠시 후 다시 시도해 주세요.");
-        } else {
-          console.error("assignSelectedWaitingToSeat error:", err);
-          alert(`대기 배치에 실패했습니다.${assignSeatFailureHint(err)}`);
-        }
+      const waiting = resolveSelectedWaitingForAssign();
+      if (!waiting) return;
+      if (waiting.blockChecked === true) {
+        alert("BLOCK 체크된 대기자는 배치할 수 없습니다.");
+        return;
       }
+      stagePendingSeatAssignment(sid, waiting);
+      renderSeats(GL.globalSeats);
+      renderWaiting(getCurrentTournamentWaiting());
       return;
     }
 
@@ -471,6 +495,14 @@ export function bindGlobalLayoutEventHandlers() {
     const isDoubleActivate = Number(e?.detail || 0) >= 2 || isSameSeatQuickTap;
 
     if (isDoubleActivate && !GL.selectedWaitingId) {
+      if (getPendingSeatAssignment(sid)) {
+        cancelPendingSeatAssignment(sid);
+        GL.lastSeatTapAt = 0;
+        GL.lastSeatTapId = "";
+        renderSeats(GL.globalSeats);
+        renderWaiting(getCurrentTournamentWaiting());
+        return;
+      }
       if (!isEmptyPerson(String(seat.person || "").trim())) {
         try {
           await clearSeat(sid);
@@ -489,22 +521,15 @@ export function bindGlobalLayoutEventHandlers() {
     if (String(GL.selectedWaitingId || "").trim() && !isMultiSelectPointer(e)) {
       syncSelectedWaitingFromMyOperatorPick();
       if (!String(GL.selectedWaitingId || "").trim()) return;
-      try {
-        await assignSelectedWaitingToSeat(sid);
-      } catch (err) {
-        if (String(err?.message || "").includes("same_person_noop")) {
-          alert("이미 이 Seat에 있는 사람입니다. 다른 Seat를 선택하세요.");
-        } else if (String(err?.message || "").includes("waiting_blocked")) {
-          alert("BLOCK 체크된 대기자는 배치할 수 없습니다.");
-        } else if (String(err?.message || "").includes("waiting_not_found")) {
-          alert("해당 대기자가 이미 처리되었습니다.");
-        } else if (String(err?.message || "").includes("seat_not_found")) {
-          alert("Seat 정보를 찾을 수 없습니다. 잠시 후 다시 시도해 주세요.");
-        } else {
-          console.error("canvas assignSelectedWaitingToSeat error:", err);
-          alert(`대기 배치에 실패했습니다.${assignSeatFailureHint(err)}`);
-        }
+      const waiting = resolveSelectedWaitingForAssign();
+      if (!waiting) return;
+      if (waiting.blockChecked === true) {
+        alert("BLOCK 체크된 대기자는 배치할 수 없습니다.");
+        return;
       }
+      stagePendingSeatAssignment(sid, waiting);
+      renderSeats(GL.globalSeats);
+      renderWaiting(getCurrentTournamentWaiting());
       return;
     }
 

@@ -123,7 +123,7 @@ function sleep(ms = 0) {
 export async function showSeatAssignedOsNotification({
   title = "Han Pit",
   body = "",
-  targetUrl = "./layout.html",
+  targetUrl = "./global-layout.html",
   uid = "",
   tag = "",
   appBadgeCount = ""
@@ -138,7 +138,7 @@ export async function showSeatAssignedOsNotification({
     renotify: true,
     lang: "ko",
     data: {
-      targetUrl: String(targetUrl || "./layout.html").trim() || "./layout.html",
+      targetUrl: String(targetUrl || "./global-layout.html").trim() || "./global-layout.html",
       appBadgeCount: appBadgeCount != null ? String(appBadgeCount) : ""
     },
     vibrate: [180, 80, 180]

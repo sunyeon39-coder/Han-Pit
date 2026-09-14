@@ -44,6 +44,7 @@ import {
   maybeShowOptimisticSeatAlertFromSeats,
   triggerOptimisticMobileSeatAssignedAlert
 } from "../shared/optimistic-seat-assigned-notify.js";
+import { buildSeatAssignedTargetUrl, SEAT_SWAP_REVEAL_DELAY_MS } from "../shared/seat-notification-push.js";
 import {
   isFirestoreQuotaCoolingDown,
   noteFirestoreQuotaExceeded
@@ -661,9 +662,9 @@ function applyGlobalSeatsFromSnapshot(snap, prevSeatsRef = { value: [] }) {
     maybeShowOptimisticSeatAlertFromSeats(mergedSeats, {
       user: GL.currentUser || auth.currentUser,
       profile: GL.userProfile,
-      buildTargetUrl: (eventId, boxId, seatId) =>
-        `./layout.html?tournamentId=${encodeURIComponent(GL.tournamentId)}&eventId=${encodeURIComponent(eventId)}&boxId=${encodeURIComponent(boxId)}&focusSeatId=${encodeURIComponent(seatId)}`,
-      showAlert: (payload) => triggerOptimisticMobileSeatAssignedAlert(payload)
+      buildTargetUrl: (eventId, boxId) => buildSeatAssignedTargetUrl(GL.tournamentId, eventId, boxId),
+      showAlert: (payload) => triggerOptimisticMobileSeatAssignedAlert(payload),
+      revealDelayMs: SEAT_SWAP_REVEAL_DELAY_MS
     });
   }
 

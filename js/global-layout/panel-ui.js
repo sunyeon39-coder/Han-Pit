@@ -15,7 +15,9 @@ import {
   fmtElapsed,
   timerClass,
   getSeatPosition,
-  getSeatById
+  getSeatById,
+  isPersonInPostSwapGrace,
+  resolveSeatSwapDisplay
 } from "./utils.js";
 import { renderGlobalLayoutMobile } from "./mobile-panel-render.js";
 import { buildSeatedIdentitySet } from "../shared/tournament-waiting-queue.js";
@@ -69,10 +71,12 @@ function waitingPanelFingerprint(waiting = []) {
       const wid = String(w.id || "").trim();
       const blocked = isWaitingBlocked(w) ? 1 : 0;
       const pickUi = waitingRowPickClass(wid);
-      return `${index}:${wid}|${String(w.name || w.uid || "").trim()}|${blocked}|${pickUi.isSelected ? 1 : 0}|${Number(w.blockAccumulatedMs || 0)}|${Number(w.blockCheckedAt || 0)}`;
+      const grace = isPersonInPostSwapGrace(GL.globalSeats, { uid: w.uid, name: w.name }) ? 1 : 0;
+      return `${index}:${wid}|${String(w.name || w.uid || "").trim()}|${blocked}|${pickUi.isSelected ? 1 : 0}|${Number(w.blockAccumulatedMs || 0)}|${Number(w.blockCheckedAt || 0)}|${grace}`;
     })
     .join(";");
-  return `S:${seatedKey}|W:${waitingKey}|M:${GL.waitingViewMode}`;
+  const pendingKey = [...GL.pendingSeatAssignments.keys()].sort().join(",");
+  return `S:${seatedKey}|W:${waitingKey}|M:${GL.waitingViewMode}|P:${pendingKey}`;
 }
 
 export function invalidateWaitingPanelFingerprint() {
@@ -81,7 +85,8 @@ export function invalidateWaitingPanelFingerprint() {
 
 function seatPanelFingerprint(seats = []) {
   const sel = String(GL.selectedWaitingId || "").trim();
-  return `${sel}|${GL.seatSortMode}|${seats
+  const pendingKey = [...GL.pendingSeatAssignments.keys()].sort().join(",");
+  return `${sel}|${GL.seatSortMode}|P:${pendingKey}|${seats
     .map((s) => {
       const sid = String(s.seatId || "").trim();
       const occupied = !isEmptyPerson(String(s.person || "").trim());
@@ -92,23 +97,40 @@ function seatPanelFingerprint(seats = []) {
 }
 
 function buildGlobalSeatBoxState(s, idx, paletteMap) {
-  const label = s.label || s.no || s.seatId || "-";
+  const seatId = String(s.seatId || "").trim();
+  const pending = GL.pendingSeatAssignments.get(seatId) || null;
   const occupied = !isEmptyPerson(String(s.person || "").trim());
-  const name = occupied ? String(s.person || "").trim() : "-";
+  const swapDisplay = occupied && !pending
+    ? resolveSeatSwapDisplay(s, Date.now(), { isAdminView: canManageGlobalLayoutOps() })
+    : null;
+  const name = pending
+    ? String(pending.waiting?.name || "").trim() || "-"
+    : swapDisplay
+      ? swapDisplay.name || "-"
+      : "-";
   const isSelf = occupied && isSeatAssignedToCurrentUser(s, auth.currentUser, GL.userProfile);
-  const personClass = [occupied ? "seat-person" : "seat-person is-empty", isSelf ? "is-self" : ""]
+  const personClass = [occupied || pending ? "seat-person" : "seat-person is-empty", isSelf ? "is-self" : ""]
     .filter(Boolean)
     .join(" ");
-  const seatId = String(s.seatId || "").trim();
   const selectedClass = GL.selectedSeatIds.has(seatId) ? "selected" : "";
   const x = Number.isFinite(Number(s.x)) ? Number(s.x) : getSeatPosition(idx).x;
   const y = Number.isFinite(Number(s.y)) ? Number(s.y) : getSeatPosition(idx).y;
   const seatedAtMs = occupied ? toMillis(s.seatedAt || 0) : 0;
   const elapsedMs = occupied ? (seatedAtMs > 0 ? Date.now() - seatedAtMs : 0) : 0;
   const timerCls = occupied ? timerClass(elapsedMs) : "";
+  const isBlinkOn = swapDisplay?.highlight === true;
   const paletteClass = getEventBoxPaletteClass(s, paletteMap);
   const alertClass = seatAlertClass(s, canManageGlobalLayoutOps());
-  const seatBoxClass = ["seat-box", paletteClass, occupied ? "is-occupied" : "", timerCls, selectedClass, alertClass]
+  const seatBoxClass = [
+    "seat-box",
+    paletteClass,
+    occupied ? "is-occupied" : "",
+    timerCls,
+    selectedClass,
+    alertClass,
+    pending ? "is-pending-assign" : "",
+    isBlinkOn ? "is-confirm-blink" : ""
+  ]
     .filter(Boolean)
     .join(" ");
   const canvasLabel = String(s.label ?? s.no ?? "").trim() || "—";
@@ -153,6 +175,7 @@ export function updateCanvasSeatTimerClasses() {
   const root = GL.app.querySelector(".pc-canvas");
   if (!root) return;
   const now = Date.now();
+  const isAdminView = canManageGlobalLayoutOps();
   const seatById = buildGlobalSeatsByIdMap();
   root.querySelectorAll(".seat-box[data-seat-id]").forEach((box) => {
     const id = String(box.getAttribute("data-seat-id") || "").trim();
@@ -166,6 +189,12 @@ export function updateCanvasSeatTimerClasses() {
     const cls = timerClass(elapsed);
     box.classList.remove("t-green", "t-yellow", "t-orange", "t-red");
     box.classList.add(cls);
+    if (!GL.pendingSeatAssignments.get(id)) {
+      const swapDisplay = resolveSeatSwapDisplay(s, now, { isAdminView });
+      box.classList.toggle("is-confirm-blink", swapDisplay.highlight);
+      const personEl = box.querySelector(".seat-person");
+      if (personEl) personEl.textContent = swapDisplay.name || "-";
+    }
   });
 }
 
@@ -379,11 +408,16 @@ export function renderWaiting(_waiting) {
   }
   GL._waitingPanelFp = nextFp;
 
+  const pendingWaitingIds = new Set(
+    [...GL.pendingSeatAssignments.values()].map((p) => String(p.waiting?.id || "").trim()).filter(Boolean)
+  );
+
   const buildWaitRowHtml = (w) => {
     const wid = String(w.id || "");
     const pickUi = waitingRowPickClass(wid);
     const selected = pickUi.isSelected;
     const blocked = isWaitingBlocked(w);
+    const isStagedForSeat = pendingWaitingIds.has(wid);
     const startMs = getWaitingDisplayStartMs(w);
     const elapsed = Date.now() - startMs;
     const tClass = timerClass(elapsed);
@@ -409,7 +443,7 @@ export function renderWaiting(_waiting) {
       : "";
     return `
     <div
-      class="seat-manage-row wait-panel-row gl-panel-list-row ${selected ? "selected" : ""} ${blocked ? "is-blocked" : ""} ${pickUi.classes}"
+      class="seat-manage-row wait-panel-row gl-panel-list-row ${selected ? "selected" : ""} ${blocked ? "is-blocked" : ""} ${isStagedForSeat ? "is-staged-for-seat" : ""} ${pickUi.classes}"
       style="--wait-pick-color:${escapeHtml(pickUi.pickColor)}"
       data-wid="${escapeHtml(wid)}"
       data-wait-join-ms="${joinedAtMs}"
@@ -434,14 +468,24 @@ export function renderWaiting(_waiting) {
   `;
   };
 
-  const { normal: normalWaiting, blocked: blockedWaiting } = partitionWaitingForMobileDisplay(sortedWaiting);
+  const { normal: normalWaitingRaw, blocked: blockedWaiting } = partitionWaitingForMobileDisplay(sortedWaiting);
+  // 스왑으로 밀려났지만 아직 "현재" 칸에 계속 보이는 전환 구간인 사람 — admin이 실수로
+  // 다시 배치하지 않도록, 그 구간이 끝나 실제로 대기 상태가 될 때까지 목록에서 숨긴다.
+  const normalWaiting = normalWaitingRaw.filter(
+    (w) => !isPersonInPostSwapGrace(GL.globalSeats, { uid: w.uid, name: w.name })
+  );
   if (GL.waitingViewMode !== "block") GL.waitingViewMode = "wait";
   const activeGroup = GL.waitingViewMode === "block" ? blockedWaiting : normalWaiting;
   const waitingRows = activeGroup.map(buildWaitRowHtml).join("");
+  const pendingCount = GL.pendingSeatAssignments.size;
+  const confirmAssignBtnHtml = canManageGlobalLayoutOps()
+    ? `<button id="waitConfirmAssignBtn" class="pill-inline primary" type="button" ${pendingCount ? "" : "disabled"}>배치확인${pendingCount ? ` (${pendingCount})` : ""}</button>`
+    : "";
   const waitTabRowHtml = `
     <div class="wait-tab-row">
       <button id="waitTabNormalBtn" class="pill-inline ${GL.waitingViewMode === "wait" ? "active" : ""}" type="button">대기</button>
       <button id="waitTabBlockBtn" class="pill-inline ${GL.waitingViewMode === "block" ? "active" : ""}" type="button">BLOCK</button>
+      ${confirmAssignBtnHtml}
     </div>
   `;
 
@@ -483,26 +527,37 @@ export function renderWaiting(_waiting) {
 export function updateSeatPanelTimers() {
   const seatCol = getPcSeatColEl();
   if (!seatCol) return;
-  const chips = seatCol.querySelectorAll(".time-chip[data-seat-start]");
-  if (!chips.length) return;
+  const rows = seatCol.querySelectorAll(".seat-manage-row[data-select-seat]");
+  if (!rows.length) return;
   const now = Date.now();
-  chips.forEach((chip) => {
-    const start = Number(chip.getAttribute("data-seat-start") || "0");
-    const elapsed = start > 0 ? Math.max(0, now - start) : 0;
-    chip.textContent = fmtElapsed(elapsed);
-    const cls = timerClass(elapsed);
-    chip.classList.remove("t-green", "t-yellow", "t-orange", "t-red");
-    chip.classList.add(cls);
+  const isAdminView = canManageGlobalLayoutOps();
+  const seatByRowKey = new Map((GL.globalSeats || []).map((s) => [getGlobalSeatRowKey(s), s]));
+  rows.forEach((row) => {
+    const chip = row.querySelector(".time-chip[data-seat-start]");
+    if (chip) {
+      const start = Number(chip.getAttribute("data-seat-start") || "0");
+      const elapsed = start > 0 ? Math.max(0, now - start) : 0;
+      chip.textContent = fmtElapsed(elapsed);
+      const cls = timerClass(elapsed);
+      chip.classList.remove("t-green", "t-yellow", "t-orange", "t-red");
+      chip.classList.add(cls);
+    }
+    const rowKey = String(row.getAttribute("data-select-seat") || "").trim();
+    const seat = seatByRowKey.get(rowKey);
+    const seatId = String(seat?.seatId || "").trim();
+    if (!seat || GL.pendingSeatAssignments.get(seatId)) return;
+    const swapDisplay = resolveSeatSwapDisplay(seat, now, { isAdminView });
+    row.classList.toggle("is-confirm-blink", swapDisplay.highlight);
+    const nameEl = row.querySelector(".seat-manage-name");
+    if (nameEl) nameEl.textContent = swapDisplay.name || "-";
   });
 }
 
 export function updateWaitingTimersInPanel() {
   const waitCol = getPcWaitColEl();
   if (!waitCol) return;
-  const chips = waitCol.querySelectorAll(".time-chip[data-wait-start]");
-  if (!chips.length) return;
   const now = Date.now();
-  chips.forEach((chip) => {
+  waitCol.querySelectorAll(".time-chip[data-wait-start]").forEach((chip) => {
     const start = Number(chip.getAttribute("data-wait-start") || "0");
     const elapsed = start > 0 ? Math.max(0, now - start) : 0;
     chip.textContent = fmtElapsed(elapsed);
@@ -510,6 +565,25 @@ export function updateWaitingTimersInPanel() {
     chip.classList.remove("t-green", "t-yellow", "t-orange", "t-red");
     chip.classList.add(cls);
   });
+
+  // 스왑 전환 구간(2분)이 끝나 "대기"에 새로 나타나야 하는 사람이 있으면 즉시 다시 그린다 —
+  // 그렇지 않으면 다른 데이터 변경이 있을 때까지 캐시된 목록에 계속 안 보이게 된다.
+  if (GL.waitingViewMode !== "block") {
+    const waiting = getCurrentTournamentWaiting();
+    const shownIds = new Set(
+      [...waitCol.querySelectorAll("[data-wid]")].map((el) => String(el.getAttribute("data-wid") || "").trim())
+    );
+    const shouldReveal = waiting.some((w) => {
+      if (isWaitingBlocked(w)) return false;
+      const wid = String(w.id || "").trim();
+      if (shownIds.has(wid)) return false;
+      return !isPersonInPostSwapGrace(GL.globalSeats, { uid: w.uid, name: w.name });
+    });
+    if (shouldReveal) {
+      GL._waitingPanelFp = null;
+      renderWaiting(waiting);
+    }
+  }
 }
 
 export function renderSeatPanel() {
@@ -537,12 +611,21 @@ export function renderSeatPanel() {
   GL._seatPanelFp = nextSeatFp;
 
   const panelPaletteMap = buildEventBoxPaletteMap(sorted);
+  const isAdminViewForPanel = canManageGlobalLayoutOps();
   const rows = sorted
     .map((s) => {
-      const occupied = !isEmptyPerson(String(s.person || "").trim());
-      const name = occupied ? String(s.person || "").trim() : "-";
-      const isSelf = occupied && isSeatAssignedToCurrentUser(s, auth.currentUser, GL.userProfile);
       const seatId = String(s.seatId || "").trim();
+      const pending = GL.pendingSeatAssignments.get(seatId) || null;
+      const occupied = !isEmptyPerson(String(s.person || "").trim());
+      const swapDisplay = occupied && !pending
+        ? resolveSeatSwapDisplay(s, Date.now(), { isAdminView: isAdminViewForPanel })
+        : null;
+      const name = pending
+        ? String(pending.waiting?.name || "").trim() || "-"
+        : swapDisplay
+          ? swapDisplay.name || "-"
+          : "-";
+      const isSelf = occupied && isSeatAssignedToCurrentUser(s, auth.currentUser, GL.userProfile);
       const firestoreDocId = String(s.__firestoreDocId || "").trim();
       const rowKey = getGlobalSeatRowKey(s);
       const paletteClass = getEventBoxPaletteClass(s, panelPaletteMap);
@@ -550,14 +633,15 @@ export function renderSeatPanel() {
       const seatedAt = getGlobalSeatSeatedAtMs(s);
       const elapsed = seatedAt ? Date.now() - seatedAt : 0;
       const tClass = timerClass(elapsed);
+      const isBlinkOn = swapDisplay?.highlight === true;
       const ebMeta = !occupied ? formatSeatPanelEventBoxMeta(s) : "";
       return `
-      <div class="seat-manage-row gl-panel-list-row ${paletteClass} ${selectedRowClass} ${seatAlertClass(s, canManageGlobalLayoutOps())}" data-select-seat="${escapeHtml(rowKey)}" data-firestore-doc="${escapeHtml(firestoreDocId)}">
+      <div class="seat-manage-row gl-panel-list-row ${paletteClass} ${selectedRowClass} ${seatAlertClass(s, canManageGlobalLayoutOps())} ${pending ? "is-pending-assign" : ""} ${isBlinkOn ? "is-confirm-blink" : ""}" data-select-seat="${escapeHtml(rowKey)}" data-firestore-doc="${escapeHtml(firestoreDocId)}">
         <div class="seat-manage-main seat-manage-main--oneline">
           <div class="seat-manage-namewrap seat-manage-namewrap--with-num">
             <span class="seat-manage-num">${escapeHtml(seatCanvasDigitsOnly(s.label, s.no))}</span>
             <div class="seat-manage-namecol">
-              <span class="seat-manage-name ${occupied ? "" : "is-empty"} ${isSelf ? "is-self" : ""}">${escapeHtml(name)}</span>
+              <span class="seat-manage-name ${occupied || pending ? "" : "is-empty"} ${isSelf ? "is-self" : ""}">${escapeHtml(name)}</span>
               ${ebMeta ? `<span class="seat-manage-eb-meta muted">${escapeHtml(ebMeta)}</span>` : ""}
             </div>
           </div>

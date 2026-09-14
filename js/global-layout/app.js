@@ -10,6 +10,7 @@ import {
   maybeShowOptimisticSeatAlertFromSeats,
   registerOptimisticSeatAssignedAlertHandler
 } from "../shared/optimistic-seat-assigned-notify.js";
+import { buildSeatAssignedTargetUrl, SEAT_SWAP_REVEAL_DELAY_MS } from "../shared/seat-notification-push.js";
 import {
   FCM_VAPID_KEY as VAPID_KEY,
   alertFcmRegistrationResult,
@@ -109,10 +110,10 @@ function checkGlobalLayoutOptimisticSeatAlert() {
   maybeShowOptimisticSeatAlertFromSeats(GL.globalSeats, {
     user,
     profile: GL.userProfile,
-    buildTargetUrl: (eventId, boxId, seatId) =>
-      `./layout.html?tournamentId=${encodeURIComponent(GL.tournamentId)}&eventId=${encodeURIComponent(eventId)}&boxId=${encodeURIComponent(boxId)}&focusSeatId=${encodeURIComponent(seatId)}`,
+    buildTargetUrl: (eventId, boxId) => buildSeatAssignedTargetUrl(GL.tournamentId, eventId, boxId),
     showAlert: (payload) =>
-      globalLayoutMobileSeatNotify?.showOptimisticSeatAssignedAlert?.(payload) ?? false
+      globalLayoutMobileSeatNotify?.showOptimisticSeatAssignedAlert?.(payload) ?? false,
+    revealDelayMs: SEAT_SWAP_REVEAL_DELAY_MS
   });
 }
 
@@ -493,13 +494,7 @@ export function startGlobalLayoutApp() {
         return;
       }
 
-      if (layoutIsMobile()) {
-        alert("통합 배치도는 PC에서만 볼 수 있습니다.");
-        location.replace("./index.html");
-        return;
-      }
-
-      // 운영 권한은 없지만 PC 사용자 — 캔버스만 보이는 조회 전용 세션 시작
+      // 운영 권한은 없는 근무자 — PC/모바일 모두 조회 전용 세션 시작
       GL.opsServerVerified = false;
       startGlobalLayoutSession(user);
       void refreshGlobalLayoutOpsProfileBackground(user);

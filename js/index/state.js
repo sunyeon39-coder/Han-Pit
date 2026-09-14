@@ -36,6 +36,7 @@ export const IX = {
   dealerOpsMount: null,
   topicBar: null,
   topicBarText: null,
+  topicGlobalLayoutBtn: null,
 
   enablePushBtn: null,
   seatMapBtn: null,
@@ -161,6 +162,7 @@ export function refreshIndexDomRefs() {
   IX.dealerOpsMount = $("dealerOpsMount");
   IX.topicBar = $("topicBar");
   IX.topicBarText = $("topicBarText");
+  IX.topicGlobalLayoutBtn = $("topicGlobalLayoutBtn");
 
   IX.enablePushBtn = $("enablePushBtn");
   IX.seatMapBtn = $("seatMapBtn");

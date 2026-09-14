@@ -255,7 +255,7 @@ export async function validateLayoutEventForGlobalOps(eventId = "", boxId = "", 
     }
     return {
       ok: false,
-      message: `event ${e} / box ${b} 는 layout_events에 없습니다.\n\n※ index「카드 관리」에서 이 카드 ID·Box ID로 카드를 저장하면 자동으로 생성됩니다. 값이 카드와 다르지 않은지 확인하거나, layout.html에서 한 번 저장해 주세요.`
+      message: `event ${e} / box ${b} 는 layout_events에 없습니다.\n\n※ index「카드 관리」에서 이 카드 ID·Box ID로 카드를 저장하면 자동으로 생성됩니다. 값이 카드와 다르지 않은지 확인해 주세요.`
     };
   }
 

@@ -1,5 +1,6 @@
 import {
   buildSeatAssignedNotificationWrite,
+  buildSeatAssignedTargetUrl,
   buildSeatClearedNotificationWrite
 } from "../shared/seat-notification-push.js";
 import { db } from "../firebase.js";
@@ -737,7 +738,7 @@ export async function applyGlobalSeatRename(
             boxId: nextBoxId,
             seatId: targetSeatId,
             seatLabel: nextLabel,
-            targetUrl: `./layout.html?tournamentId=${encodeURIComponent(GL.tournamentId)}&eventId=${encodeURIComponent(resolvedNextEventId)}&boxId=${encodeURIComponent(nextBoxId)}&focusSeatId=${encodeURIComponent(targetSeatId)}`,
+            targetUrl: buildSeatAssignedTargetUrl(GL.tournamentId, resolvedNextEventId, nextBoxId),
             message: `${eventCardLabel} / Seat ${nextLabel} ${
               oldDocId !== newDocId ? "배치(카드·Box)가 변경되었습니다." : "라벨이 변경되었습니다."
             }`,
@@ -867,7 +868,7 @@ async function addGlobalSeatCore({ label = "", eventId = "", boxId = "", clearFo
   }
   if (!isValidLayoutRouteIdPart(eid) || !isValidLayoutRouteIdPart(bid)) {
     alert(
-      "카드 ID / Box ID 형식이 올바르지 않습니다. (비어 있지 않고, / 나 __ 는 사용할 수 없습니다.)\nindex「카드 관리」에 표시된 값과 layout.html 주소창의 eventId·boxId를 확인하세요."
+      "카드 ID / Box ID 형식이 올바르지 않습니다. (비어 있지 않고, / 나 __ 는 사용할 수 없습니다.)\nindex「카드 관리」에 표시된 값을 확인하세요."
     );
     return;
   }

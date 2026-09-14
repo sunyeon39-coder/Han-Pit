@@ -15,6 +15,15 @@
         { "fieldPath": "tournamentId", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "layout_notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "acknowledged", "order": "ASCENDING" },
+        { "fieldPath": "notifyAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

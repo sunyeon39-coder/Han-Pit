@@ -73,7 +73,13 @@ export function shouldSkipSeatNotificationSnapshotAfterOptimistic({
   return activeNotificationId === optKey || String(activeNotificationId || "").startsWith("opt:");
 }
 
-/** 좌석 스냅샷에서 본인 배치를 감지해 낙관적 알림 (원격 배치·Firestore 알림 doc 지연 대비) */
+/**
+ * 좌석 스냅샷에서 본인 배치를 감지해 낙관적 알림 (원격 배치·Firestore 알림 doc 지연 대비).
+ * revealDelayMs — 통합 배치도 "교대" 공개 지연(REVEAL). 그 시점 전에는 layout_notifications
+ * 문서 자체도 아직 비공개(notifyAt)이므로, 이 좌석 스냅샷 기반 낙관적 경로도 같이 숨겨야
+ * seatedAt 이 즉시 갱신되는 global_seats 를 통해 교대가 먼저 새어나가지 않는다.
+ * (layout.html 등 이 지연 개념이 없는 화면은 기본값 0으로 기존과 동일하게 즉시 동작한다.)
+ */
 export function maybeShowOptimisticSeatAlertFromSeats(seats = [], options = {}) {
   const {
     user,
@@ -82,7 +88,8 @@ export function maybeShowOptimisticSeatAlertFromSeats(seats = [], options = {}) 
     boxId = "",
     eventTitle = "",
     buildTargetUrl,
-    showAlert
+    showAlert,
+    revealDelayMs = 0
   } = options;
 
   if (!shouldUseOptimisticSeatAlertOnMobile()) return false;
@@ -97,7 +104,9 @@ export function maybeShowOptimisticSeatAlertFromSeats(seats = [], options = {}) 
   const ev = String(eventId || seat.currentEventId || seat.mappedEventId || "").trim();
   const bx = String(boxId || seat.boxId || "").trim();
   const seatedAt = Number(seat.seatedAt || 0);
-  if (seatedAt > 0 && Date.now() - seatedAt > RECENT_SEAT_ASSIGN_ALERT_MS) return false;
+  const elapsed = seatedAt > 0 ? Date.now() - seatedAt : 0;
+  if (seatedAt > 0 && elapsed < revealDelayMs) return false;
+  if (seatedAt > 0 && elapsed - revealDelayMs > RECENT_SEAT_ASSIGN_ALERT_MS) return false;
 
   const uid = String(user.uid || "").trim();
   const optKey = buildOptimisticSeatAlertKey({ uid, eventId: ev, boxId: bx, seatId });

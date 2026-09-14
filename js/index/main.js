@@ -441,31 +441,6 @@ function wireIndexPageControls() {
     }
   });
 
-  IX.root?.addEventListener("click", (e) => {
-    const card = e.target.closest(".event-card");
-    if (!card) return;
-
-    if (IX.currentTournament && !isTournamentActive(IX.currentTournament)) {
-      routeToHub("대회 기간이 종료되어 허브로 이동합니다.");
-      return;
-    }
-
-    const tournamentId = getTournamentId();
-    const eventId = card.dataset.eventId;
-    const boxId = card.dataset.boxId;
-
-    if (!eventId || !boxId) {
-      console.warn("❌ Missing eventId or boxId");
-      return;
-    }
-
-    sessionStorage.setItem("tournamentId", tournamentId);
-    sessionStorage.setItem("eventId", eventId);
-    sessionStorage.setItem("boxId", boxId);
-
-    location.href = `./layout.html?tournamentId=${encodeURIComponent(tournamentId)}&eventId=${encodeURIComponent(eventId)}&boxId=${encodeURIComponent(boxId)}`;
-  });
-
   IX.backBtn?.addEventListener("click", () => {
     sessionStorage.removeItem("boxId");
     location.href = resolveRelativePage("hub.html");
@@ -475,10 +450,7 @@ function wireIndexPageControls() {
     const href = buildGlobalLayoutHref();
     if (href) prefetchPageOnce(href);
   };
-  IX.globalLayoutBtn?.addEventListener("pointerenter", prefetchGlobalLayout, { passive: true });
-  IX.globalLayoutBtn?.addEventListener("focus", prefetchGlobalLayout, { passive: true });
-
-  IX.globalLayoutBtn?.addEventListener("click", () => {
+  const goToGlobalLayout = () => {
     const tournamentId = getTournamentId();
     if (!tournamentId) {
       alert("대회 정보가 없습니다.");
@@ -492,6 +464,12 @@ function wireIndexPageControls() {
     }
     const href = buildGlobalLayoutHref();
     if (href) location.href = href;
+  };
+
+  [IX.globalLayoutBtn, IX.topicGlobalLayoutBtn].forEach((btn) => {
+    btn?.addEventListener("pointerenter", prefetchGlobalLayout, { passive: true });
+    btn?.addEventListener("focus", prefetchGlobalLayout, { passive: true });
+    btn?.addEventListener("click", goToGlobalLayout);
   });
 
   IX.eventAdminBtn?.addEventListener("click", () => {

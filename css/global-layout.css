@@ -38,6 +38,22 @@ body.page-global-layout.has-topic-bar #app {
   touch-action: none;
 }
 
+/* "배치확인" 전 임시(staged) 배치 / 확인 후 5~10분 구간(30초 간격 강조, 교대 임박 경고) —
+   반전 대신 눈에 띄는 밝은색 배경으로 표시 */
+.pc-canvas .seat-box.is-pending-assign,
+.pc-canvas .seat-box.is-confirm-blink {
+  background: var(--gl-highlight, #ffffff);
+  border-color: var(--gl-highlight, #ffffff);
+}
+
+.pc-canvas .seat-box.is-pending-assign .seat-title,
+.pc-canvas .seat-box.is-confirm-blink .seat-title,
+.pc-canvas .seat-box.is-pending-assign .seat-person,
+.pc-canvas .seat-box.is-confirm-blink .seat-person {
+  color: #000000;
+  text-shadow: none;
+}
+
 .pc-canvas .seat-box .seat-history-btn {
   position: absolute;
   top: 3px;
@@ -672,6 +688,18 @@ body.page-global-layout .pc-panel .global-list > .gl-panel-list-row {
   margin-bottom: 0;
 }
 
+/* "배치확인" 전 임시(staged) 배치 / 확인 후 5~10분 강조 경고 — 좌측 Seat 목록 행: 은은한 흰색 글로우 */
+.seat-manage-row.is-pending-assign,
+.seat-manage-row.is-confirm-blink,
+/* 대기 목록에서 이미 어떤 seat에 임시 배치된 사람 — 동일한 은은한 흰색 글로우 */
+.wait-panel-row.is-staged-for-seat {
+  border-color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.3) inset,
+    0 0 14px rgba(255, 255, 255, 0.22);
+}
+
 /* 대기 탭: 대기/BLOCK (Seat순/시간순과 동일 스타일) */
 body.page-global-layout .pc-panel .wait-tab-row {
   display: flex;
@@ -857,6 +885,99 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     white-space: nowrap;
   }
 
+  body.page-global-layout .mobile-lookup-card .mobile-lookup-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  body.page-global-layout .mobile-lookup-card .mobile-lookup-field label {
+    font-size: 12px;
+    font-weight: 800;
+    color: rgba(238, 241, 244, 0.72);
+  }
+
+  body.page-global-layout .mobile-lookup-card .mobile-lookup-field input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.04);
+    color: #eef1f4;
+    font-size: 14px;
+  }
+
+  body.page-global-layout .mobile-lookup-card .mobile-lookup-field input::placeholder {
+    color: rgba(238, 241, 244, 0.35);
+  }
+
+  body.page-global-layout .mobile-lookup-card .mobile-lookup-field input:focus {
+    outline: none;
+    border-color: rgba(61, 219, 196, 0.6);
+  }
+
+  body.page-global-layout .mobile-lookup-card .mobile-lookup-hint {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--accent-blue, #3ddbc4);
+    margin-bottom: 10px;
+  }
+
+  body.page-global-layout .mobile-lookup-card .mobile-lookup-hint--result {
+    font-size: 17px;
+  }
+
+  body.page-global-layout .mobile-lookup-card .mobile-lookup-placeholder {
+    padding: 14px 12px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.02);
+    color: rgba(238, 241, 244, 0.45);
+    font-size: 13px;
+    text-align: center;
+  }
+
+  body.page-global-layout .mobile-lookup-card .mobile-lookup-section {
+    padding: 12px;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  body.page-global-layout .mobile-lookup-card .mobile-lookup-section:last-child {
+    margin-bottom: 0;
+  }
+
+  body.page-global-layout .mobile-lookup-card .mobile-lookup-section-label {
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    color: rgba(238, 241, 244, 0.85);
+    margin-bottom: 10px;
+  }
+
+  body.page-global-layout .mobile-lookup-card .mobile-lookup-section-label span {
+    font-weight: 650;
+    color: rgba(238, 241, 244, 0.5);
+    letter-spacing: 0;
+  }
+
+  body.page-global-layout .mobile-lookup-card .mobile-lookup-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: rgba(238, 241, 244, 0.75);
+  }
+
+  body.page-global-layout .mobile-lookup-card .mobile-lookup-dash {
+    color: rgba(238, 241, 244, 0.35);
+  }
+
   body.page-global-layout .global-layout-mobile .mobile-wait-group-label {
     margin: 10px 0 6px;
     padding: 0 2px;
@@ -939,6 +1060,84 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     padding: 4px 8px;
     font-size: 11px;
     min-height: 28px;
+  }
+
+  body.page-global-layout .global-layout-mobile .mobile-seat-col-header {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 2px 6px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    color: rgba(238, 241, 244, 0.45);
+  }
+
+  body.page-global-layout .global-layout-mobile .mobile-seat-col-header-name {
+    flex: 1 1 auto;
+  }
+
+  body.page-global-layout .global-layout-mobile .mobile-seat-col-header-cell {
+    flex: 0 0 44px;
+    text-align: center;
+  }
+
+  body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-col {
+    flex: 0 0 44px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: rgba(238, 241, 244, 0.9);
+  }
+
+  body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-col--next {
+    color: rgba(238, 241, 244, 0.4);
+  }
+
+  body.page-global-layout .global-layout-mobile .mobile-seat-more-btn {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    margin-left: 2px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(238, 241, 244, 0.7);
+    font-size: 14px;
+    line-height: 1;
+  }
+
+  body.page-global-layout .global-layout-mobile .mobile-seat-actions-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+
+  body.page-global-layout .global-layout-mobile .mobile-seat-actions-row[hidden] {
+    display: none;
+  }
+
+  /* "배치확인" 후 5~10분 구간 — 30초 간격 강조(교대 임박 경고) */
+  body.page-global-layout .global-layout-mobile .mobile-seat-row.is-confirm-blink {
+    background: var(--gl-highlight, #ffffff);
+    border-color: var(--gl-highlight, #ffffff);
+  }
+
+  body.page-global-layout .global-layout-mobile .mobile-seat-row.is-confirm-blink .mobile-seat-person,
+  body.page-global-layout .global-layout-mobile .mobile-seat-row.is-confirm-blink .mobile-seat-col,
+  body.page-global-layout .global-layout-mobile .mobile-seat-row.is-confirm-blink .mobile-seat-eb-meta {
+    color: #000000;
+  }
+
+  /* 본인(isSelf) 이름은 반전 강조 중에도 원래 주황색을 유지 */
+  body.page-global-layout .global-layout-mobile .mobile-seat-row.is-confirm-blink .mobile-seat-person.is-self:not(.is-empty) {
+    color: #ff9a3c;
+    text-shadow: 0 0 12px rgba(255, 154, 60, 0.35);
   }
 
   body.page-global-layout .global-layout-mobile .mobile-wait-row.compact .mobile-seat-name-cluster {
