@@ -121,8 +121,13 @@ async function sendSeatAssignedNotificationIfDue(uid, notifyRef, after) {
 
   if (createdMs > 0 && Date.now() - createdMs > STALE_SEAT_NOTIFY_MAX_AGE_MS) {
     try {
+      // acknowledged:true 로 같이 표시해 sendDueLayoutSeatNotifications 의
+      // acknowledged==false 필터에서 빠지게 한다 — 안 그러면 아무도 안 연
+      // 오래된 알림이 매 분 스윕 쿼리에 영원히 다시 걸려 쌓이고, 그러다 보면
+      // limit(SEAT_NOTIFY_SWEEP_LIMIT) 때문에 정작 방금 도래한 새 알림이
+      // 뒤로 밀려 못 보내지는 상황까지 생길 수 있다.
       await notifyRef.set(
-        {fcmSeatNotifyDedupKey: dedupKey, fcmSeatNotifySending: FieldValue.delete()},
+        {fcmSeatNotifyDedupKey: dedupKey, fcmSeatNotifySending: FieldValue.delete(), acknowledged: true},
         {merge: true}
       );
     } catch (e) {

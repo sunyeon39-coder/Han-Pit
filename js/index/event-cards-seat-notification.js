@@ -37,12 +37,18 @@ function cardIdForSeatNotification(data = {}) {
   });
 }
 
+let stopSeatAssignmentResumeRecheck = null;
+
 export function bindMySeatAssignment(user) {
   if (!user) return;
 
   if (IX.stopMySeatNotificationWatch) {
     IX.stopMySeatNotificationWatch();
     IX.stopMySeatNotificationWatch = null;
+  }
+  if (stopSeatAssignmentResumeRecheck) {
+    stopSeatAssignmentResumeRecheck();
+    stopSeatAssignmentResumeRecheck = null;
   }
 
   const SOUND_ENABLED_KEY = "boxboard_sound_enabled_v1";
@@ -431,4 +437,22 @@ export function bindMySeatAssignment(user) {
       console.error("bindMySeatAssignment error:", err);
     }
   );
+
+  // notifyAt 지연·탭 백그라운드 때문에 공개 시점에 모달을 못 띄운 경우, 다시 포그라운드로
+  // 돌아오면 한 번 더 확인해서 놓친 알림을 잡아준다.
+  function recheckOnResume() {
+    if (typeof document === "undefined") return;
+    if (document.visibilityState !== "visible" || !document.hasFocus()) return;
+    void refetchAndApply();
+  }
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", recheckOnResume);
+    window.addEventListener("focus", recheckOnResume);
+    window.addEventListener("pageshow", recheckOnResume);
+    stopSeatAssignmentResumeRecheck = () => {
+      document.removeEventListener("visibilitychange", recheckOnResume);
+      window.removeEventListener("focus", recheckOnResume);
+      window.removeEventListener("pageshow", recheckOnResume);
+    };
+  }
 }
