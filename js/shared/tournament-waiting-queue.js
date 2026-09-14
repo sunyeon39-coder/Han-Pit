@@ -164,7 +164,16 @@ function waitingPersonIdentityKey(row = {}) {
 
 export { waitingPersonIdentityKey };
 
-const SEAT_RETURN_SOURCES = new Set(["seat_clear", "seat_swap", "seat_removed_recovery"]);
+const SEAT_RETURN_SOURCES = new Set([
+  "seat_clear",
+  "seat_swap",
+  "seat_removed_recovery",
+  // 10분 지연 교대(incomingPerson) 도입분 — 이것도 "방금 좌석에서 돌아온 정본" 행으로
+  // 인식해야, 예전(취소·재교체 전) 유령 대기 행과 겹쳤을 때 최신 joinedAt이 정확히 이긴다.
+  "seat_swap_finalized",
+  "incoming_swap_replaced",
+  "incoming_swap_cancelled"
+]);
 /** 한쪽 joinedAt 이 다른 쪽보다 이만큼 오래됐으면 "좌석에 있던 시간을 끌고온" 유령 행으로 본다 */
 const STALE_JOIN_GAP_MS = 30 * 60 * 1000;
 
