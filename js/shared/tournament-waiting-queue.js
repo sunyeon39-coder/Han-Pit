@@ -397,30 +397,6 @@ export function buildTournamentWaitingDisplayList({
   const checkedOut = attendanceCheckedOutUids instanceof Set ? attendanceCheckedOutUids : new Set();
   const filterReady = attendanceFilterReady === true;
 
-  // TEMP DEBUG — incomingPerson 매칭 안 되는 잔상 재추적용.
-  try {
-    const incomingSeats = (globalSeats || [])
-      .filter((s) => {
-        const p = String(s?.incomingPerson || "").trim();
-        return p && p !== "비어있음" && p !== "빈자리";
-      })
-      .map(
-        (s) =>
-          `${s?.seatId}:incoming="${s?.incomingPerson}"/incomingUid=${s?.incomingPersonUid || "-"}/incomingEmail=${s?.incomingPersonEmail || "-"}`
-      );
-    if (incomingSeats.length) {
-      const rowsForTid = (globalWaiting || []).filter((w) => waitingRowBelongsToTournament(w, tid));
-      console.warn(
-        "[waiting-debug2] tid=%s\nWAITING ROWS: %s\nINCOMING SEATS:\n  %s",
-        tid,
-        rowsForTid.map((w) => `id=${w?.id} name="${w?.name}" uid=${w?.uid || "-"} email=${w?.email || "-"}`).join(" | "),
-        incomingSeats.join("\n  ")
-      );
-    }
-  } catch (e) {
-    console.warn("[waiting-debug2] failed", e);
-  }
-
   // global_waiting — 퇴근자는 제외. 미출근·수동 +대기는 유지.
   const waitingBase = (globalWaiting || [])
     .filter((w) => waitingRowBelongsToTournament(w, tid))
