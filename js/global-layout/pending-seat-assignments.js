@@ -38,9 +38,12 @@ export function hasPendingSeatAssignments() {
  * 좌석 배정은 GL.seatMutationInFlight 뮤텍스로 한 번에 하나씩만 처리되므로
  * (동시에 여러 개를 병렬 실행하면 뒤쪽 요청들이 조용히 무시된다) 실제 Firestore
  * 확정은 순서대로 await 한다. 다만 그 순서 때문에 seat이 하나씩 시차를 두고
- * 화면에 반영되는 것처럼 보이지 않도록, 화면 반영(낙관적 업데이트)은 여기서
- * 전부 먼저 한 번에 끝내고 한 번만 렌더한다 — 같은 now(seatedAt)를 쓰기 때문에
- * "현재/다음" 색 전환 타이밍도 전부 동시에 시작된다.
+ * 화면에 반영되는 것처럼 보이지 않도록 두 겹으로 막는다: (1) 화면 반영(낙관적
+ * 업데이트)은 여기서 전부 먼저 한 번에 끝내고 한 번만 렌더한다 — 같은 now(seatedAt)를
+ * 쓰기 때문에 "현재/다음" 색 전환 타이밍도 전부 동시에 시작된다. (2) 그 뒤 순서대로
+ * 실제 저장하는 동안, 좌석 하나가 끝날 때마다 실시간 리스너가 그 좌석만 다시 반영해
+ * 한 명씩 뚝뚝 들어오는 것처럼 보이지 않도록 GL.batchSeatMutationDepth로 배치 전체가
+ * 끝날 때까지 실시간 반영 자체를 미뤄둔다(realtime.js의 isSeatMutationBusy 참고).
  */
 export async function confirmAllPendingSeatAssignments({ immediate = false } = {}) {
   const entries = [...GL.pendingSeatAssignments.entries()];
@@ -68,32 +71,42 @@ export async function confirmAllPendingSeatAssignments({ immediate = false } = {
   }
   if (entries.length) flushOptimisticGlobalLayoutUi();
 
+  // 실제 저장은 뮤텍스 때문에 좌석마다 순서대로 await 되는데, 그 사이사이 실시간
+  // 리스너가 "방금 그 좌석만" 반영하며 화면이 한 명씩 뚝뚝 들어오는 것처럼 보였다.
+  // 배치 전체가 끝날 때까지는 실시간 반영을 큐에 재워두고(realtime.js의
+  // isSeatMutationBusy), 끝나는 순간 마지막 스냅샷 한 번으로 몰아서 반영되게 한다 —
+  // 위에서 이미 낙관적으로 전부 동시에 보여줬으니 그 사이 실시간 갱신은 안 보여도 된다.
+  if (entries.length) GL.batchSeatMutationDepth = (GL.batchSeatMutationDepth || 0) + 1;
   const failed = [];
-  for (const [seatId, pending] of entries) {
-    try {
-      // waitingSnapshot — 위 낙관적 반영 루프가 이미 GL.globalWaiting에서 이 사람들을
-      // 지웠으므로, 그 지우기 전 스냅샷을 넘겨야 트랜잭션 안에서 실제 대기 문서를
-      // 제대로 찾아 지울 수 있다(안 그러면 문서가 안 지워진 채 대기열에 잔상으로 남는다).
-      await assignSelectedWaitingToSeat(seatId, pending.waiting, now, {
-        skipOptimistic: true,
-        immediate,
-        waitingSnapshot: preBatchSnapshot?.globalWaiting
-      });
-      GL.pendingSeatAssignments.delete(seatId);
-    } catch (err) {
-      const msg = String(err?.message || "").trim();
-      if (msg === "same_person_noop") {
-        // 네트워크가 잠깐 끊겼다가 재시도되는 등으로, 이 트랜잭션이 실제로는 이미
-        // 예전 시도에서 성공해서 이 사람이 이미 그 좌석에 정상 반영된 상태일 수 있다
-        // (그래서 "같은 사람"이라 다시 쓸 게 없다고 거부된 것). 이걸 진짜 실패로 보고
-        // 아래에서 화면을 배치 전으로 되돌리면, 이미 맞게 반영된 좌석은 그대로인데
-        // 그 사람만 대기 목록으로 다시 끌려나오는 모순이 생긴다 — 실패로 세지 않는다.
+  try {
+    for (const [seatId, pending] of entries) {
+      try {
+        // waitingSnapshot — 위 낙관적 반영 루프가 이미 GL.globalWaiting에서 이 사람들을
+        // 지웠으므로, 그 지우기 전 스냅샷을 넘겨야 트랜잭션 안에서 실제 대기 문서를
+        // 제대로 찾아 지울 수 있다(안 그러면 문서가 안 지워진 채 대기열에 잔상으로 남는다).
+        await assignSelectedWaitingToSeat(seatId, pending.waiting, now, {
+          skipOptimistic: true,
+          immediate,
+          waitingSnapshot: preBatchSnapshot?.globalWaiting
+        });
         GL.pendingSeatAssignments.delete(seatId);
-        continue;
+      } catch (err) {
+        const msg = String(err?.message || "").trim();
+        if (msg === "same_person_noop") {
+          // 네트워크가 잠깐 끊겼다가 재시도되는 등으로, 이 트랜잭션이 실제로는 이미
+          // 예전 시도에서 성공해서 이 사람이 이미 그 좌석에 정상 반영된 상태일 수 있다
+          // (그래서 "같은 사람"이라 다시 쓸 게 없다고 거부된 것). 이걸 진짜 실패로 보고
+          // 아래에서 화면을 배치 전으로 되돌리면, 이미 맞게 반영된 좌석은 그대로인데
+          // 그 사람만 대기 목록으로 다시 끌려나오는 모순이 생긴다 — 실패로 세지 않는다.
+          GL.pendingSeatAssignments.delete(seatId);
+          continue;
+        }
+        console.error("confirmAllPendingSeatAssignments:", seatId, err);
+        failed.push({ seatId, waiting: pending.waiting, err });
       }
-      console.error("confirmAllPendingSeatAssignments:", seatId, err);
-      failed.push({ seatId, waiting: pending.waiting, err });
     }
+  } finally {
+    if (entries.length) GL.batchSeatMutationDepth = Math.max(0, (GL.batchSeatMutationDepth || 0) - 1);
   }
 
   if (failed.length && preBatchSnapshot) {

@@ -87,6 +87,13 @@ async function applyGlobalWaitingArrayDiff(tournamentId, prevArr = [], nextArr =
 /** Firestore 전파 전 캐시 스냅샷이 방금 배치한 좌석을 비우는 것 방지 */
 const RECENT_LOCAL_SEAT_MS = 12000;
 let seatRecoverDebounceTimer = null;
+/** 좌석 관련 쓰기가 진행 중인지 — 개별 트랜잭션(seatMutationInFlight) 또는 배치확인
+ * 일괄 처리 전체(batchSeatMutationDepth) 어느 쪽이든 진행 중이면 실시간 스냅샷을
+ * 미루고 재시도 큐로 보낸다(개별 좌석이 하나씩 뚝뚝 반영되는 것 방지). */
+function isSeatMutationBusy() {
+  return GL.seatMutationInFlight === true || (GL.batchSeatMutationDepth || 0) > 0;
+}
+
 let purgeInactiveWaitingTimer = null;
 let restoreMissingWaitingTimer = null;
 /** 출석 스냅샷 보관 — global_waiting 도착 후 inactive 재계산용 */
@@ -811,7 +818,7 @@ export function bindRealtime() {
     seatSnapshotRetryTimer = setTimeout(() => {
       seatSnapshotRetryTimer = null;
       if (!pendingSeatSnapshotToApply) return;
-      if (GL.seatMutationInFlight) {
+      if (isSeatMutationBusy()) {
         retrySeatSnapshotWhenFree();
         return;
       }
@@ -893,7 +900,7 @@ export function bindRealtime() {
       // 대기 목록 워처(GL.stopWaitingWatch)는 이미 fromCache와 무관하게 통째로 건너뛰므로
       // 그것과 동일하게 맞춘다 — 작업이 끝나면(finally에서 플래그 해제) 다음 스냅샷이
       // 정상적으로 최신 상태를 반영한다.
-      if (GL.seatMutationInFlight) {
+      if (isSeatMutationBusy()) {
         pendingSeatSnapshotToApply = snap;
         retrySeatSnapshotWhenFree();
         return;
@@ -921,7 +928,7 @@ export function bindRealtime() {
     waitingSnapshotRetryTimer = setTimeout(() => {
       waitingSnapshotRetryTimer = null;
       if (!pendingWaitingSnapshotToApply) return;
-      if (GL.waitingMutationInFlight || GL.seatMutationInFlight) {
+      if (GL.waitingMutationInFlight || isSeatMutationBusy()) {
         retryWaitingSnapshotWhenFree();
         return;
       }
@@ -968,7 +975,7 @@ export function bindRealtime() {
     globalWaitingCollectionRef(db, GL.tournamentId),
     (snap) => {
       if (shouldIgnoreStaleGlobalLayoutSnapshot(snap)) return;
-      if (GL.waitingMutationInFlight || GL.seatMutationInFlight) {
+      if (GL.waitingMutationInFlight || isSeatMutationBusy()) {
         pendingWaitingSnapshotToApply = snap;
         retryWaitingSnapshotWhenFree();
         return;

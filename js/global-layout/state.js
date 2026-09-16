@@ -41,6 +41,11 @@ export const GL = {
   dataRevision: 0,
   /** 배치·비우기 동시 클릭 방지 */
   seatMutationInFlight: false,
+  // 배치확인 일괄 처리 동안, 좌석별 실제 저장이 순서대로 하나씩 끝날 때마다 실시간
+  // 리스너가 "그 좌석만" 다시 반영해 화면이 한 명씩 뚝뚝 끊겨 들어오는 것처럼 보이는 걸
+  // 막는 카운터 — 0보다 크면 배치 전체가 끝날 때까지 실시간 반영을 미룬다(0으로 돌아오면
+  // 마지막 스냅샷을 한 번에 재적용).
+  batchSeatMutationDepth: 0,
   /** 대기 추가·삭제·BLOCK 중 realtime 덮어쓰기 방지 */
   waitingMutationInFlight: false,
   /** 로컬 변경 후 캐시 스냅샷 무시 시각(unix ms) */
