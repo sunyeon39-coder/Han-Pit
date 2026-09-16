@@ -534,23 +534,36 @@ export function updateSeatPanelTimers() {
   const isAdminView = canManageGlobalLayoutOps();
   const seatByRowKey = new Map((GL.globalSeats || []).map((s) => [getGlobalSeatRowKey(s), s]));
   rows.forEach((row) => {
+    const rowKey = String(row.getAttribute("data-select-seat") || "").trim();
+    const seat = seatByRowKey.get(rowKey);
+    const seatId = String(seat?.seatId || "").trim();
+    const hasPending = !!seat && !!GL.pendingSeatAssignments.get(seatId);
+    const swapDisplay = seat && !hasPending ? resolveSeatSwapDisplay(seat, now, { isAdminView }) : null;
+
+    if (swapDisplay) {
+      row.classList.toggle("is-confirm-blink", swapDisplay.highlight);
+      const nameEl = row.querySelector(".seat-manage-name");
+      if (nameEl) nameEl.textContent = swapDisplay.name || "-";
+    }
+
     const chip = row.querySelector(".time-chip[data-seat-start]");
     if (chip) {
-      const start = Number(chip.getAttribute("data-seat-start") || "0");
-      const elapsed = start > 0 ? Math.max(0, now - start) : 0;
+      // 스왑 반전(15초 간격)으로 이름이 바뀌는 동안 옆 경과 시간도 지금 보여주는 사람
+      // 기준(timeBasisMs)으로 같이 갈아끼운다 — 안 그러면 새 이름에 이전 점유자의
+      // 훨씬 긴 착석 시간이 그대로 눌러붙어 보인다.
+      const basis =
+        swapDisplay && swapDisplay.timeBasisMs
+          ? swapDisplay.timeBasisMs
+          : Number(chip.getAttribute("data-seat-start") || "0");
+      if (swapDisplay && swapDisplay.timeBasisMs) {
+        chip.setAttribute("data-seat-start", String(swapDisplay.timeBasisMs));
+      }
+      const elapsed = basis > 0 ? Math.max(0, now - basis) : 0;
       chip.textContent = fmtElapsed(elapsed);
       const cls = timerClass(elapsed);
       chip.classList.remove("t-green", "t-yellow", "t-orange", "t-red");
       chip.classList.add(cls);
     }
-    const rowKey = String(row.getAttribute("data-select-seat") || "").trim();
-    const seat = seatByRowKey.get(rowKey);
-    const seatId = String(seat?.seatId || "").trim();
-    if (!seat || GL.pendingSeatAssignments.get(seatId)) return;
-    const swapDisplay = resolveSeatSwapDisplay(seat, now, { isAdminView });
-    row.classList.toggle("is-confirm-blink", swapDisplay.highlight);
-    const nameEl = row.querySelector(".seat-manage-name");
-    if (nameEl) nameEl.textContent = swapDisplay.name || "-";
   });
 }
 
@@ -631,7 +644,9 @@ export function renderSeatPanel() {
       const rowKey = getGlobalSeatRowKey(s);
       const paletteClass = getEventBoxPaletteClass(s, panelPaletteMap);
       const selectedRowClass = GL.selectedSeatIds.has(rowKey) ? "selected" : "";
-      const seatedAt = getGlobalSeatSeatedAtMs(s);
+      // 스왑 반전 중(15초 간격으로 이름이 바뀜)엔 지금 보여주는 사람 기준(timeBasisMs)의
+      // 경과 시간을 써야 한다 — 안 그러면 새 이름에 이전 점유자의 착석 시간이 붙어 보인다.
+      const seatedAt = swapDisplay?.timeBasisMs || getGlobalSeatSeatedAtMs(s);
       const elapsed = seatedAt ? Date.now() - seatedAt : 0;
       const tClass = timerClass(elapsed);
       const isBlinkOn = swapDisplay?.highlight === true;

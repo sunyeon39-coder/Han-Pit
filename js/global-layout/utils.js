@@ -469,32 +469,37 @@ export function getSeatConfirmHighlightState(seatedAtMs, nowMs = Date.now()) {
 export function resolveSeatSwapDisplay(seat = {}, nowMs = Date.now(), { isAdminView = true } = {}) {
   const incomingName = String(seat?.incomingPerson || "").trim();
   const currentName = String(seat?.person || "").trim();
+  const seatedAt = toMillis(seat?.seatedAt);
+  const incomingAt = toMillis(seat?.incomingAt);
 
   // 즉시확인("instantConfirm") — 예약 없이 이미 다 공개된 배정이라 "방금 확정됨" 강조
   // (흰색/블링크/교대 5분 전 배너)를 띄울 이유가 없다. 곧바로 정착된 상태로 보여준다.
   if (seat?.instantConfirm === true) {
-    return { name: currentName, highlight: false };
+    return { name: currentName, highlight: false, timeBasisMs: seatedAt };
   }
 
   if (!isEmptyPerson(incomingName)) {
-    const incomingAt = toMillis(seat?.incomingAt);
     const { isRecent, isBlinkPhase, isBlinkOn } = getSeatConfirmHighlightState(incomingAt, nowMs);
-    if (!isRecent) return { name: incomingName, highlight: false };
+    if (!isRecent) return { name: incomingName, highlight: false, timeBasisMs: incomingAt };
     if (!isAdminView && !isBlinkPhase) {
       // 근무자 화면: 공개 시점(REVEAL) 전에는 교대 확정 대기 사실 자체를 숨긴다 —
       // 실제 occupant(currentName)는 아직 그대로이므로 그걸 보여준다.
-      return { name: currentName, highlight: false };
+      return { name: currentName, highlight: false, timeBasisMs: seatedAt };
     }
-    if (!isBlinkPhase) return { name: incomingName, highlight: true };
-    return isBlinkOn ? { name: incomingName, highlight: true } : { name: currentName, highlight: false };
+    // 이름이 incomingName↔currentName으로 15초마다 바뀌는 동안, 옆의 경과 시간도 지금
+    // 보여주는 사람 기준으로 같이 바뀌어야 한다 — 안 그러면 새로 올 사람 이름에 기존
+    // 점유자의(훨씬 긴) 착석 시간이 그대로 붙어 보여서 혼란을 준다.
+    if (!isBlinkPhase) return { name: incomingName, highlight: true, timeBasisMs: incomingAt };
+    return isBlinkOn
+      ? { name: incomingName, highlight: true, timeBasisMs: incomingAt }
+      : { name: currentName, highlight: false, timeBasisMs: seatedAt };
   }
 
-  const seatedAt = toMillis(seat?.seatedAt);
   const { isRecent, isBlinkPhase, isBlinkOn } = getSeatConfirmHighlightState(seatedAt, nowMs);
-  if (!isRecent) return { name: currentName, highlight: false };
-  if (!isAdminView && !isBlinkPhase) return { name: "", highlight: false };
-  if (!isBlinkPhase) return { name: currentName, highlight: true };
-  return { name: currentName, highlight: isBlinkOn };
+  if (!isRecent) return { name: currentName, highlight: false, timeBasisMs: seatedAt };
+  if (!isAdminView && !isBlinkPhase) return { name: "", highlight: false, timeBasisMs: seatedAt };
+  if (!isBlinkPhase) return { name: currentName, highlight: true, timeBasisMs: seatedAt };
+  return { name: currentName, highlight: isBlinkOn, timeBasisMs: seatedAt };
 }
 
 /** seat의 previousPerson(스왑으로 밀려난 이전 occupant)이 이 사람인지 */
