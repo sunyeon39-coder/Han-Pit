@@ -91,7 +91,9 @@ function seatPanelFingerprint(seats = []) {
       const sid = String(s.seatId || "").trim();
       const occupied = !isEmptyPerson(String(s.person || "").trim());
       const selected = GL.selectedSeatIds.has(getGlobalSeatRowKey(s)) ? 1 : 0;
-      return `${sid}|${String(s.person || "").trim()}|${occupied ? 1 : 0}|${selected}|${String(s.label ?? s.no ?? "")}`;
+      // 스왑(incomingPerson)만 새로 생기는 변화는 person/status가 그대로라 이 필드들
+      // 만으로는 안 잡힌다 — 캔버스 fingerprint와 같은 이유로 여기도 포함시킨다.
+      return `${sid}|${String(s.person || "").trim()}|${occupied ? 1 : 0}|${selected}|${String(s.label ?? s.no ?? "")}|${String(s.incomingPerson || "").trim()}|${Number(s.incomingAt || 0) || 0}|${s.instantConfirm === true ? 1 : 0}`;
     })
     .join(";")}`;
 }

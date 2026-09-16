@@ -117,7 +117,17 @@ function globalSeatsUiFingerprint(seats = []) {
         String(s?.label ?? s?.no ?? ""),
         Number(s?.seatedAt || 0) || 0,
         Number(s?.order || 0) || 0,
-        String(s?.status || "")
+        String(s?.status || ""),
+        // 스왑(교대) 예약은 person/seatedAt/status가 그대로라 위 필드만으로는 변화가
+        // 안 잡힌다 — incomingPerson만 새로 생겨도 fingerprint가 그대로여서 이 변화를
+        // "UI 변경 없음"으로 오판, 캔버스(renderSeats)가 스킵되고 딜러 명단 등 다른
+        // 경로만 최신으로 보이는 원인이었다.
+        String(s?.incomingPerson || "").trim(),
+        String(s?.incomingPersonUid || "").trim(),
+        Number(s?.incomingAt || 0) || 0,
+        s?.instantConfirm === true ? 1 : 0,
+        String(s?.alertKind || "").trim(),
+        s?.alertActive === true ? 1 : 0
       ].join(":")
     )
     .join("|");
