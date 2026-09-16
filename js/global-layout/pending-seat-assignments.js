@@ -78,6 +78,11 @@ export async function confirmAllPendingSeatAssignments({ immediate = false } = {
   // 위에서 이미 낙관적으로 전부 동시에 보여줬으니 그 사이 실시간 갱신은 안 보여도 된다.
   if (entries.length) GL.batchSeatMutationDepth = (GL.batchSeatMutationDepth || 0) + 1;
   const failed = [];
+  // 실제 저장 완료를 GL.pendingSeatAssignments에서 그때그때 지우면, "배치확인 (N)"
+  // 버튼의 숫자가 저장 끝날 때마다 하나씩 줄어드는 게 그대로 보인다(좌석은 이미
+  // 위에서 다 확정된 것처럼 보이는데 숫자만 뒤늦게 뚝뚝 떨어지면 어색하다). 배치 전체가
+  // 끝난 뒤 한 번에 지워서 숫자도 좌석과 같은 타이밍에 한 번에 떨어지게 한다.
+  const doneSeatIds = new Set();
   try {
     for (const [seatId, pending] of entries) {
       try {
@@ -89,7 +94,7 @@ export async function confirmAllPendingSeatAssignments({ immediate = false } = {
           immediate,
           waitingSnapshot: preBatchSnapshot?.globalWaiting
         });
-        GL.pendingSeatAssignments.delete(seatId);
+        doneSeatIds.add(seatId);
       } catch (err) {
         const msg = String(err?.message || "").trim();
         if (msg === "same_person_noop") {
@@ -98,7 +103,7 @@ export async function confirmAllPendingSeatAssignments({ immediate = false } = {
           // (그래서 "같은 사람"이라 다시 쓸 게 없다고 거부된 것). 이걸 진짜 실패로 보고
           // 아래에서 화면을 배치 전으로 되돌리면, 이미 맞게 반영된 좌석은 그대로인데
           // 그 사람만 대기 목록으로 다시 끌려나오는 모순이 생긴다 — 실패로 세지 않는다.
-          GL.pendingSeatAssignments.delete(seatId);
+          doneSeatIds.add(seatId);
           continue;
         }
         console.error("confirmAllPendingSeatAssignments:", seatId, err);
@@ -106,6 +111,7 @@ export async function confirmAllPendingSeatAssignments({ immediate = false } = {
       }
     }
   } finally {
+    for (const seatId of doneSeatIds) GL.pendingSeatAssignments.delete(seatId);
     if (entries.length) GL.batchSeatMutationDepth = Math.max(0, (GL.batchSeatMutationDepth || 0) - 1);
   }
 
