@@ -16,6 +16,8 @@ export function updateShiftRevealBanner() {
   if (!el || !textEl) return;
 
   const hasActive = (GL.globalSeats || []).some((s) => {
+    // 즉시확인("instantConfirm")으로 확정된 좌석은 예약 구간 자체가 없으므로 배너 대상에서 뺀다.
+    if (s?.instantConfirm === true) return false;
     // 스왑(교대 확정 대기 중) — 실제 occupant의 seatedAt은 안 바뀌므로 incomingAt 기준으로
     // 봐야 한다. 이걸 놓치면 스왑으로 들어온 사람의 5~10분 구간에는 배너가 영영 안 뜬다.
     if (!isEmptyPerson(String(s?.incomingPerson || "").trim())) {

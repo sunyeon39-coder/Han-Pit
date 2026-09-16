@@ -559,6 +559,9 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
               incomingPersonUid: "",
               incomingPersonEmail: "",
               incomingAt: null,
+              // 즉시확인은 이미 다 공개된 상태라 "방금 확정됨" 강조(흰색 대기 표시/블링크/교대
+              // 5분 전 배너)를 띄울 이유가 없다 — 이 플래그로 그 강조 구간을 통째로 건너뛴다.
+              instantConfirm: true,
               updatedAt: now,
               updatedAtServer: serverTimestamp(),
               ...(nextSeatHistory ? { seatHistory: nextSeatHistory } : {})
@@ -788,6 +791,7 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
           personEmail: String(waiting.email || "").trim(),
           seatedAt: now,
           status: "occupied",
+          instantConfirm: immediate,
           updatedAt: now,
           updatedAtServer: serverTimestamp(),
           ...(nextSeatHistory ? { seatHistory: nextSeatHistory } : {})

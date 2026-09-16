@@ -139,6 +139,7 @@ export function applyOptimisticAssign({ targetSeatId, waiting, seat, now: nowOve
           personEmail: waitingEmail,
           seatedAt: now,
           status: "occupied",
+          instantConfirm: immediate,
           incomingPerson: "",
           incomingPersonUid: "",
           incomingPersonEmail: "",

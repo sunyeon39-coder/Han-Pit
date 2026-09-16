@@ -470,6 +470,12 @@ export function resolveSeatSwapDisplay(seat = {}, nowMs = Date.now(), { isAdminV
   const incomingName = String(seat?.incomingPerson || "").trim();
   const currentName = String(seat?.person || "").trim();
 
+  // 즉시확인("instantConfirm") — 예약 없이 이미 다 공개된 배정이라 "방금 확정됨" 강조
+  // (흰색/블링크/교대 5분 전 배너)를 띄울 이유가 없다. 곧바로 정착된 상태로 보여준다.
+  if (seat?.instantConfirm === true) {
+    return { name: currentName, highlight: false };
+  }
+
   if (!isEmptyPerson(incomingName)) {
     const incomingAt = toMillis(seat?.incomingAt);
     const { isRecent, isBlinkPhase, isBlinkOn } = getSeatConfirmHighlightState(incomingAt, nowMs);

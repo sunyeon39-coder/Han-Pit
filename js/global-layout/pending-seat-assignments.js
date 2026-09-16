@@ -62,6 +62,9 @@ export async function confirmAllPendingSeatAssignments({ immediate = false } = {
     const seat = GL.globalSeats.find((s) => String(s?.seatId || "").trim() === seatId);
     if (!seat) continue;
     applyOptimisticAssign({ targetSeatId: seatId, waiting: pending.waiting, seat, now, immediate });
+    // immediate("즉시확인")는 확정을 기다리는 흰색 "배치 대기 중" 표시를 거칠 이유가 없다 —
+    // 낙관적 반영이 이미 최종 상태이므로 여기서 바로 지워 그 프레임부터 실제 좌석으로 보이게 한다.
+    if (immediate) GL.pendingSeatAssignments.delete(seatId);
   }
   if (entries.length) flushOptimisticGlobalLayoutUi();
 

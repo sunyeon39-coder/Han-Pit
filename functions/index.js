@@ -413,6 +413,9 @@ async function finalizeOneIncomingSwap(seatDocSnap) {
         // 사람의 착석 시간이 이미 10분 지난 것처럼 보였다.
         seatedAt: now,
         status: "occupied",
+        // 이 좌석이 예전에(다른 시점) 즉시확인으로 확정된 적이 있으면 그 플래그가 merge로
+        // 남아있을 수 있다 — 이번엔 정상적으로 5~10분 공개 구간을 거친 정상 스왑이므로 끈다.
+        instantConfirm: false,
         incomingPerson: FieldValue.delete(),
         incomingPersonUid: FieldValue.delete(),
         incomingPersonEmail: FieldValue.delete(),
