@@ -81,6 +81,16 @@ export async function confirmAllPendingSeatAssignments({ immediate = false } = {
       });
       GL.pendingSeatAssignments.delete(seatId);
     } catch (err) {
+      const msg = String(err?.message || "").trim();
+      if (msg === "same_person_noop") {
+        // 네트워크가 잠깐 끊겼다가 재시도되는 등으로, 이 트랜잭션이 실제로는 이미
+        // 예전 시도에서 성공해서 이 사람이 이미 그 좌석에 정상 반영된 상태일 수 있다
+        // (그래서 "같은 사람"이라 다시 쓸 게 없다고 거부된 것). 이걸 진짜 실패로 보고
+        // 아래에서 화면을 배치 전으로 되돌리면, 이미 맞게 반영된 좌석은 그대로인데
+        // 그 사람만 대기 목록으로 다시 끌려나오는 모순이 생긴다 — 실패로 세지 않는다.
+        GL.pendingSeatAssignments.delete(seatId);
+        continue;
+      }
       console.error("confirmAllPendingSeatAssignments:", seatId, err);
       failed.push({ seatId, waiting: pending.waiting, err });
     }
