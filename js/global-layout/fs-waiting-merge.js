@@ -1,6 +1,23 @@
-import { makeUid } from "./utils.js";
 import { getWaitingRowJoinMs } from "../shared/tournament-waiting-queue.js";
 import { resolveAttendanceWaitingJoinMs } from "../shared/attendance-operational-day.js";
+
+/**
+ * "이 사람의 대기 문서 id는 이거다" — 서버(functions/index.js의 finalizeOneIncomingSwap이
+ * 쓰는 manualWaitingIdForName/`w_${uid}` 패턴)와 반드시 똑같아야 한다. 예전엔 클라이언트
+ * 쪽 좌석→대기 복귀 로직들이 로컬 배열에서 못 찾으면 각자 랜덤 id(makeUid("wait"))로 새
+ * 문서를 만들었는데, 그러면 나중에 서버 finalize가 같은 사람을 위해 결정적 id로 또 다른
+ * 문서를 만들어 — 한 사람 앞으로 대기 문서가 여러 개(잔상) 쌓이는 원인이 됐다. 이제부터는
+ * 로컬에서 기존 행을 못 찾았을 때도 항상 이 결정적 id로 수렴하게 한다.
+ */
+export function resolveCanonicalWaitingDocId(person = {}) {
+  const uid = String(person?.uid || "").trim();
+  if (uid) return `w_${uid}`;
+  const safeName = String(person?.name || "")
+    .trim()
+    .replace(/[/\s]+/g, "_")
+    .slice(0, 120);
+  return `w_manual_${safeName || "unnamed"}`;
+}
 
 /** global_waiting 행이 같은 대회·같은 사람( uid / email / 이름-only )인지 */
 export function waitingRowMatchesPerson(w, tournamentId, person) {
@@ -74,7 +91,9 @@ export function rebuildWaitingAfterSeatToWait(waitingArr, tournamentId, person, 
           blockCheckedAt: null,
           blockAccumulatedMs: Number(prev?.blockAccumulatedMs || 0) || 0
         };
-  const id = String(extraFields.id || prev?.id || makeUid("wait")).trim();
+  const id = String(
+    extraFields.id || prev?.id || resolveCanonicalWaitingDocId({ uid: prevUid, name: prevName })
+  ).trim();
   const {
     id: _dropId,
     blockChecked: _dropBlock,

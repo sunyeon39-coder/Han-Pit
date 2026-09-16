@@ -38,7 +38,11 @@ import {
 } from "./fs-layout-projection.js";
 import { getEventCardIdFromRecord } from "../shared/tournament-event-instance.js";
 import { buildSeatAssignedNotifyMessage } from "../shared/seat-notification-label.js";
-import { rebuildWaitingAfterSeatToWait, waitingRowMatchesPerson } from "./fs-waiting-merge.js";
+import {
+  rebuildWaitingAfterSeatToWait,
+  waitingRowMatchesPerson,
+  resolveCanonicalWaitingDocId
+} from "./fs-waiting-merge.js";
 import { pushGlobalUndo } from "./undo-stack.js";
 import { captureSeatShellSnapshot } from "./utils.js";
 import { applyOptimisticMyWaitingPick, clearMyWaitingPick } from "./waiting-picks.js";
@@ -321,6 +325,14 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
         );
         const assigneeWaitingRefs = uniqueDocRefs([
           globalWaitingDocRef(db, GL.tournamentId, waitingId || makeUid("wait")),
+          // 서버(finalize)와 이름/수동 대기 복원이 쓰는 결정적 id도 항상 같이 지운다 —
+          // 예전에 로컬 배열이 못 찾아 랜덤 id로 새로 만들어졌던 잔여 문서가 남아있었다면
+          // 여기서 같이 정리된다(대기 잔상 근본 원인).
+          globalWaitingDocRef(
+            db,
+            GL.tournamentId,
+            resolveCanonicalWaitingDocId({ uid: waitingUid, name: waitingName })
+          ),
           ...findGlobalWaitingEntryRefs(db, GL.tournamentId, waitingSnapshotForRefs, {
             uid: waitingUid,
             email: waiting.email,
@@ -347,11 +359,18 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
           : [];
         const prevWaitingRefs =
           immediate && !isEmptyPerson(prevName)
-            ? findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, {
-                uid: prevUid,
-                email: prevEmail,
-                name: prevName
-              })
+            ? uniqueDocRefs([
+                globalWaitingDocRef(
+                  db,
+                  GL.tournamentId,
+                  resolveCanonicalWaitingDocId({ uid: prevUid, name: prevName })
+                ),
+                ...findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, {
+                  uid: prevUid,
+                  email: prevEmail,
+                  name: prevName
+                })
+              ])
             : [];
         // 이미 어딘가 앉아 있는데 대기열에도 유령처럼 남아있는 잔여 문서 — 이번 배정
         // 당사자는 위에서 별도로 지우니 제외. 다른 경로(예: finalize 스케줄러)로 생긴
@@ -687,6 +706,14 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
 
       const assigneeWaitingRefs = uniqueDocRefs([
         globalWaitingDocRef(db, GL.tournamentId, waitingId || makeUid("wait")),
+        // 서버(finalize)와 이름/수동 대기 복원이 쓰는 결정적 id도 항상 같이 지운다 —
+        // 예전에 로컬 배열이 못 찾아 랜덤 id로 새로 만들어졌던 잔여 문서가 남아있었다면
+        // 여기서 같이 정리된다(대기 잔상 근본 원인).
+        globalWaitingDocRef(
+          db,
+          GL.tournamentId,
+          resolveCanonicalWaitingDocId({ uid: waitingUid, name: waitingName })
+        ),
         ...findGlobalWaitingEntryRefs(db, GL.tournamentId, waitingSnapshotForRefs, {
           uid: waitingUid,
           email: waiting.email,
@@ -979,11 +1006,19 @@ export async function cancelIncomingSeatSwap(seatId = "") {
       const incomingName = String(seatData.incomingPerson || "").trim();
       if (isEmptyPerson(incomingName)) return;
 
-      const incomingWaitingRefs = findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, {
+      const canonicalIncomingRef = globalWaitingDocRef(
+        db,
+        GL.tournamentId,
+        resolveCanonicalWaitingDocId({ uid: incomingUid, name: incomingName })
+      );
+      const searchedIncomingRefs = findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, {
         uid: incomingUid,
         email: incomingEmail,
         name: incomingName
       });
+      const incomingWaitingRefs = searchedIncomingRefs.some((r) => r.path === canonicalIncomingRef.path)
+        ? searchedIncomingRefs
+        : [canonicalIncomingRef, ...searchedIncomingRefs];
       const incomingWaitingSnaps = await Promise.all(incomingWaitingRefs.map((r) => tx.get(r)));
       const incomingExistingRows = incomingWaitingSnaps
         .map((s, i) => (s.exists() ? { id: incomingWaitingRefs[i].id, ...s.data() } : null))

@@ -16,7 +16,7 @@ import { findGlobalWaitingEntryRefs, diffGlobalWaitingRows } from "./waiting-ent
 import { globalWaitingDocRef } from "../shared/tournament-waiting-queue.js";
 import { buildSeatClearedNotificationWrite } from "../shared/seat-notification-push.js";
 import { scheduleSyncLayoutProjection } from "./fs-layout-projection.js";
-import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
+import { rebuildWaitingAfterSeatToWait, resolveCanonicalWaitingDocId } from "./fs-waiting-merge.js";
 import { pushGlobalUndo } from "./undo-stack.js";
 import { captureSeatShellSnapshot } from "./utils.js";
 import {
@@ -89,11 +89,23 @@ export async function clearSeat(seatId = "") {
         targetSeatId
       );
       const personWaitingRefs = !isEmptyPerson(prevName)
-        ? findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, {
-            uid: prevUid,
-            email: prevEmail,
-            name: prevName
-          })
+        ? (() => {
+            // 서버(finalize)와 같은 결정적 id도 항상 같이 확인한다 — 로컬 배열이 예전에
+            // 못 찾아 랜덤 id로 새로 만들었던 잔여 대기 문서가 있었다면 여기서 같이 정리된다.
+            const canonicalRef = globalWaitingDocRef(
+              db,
+              GL.tournamentId,
+              resolveCanonicalWaitingDocId({ uid: prevUid, name: prevName })
+            );
+            const searched = findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, {
+              uid: prevUid,
+              email: prevEmail,
+              name: prevName
+            });
+            return searched.some((r) => r.path === canonicalRef.path)
+              ? searched
+              : [canonicalRef, ...searched];
+          })()
         : [];
 
       const [otherSnaps, waitingSnaps] = await Promise.all([
