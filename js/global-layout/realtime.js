@@ -789,6 +789,75 @@ export function bindRealtime() {
   let prevSeats = [];
   const prevSeatsRef = { value: prevSeats };
 
+  // 배치확인 일괄 처리처럼 여러 트랜잭션이 연달아(seatMutationInFlight 켜짐→꺼짐을 반복)
+  // 실행되는 동안 도착한 서버 스냅샷을 아래에서 그냥 버리면, 그 사이 실패한 항목의 롤백
+  // 등으로 로컬 상태가 실제 서버 상태와 어긋난 채 다음 "진짜" 변경이 있을 때까지(때로는
+  // 영영) 고쳐지지 않는 원인이 된다. 버리지 않고 플래그가 풀리는 대로 마지막 스냅샷을
+  // 다시 적용한다.
+  let pendingSeatSnapshotToApply = null;
+  let seatSnapshotRetryTimer = null;
+  function retrySeatSnapshotWhenFree() {
+    if (seatSnapshotRetryTimer) return;
+    seatSnapshotRetryTimer = setTimeout(() => {
+      seatSnapshotRetryTimer = null;
+      if (!pendingSeatSnapshotToApply) return;
+      if (GL.seatMutationInFlight) {
+        retrySeatSnapshotWhenFree();
+        return;
+      }
+      const snap = pendingSeatSnapshotToApply;
+      pendingSeatSnapshotToApply = null;
+      applySeatSnapshot(snap);
+    }, 300);
+  }
+
+  function applySeatSnapshot(snap) {
+    if (shouldIgnoreStaleGlobalLayoutSnapshot(snap)) return;
+    if (snap.empty && snap.metadata?.fromCache && GL.globalSeats.length > 0) {
+      return;
+    }
+    // 완전히 빈 캐시 스냅샷뿐 아니라, 모바일/PWA가 백그라운드에서 돌아올 때 로컬 캐시가
+    // 서버와 아직 덜 맞춰진 상태에서 "일부만 있는" 캐시 스냅샷이 먼저 도착할 수 있다.
+    // 이걸 그대로 반영하면 실제로는 멀쩡한 좌석·배치 인원이 잠깐(때로는 다음 실제 변경이
+    // 있을 때까지 계속) 화면에서 사라져 보인다 — 서버 기준으로 재확인 후 반영한다.
+    if (snap.metadata?.fromCache && GL.globalSeats.length > 0 && !snap.empty) {
+      const incomingCount = snap.docs.length;
+      const prevCount = GL.globalSeats.length;
+      if (incomingCount < prevCount * 0.5) {
+        void refreshGlobalSeatsFromServer();
+        return;
+      }
+    }
+    const { removedOccupiedSeats, nextSeats, historyGaps } = applyGlobalSeatsFromSnapshot(
+      snap,
+      prevSeatsRef
+    );
+    prevSeats = prevSeatsRef.value;
+
+    if (snap?.empty && !GL.globalSeats.length) {
+      void refreshGlobalSeatsFromServer();
+    }
+
+    // 어떤 경로든 점유자가 바뀌었는데 이력이 누락된 경우, 권한 있는 클라이언트가 보강한다.
+    if (
+      historyGaps.length &&
+      !snap.metadata?.fromCache &&
+      !snap.metadata?.hasPendingWrites &&
+      canManageGlobalLayoutOps()
+    ) {
+      void persistSeatHistoryGaps(historyGaps);
+    }
+
+    if (
+      removedOccupiedSeats.length &&
+      !shouldSkipSeatRecoveryNow() &&
+      !snap.metadata?.fromCache &&
+      !snap.metadata?.hasPendingWrites
+    ) {
+      scheduleRecoverRemovedSeatPeople(removedOccupiedSeats, nextSeats);
+    }
+  }
+
   GL.stopTopicWatch = onSnapshot(doc(db, "tournaments", GL.tournamentId), (snap) => {
     if (!snap.exists()) return;
     const next = String(snap.data()?.topicText || "");
@@ -814,51 +883,12 @@ export function bindRealtime() {
       // 대기 목록 워처(GL.stopWaitingWatch)는 이미 fromCache와 무관하게 통째로 건너뛰므로
       // 그것과 동일하게 맞춘다 — 작업이 끝나면(finally에서 플래그 해제) 다음 스냅샷이
       // 정상적으로 최신 상태를 반영한다.
-      if (GL.seatMutationInFlight) return;
-      if (shouldIgnoreStaleGlobalLayoutSnapshot(snap)) return;
-      if (snap.empty && snap.metadata?.fromCache && GL.globalSeats.length > 0) {
+      if (GL.seatMutationInFlight) {
+        pendingSeatSnapshotToApply = snap;
+        retrySeatSnapshotWhenFree();
         return;
       }
-      // 완전히 빈 캐시 스냅샷뿐 아니라, 모바일/PWA가 백그라운드에서 돌아올 때 로컬 캐시가
-      // 서버와 아직 덜 맞춰진 상태에서 "일부만 있는" 캐시 스냅샷이 먼저 도착할 수 있다.
-      // 이걸 그대로 반영하면 실제로는 멀쩡한 좌석·배치 인원이 잠깐(때로는 다음 실제 변경이
-      // 있을 때까지 계속) 화면에서 사라져 보인다 — 서버 기준으로 재확인 후 반영한다.
-      if (snap.metadata?.fromCache && GL.globalSeats.length > 0 && !snap.empty) {
-        const incomingCount = snap.docs.length;
-        const prevCount = GL.globalSeats.length;
-        if (incomingCount < prevCount * 0.5) {
-          void refreshGlobalSeatsFromServer();
-          return;
-        }
-      }
-      const { removedOccupiedSeats, nextSeats, historyGaps } = applyGlobalSeatsFromSnapshot(
-        snap,
-        prevSeatsRef
-      );
-      prevSeats = prevSeatsRef.value;
-
-      if (snap?.empty && !GL.globalSeats.length) {
-        void refreshGlobalSeatsFromServer();
-      }
-
-      // 어떤 경로든 점유자가 바뀌었는데 이력이 누락된 경우, 권한 있는 클라이언트가 보강한다.
-      if (
-        historyGaps.length &&
-        !snap.metadata?.fromCache &&
-        !snap.metadata?.hasPendingWrites &&
-        canManageGlobalLayoutOps()
-      ) {
-        void persistSeatHistoryGaps(historyGaps);
-      }
-
-      if (
-        removedOccupiedSeats.length &&
-        !shouldSkipSeatRecoveryNow() &&
-        !snap.metadata?.fromCache &&
-        !snap.metadata?.hasPendingWrites
-      ) {
-        scheduleRecoverRemovedSeatPeople(removedOccupiedSeats, nextSeats);
-      }
+      applySeatSnapshot(snap);
     },
     (err) => {
       seatSnapshotReceived = true;
@@ -870,11 +900,28 @@ export function bindRealtime() {
     }
   );
 
-  GL.stopWaitingWatch = onSnapshot(
-    globalWaitingCollectionRef(db, GL.tournamentId),
-    (snap) => {
-      if (shouldIgnoreStaleGlobalLayoutSnapshot(snap)) return;
-      if (GL.waitingMutationInFlight || GL.seatMutationInFlight) return;
+  // 배치확인 일괄 처리처럼 여러 트랜잭션이 연달아 실행되는 동안(waitingMutationInFlight/
+  // seatMutationInFlight 켜짐) 도착한 "대기 문서 삭제됨" 서버 스냅샷을 그냥 버리면, 실제로는
+  // Firestore에서 이미 지워진 대기자가 로컬 GL.globalWaiting에는 영영(다음 실제 변경 전까지)
+  // 남아있는 "잔상"의 주 원인이 된다. 버리지 않고 플래그가 풀리는 대로 다시 적용한다.
+  let pendingWaitingSnapshotToApply = null;
+  let waitingSnapshotRetryTimer = null;
+  function retryWaitingSnapshotWhenFree() {
+    if (waitingSnapshotRetryTimer) return;
+    waitingSnapshotRetryTimer = setTimeout(() => {
+      waitingSnapshotRetryTimer = null;
+      if (!pendingWaitingSnapshotToApply) return;
+      if (GL.waitingMutationInFlight || GL.seatMutationInFlight) {
+        retryWaitingSnapshotWhenFree();
+        return;
+      }
+      const snap = pendingWaitingSnapshotToApply;
+      pendingWaitingSnapshotToApply = null;
+      applyWaitingSnapshot(snap);
+    }, 300);
+  }
+
+  function applyWaitingSnapshot(snap) {
       const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       const nextWaiting = mergeIncomingGlobalWaiting(rows, GL.globalWaiting);
       const nextFp = globalWaitingUiFingerprint(nextWaiting);
@@ -905,6 +952,18 @@ export function bindRealtime() {
       if (snap.metadata?.fromCache && !nextWaiting.length) {
         void refreshGlobalWaitingFromServer();
       }
+  }
+
+  GL.stopWaitingWatch = onSnapshot(
+    globalWaitingCollectionRef(db, GL.tournamentId),
+    (snap) => {
+      if (shouldIgnoreStaleGlobalLayoutSnapshot(snap)) return;
+      if (GL.waitingMutationInFlight || GL.seatMutationInFlight) {
+        pendingWaitingSnapshotToApply = snap;
+        retryWaitingSnapshotWhenFree();
+        return;
+      }
+      applyWaitingSnapshot(snap);
     },
     (err) => {
       logFirestoreWatchError("global waiting watch error", err);

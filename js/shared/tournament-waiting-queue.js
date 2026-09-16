@@ -9,9 +9,6 @@ import {
   isInactiveWaitingEntry
 } from "./attendance-waiting-filter.js";
 
-// TEMP DEBUG state — 잔상 원인 추적용, 동일 내용 반복 로그 방지.
-let lastWaitingDebugSummary = "";
-
 /** 대기자 1명 = 문서 1개 (tournaments/{tid}/global_waiting/{entryId}) */
 export function globalWaitingCollectionRef(db, tournamentId) {
   return collection(db, "tournaments", String(tournamentId || "").trim(), "global_waiting");
@@ -384,30 +381,6 @@ export function buildTournamentWaitingDisplayList({
   const inactive = attendanceInactiveUids instanceof Set ? attendanceInactiveUids : new Set();
   const checkedOut = attendanceCheckedOutUids instanceof Set ? attendanceCheckedOutUids : new Set();
   const filterReady = attendanceFilterReady === true;
-
-  // TEMP DEBUG — 대기 목록 잔상 원인 추적용. 문제 재현되면 콘솔 출력 그대로 공유해주세요.
-  try {
-    const seatOccupants = (globalSeats || [])
-      .filter((s) => {
-        const p = String(s?.person || "").trim();
-        return p && p !== "비어있음" && p !== "빈자리";
-      })
-      .map((s) => `${s?.seatId}:"${s?.person}"/uid=${s?.personUid || "-"}/email=${s?.personEmail || "-"}`);
-    const rowsForTid = (globalWaiting || []).filter((w) => waitingRowBelongsToTournament(w, tid));
-    const rowLines = rowsForTid.map((w) => {
-      const seated = isPersonSeatedInGlobalSeats(globalSeats, { uid: w?.uid, email: w?.email, name: w?.name });
-      return `  - id=${w?.id} name="${w?.name}" uid=${w?.uid || "-"} email=${w?.email || "-"} => seated=${seated}`;
-    });
-    const summary = `tid=${tid}\nWAITING ROWS:\n${rowLines.join("\n") || "  (none)"}\nSEAT OCCUPANTS:\n  ${
-      seatOccupants.join("\n  ") || "(none)"
-    }`;
-    if (summary !== lastWaitingDebugSummary) {
-      lastWaitingDebugSummary = summary;
-      console.warn(`[waiting-debug]\n${summary}`);
-    }
-  } catch (e) {
-    console.warn("[waiting-debug] failed", e);
-  }
 
   // global_waiting — 퇴근자는 제외. 미출근·수동 +대기는 유지.
   const waitingBase = (globalWaiting || [])
