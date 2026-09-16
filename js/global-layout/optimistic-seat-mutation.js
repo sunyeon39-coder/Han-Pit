@@ -130,7 +130,8 @@ export function applyOptimisticAssign({ targetSeatId, waiting, seat, now: nowOve
           incomingPerson: waitingName || waitingUid || "-",
           incomingPersonUid: waitingUid,
           incomingPersonEmail: waitingEmail,
-          incomingAt: now
+          incomingAt: now,
+          instantConfirm: false
         }
       : {
           ...target,

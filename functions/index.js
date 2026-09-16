@@ -413,9 +413,11 @@ async function finalizeOneIncomingSwap(seatDocSnap) {
         // 사람의 착석 시간이 이미 10분 지난 것처럼 보였다.
         seatedAt: now,
         status: "occupied",
-        // 이 좌석이 예전에(다른 시점) 즉시확인으로 확정된 적이 있으면 그 플래그가 merge로
-        // 남아있을 수 있다 — 이번엔 정상적으로 5~10분 공개 구간을 거친 정상 스왑이므로 끈다.
-        instantConfirm: false,
+        // seatedAt을 지금 시점으로 새로 찍기 때문에, 이 플래그를 안 켜두면 0~10분 "방금
+        // 확정됨" 강조(흰색/블링크)가 여기서 또 한 번(스왑 예약 10분 + 확정 후 10분,
+        // 총 20분) 새로 시작돼버린다. 이미 5~10분 예약 구간을 다 거치고 지금 막 확정된
+        // 것이므로 더 보여줄 예약/강조 구간이 없다 — 즉시확인과 동일하게 바로 정착으로 본다.
+        instantConfirm: true,
         incomingPerson: FieldValue.delete(),
         incomingPersonUid: FieldValue.delete(),
         incomingPersonEmail: FieldValue.delete(),

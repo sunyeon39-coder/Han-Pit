@@ -624,6 +624,10 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
               incomingPersonUid: waitingUid,
               incomingPersonEmail: waitingEmail,
               incomingAt: now,
+              // 이 좌석이 예전에(즉시확인, 또는 직전 스왑의 finalize로) instantConfirm:true로
+              // 정착돼 있었을 수 있다 — 이번엔 새로 예약을 거는 정상 스왑이니, 0~5분 강조/
+              // 5~10분 반전이 다시 정상적으로 보이도록 꺼둔다.
+              instantConfirm: false,
               updatedAt: now,
               updatedAtServer: serverTimestamp()
             },
