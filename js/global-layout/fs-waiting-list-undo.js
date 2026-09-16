@@ -7,7 +7,7 @@ import {
 import { GL } from "./state.js";
 import { getAttendanceRef, isEmptyPerson, makeUid, resolveGlobalSeatDocRefForUndo } from "./utils.js";
 import { getCandidateSeatRefsForPerson } from "./seat-candidates.js";
-import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
+import { rebuildWaitingAfterSeatToWait, resolveCanonicalWaitingDocId } from "./fs-waiting-merge.js";
 import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
 import {
   applyWaitingBlockLocal,
@@ -1004,20 +1004,40 @@ export async function removeManualWaiting(waitingId = "") {
   const row = snapshotBefore.find((w) => String(w?.id || "").trim() === wid);
   if (!row) return;
 
-  const next = snapshotBefore.filter((w) => String(w?.id || "").trim() !== wid);
+  // 같은 사람 앞으로 문서가 여러 개(결정적 id + 예전에 랜덤 id로 남은 잔여분) 쌓여있을
+  // 수 있다 — 화면엔 이름 하나로 뭉쳐 보이니 클릭한 행의 id 하나만 지우면 다른 문서가
+  // 살아남아 "삭제했는데도 계속 보인다"가 된다. 같은 사람 것으로 매칭되는 문서를 전부 찾아
+  // 같이 지운다.
+  const person = { uid: row.uid, email: row.email, name: row.name };
+  const canonicalRef = globalWaitingDocRef(db, GL.tournamentId, resolveCanonicalWaitingDocId(person));
+  const searchedRefs = findGlobalWaitingEntryRefs(db, GL.tournamentId, snapshotBefore, person);
+  const allRefs = [globalWaitingDocRef(db, GL.tournamentId, wid), canonicalRef, ...searchedRefs];
+  const seenPaths = new Set();
+  const refsToDelete = allRefs.filter((r) => {
+    if (seenPaths.has(r.path)) return false;
+    seenPaths.add(r.path);
+    return true;
+  });
+  const idsToDelete = new Set(refsToDelete.map((r) => r.id));
+
+  const next = snapshotBefore.filter((w) => !idsToDelete.has(String(w?.id || "").trim()));
   GL.waitingMutationInFlight = true;
   markGlobalLayoutLocalMutation();
   replaceGlobalWaitingLocal(next);
   flushOptimisticGlobalLayoutUi();
 
-  const hadSelectedWaiting = GL.selectedWaitingId === wid;
+  const hadSelectedWaiting = idsToDelete.has(GL.selectedWaitingId);
   if (hadSelectedWaiting) {
     GL.selectedWaitingId = "";
   }
 
   try {
     await runSerializedGlobalWaitingWrite(() =>
-      deleteDoc(globalWaitingDocRef(db, GL.tournamentId, wid))
+      Promise.all(refsToDelete.map((ref) => deleteDoc(ref).catch((err) => {
+        // 애초에 존재하지 않던 문서(예: canonicalRef가 아직 안 생겼던 경우)는
+        // not-found로 실패해도 무시 — 나머지 문서 삭제는 계속 진행한다.
+        if (String(err?.code || "") !== "not-found") throw err;
+      })))
     );
     // "내 선택 표시" 서버 해제는 이 삭제 저장이 끝난 뒤에 큐에 넣는다 — 먼저 넣으면
     // 같은 직렬화 큐를 쓰는 삭제 쓰기를 기다리게 되어 매번 지연이 생긴다.
