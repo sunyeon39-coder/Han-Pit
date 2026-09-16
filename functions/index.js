@@ -494,7 +494,11 @@ exports.finalizeIncomingSeatSwaps = onSchedule(
   {
     schedule: "* * * * *",
     timeZone: "Asia/Seoul",
-    region: "asia-northeast3"
+    region: "asia-northeast3",
+    // 1분 크론이라 원래도 0~59초 오차는 있지만, scale-to-zero면 오랜만에 도는 실행마다
+    // 콜드스타트가 몇 초~몇십 초 더 얹혀 "10분이 아니라 11분"처럼 보였다 — 인스턴스를
+    // 항상 하나 띄워둬서 그 콜드스타트 지연만 없앤다(월 약간의 고정 비용 발생, 사용자 확인함).
+    minInstances: 1
   },
   async () => {
     const cutoff = Date.now() - SEAT_SWAP_SETTLE_MS;
