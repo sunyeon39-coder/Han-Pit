@@ -196,10 +196,12 @@ a.app-mark {
   z-index: 500;
   display: flex;
   align-items: center;
-  padding: 10px 22px;
-  border-radius: var(--radius-pill);
+  justify-content: center;
+  padding: 18px 48px;
+  min-width: 340px;
+  border-radius: 16px;
   border: 1px solid rgba(255, 77, 94, 0.55);
-  background: rgba(30, 8, 11, 0.92);
+  background: rgba(40, 12, 15, 0.72);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
 }
 
@@ -210,7 +212,7 @@ a.app-mark {
 .gl-shift-banner__text {
   color: var(--danger);
   font-weight: 800;
-  font-size: 14px;
+  font-size: 19px;
   white-space: nowrap;
 }
 
