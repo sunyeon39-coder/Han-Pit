@@ -123,6 +123,8 @@ export function applyOptimisticAssign({ targetSeatId, waiting, seat, now: nowOve
     return true;
   });
 
+  const existingIncomingAt = Number(target?.incomingAt) || 0;
+  const hadExistingIncoming = !isEmptyPerson(String(target?.incomingPerson || "").trim());
   const nextTarget =
     wasOccupied && !immediate
       ? {
@@ -130,7 +132,10 @@ export function applyOptimisticAssign({ targetSeatId, waiting, seat, now: nowOve
           incomingPerson: waitingName || waitingUid || "-",
           incomingPersonUid: waitingUid,
           incomingPersonEmail: waitingEmail,
-          incomingAt: now,
+          // 이미 다른 사람이 확정 대기 중이던 좌석에서 선택을 바꾸는 거라면, 그 사람의
+          // incomingAt을 그대로 물려받는다 — 안 그러면 바꿀 때마다 10분 카운트가 새로
+          // 시작돼서 실제 확정이 계속 미뤄진다(fs-assign-waiting-to-seat.js와 동일 규칙).
+          incomingAt: hadExistingIncoming && existingIncomingAt > 0 ? existingIncomingAt : now,
           instantConfirm: false
         }
       : {

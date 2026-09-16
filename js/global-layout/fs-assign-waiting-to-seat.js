@@ -307,6 +307,7 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
         const existingIncomingUid = String(seatData.incomingPersonUid || "").trim();
         const existingIncomingEmail = String(seatData.incomingPersonEmail || "").trim().toLowerCase();
         const existingIncomingName = String(seatData.incomingPerson || "").trim();
+        const existingIncomingAt = Number(seatData.incomingAt) || 0;
         const hasExistingIncoming = !isEmptyPerson(existingIncomingName);
         if (
           hasExistingIncoming &&
@@ -623,7 +624,12 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
               incomingPerson: waitingName,
               incomingPersonUid: waitingUid,
               incomingPersonEmail: waitingEmail,
-              incomingAt: now,
+              // 이 좌석에 이미 다른 사람이 "확정 대기 중"이었다면(선택을 바꾼 경우) 그
+              // 사람의 incomingAt을 그대로 물려받는다 — 안 그러면 0~5분 구간에 마음이
+              // 바뀌어 다른 사람으로 바꿀 때마다 10분 카운트가 매번 새로 시작돼서, 바꾼
+              // 횟수만큼 실제 확정이 계속 늦춰지는 문제가 있었다. 처음 배치확인을 누른
+              // 시점 기준으로 10분이 되면 확정되게 한다.
+              incomingAt: hasExistingIncoming && existingIncomingAt > 0 ? existingIncomingAt : now,
               // 이 좌석이 예전에(즉시확인, 또는 직전 스왑의 finalize로) instantConfirm:true로
               // 정착돼 있었을 수 있다 — 이번엔 새로 예약을 거는 정상 스왑이니, 0~5분 강조/
               // 5~10분 반전이 다시 정상적으로 보이도록 꺼둔다.
