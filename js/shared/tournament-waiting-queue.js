@@ -382,6 +382,30 @@ export function buildTournamentWaitingDisplayList({
   const checkedOut = attendanceCheckedOutUids instanceof Set ? attendanceCheckedOutUids : new Set();
   const filterReady = attendanceFilterReady === true;
 
+  // TEMP DEBUG — 대기 목록 잔상 원인 추적용. 문제 재현되면 콘솔 출력 그대로 공유해주세요.
+  try {
+    const seatOccupants = (globalSeats || [])
+      .filter((s) => {
+        const p = String(s?.person || "").trim();
+        return p && p !== "비어있음" && p !== "빈자리";
+      })
+      .map((s) => ({
+        seatId: s?.seatId,
+        person: s?.person,
+        personUid: s?.personUid || "",
+        personEmail: s?.personEmail || ""
+      }));
+    const rowsForTid = (globalWaiting || []).filter((w) => waitingRowBelongsToTournament(w, tid));
+    console.warn(
+      "[waiting-debug] tid=%s rows=%o seatOccupants=%o",
+      tid,
+      rowsForTid.map((w) => ({ id: w?.id, name: w?.name, uid: w?.uid || "", email: w?.email || "" })),
+      seatOccupants
+    );
+  } catch (e) {
+    console.warn("[waiting-debug] failed", e);
+  }
+
   // global_waiting — 퇴근자는 제외. 미출근·수동 +대기는 유지.
   const waitingBase = (globalWaiting || [])
     .filter((w) => waitingRowBelongsToTournament(w, tid))
