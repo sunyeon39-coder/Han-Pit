@@ -105,6 +105,12 @@ export function personIdentityMatches(left = {}, right = {}) {
  * 대기+배치에 동시에 보이는 사고가 난다. 여기서는 uid·email·이름 중 하나라도
  * 일치하면 "배치됨" 으로 본다(단락 없이 OR). 표시명이 완전히 동일한 서로 다른
  * 딜러는 한쪽이 배치돼 있으면 대기에서 가려질 수 있으나, 운영상 그 편이 안전하다.
+ *
+ * incomingPerson(스왑 확정 대기 중, 0~10분)도 "이미 배치됨"으로 본다 — 실제 occupant는
+ * finalize 전까지 안 바뀌지만, 그 사람은 이미 배치확인이 끝나 곧 그 자리로 옮겨갈 예정이라
+ * 대기열에 다시 보이면 안 된다. 이걸 놓치면(실제 person 필드만 봤을 때) 출석부 기반 자동
+ * 복구(healMissingWaitingFromAttendance)가 "이 사람 대기열에 없네?" 하고 착각해 confirm으로
+ * 방금 지운 대기 문서를 몇 초 뒤 다시 만들어내는 원인이 된다.
  */
 export function isPersonSeatedInGlobalSeats(seats = [], person = {}) {
   const uid = String(person?.uid || person?.personUid || "").trim();
@@ -112,13 +118,22 @@ export function isPersonSeatedInGlobalSeats(seats = [], person = {}) {
   const name = String(person?.name || person?.nickname || person?.person || "").trim();
   if (!uid && !email && !name) return false;
   for (const s of seats || []) {
-    if (isEmptySeatPerson(s?.person)) continue;
-    const sUid = String(s?.personUid || s?.uid || "").trim();
-    const sEmail = String(s?.personEmail || s?.email || "").trim().toLowerCase();
-    const sName = String(s?.person || s?.name || s?.nickname || "").trim();
-    if (uid && sUid && uid === sUid) return true;
-    if (email && sEmail && email === sEmail) return true;
-    if (name && sName && name === sName) return true;
+    if (!isEmptySeatPerson(s?.person)) {
+      const sUid = String(s?.personUid || s?.uid || "").trim();
+      const sEmail = String(s?.personEmail || s?.email || "").trim().toLowerCase();
+      const sName = String(s?.person || s?.name || s?.nickname || "").trim();
+      if (uid && sUid && uid === sUid) return true;
+      if (email && sEmail && email === sEmail) return true;
+      if (name && sName && name === sName) return true;
+    }
+    const incomingName = String(s?.incomingPerson || "").trim();
+    if (!isEmptySeatPerson(incomingName)) {
+      const iUid = String(s?.incomingPersonUid || "").trim();
+      const iEmail = String(s?.incomingPersonEmail || "").trim().toLowerCase();
+      if (uid && iUid && uid === iUid) return true;
+      if (email && iEmail && email === iEmail) return true;
+      if (name && incomingName === name) return true;
+    }
   }
   return false;
 }
