@@ -189,6 +189,9 @@ function resolveDealerNextSeat(dealer = {}) {
 
   const freshSeat = (GL.globalSeats || []).find((s) => seatMatchesPerson(s, dealer));
   if (!freshSeat) return null;
+  // 즉시확인("instantConfirm")으로 배치된 좌석은 예약 구간이 없다 — "다음"에 잠깐 걸치지
+  // 않고 바로 resolveDealerCurrentSeat 쪽에서 "현재"로 보여준다.
+  if (freshSeat.instantConfirm === true) return null;
   const { isRecent, isBlinkPhase } = getSeatConfirmHighlightState(toMillis(freshSeat.seatedAt));
   if (!isRecent) return null;
   if (!canManageGlobalLayoutOps() && !isBlinkPhase) return null;
@@ -205,6 +208,8 @@ function resolveDealerCurrentSeat(dealer = {}) {
   const seat = (GL.globalSeats || []).find((s) => seatMatchesPerson(s, dealer));
   if (!seat) return null;
   if (!isEmptyPerson(String(seat.incomingPerson || "").trim())) return seat;
+  // 즉시확인으로 배치된 좌석은 예약/공개 구간 없이 바로 "현재"로 보여준다.
+  if (seat.instantConfirm === true) return seat;
   return getSeatConfirmHighlightState(toMillis(seat.seatedAt)).isRecent ? null : seat;
 }
 
