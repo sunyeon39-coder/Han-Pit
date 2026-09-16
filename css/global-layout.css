@@ -1102,6 +1102,21 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     color: rgba(238, 241, 244, 0.4);
   }
 
+  /* 딜러 명단 행 크기를 대기 패널의 "다음 배치가 여기에 표시됩니다" 박스와 맞춘다 —
+     padding/radius/글자 크기를 그 박스 기준(.mobile-lookup-placeholder)으로 통일. */
+  body.page-global-layout .global-layout-mobile .mobile-seat-row.compact {
+    padding: 14px 12px;
+    border-radius: 8px;
+  }
+
+  body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-person {
+    font-size: 13px;
+  }
+
+  body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-col {
+    font-size: 13px;
+  }
+
   body.page-global-layout .global-layout-mobile .mobile-seat-more-btn {
     flex-shrink: 0;
     width: 28px;
