@@ -328,7 +328,7 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
           })
         ]);
         const existingIncomingWaitingRefs = hasExistingIncoming
-          ? findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, {
+          ? findGlobalWaitingEntryRefs(db, GL.tournamentId, waitingSnapshotForRefs, {
               uid: existingIncomingUid,
               email: seatData.incomingPersonEmail,
               name: existingIncomingName
