@@ -9,6 +9,9 @@ import {
   isInactiveWaitingEntry
 } from "./attendance-waiting-filter.js";
 
+// TEMP DEBUG state — 잔상 원인 추적용, 동일 내용 반복 로그 방지.
+let lastWaitingDebugSummary = "";
+
 /** 대기자 1명 = 문서 1개 (tournaments/{tid}/global_waiting/{entryId}) */
 export function globalWaitingCollectionRef(db, tournamentId) {
   return collection(db, "tournaments", String(tournamentId || "").trim(), "global_waiting");
@@ -389,19 +392,19 @@ export function buildTournamentWaitingDisplayList({
         const p = String(s?.person || "").trim();
         return p && p !== "비어있음" && p !== "빈자리";
       })
-      .map((s) => ({
-        seatId: s?.seatId,
-        person: s?.person,
-        personUid: s?.personUid || "",
-        personEmail: s?.personEmail || ""
-      }));
+      .map((s) => `${s?.seatId}:"${s?.person}"/uid=${s?.personUid || "-"}/email=${s?.personEmail || "-"}`);
     const rowsForTid = (globalWaiting || []).filter((w) => waitingRowBelongsToTournament(w, tid));
-    console.warn(
-      "[waiting-debug] tid=%s rows=%o seatOccupants=%o",
-      tid,
-      rowsForTid.map((w) => ({ id: w?.id, name: w?.name, uid: w?.uid || "", email: w?.email || "" })),
-      seatOccupants
-    );
+    const rowLines = rowsForTid.map((w) => {
+      const seated = isPersonSeatedInGlobalSeats(globalSeats, { uid: w?.uid, email: w?.email, name: w?.name });
+      return `  - id=${w?.id} name="${w?.name}" uid=${w?.uid || "-"} email=${w?.email || "-"} => seated=${seated}`;
+    });
+    const summary = `tid=${tid}\nWAITING ROWS:\n${rowLines.join("\n") || "  (none)"}\nSEAT OCCUPANTS:\n  ${
+      seatOccupants.join("\n  ") || "(none)"
+    }`;
+    if (summary !== lastWaitingDebugSummary) {
+      lastWaitingDebugSummary = summary;
+      console.warn(`[waiting-debug]\n${summary}`);
+    }
   } catch (e) {
     console.warn("[waiting-debug] failed", e);
   }
