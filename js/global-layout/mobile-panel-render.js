@@ -192,6 +192,9 @@ function resolveDealerNextSeat(dealer = {}) {
   // 즉시확인("instantConfirm")으로 배치된 좌석은 예약 구간이 없다 — "다음"에 잠깐 걸치지
   // 않고 바로 resolveDealerCurrentSeat 쪽에서 "현재"로 보여준다.
   if (freshSeat.instantConfirm === true) return null;
+  // admin도 resolveDealerCurrentSeat에서 이미 즉시 "현재"로 보여주므로, 여기서 또
+  // "다음"에 중복으로 걸치지 않게 한다.
+  if (canManageGlobalLayoutOps()) return null;
   const { isRecent, isBlinkPhase } = getSeatConfirmHighlightState(toMillis(freshSeat.seatedAt));
   if (!isRecent) return null;
   if (!canManageGlobalLayoutOps() && !isBlinkPhase) return null;
@@ -201,8 +204,9 @@ function resolveDealerNextSeat(dealer = {}) {
 /**
  * 현재(CURRENT) — 이 딜러가 실제로 앉아 있는 좌석(seat.person). 교대가 확정 대기 중이어도
  * 실제 occupant는 finalize 전까지 안 바뀌므로 그냥 정상적으로 보여주면 된다. 스왑이 아니라
- * 방금 빈 자리에 새로 배치된 경우(incomingPerson 없음)만, 정착 전(0~10분)에는 "다음"에서만
- * 보여주고 "현재"는 정착 후에 나타나게 한다.
+ * 방금 빈 자리에 새로 배치된 경우(incomingPerson 없음)만, 근무자 본인 화면 기준으로는
+ * 정착 전(0~10분)에 "다음"에서만 보여주고 "현재"는 정착 후에 나타나게 한다 — admin은
+ * 이미 실제 점유자로 확정된 사람을 굳이 숨길 이유가 없어 바로 "현재"로 보여준다.
  */
 function resolveDealerCurrentSeat(dealer = {}) {
   const seat = (GL.globalSeats || []).find((s) => seatMatchesPerson(s, dealer));
@@ -210,6 +214,7 @@ function resolveDealerCurrentSeat(dealer = {}) {
   if (!isEmptyPerson(String(seat.incomingPerson || "").trim())) return seat;
   // 즉시확인으로 배치된 좌석은 예약/공개 구간 없이 바로 "현재"로 보여준다.
   if (seat.instantConfirm === true) return seat;
+  if (canManageGlobalLayoutOps()) return seat;
   return getSeatConfirmHighlightState(toMillis(seat.seatedAt)).isRecent ? null : seat;
 }
 
