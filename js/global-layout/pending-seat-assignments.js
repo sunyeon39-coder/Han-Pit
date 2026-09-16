@@ -71,7 +71,14 @@ export async function confirmAllPendingSeatAssignments({ immediate = false } = {
   const failed = [];
   for (const [seatId, pending] of entries) {
     try {
-      await assignSelectedWaitingToSeat(seatId, pending.waiting, now, { skipOptimistic: true, immediate });
+      // waitingSnapshot — 위 낙관적 반영 루프가 이미 GL.globalWaiting에서 이 사람들을
+      // 지웠으므로, 그 지우기 전 스냅샷을 넘겨야 트랜잭션 안에서 실제 대기 문서를
+      // 제대로 찾아 지울 수 있다(안 그러면 문서가 안 지워진 채 대기열에 잔상으로 남는다).
+      await assignSelectedWaitingToSeat(seatId, pending.waiting, now, {
+        skipOptimistic: true,
+        immediate,
+        waitingSnapshot: preBatchSnapshot?.globalWaiting
+      });
       GL.pendingSeatAssignments.delete(seatId);
     } catch (err) {
       console.error("confirmAllPendingSeatAssignments:", seatId, err);

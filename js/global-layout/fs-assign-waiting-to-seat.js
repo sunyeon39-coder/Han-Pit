@@ -171,6 +171,16 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
   // 문제가 있으면 확정 전(더블클릭)에 취소해 기존 점유자를 그대로 유지할 수 있다.
   const wasOccupiedNow = !isEmptyPerson(String(seat.person || "").trim());
 
+  // 낙관적 반영(applyOptimisticAssign)이 GL.globalWaiting에서 이 사람 행을 곧바로 지운다 —
+  // 그 아래에서 실제 대기 문서를 찾을 때 이미 비워진 배열을 검색하면 아무것도 못 찾아
+  // 실제 문서를 못 지우는(대기 목록 잔상) 자기 자신과의 경쟁이 생긴다. 낙관적 반영 전
+  // 스냅샷을 남겨 트랜잭션 안에서는 이걸로 찾는다. 일괄 확인(confirmAllPendingSeatAssignments)
+  // 은 여러 건을 먼저 한꺼번에 낙관적으로 반영한 뒤 이 함수를 호출하므로, 그쪽에서
+  // 자신이 찍어둔 스냅샷을 opts.waitingSnapshot으로 넘겨준다.
+  const waitingSnapshotForRefs = Array.isArray(opts?.waitingSnapshot)
+    ? opts.waitingSnapshot
+    : [...GL.globalWaiting];
+
   // skipOptimistic — 일괄 배치확인(confirmAllPendingSeatAssignments)에서 이미 모든
   // 대상의 화면 반영을 한 번에 끝내고 넘어온 경우. 여기서 다시 적용하면 방금 배치된
   // 사람을 "밀려난 이전 점유자"로 오인해 이중 반영되므로 건너뛴다.
@@ -311,7 +321,7 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
         );
         const assigneeWaitingRefs = uniqueDocRefs([
           globalWaitingDocRef(db, GL.tournamentId, waitingId || makeUid("wait")),
-          ...findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, {
+          ...findGlobalWaitingEntryRefs(db, GL.tournamentId, waitingSnapshotForRefs, {
             uid: waitingUid,
             email: waiting.email,
             name: waitingName
@@ -677,7 +687,7 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
 
       const assigneeWaitingRefs = uniqueDocRefs([
         globalWaitingDocRef(db, GL.tournamentId, waitingId || makeUid("wait")),
-        ...findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, {
+        ...findGlobalWaitingEntryRefs(db, GL.tournamentId, waitingSnapshotForRefs, {
           uid: waitingUid,
           email: waiting.email,
           name: waitingName
