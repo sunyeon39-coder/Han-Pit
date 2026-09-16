@@ -42,7 +42,7 @@ export function hasPendingSeatAssignments() {
  * 전부 먼저 한 번에 끝내고 한 번만 렌더한다 — 같은 now(seatedAt)를 쓰기 때문에
  * "현재/다음" 색 전환 타이밍도 전부 동시에 시작된다.
  */
-export async function confirmAllPendingSeatAssignments() {
+export async function confirmAllPendingSeatAssignments({ immediate = false } = {}) {
   const entries = [...GL.pendingSeatAssignments.entries()];
   const now = Date.now();
 
@@ -61,14 +61,14 @@ export async function confirmAllPendingSeatAssignments() {
   for (const [seatId, pending] of entries) {
     const seat = GL.globalSeats.find((s) => String(s?.seatId || "").trim() === seatId);
     if (!seat) continue;
-    applyOptimisticAssign({ targetSeatId: seatId, waiting: pending.waiting, seat, now });
+    applyOptimisticAssign({ targetSeatId: seatId, waiting: pending.waiting, seat, now, immediate });
   }
   if (entries.length) flushOptimisticGlobalLayoutUi();
 
   const failed = [];
   for (const [seatId, pending] of entries) {
     try {
-      await assignSelectedWaitingToSeat(seatId, pending.waiting, now, { skipOptimistic: true });
+      await assignSelectedWaitingToSeat(seatId, pending.waiting, now, { skipOptimistic: true, immediate });
       GL.pendingSeatAssignments.delete(seatId);
     } catch (err) {
       console.error("confirmAllPendingSeatAssignments:", seatId, err);
@@ -92,7 +92,7 @@ export async function confirmAllPendingSeatAssignments() {
       if (failedSeatIds.has(seatId)) continue;
       const seat = GL.globalSeats.find((s) => String(s?.seatId || "").trim() === seatId);
       if (!seat) continue;
-      applyOptimisticAssign({ targetSeatId: seatId, waiting: pending.waiting, seat, now });
+      applyOptimisticAssign({ targetSeatId: seatId, waiting: pending.waiting, seat, now, immediate });
     }
     flushOptimisticGlobalLayoutUi();
   }

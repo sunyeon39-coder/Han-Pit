@@ -175,9 +175,12 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
   // 대상의 화면 반영을 한 번에 끝내고 넘어온 경우. 여기서 다시 적용하면 방금 배치된
   // 사람을 "밀려난 이전 점유자"로 오인해 이중 반영되므로 건너뛴다.
   const skipOptimistic = opts?.skipOptimistic === true;
+  // immediate — "즉시확인": 스왑이어도 0~10분 예약(incomingPerson) 없이 지금 바로
+  // 실제 occupant를 교체하고, 알림도 5분 뒤가 아니라 즉시 발송한다.
+  const immediate = opts?.immediate === true;
   const rollbackOptimistic = skipOptimistic
     ? () => {}
-    : applyOptimisticAssign({ targetSeatId, waiting, seat, now });
+    : applyOptimisticAssign({ targetSeatId, waiting, seat, now, immediate });
   applyOptimisticMyWaitingPick("");
   if (!skipOptimistic) flushOptimisticGlobalLayoutUi();
   // 스왑(기존 점유자가 있는 좌석)은 아직 "진짜 배치"가 아니므로, 본인이 스스로에게
@@ -321,6 +324,25 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
               name: existingIncomingName
             })
           : [];
+        // immediate 모드 전용 — 지금 이 좌석에서 밀려나는 실제 점유자(prevXxx)가 다른
+        // 좌석에도 이미 앉아있는지, 대기열에 유령 문서가 남아있는지 확인용(clearSeat과 동일한 패턴).
+        const prevOtherSeatRefs = immediate
+          ? getCandidateSeatRefsForPerson(
+              db,
+              GL.tournamentId,
+              GL.globalSeats,
+              { uid: prevUid, email: prevEmail, name: prevName },
+              targetSeatId
+            )
+          : [];
+        const prevWaitingRefs =
+          immediate && !isEmptyPerson(prevName)
+            ? findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, {
+                uid: prevUid,
+                email: prevEmail,
+                name: prevName
+              })
+            : [];
         // 이미 어딘가 앉아 있는데 대기열에도 유령처럼 남아있는 잔여 문서 — 이번 배정
         // 당사자는 위에서 별도로 지우니 제외. 다른 경로(예: finalize 스케줄러)로 생긴
         // 잔여물도 여기서 같이 정리된다.
@@ -355,6 +377,8 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
           ...waitingDupRefs,
           ...assigneeWaitingRefs,
           ...existingIncomingWaitingRefs,
+          ...prevOtherSeatRefs,
+          ...prevWaitingRefs,
           ...staleSeatedWaitingRefs
         ];
         const readSnaps = await Promise.all(readRefs.map((r) => tx.get(r)));
@@ -370,7 +394,11 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
           existingIncomingOffset,
           existingIncomingOffset + existingIncomingWaitingRefs.length
         );
-        const staleSnapOffset = existingIncomingOffset + existingIncomingWaitingRefs.length;
+        const prevOtherSeatOffset = existingIncomingOffset + existingIncomingWaitingRefs.length;
+        const prevOtherSeatSnaps = readSnaps.slice(prevOtherSeatOffset, prevOtherSeatOffset + prevOtherSeatRefs.length);
+        const prevWaitingOffset = prevOtherSeatOffset + prevOtherSeatRefs.length;
+        const prevWaitingSnaps = readSnaps.slice(prevWaitingOffset, prevWaitingOffset + prevWaitingRefs.length);
+        const staleSnapOffset = prevWaitingOffset + prevWaitingRefs.length;
         const staleSeatedWaitingSnaps = readSnaps.slice(
           staleSnapOffset,
           staleSnapOffset + staleSeatedWaitingRefs.length
@@ -441,20 +469,135 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
         }
 
         undoSeatSnapshot = captureSeatShellSnapshot(seat, seatData);
-        undoSeatBefore = null; // 실제 occupant는 안 바뀌므로 되돌릴 게 없다 — undo 스택엔 안 올린다.
 
-        tx.set(
-          seatRef,
-          {
-            incomingPerson: waitingName,
-            incomingPersonUid: waitingUid,
-            incomingPersonEmail: waitingEmail,
-            incomingAt: now,
-            updatedAt: now,
-            updatedAtServer: serverTimestamp()
-          },
-          { merge: true }
-        );
+        let prevHasOtherSeat = false;
+        if (immediate) {
+          // ── 즉시확인: 예약 없이 지금 바로 실제 occupant를 교체한다 ──────────
+          prevHasOtherSeat = prevOtherSeatSnaps.some((docSnap) => {
+            if (!docSnap.exists()) return false;
+            const data = docSnap.data() || {};
+            const dSeatId = String(data.seatId || "").trim();
+            if (dSeatId === targetSeatId) return false;
+            const dUid = String(data.personUid || "").trim();
+            const dEmail = String(data.personEmail || "").trim().toLowerCase();
+            const dName = String(data.person || "").trim();
+            const sameUser =
+              (prevUid && dUid && prevUid === dUid) ||
+              (prevEmail.toLowerCase() && dEmail && prevEmail.toLowerCase() === dEmail) ||
+              (!prevUid && !dUid && prevName && dName === prevName);
+            if (!sameUser) return false;
+            return !isEmptyPerson(dName);
+          });
+
+          const prevExistingWaitingRows = prevWaitingSnaps
+            .map((s, i) => (s.exists() ? { id: prevWaitingRefs[i].id, ...s.data() } : null))
+            .filter(Boolean);
+
+          if (!prevHasOtherSeat) {
+            swapReturnedJoinedAt = now;
+            const nextPrevWaitingRows = rebuildWaitingAfterSeatToWait(
+              prevExistingWaitingRows,
+              GL.tournamentId,
+              { uid: prevUid, email: prevEmail, name: prevName },
+              now,
+              { source: "seat_swap_immediate", resetJoinedAt: true }
+            );
+            const { toSet: prevToSet, toDelete: prevToDelete } = diffGlobalWaitingRows(
+              prevExistingWaitingRows,
+              nextPrevWaitingRows
+            );
+            for (const { id, data } of prevToSet) {
+              tx.set(globalWaitingDocRef(db, GL.tournamentId, id), data, { merge: true });
+            }
+            for (const id of prevToDelete) {
+              tx.delete(globalWaitingDocRef(db, GL.tournamentId, id));
+            }
+          }
+
+          if (prevUid) {
+            tx.set(
+              getAttendanceRef(db, GL.tournamentId, prevUid),
+              {
+                uid: prevUid,
+                email: prevEmail,
+                name: prevName,
+                tournamentId: GL.tournamentId,
+                status: prevHasOtherSeat ? "assigned" : "waiting",
+                statusChangedAt: now,
+                updatedAt: now,
+                updatedAtServer: serverTimestamp()
+              },
+              { merge: true }
+            );
+            tx.set(
+              doc(db, "layout_notifications", prevUid),
+              buildSeatClearedNotificationWrite({ createdAt: now, updatedAtServer: serverTimestamp() }),
+              { merge: true }
+            );
+          }
+
+          undoSeatBefore = {
+            person: prevName,
+            personUid: prevUid,
+            personEmail: prevEmail,
+            seatedAt: seatData.seatedAt ? Number(seatData.seatedAt) : null,
+            status: "occupied"
+          };
+
+          const historyEntry = entryFromSeatOccupant(seatData, now, "replace");
+          const nextSeatHistory = appendSeatHistoryPatch(seatData.seatHistory, historyEntry);
+
+          tx.set(
+            seatRef,
+            {
+              person: String(waiting.name || "").trim(),
+              personUid: String(waiting.uid || "").trim(),
+              personEmail: String(waiting.email || "").trim(),
+              seatedAt: now,
+              status: "occupied",
+              incomingPerson: "",
+              incomingPersonUid: "",
+              incomingPersonEmail: "",
+              incomingAt: null,
+              updatedAt: now,
+              updatedAtServer: serverTimestamp(),
+              ...(nextSeatHistory ? { seatHistory: nextSeatHistory } : {})
+            },
+            { merge: true }
+          );
+
+          if (waitingUid) {
+            tx.set(
+              getAttendanceRef(db, GL.tournamentId, waitingUid),
+              {
+                uid: waitingUid,
+                email: waitingEmail,
+                name: waitingName,
+                tournamentId: GL.tournamentId,
+                status: "assigned",
+                statusChangedAt: now,
+                updatedAt: now,
+                updatedAtServer: serverTimestamp()
+              },
+              { merge: true }
+            );
+          }
+        } else {
+          undoSeatBefore = null; // 실제 occupant는 안 바뀌므로 되돌릴 게 없다 — undo 스택엔 안 올린다.
+
+          tx.set(
+            seatRef,
+            {
+              incomingPerson: waitingName,
+              incomingPersonUid: waitingUid,
+              incomingPersonEmail: waitingEmail,
+              incomingAt: now,
+              updatedAt: now,
+              updatedAtServer: serverTimestamp()
+            },
+            { merge: true }
+          );
+        }
 
         for (const ref of assigneeWaitingRefs) {
           tx.delete(ref);
@@ -496,7 +639,7 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
                   seatLabel: seat.label || seat.no || ""
                 }),
                 createdAt: now,
-                notifyAt: now + SEAT_SWAP_REVEAL_DELAY_MS,
+                notifyAt: immediate ? now : now + SEAT_SWAP_REVEAL_DELAY_MS,
                 updatedAt: now,
                 updatedAtServer: serverTimestamp()
               })
@@ -509,7 +652,8 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
           waitingUid,
           waitingName,
           wasOccupied: true,
-          incoming: true,
+          incoming: !immediate,
+          detail: immediate ? "즉시확인(0~10분 예약 없이 즉시 교대 확정)" : "",
           seatLabel: String(seat.label || seat.no || "").trim(),
           targetSeatId,
           eventId: canonicalSeatEventId,
@@ -707,7 +851,7 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
                 seatLabel: seat.label || seat.no || ""
               }),
               createdAt: now,
-              notifyAt: now + SEAT_SWAP_REVEAL_DELAY_MS,
+              notifyAt: immediate ? now : now + SEAT_SWAP_REVEAL_DELAY_MS,
               updatedAt: now,
               updatedAtServer: serverTimestamp()
             })
@@ -737,7 +881,7 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
         boxId: assignLogMeta.boxId,
         seatId: assignLogMeta.targetSeatId,
         seatLabel: assignLogMeta.seatLabel,
-        detail: assignLogMeta.incoming ? "교대 확정 대기 시작(10분 뒤 확정)" : ""
+        detail: assignLogMeta.detail || (assignLogMeta.incoming ? "교대 확정 대기 시작(10분 뒤 확정)" : "")
       });
     }
 
@@ -762,7 +906,8 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
   const bx = String(canonicalSeatBoxId || "").trim();
   // 스왑(교대 확정 대기) 건은 실제 occupant가 안 바뀌므로 되돌리기 스택에 올리지 않는다 —
   // 10분 안에 마음이 바뀌면 더블클릭으로 취소(cancelIncomingSeatSwap)하는 게 정확한 경로다.
-  if (!wasOccupiedResolved) {
+  // immediate 모드는 실제 occupant가 바로 바뀌므로 예외적으로 undo 스택에 올린다.
+  if (!wasOccupiedResolved || immediate) {
     pushGlobalUndo({
       kind: "assign",
       targetSeatId,

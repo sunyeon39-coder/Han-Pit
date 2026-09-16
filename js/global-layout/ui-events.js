@@ -218,11 +218,17 @@ export function bindGlobalLayoutEventHandlers() {
     }
 
     const confirmAssignBtn = e.target.closest("#waitConfirmAssignBtn");
-    if (confirmAssignBtn) {
-      if (!hasPendingSeatAssignments() || confirmAssignBtn.disabled) return;
-      confirmAssignBtn.disabled = true;
+    const confirmAssignNowBtn = e.target.closest("#waitConfirmAssignNowBtn");
+    if (confirmAssignBtn || confirmAssignNowBtn) {
+      const btn = confirmAssignBtn || confirmAssignNowBtn;
+      const immediate = !!confirmAssignNowBtn;
+      if (!hasPendingSeatAssignments() || btn.disabled) return;
+      if (immediate && !confirm("즉시확인 — 0~10분 예약 없이 지금 바로 교대를 확정하고 근무자에게 즉시 알림을 보냅니다. 계속할까요?")) {
+        return;
+      }
+      btn.disabled = true;
       try {
-        const { confirmedCount, failed } = await confirmAllPendingSeatAssignments();
+        const { confirmedCount, failed } = await confirmAllPendingSeatAssignments({ immediate });
         if (failed.length) {
           const lines = failed.map(({ waiting, err }) => {
             const msg = String(err?.message || "").trim();

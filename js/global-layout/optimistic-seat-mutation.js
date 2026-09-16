@@ -72,8 +72,10 @@ function matchesPersonOnSeat(seat = {}, person = {}) {
  * 좌석이 이미 점유돼 있으면(스왑) 실제 occupant는 그대로 두고 incomingPerson/incomingAt
  * 으로만 "10분 뒤 확정 예정"을 표시한다 — 실제 person 필드는 finalize(서버 스케줄러)
  * 전까지 바뀌지 않는다. 빈 좌석에 새로 배치하는 경우만 기존처럼 즉시 반영한다.
+ * immediate:true("즉시확인")면 스왑이어도 예약 없이 실제 occupant를 바로 교체하고,
+ * 밀려나는 기존 점유자를 대기열로 즉시 되돌린다.
  */
-export function applyOptimisticAssign({ targetSeatId, waiting, seat, now: nowOverride = 0 }) {
+export function applyOptimisticAssign({ targetSeatId, waiting, seat, now: nowOverride = 0, immediate = false }) {
   const sid = String(targetSeatId || "").trim();
   const snapshot = {
     globalSeats: cloneSeats(GL.globalSeats),
@@ -121,24 +123,52 @@ export function applyOptimisticAssign({ targetSeatId, waiting, seat, now: nowOve
     return true;
   });
 
-  const nextTarget = wasOccupied
-    ? {
-        ...target,
-        incomingPerson: waitingName || waitingUid || "-",
-        incomingPersonUid: waitingUid,
-        incomingPersonEmail: waitingEmail,
-        incomingAt: now
-      }
-    : {
-        ...target,
-        person: waitingName || waitingUid || "-",
-        personUid: waitingUid,
-        personEmail: waitingEmail,
-        seatedAt: now,
-        status: "occupied"
-      };
+  const nextTarget =
+    wasOccupied && !immediate
+      ? {
+          ...target,
+          incomingPerson: waitingName || waitingUid || "-",
+          incomingPersonUid: waitingUid,
+          incomingPersonEmail: waitingEmail,
+          incomingAt: now
+        }
+      : {
+          ...target,
+          person: waitingName || waitingUid || "-",
+          personUid: waitingUid,
+          personEmail: waitingEmail,
+          seatedAt: now,
+          status: "occupied",
+          incomingPerson: "",
+          incomingPersonUid: "",
+          incomingPersonEmail: "",
+          incomingAt: null
+        };
   if (seatIdx >= 0) GL.globalSeats[seatIdx] = nextTarget;
   else GL.globalSeats.push(nextTarget);
+
+  // immediate 스왑 — 밀려나는 기존 점유자를 대기열로 바로 되돌린다(다른 좌석에 이미
+  // 앉아있지 않은 경우만; clearSeat 낙관적 반영과 동일한 판단 기준).
+  if (wasOccupied && immediate && !isEmptyPerson(prevName)) {
+    const prevPerson = {
+      uid: String(target?.personUid || "").trim(),
+      email: String(target?.personEmail || "").trim(),
+      name: prevName
+    };
+    const hasOtherSeat = isPersonSeatedInGlobalSeats(
+      GL.globalSeats.filter((s) => String(s?.seatId || "").trim() !== sid),
+      prevPerson
+    );
+    if (!hasOtherSeat) {
+      GL.globalWaiting = rebuildWaitingAfterSeatToWait(
+        GL.globalWaiting,
+        GL.tournamentId,
+        prevPerson,
+        now,
+        { source: "seat_swap_immediate", resetJoinedAt: true }
+      );
+    }
+  }
 
   GL.selectedWaitingId = "";
   GL.selectedSeatIds.clear();

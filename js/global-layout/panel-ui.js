@@ -479,7 +479,8 @@ export function renderWaiting(_waiting) {
   const waitingRows = activeGroup.map(buildWaitRowHtml).join("");
   const pendingCount = GL.pendingSeatAssignments.size;
   const confirmAssignBtnHtml = canManageGlobalLayoutOps()
-    ? `<button id="waitConfirmAssignBtn" class="pill-inline primary" type="button" ${pendingCount ? "" : "disabled"}>배치확인${pendingCount ? ` (${pendingCount})` : ""}</button>`
+    ? `<button id="waitConfirmAssignBtn" class="pill-inline primary" type="button" ${pendingCount ? "" : "disabled"}>배치확인${pendingCount ? ` (${pendingCount})` : ""}</button>
+       <button id="waitConfirmAssignNowBtn" class="pill-inline warn" type="button" ${pendingCount ? "" : "disabled"}>즉시확인${pendingCount ? ` (${pendingCount})` : ""}</button>`
     : "";
   const waitTabRowHtml = `
     <div class="wait-tab-row">

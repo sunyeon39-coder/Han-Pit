@@ -703,8 +703,15 @@ body.page-global-layout .pc-panel .global-list > .gl-panel-list-row {
 /* 대기 탭: 대기/BLOCK (Seat순/시간순과 동일 스타일) */
 body.page-global-layout .pc-panel .wait-tab-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   margin-bottom: 10px;
+}
+
+/* 배치확인/즉시확인 — 대기/BLOCK 탭과 같은 줄이 아니라 그 아래 한 줄로 내려서 보여준다 */
+body.page-global-layout .pc-panel .wait-tab-row #waitConfirmAssignBtn,
+body.page-global-layout .pc-panel .wait-tab-row #waitConfirmAssignNowBtn {
+  flex-basis: calc(50% - 2px);
 }
 
 body.page-global-layout .pc-panel .wait-tab-row .pill-inline {
