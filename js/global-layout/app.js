@@ -372,6 +372,7 @@ export function startGlobalLayoutApp() {
       tournamentId: GL.tournamentId,
       getUid: () => auth.currentUser?.uid || GL.currentUser?.uid || "",
       canManage: canManageGlobalLayoutOps,
+      isDragging: () => !!GL.dragState,
       onLocalToggle: () => {
         GL.dragState = null;
         GL.lastSeatTapId = "";

@@ -73,7 +73,7 @@ export function seatShowsAlert(seat, canManage) {
 let activeTid = "";
 let activeHandle = null;
 
-export function initSeatAlerts({ db, tournamentId, getUid, canManage, onLocalToggle } = {}) {
+export function initSeatAlerts({ db, tournamentId, getUid, canManage, onLocalToggle, isDragging } = {}) {
   const tid = String(tournamentId || "").trim();
   if (!db || !tid) return activeHandle || { stop() {} };
   if (activeHandle && activeTid === tid) return activeHandle;
@@ -315,6 +315,16 @@ export function initSeatAlerts({ db, tournamentId, getUid, canManage, onLocalTog
 
   function onMove(e) {
     if (!press) return;
+    // 캔버스에서 Seat 박스를 옮기려고 잡은 경우(ui-events.js가 pointerdown 시점에
+    // GL.dragState를 켠다) — 같은 pointerdown 이벤트를 이 모듈이 capture 단계에서 먼저
+    // 받으므로 그 시점엔 아직 드래그 상태를 알 수 없지만, 이어지는 pointermove에서는
+    // 알 수 있다. 실제 드래그가 시작된 걸 확인하면 12px 기준을 기다리지 않고 즉시
+    // 길게 누르기를 취소해, 정밀하게 조금씩 옮기는 드래그 중 상태 표시 모달이 뜨는
+    // 것을 막는다.
+    if (isDragging?.()) {
+      clearPress();
+      return;
+    }
     if (
       Math.abs(e.clientX - press.x) > MOVE_TOLERANCE_PX ||
       Math.abs(e.clientY - press.y) > MOVE_TOLERANCE_PX
