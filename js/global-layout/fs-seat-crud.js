@@ -568,11 +568,20 @@ export async function applyGlobalSeatRename(
     return { ok: false };
   }
 
-  let eventCards = [];
-  try {
-    eventCards = await fetchEventCardsForSeatEdit();
-  } catch (err) {
-    console.error("fetchEventCardsForSeatEdit error:", err);
+  // 카드 목록 조회와 이 Seat의 실제 문서 찾기는 서로 결과가 필요 없는 독립적인 읽기다 —
+  // 예전엔 순서대로 기다려서(각각 네트워크 왕복 1번씩) 저장 버튼을 누르자마자 그 두 배의
+  // 지연이 그대로 느껴졌다. 동시에 보내 왕복 1번 분량으로 줄인다.
+  const [eventCards, foundDoc] = await Promise.all([
+    fetchEventCardsForSeatEdit().catch((err) => {
+      console.error("fetchEventCardsForSeatEdit error:", err);
+      return [];
+    }),
+    findGlobalSeatDocRef(targetSeatId, [])
+  ]);
+
+  if (!foundDoc?.snap?.exists()) {
+    alert("Firestore에서 이 Seat 문서를 찾을 수 없습니다. 새로고침 후 다시 시도해 주세요.");
+    return { ok: false };
   }
 
   const resolvedNextEventId = resolveEventIdForSave(nextEventId, eventCards) || nextEventId;
@@ -581,12 +590,6 @@ export async function applyGlobalSeatRename(
     alert(
       "카드는 목록에서 선택해 주세요.\nindex「카드 관리」에 등록된 카드만 사용할 수 있습니다."
     );
-    return { ok: false };
-  }
-
-  const foundDoc = await findGlobalSeatDocRef(targetSeatId, eventCards);
-  if (!foundDoc?.snap?.exists()) {
-    alert("Firestore에서 이 Seat 문서를 찾을 수 없습니다. 새로고침 후 다시 시도해 주세요.");
     return { ok: false };
   }
 
@@ -635,7 +638,12 @@ export async function applyGlobalSeatRename(
       if (idxLabel >= 0) GL.globalSeats[idxLabel] = { ...GL.globalSeats[idxLabel], label: nextLabel };
       refreshGlobalLayoutPcOpsPanel();
       renderSeats(GL.globalSeats);
-      await syncLayoutProjection(resolvedNextEventId, nextBoxId);
+      // layout_events 프로젝션은 다른 화면(카드/Box 전용 배치도)용 캐시일 뿐이고, 실제
+      // 좌석 데이터·이 화면은 이미 위에서 다 반영됐다 — 저장 버튼이 이 추가 조회+쓰기가
+      // 끝날 때까지 기다릴 이유가 없어 기다리지 않고 백그라운드로 흘려보낸다.
+      void syncLayoutProjection(resolvedNextEventId, nextBoxId).catch((err) =>
+        console.error("syncLayoutProjection (rename) error:", err)
+      );
       return { ok: true, shouldOfferLayout: null };
     }
 
@@ -713,42 +721,44 @@ export async function applyGlobalSeatRename(
     const uid = String(seat.personUid || "").trim();
     if (uid) {
       const eventCardLabel = await resolveTournamentEventCardId(resolvedNextEventId);
-      await setDoc(
-        getAttendanceRef(db, GL.tournamentId, uid),
-        {
-          uid,
-          tournamentId: GL.tournamentId,
-          currentSeatLabel: nextLabel,
-          currentEventId: resolvedNextEventId,
-          currentBoxId: nextBoxId,
-          currentSeatId: targetSeatId,
-          updatedAt: now,
-          updatedAtServer: serverTimestamp()
-        },
-        { merge: true }
-      );
-
-      await setDoc(
-        doc(db, "layout_notifications", uid),
-        {
-          ...buildSeatAssignedNotificationWrite(uid, {
+      // 출석 문서와 알림 문서는 서로 독립적인 쓰기라 굳이 순서대로 기다릴 필요가 없다.
+      await Promise.all([
+        setDoc(
+          getAttendanceRef(db, GL.tournamentId, uid),
+          {
+            uid,
             tournamentId: GL.tournamentId,
-            eventId: resolvedNextEventId,
-            eventTitle: eventCardLabel,
-            boxId: nextBoxId,
-            seatId: targetSeatId,
-            seatLabel: nextLabel,
-            targetUrl: buildSeatAssignedTargetUrl(GL.tournamentId, resolvedNextEventId, nextBoxId),
-            message: `${eventCardLabel} / Seat ${nextLabel} ${
-              oldDocId !== newDocId ? "배치(카드·Box)가 변경되었습니다." : "라벨이 변경되었습니다."
-            }`,
-            createdAt: now,
+            currentSeatLabel: nextLabel,
+            currentEventId: resolvedNextEventId,
+            currentBoxId: nextBoxId,
+            currentSeatId: targetSeatId,
             updatedAt: now,
             updatedAtServer: serverTimestamp()
-          })
-        },
-        { merge: true }
-      );
+          },
+          { merge: true }
+        ),
+        setDoc(
+          doc(db, "layout_notifications", uid),
+          {
+            ...buildSeatAssignedNotificationWrite(uid, {
+              tournamentId: GL.tournamentId,
+              eventId: resolvedNextEventId,
+              eventTitle: eventCardLabel,
+              boxId: nextBoxId,
+              seatId: targetSeatId,
+              seatLabel: nextLabel,
+              targetUrl: buildSeatAssignedTargetUrl(GL.tournamentId, resolvedNextEventId, nextBoxId),
+              message: `${eventCardLabel} / Seat ${nextLabel} ${
+                oldDocId !== newDocId ? "배치(카드·Box)가 변경되었습니다." : "라벨이 변경되었습니다."
+              }`,
+              createdAt: now,
+              updatedAt: now,
+              updatedAtServer: serverTimestamp()
+            })
+          },
+          { merge: true }
+        )
+      ]);
     }
 
     const idx = GL.globalSeats.findIndex((s) => String(s.seatId || "").trim() === targetSeatId);
@@ -792,16 +802,23 @@ export async function applyGlobalSeatRename(
     } else {
       projectionKeys.add(`${resolvedNextEventId}__${nextBoxId}`);
     }
+    refreshGlobalLayoutPcOpsPanel();
+    renderSeats(GL.globalSeats);
+
+    // layout_events 프로젝션(다른 화면용 캐시)은 실제 저장·이 화면 반영과 무관하게
+    // 뒤에서 흘려보낸다 — 카드/Box를 옮길 때 이게 순서대로(최대 2번) 끝날 때까지
+    // 저장 버튼이 멈춰 있을 이유가 없다.
     for (const key of projectionKeys) {
       const sep = key.lastIndexOf("__");
       if (sep < 0) continue;
       const e = key.slice(0, sep).trim();
       const b = key.slice(sep + 2).trim();
-      if (e && b) await syncLayoutProjection(e, b);
+      if (e && b) {
+        void syncLayoutProjection(e, b).catch((err) =>
+          console.error("syncLayoutProjection (rename/move) error:", err)
+        );
+      }
     }
-
-    refreshGlobalLayoutPcOpsPanel();
-    renderSeats(GL.globalSeats);
 
     const shouldOfferLayout =
       oldDocId !== newDocId ? { eventId: resolvedNextEventId, boxId: nextBoxId } : null;
