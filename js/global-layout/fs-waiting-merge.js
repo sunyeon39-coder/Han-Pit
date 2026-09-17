@@ -121,6 +121,14 @@ export function rebuildWaitingAfterSeatToWait(waitingArr, tournamentId, person, 
           nowMs,
           extraFields.attendanceByUid instanceof Map ? extraFields.attendanceByUid : null
         );
+  // carryOverConfirmAt — 교대 확정 대기(incomingPerson) 취소 등으로 대기로 되돌릴 때, 원래
+  // 배치확인이 걸렸던 시각을 이 대기 문서에 실어 둔다. 나중에 이 사람이 다른 좌석에 다시
+  // 배치확인되면(assignSelectedWaitingToSeat) 이 값을 이어받아 incomingAt/seatedAt으로 써서,
+  // "0~5분 사이 뺐다가 다른 곳에 다시 넣으면 타이머가 리셋되지 않고 이어진다"를 만족한다.
+  // extraFields에서 안 넘어오면 항상 null로 명시해서 쓴다 — 안 그러면 merge:true 쓰기라
+  // 예전에 실렸던 값이 관계없는 다음 배치까지 그대로 남아 잘못 이어붙는 문제가 생긴다.
+  const carryOverConfirmAt = Number(restExtra.carryOverConfirmAt) > 0 ? Number(restExtra.carryOverConfirmAt) : null;
+
   return [
     ...filtered,
     {
@@ -131,7 +139,8 @@ export function rebuildWaitingAfterSeatToWait(waitingArr, tournamentId, person, 
       tournamentId: tid,
       joinedAt,
       ...blockFields,
-      ...restExtra
+      ...restExtra,
+      carryOverConfirmAt
     }
   ];
 }

@@ -276,6 +276,10 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
       const waitingEmail = String(waiting.email || "").trim();
       const waitingEmailLc = waitingEmail.toLowerCase();
       const waitingName = String(waiting.name || "").trim();
+      // 0~5분 사이 다른 좌석에서 취소된 배치확인이었다면, 그때 대기 문서에 실어둔
+      // 원래 확정 시각을 이어받는다(cancelIncomingSeatSwap 참고) — 즉시확인(immediate)은
+      // 예약 개념 자체가 없으므로 항상 now를 쓴다.
+      const carryOverConfirmAt = !immediate ? Number(waiting.carryOverConfirmAt) || 0 : 0;
 
       const seatSnap = await tx.get(seatRef);
       if (!seatSnap?.exists()) throw new Error("seat_not_found");
@@ -629,7 +633,12 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
               // 바뀌어 다른 사람으로 바꿀 때마다 10분 카운트가 매번 새로 시작돼서, 바꾼
               // 횟수만큼 실제 확정이 계속 늦춰지는 문제가 있었다. 처음 배치확인을 누른
               // 시점 기준으로 10분이 되면 확정되게 한다.
-              incomingAt: hasExistingIncoming && existingIncomingAt > 0 ? existingIncomingAt : now,
+              incomingAt:
+                hasExistingIncoming && existingIncomingAt > 0
+                  ? existingIncomingAt
+                  : carryOverConfirmAt > 0
+                    ? carryOverConfirmAt
+                    : now,
               // 이 좌석이 예전에(즉시확인, 또는 직전 스왑의 finalize로) instantConfirm:true로
               // 정착돼 있었을 수 있다 — 이번엔 새로 예약을 거는 정상 스왑이니, 0~5분 강조/
               // 5~10분 반전이 다시 정상적으로 보이도록 꺼둔다.
@@ -836,7 +845,7 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
           person: String(waiting.name || "").trim(),
           personUid: String(waiting.uid || "").trim(),
           personEmail: String(waiting.email || "").trim(),
-          seatedAt: now,
+          seatedAt: carryOverConfirmAt > 0 ? carryOverConfirmAt : now,
           status: "occupied",
           instantConfirm: immediate,
           updatedAt: now,
@@ -1014,6 +1023,7 @@ export async function cancelIncomingSeatSwap(seatId = "") {
       const incomingUid = String(seatData.incomingPersonUid || "").trim();
       const incomingEmail = String(seatData.incomingPersonEmail || "").trim();
       const incomingName = String(seatData.incomingPerson || "").trim();
+      const cancelledIncomingAt = Number(seatData.incomingAt) || 0;
       if (isEmptyPerson(incomingName)) return;
 
       const canonicalIncomingRef = globalWaitingDocRef(
@@ -1038,7 +1048,13 @@ export async function cancelIncomingSeatSwap(seatId = "") {
         GL.tournamentId,
         { uid: incomingUid, email: incomingEmail, name: incomingName },
         now,
-        { source: "incoming_swap_cancelled", resetJoinedAt: true }
+        {
+          source: "incoming_swap_cancelled",
+          resetJoinedAt: true,
+          // 0~5분 사이 취소된 배치확인이면 이 시각을 이어받아, 다른 좌석에 다시
+          // 배치확인될 때 타이머가 새로 시작되지 않고 원래 시점부터 이어지게 한다.
+          carryOverConfirmAt: cancelledIncomingAt > 0 ? cancelledIncomingAt : null
+        }
       )[0];
       const { toSet, toDelete } = diffGlobalWaitingRows(
         incomingExistingRows,

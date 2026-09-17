@@ -125,6 +125,9 @@ export function applyOptimisticAssign({ targetSeatId, waiting, seat, now: nowOve
 
   const existingIncomingAt = Number(target?.incomingAt) || 0;
   const hadExistingIncoming = !isEmptyPerson(String(target?.incomingPerson || "").trim());
+  // 0~5분 사이 다른 좌석에서 취소된 배치확인이었다면 그때 실렸던 원래 확정 시각을
+  // 이어받는다(fs-assign-waiting-to-seat.js와 동일 규칙) — 즉시확인은 예약 개념이 없다.
+  const carryOverConfirmAt = !immediate ? Number(waiting?.carryOverConfirmAt) || 0 : 0;
   const nextTarget =
     wasOccupied && !immediate
       ? {
@@ -135,7 +138,12 @@ export function applyOptimisticAssign({ targetSeatId, waiting, seat, now: nowOve
           // 이미 다른 사람이 확정 대기 중이던 좌석에서 선택을 바꾸는 거라면, 그 사람의
           // incomingAt을 그대로 물려받는다 — 안 그러면 바꿀 때마다 10분 카운트가 새로
           // 시작돼서 실제 확정이 계속 미뤄진다(fs-assign-waiting-to-seat.js와 동일 규칙).
-          incomingAt: hadExistingIncoming && existingIncomingAt > 0 ? existingIncomingAt : now,
+          incomingAt:
+            hadExistingIncoming && existingIncomingAt > 0
+              ? existingIncomingAt
+              : carryOverConfirmAt > 0
+                ? carryOverConfirmAt
+                : now,
           instantConfirm: false
         }
       : {
@@ -143,7 +151,7 @@ export function applyOptimisticAssign({ targetSeatId, waiting, seat, now: nowOve
           person: waitingName || waitingUid || "-",
           personUid: waitingUid,
           personEmail: waitingEmail,
-          seatedAt: now,
+          seatedAt: carryOverConfirmAt > 0 ? carryOverConfirmAt : now,
           status: "occupied",
           instantConfirm: immediate,
           incomingPerson: "",
@@ -203,6 +211,7 @@ export function applyOptimisticCancelIncomingSwap({ targetSeatId, seat }) {
   const incomingUid = String(target?.incomingPersonUid || "").trim();
   const incomingEmail = String(target?.incomingPersonEmail || "").trim();
   const incomingName = String(target?.incomingPerson || "").trim();
+  const cancelledIncomingAt = Number(target?.incomingAt) || 0;
   const now = Date.now();
 
   if (seatIdx >= 0) {
@@ -221,7 +230,11 @@ export function applyOptimisticCancelIncomingSwap({ targetSeatId, seat }) {
       GL.tournamentId,
       { uid: incomingUid, email: incomingEmail, name: incomingName },
       now,
-      { source: "incoming_swap_cancelled", resetJoinedAt: true }
+      {
+        source: "incoming_swap_cancelled",
+        resetJoinedAt: true,
+        carryOverConfirmAt: cancelledIncomingAt > 0 ? cancelledIncomingAt : null
+      }
     );
   }
 
@@ -250,6 +263,7 @@ export function applyOptimisticClear({ targetSeatId, seat }) {
   const incomingUid = String(target?.incomingPersonUid || "").trim();
   const incomingEmail = String(target?.incomingPersonEmail || "").trim();
   const incomingName = String(target?.incomingPerson || "").trim();
+  const cancelledIncomingAt = Number(target?.incomingAt) || 0;
   const now = Date.now();
 
   if (seatIdx >= 0) {
@@ -278,7 +292,11 @@ export function applyOptimisticClear({ targetSeatId, seat }) {
       GL.tournamentId,
       { uid: incomingUid, email: incomingEmail, name: incomingName },
       now,
-      { source: "incoming_swap_cancelled", resetJoinedAt: true }
+      {
+        source: "incoming_swap_cancelled",
+        resetJoinedAt: true,
+        carryOverConfirmAt: cancelledIncomingAt > 0 ? cancelledIncomingAt : null
+      }
     );
   }
 

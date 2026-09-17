@@ -138,6 +138,7 @@ export async function clearSeat(seatId = "") {
       const incomingUid = String(seatData.incomingPersonUid || "").trim();
       const incomingEmail = String(seatData.incomingPersonEmail || "").trim();
       const incomingName = String(seatData.incomingPerson || "").trim();
+      const cancelledIncomingAt = Number(seatData.incomingAt) || 0;
       if (!isEmptyPerson(incomingName)) {
         const incomingWaitingRefs = findGlobalWaitingEntryRefs(db, GL.tournamentId, GL.globalWaiting, {
           uid: incomingUid,
@@ -153,7 +154,11 @@ export async function clearSeat(seatId = "") {
           GL.tournamentId,
           { uid: incomingUid, email: incomingEmail, name: incomingName },
           now,
-          { source: "incoming_swap_cancelled", resetJoinedAt: true }
+          {
+            source: "incoming_swap_cancelled",
+            resetJoinedAt: true,
+            carryOverConfirmAt: cancelledIncomingAt > 0 ? cancelledIncomingAt : null
+          }
         )[0];
         const { toSet: incomingToSet, toDelete: incomingToDelete } = diffGlobalWaitingRows(
           incomingExistingRows,
