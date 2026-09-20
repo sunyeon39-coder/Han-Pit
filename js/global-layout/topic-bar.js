@@ -7,10 +7,17 @@ export function initGlobalLayoutTopicBarDom() {
   GL.topicEditBtn?.addEventListener("click", () => void editGlobalLayoutTopic());
 }
 
+// 텍스트가 실제로 안 바뀌었으면 DOM을 다시 안 건드린다 — textContent/animationDuration을
+// 매번 같은 값으로 재대입해도 Safari에서는 흐르고 있던 marquee 애니메이션이 처음부터
+// 다시 시작돼(끊기고 다시 움직이는 것처럼 보임) 버린다.
+let lastRenderedTopicText = null;
+
 export function renderGlobalLayoutTopicBar() {
   const text = String(GL.topicText || "").trim();
   document.body.classList.toggle("has-topic-bar", !!text);
   if (GL.topicBar) GL.topicBar.hidden = !text;
+  if (text === lastRenderedTopicText) return;
+  lastRenderedTopicText = text;
   if (GL.topicBarText) {
     GL.topicBarText.textContent = text;
     const seconds = Math.min(80, Math.max(14, text.length * 0.32));
