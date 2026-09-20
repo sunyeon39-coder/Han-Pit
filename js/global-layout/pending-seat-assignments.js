@@ -115,6 +115,11 @@ export async function confirmAllPendingSeatAssignments({ immediate = false } = {
     if (entries.length) GL.batchSeatMutationDepth = Math.max(0, (GL.batchSeatMutationDepth || 0) - 1);
   }
 
+  // 개별 assignSelectedWaitingToSeat 호출은 skipOptimistic일 때 화면 갱신(선택 표시 포함)을
+  // 건너뛰므로, 배치 전체가 끝난 지금 한 번만 직접 렌더한다 — 안 그러면 "배치확인 (N)"
+  // 숫자·좌석은 위 finally에서 한 번에 정리됐는데 화면이 그걸 반영할 계기가 없다.
+  if (entries.length && !failed.length) flushOptimisticGlobalLayoutUi();
+
   if (failed.length && preBatchSnapshot) {
     // 하나라도 실패하면 배치 시작 전 상태로 되돌린 뒤, 실제로 성공한 항목만 원래
     // 순서대로 다시 낙관적으로 반영한다. 실패 항목은 화면상으로도 Firestore에

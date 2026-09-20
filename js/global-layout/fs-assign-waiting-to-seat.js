@@ -958,10 +958,19 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
     GL.seatMutationInFlight = false;
   }
 
-  GL.selectedWaitingId = "";
-  GL.selectedSeatIds.clear();
-  GL.selectedSeatIds.add(targetSeatId);
-  flushOptimisticGlobalLayoutUi();
+  // 배치확인(confirmAllPendingSeatAssignments)이 순서대로 이 함수를 여러 번 부를 때는
+  // skipOptimistic:true다 — 그때마다 여기서 선택 표시를 "방금 이 좌석 하나만"으로 갈아
+  // 끼우고 바로 렌더하면, 실제 저장이 좌석마다 순서대로 끝나는 동안 분홍 선택 테두리가
+  // 좌석을 하나씩 옮겨다니는 것처럼 보인다(좌석 내용 자체는 이미 배치 전체가 한 번에
+  // 낙관적으로 반영돼 있어서 안 바뀌는데, 선택 테두리만 뒤늦게 하나씩 따라간다). 배치
+  // 호출 쪽은 이미 낙관적 반영 단계에서 선택 상태를 정리했고, 배치 전체가 끝난 뒤 자기가
+  // 직접 한 번만 flush하므로 여기서는 단일 호출(직접 클릭)일 때만 갱신·렌더한다.
+  if (!skipOptimistic) {
+    GL.selectedWaitingId = "";
+    GL.selectedSeatIds.clear();
+    GL.selectedSeatIds.add(targetSeatId);
+    flushOptimisticGlobalLayoutUi();
+  }
   const ev = String(canonicalSeatEventId || "").trim();
   const bx = String(canonicalSeatBoxId || "").trim();
   // 스왑(교대 확정 대기) 건은 실제 occupant가 안 바뀌므로 되돌리기 스택에 올리지 않는다 —
