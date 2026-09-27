@@ -483,25 +483,26 @@ export function startGlobalLayoutApp() {
         return;
       }
 
-      const hasOps = await ensureGlobalLayoutOpsChrome(user);
-      if (hasOps) {
-        startGlobalLayoutSession(user);
-        void refreshGlobalLayoutOpsProfileBackground(user);
-        return;
-      }
-
       GL.userProfile = readBootUserProfile(user, GL.userProfile || {});
       seedMyUserProfileCache(GL.userProfile);
       if (syncGlobalLayoutOpsFromProfile(user)) {
         GL.opsServerVerified = true;
         startGlobalLayoutSession(user);
+        void ensureGlobalLayoutOpsChrome(user);
         void refreshGlobalLayoutOpsProfileBackground(user);
         return;
       }
 
-      // 운영 권한은 없는 근무자 — PC/모바일 모두 조회 전용 세션 시작
+      // 운영 권한이 캐시로는 확인되지 않는 사용자 — ensureGlobalLayoutOpsChrome 의
+      // 서버 강제 재검증(순차 Firestore 조회 여러 번, 수 초 소요)을 기다리면 좌석·대기열
+      // 데이터 로딩까지 그만큼 늦어져 "로딩이 너무 길다"는 문제로 이어진다. 조회 전용
+      // 세션을 먼저 시작해 배치도를 즉시 표시하고, ops 권한 재검증은 백그라운드에서 이어서
+      // 진행해 실제 운영 권한이 확인되는 즉시 화면을 운영 UI로 승격한다.
       GL.opsServerVerified = false;
       startGlobalLayoutSession(user);
+      void ensureGlobalLayoutOpsChrome(user).then((hasOps) => {
+        if (hasOps) refreshGlobalLayoutAdminUi();
+      });
       void refreshGlobalLayoutOpsProfileBackground(user);
     } catch (err) {
       console.error("global layout init error:", err);
