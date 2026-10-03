@@ -281,6 +281,13 @@ function trySyncGlobalLayoutMobile() {
 
 let mobileEventsWired = false;
 
+function seatWriteFailureText(err, fallback) {
+  const msg = String(err?.message || "").trim();
+  if (msg === "write_timeout") return "저장 응답이 없어 취소했습니다. 화면 아래 '연결 새로고침'을 눌러 주세요.";
+  if (msg === "seat_mutation_busy") return "다른 좌석 저장이 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.";
+  return fallback;
+}
+
 export function wireGlobalLayoutMobileEventsOnce() {
   if (mobileEventsWired || !GL.app) return;
   mobileEventsWired = true;
@@ -345,7 +352,7 @@ export function wireGlobalLayoutMobileEventsOnce() {
         fullRender();
       } catch (err) {
         console.error("mobile assign button error:", err);
-        alert("대기 배치에 실패했습니다.");
+        alert(seatWriteFailureText(err, "대기 배치에 실패했습니다."));
         fullRender();
       }
       return;
@@ -379,6 +386,7 @@ export function wireGlobalLayoutMobileEventsOnce() {
         await clearSeat(sid);
       } catch (err) {
         console.error("mobile clearSeat error:", err);
+        alert(seatWriteFailureText(err, "Seat 비우기에 실패했습니다."));
         fullRender();
       }
       return;
@@ -433,7 +441,7 @@ export function wireGlobalLayoutMobileEventsOnce() {
             alert("Seat 정보를 찾을 수 없습니다. 잠시 후 다시 시도해 주세요.");
           } else {
             console.error("mobile assign error:", err);
-            alert("대기 배치에 실패했습니다.");
+            alert(seatWriteFailureText(err, "대기 배치에 실패했습니다."));
           }
           fullRender();
         }
@@ -451,6 +459,7 @@ export function wireGlobalLayoutMobileEventsOnce() {
               await cancelIncomingSeatSwap(sid);
             } catch (err) {
               console.error("mobile cancelIncomingSeatSwap error:", err);
+              alert(seatWriteFailureText(err, "교대 취소에 실패했습니다."));
               fullRender();
             }
             return;
@@ -461,6 +470,7 @@ export function wireGlobalLayoutMobileEventsOnce() {
             await clearSeat(sid);
           } catch (err) {
             console.error("mobile clearSeat error:", err);
+            alert(seatWriteFailureText(err, "Seat 비우기에 실패했습니다."));
             fullRender();
           }
           return;

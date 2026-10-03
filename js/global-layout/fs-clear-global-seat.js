@@ -25,7 +25,8 @@ import {
 } from "./optimistic-seat-mutation.js";
 import {
   markGlobalLayoutLocalMutation,
-  releaseStuckGlobalLayoutMutationFlags
+  releaseStuckGlobalLayoutMutationFlags,
+  waitForSeatMutationIdle
 } from "./layout-mutation-guard.js";
 import {
   appendSeatHistoryPatch,
@@ -38,7 +39,9 @@ import { runSerializedGlobalWaitingWrite } from "./global-waiting-write-lock.js"
 export async function clearSeat(seatId = "") {
   releaseStuckGlobalLayoutMutationFlags();
   const targetSeatId = String(seatId || "").trim();
-  if (!targetSeatId || GL.seatMutationInFlight) return;
+  if (!targetSeatId) return;
+  // 다른 좌석 쓰기 중이면 예전엔 조용히 무시돼 "비우기를 눌렀는데 아무 일도 없음"이 됐다.
+  if (!(await waitForSeatMutationIdle())) throw new Error("seat_mutation_busy");
   const seat = GL.globalSeats.find((s) => String(s.seatId || "").trim() === targetSeatId);
   if (!seat) return;
   if (isEmptyPerson(String(seat.person || "").trim())) return;

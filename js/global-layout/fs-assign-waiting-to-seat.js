@@ -52,7 +52,11 @@ import {
   flushOptimisticGlobalLayoutUi
 } from "./optimistic-seat-mutation.js";
 import { triggerOptimisticMobileSeatAssignedAlert } from "../shared/optimistic-seat-assigned-notify.js";
-import { markGlobalLayoutLocalMutation, releaseStuckGlobalLayoutMutationFlags } from "./layout-mutation-guard.js";
+import {
+  markGlobalLayoutLocalMutation,
+  releaseStuckGlobalLayoutMutationFlags,
+  waitForSeatMutationIdle
+} from "./layout-mutation-guard.js";
 import {
   appendSeatHistoryPatch,
   entryFromSeatOccupant
@@ -148,28 +152,6 @@ function notifyOptimisticSeatAssignedForWaiting(waiting, seat, targetSeatId) {
   });
 }
 
-const SEAT_MUTATION_IDLE_WAIT_MS = 15_000;
-const ASSIGN_WRITE_TIMEOUT_MS = 30_000;
-
-/** 다른 좌석 쓰기(비우기·좌석 CRUD 등)가 끝날 때까지 잠깐 기다린다 */
-async function waitForSeatMutationIdle(timeoutMs = SEAT_MUTATION_IDLE_WAIT_MS) {
-  const deadline = Date.now() + timeoutMs;
-  while (GL.seatMutationInFlight && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 60));
-    releaseStuckGlobalLayoutMutationFlags();
-  }
-  return !GL.seatMutationInFlight;
-}
-
-/** 저장이 끝나지 않고 걸려 있으면 "배치된 것처럼 보이는데 실제론 저장 안 됨"이 된다 — 실패로 끊는다 */
-function withAssignWriteTimeout(promise) {
-  let timer = null;
-  const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error("assign_timeout")), ASSIGN_WRITE_TIMEOUT_MS);
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
-}
-
 export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride = null, nowOverride = 0, opts = {}) {
   releaseStuckGlobalLayoutMutationFlags();
 
@@ -177,7 +159,7 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
   if (!targetSeatId) throw new Error("seat_not_found");
   // 예전엔 다른 좌석 쓰기가 진행 중이면 조용히 return 했다 — 배치확인은 그걸 "성공"으로
   // 세서 화면엔 배치된 것처럼 남고 실제론 저장이 안 되는(새로고침하면 사라지는) 사고가 났다.
-  if (GL.seatMutationInFlight && !(await waitForSeatMutationIdle())) {
+  if (!(await waitForSeatMutationIdle())) {
     throw new Error("seat_mutation_busy");
   }
 
@@ -299,7 +281,7 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
       canonicalSeatBoxId = canonicalSeatBoxId || fallback.boxId;
     }
 
-    await withAssignWriteTimeout(runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
+    await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
       const waitingId = String(waiting.id || "").trim();
       const waitingUid = String(waiting.uid || "").trim();
       const waitingEmail = String(waiting.email || "").trim();
@@ -959,7 +941,7 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
         eventId: canonicalSeatEventId,
         boxId: canonicalSeatBoxId
       };
-    })));
+    }));
 
     if (assignLogMeta) {
       logGlobalLayoutAttendance({
@@ -1037,7 +1019,8 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
 export async function cancelIncomingSeatSwap(seatId = "") {
   releaseStuckGlobalLayoutMutationFlags();
   const targetSeatId = String(seatId || "").trim();
-  if (!targetSeatId || GL.seatMutationInFlight) return;
+  if (!targetSeatId) return;
+  if (!(await waitForSeatMutationIdle())) throw new Error("seat_mutation_busy");
 
   const seat = GL.globalSeats.find((s) => String(s.seatId || "").trim() === targetSeatId);
   if (!seat) return;

@@ -34,3 +34,14 @@ export function releaseStuckGlobalLayoutMutationFlags() {
     GL.waitingMutationInFlight = false;
   }
 }
+
+/** 다른 좌석 쓰기가 끝날 때까지 잠깐 기다린다 — 끝나면 true, 시간 초과면 false */
+export async function waitForSeatMutationIdle(timeoutMs = 15_000) {
+  releaseStuckGlobalLayoutMutationFlags();
+  const deadline = Date.now() + timeoutMs;
+  while (GL.seatMutationInFlight && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 60));
+    releaseStuckGlobalLayoutMutationFlags();
+  }
+  return !GL.seatMutationInFlight;
+}

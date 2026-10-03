@@ -61,6 +61,13 @@ import { getGlobalRedoCount, getGlobalUndoCount } from "./undo-stack.js";
 
 const GLOBAL_SEAT_DOUBLE_ACTIVATE_MS = 350;
 
+function seatWriteFailureMessage(err, fallback = "저장에 실패했습니다.") {
+  const msg = String(err?.message || "").trim();
+  if (msg === "seat_mutation_busy") return "다른 좌석 저장이 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.";
+  if (msg === "write_timeout") return "저장 응답이 없어 취소했습니다. 화면 아래 '연결 새로고침'을 눌러 주세요.";
+  return fallback + assignSeatFailureHint(err);
+}
+
 function assignSeatFailureHint(err) {
   const code = String(err?.code || "").trim();
   if (code === "resource-exhausted") {
@@ -236,8 +243,9 @@ export function bindGlobalLayoutEventHandlers() {
             if (msg === "waiting_blocked") return `${waiting.name || waiting.uid}: BLOCK 상태라 배치할 수 없습니다.`;
             if (msg === "waiting_not_found") return `${waiting.name || waiting.uid}: 대기자가 이미 처리되었습니다.`;
             if (msg === "seat_not_found") return `${waiting.name || waiting.uid}: Seat 정보를 찾을 수 없습니다.`;
-            if (msg === "seat_mutation_busy") return `${waiting.name || waiting.uid}: 다른 좌석 저장이 끝나지 않아 배치하지 못했습니다. 다시 시도해 주세요.`;
-            if (msg === "assign_timeout") return `${waiting.name || waiting.uid}: 저장 응답이 없어 취소했습니다. 새로고침 후 확인해 주세요.`;
+            if (msg === "seat_mutation_busy" || msg === "write_timeout") {
+              return `${waiting.name || waiting.uid}: ${seatWriteFailureMessage(err, "배치 실패")}`;
+            }
             return `${waiting.name || waiting.uid}: 배치 실패${assignSeatFailureHint(err)}`;
           });
           alert(`${confirmedCount}건 확정, ${failed.length}건 실패:\n${lines.join("\n")}`);
@@ -281,7 +289,7 @@ export function bindGlobalLayoutEventHandlers() {
         await clearSeat(sid);
       } catch (err) {
         console.error("clearSeat error:", err);
-        alert("Seat 비우기에 실패했습니다.");
+        alert(seatWriteFailureMessage(err, "Seat 비우기에 실패했습니다."));
       }
       return;
     }
@@ -393,6 +401,7 @@ export function bindGlobalLayoutEventHandlers() {
         await cancelIncomingSeatSwap(seatId);
       } catch (err) {
         console.error("panel dblclick cancelIncomingSeatSwap error:", err);
+        alert(seatWriteFailureMessage(err, "교대 취소에 실패했습니다."));
       }
       return;
     }
@@ -401,6 +410,7 @@ export function bindGlobalLayoutEventHandlers() {
       await clearSeat(seatId);
     } catch (err) {
       console.error("panel dblclick clearSeat error:", err);
+      alert(seatWriteFailureMessage(err, "Seat 비우기에 실패했습니다."));
     }
   });
 
@@ -529,6 +539,7 @@ export function bindGlobalLayoutEventHandlers() {
           GL.lastSeatTapId = "";
         } catch (err) {
           console.error("canvas seat cancelIncomingSeatSwap error:", err);
+          alert(seatWriteFailureMessage(err, "교대 취소에 실패했습니다."));
         }
         return;
       }
@@ -539,6 +550,7 @@ export function bindGlobalLayoutEventHandlers() {
           GL.lastSeatTapId = "";
         } catch (err) {
           console.error("canvas seat clearSeat error:", err);
+          alert(seatWriteFailureMessage(err, "Seat 비우기에 실패했습니다."));
         }
       }
       return;
