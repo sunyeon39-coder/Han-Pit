@@ -20,13 +20,9 @@ export async function loginWithGoogle() {
     );
   }
 
-  if (auth.currentUser) {
-    try {
-      await signOut(auth);
-    } catch (signOutErr) {
-      console.warn("loginWithGoogle pre-signOut:", signOutErr);
-    }
-  }
+  // 팝업 전에 await signOut 하면 iPhone Safari·PWA에서 "사용자가 누른 직후" 조건이 깨져
+  // 팝업이 차단되고, 다른 도메인(firebaseapp.com) 리다이렉트로 넘어가 계정을 골라도
+  // 로그인이 안 붙는 원인이 됐다. signInWithPopup 은 기존 로그인 사용자를 알아서 교체한다.
 
   const provider = createGoogleAuthProvider();
 
