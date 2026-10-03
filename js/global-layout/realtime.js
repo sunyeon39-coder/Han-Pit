@@ -813,7 +813,58 @@ export async function refreshGlobalLayoutOpsDataFromServer() {
   await Promise.all([refreshGlobalWaitingFromServer(), refreshGlobalSeatsFromServer()]);
 }
 
+/**
+ * 실시간 구독(onSnapshot)은 오류가 한 번 나면 Firestore가 그 구독을 영구히 끊는다. 예전엔
+ * 다시 붙이는 코드가 없어서, 근무자 폰이 백그라운드에 있다 돌아오며 토큰 갱신 전에 요청이
+ * 나가 권한 오류가 나는 등 일시적인 오류 한 번이면 새로고침 전까지 좌석·대기가 안 바뀌거나
+ * 비어 보였다. 오류가 나면 잠시 뒤(점점 늘려가며) 구독 전체를 다시 붙인다.
+ */
+let realtimeRebindTimer = null;
+let realtimeRebindAttempts = 0;
+const REALTIME_REBIND_MAX_DELAY_MS = 30_000;
+
+function scheduleRealtimeRebind(reason = "") {
+  if (realtimeRebindTimer || !GL.tournamentId) return;
+  const delay = Math.min(REALTIME_REBIND_MAX_DELAY_MS, 2000 * 2 ** realtimeRebindAttempts);
+  realtimeRebindAttempts += 1;
+  if (realtimeRebindAttempts >= 4) {
+    showFirestoreStallBanner("실시간 연결이 끊겼습니다. 연결 새로고침을 눌러 주세요.");
+  }
+  console.warn(`[global-layout] realtime rebind in ${delay}ms (${reason})`);
+  realtimeRebindTimer = setTimeout(() => {
+    realtimeRebindTimer = null;
+    // 로그아웃 상태면 onAuthStateChanged 쪽이 로그인 화면으로 보낸다.
+    if (!auth.currentUser) return;
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      document.addEventListener(
+        "visibilitychange",
+        () => scheduleRealtimeRebind(reason),
+        { once: true }
+      );
+      realtimeRebindAttempts = Math.max(0, realtimeRebindAttempts - 1);
+      return;
+    }
+    if (isSeatMutationBusy() || GL.waitingMutationInFlight) {
+      realtimeRebindAttempts = Math.max(0, realtimeRebindAttempts - 1);
+      scheduleRealtimeRebind(reason);
+      return;
+    }
+    bindRealtime();
+  }, delay);
+}
+
+function onRealtimeWatchError(label, err) {
+  logFirestoreWatchError(label, err);
+  const code = String(err?.code || "").trim();
+  if (code === "already-exists") return;
+  scheduleRealtimeRebind(`${label}: ${code || "error"}`);
+}
+
 export function bindRealtime() {
+  if (realtimeRebindTimer) {
+    clearTimeout(realtimeRebindTimer);
+    realtimeRebindTimer = null;
+  }
   if (!GL.tournamentId) {
     alert("대회 정보가 없습니다.");
     location.replace("./index.html");
@@ -909,13 +960,17 @@ export function bindRealtime() {
     }
   }
 
-  GL.stopTopicWatch = onSnapshot(doc(db, "tournaments", GL.tournamentId), (snap) => {
-    if (!snap.exists()) return;
-    const next = String(snap.data()?.topicText || "");
-    if (next === GL.topicText) return;
-    GL.topicText = next;
-    renderGlobalLayoutTopicBar();
-  });
+  GL.stopTopicWatch = onSnapshot(
+    doc(db, "tournaments", GL.tournamentId),
+    (snap) => {
+      if (!snap.exists()) return;
+      const next = String(snap.data()?.topicText || "");
+      if (next === GL.topicText) return;
+      GL.topicText = next;
+      renderGlobalLayoutTopicBar();
+    },
+    (err) => onRealtimeWatchError("topic watch error", err)
+  );
 
   // onSnapshot 첫 스냅샷이 곧 서버 데이터를 전달하고, 캐시가 비면 아래 fallback 이 서버를 읽으므로
   // 여기서 별도 getDocsFromServer 를 또 호출하지 않는다(중복 읽기로 Firestore quota 소모 방지).
@@ -924,6 +979,7 @@ export function bindRealtime() {
     collection(db, "tournaments", GL.tournamentId, "global_seats"),
     (snap) => {
       seatSnapshotReceived = true;
+      if (!snap.metadata?.fromCache) realtimeRebindAttempts = 0;
       // addGlobalSeatCore/deleteGlobalSeat/applyGlobalSeatRename(이동 포함)는 하나의 논리적
       // 작업을 위해 순차적으로 여러 번 Firestore에 쓴다(새 문서 생성 → 이전 문서 삭제 →
       // 중복 좌석 정리 등). 이 중간 단계마다 이 좌석 컬렉션 리스너가 다시 트리거되는데,
@@ -943,11 +999,9 @@ export function bindRealtime() {
     },
     (err) => {
       seatSnapshotReceived = true;
-      logFirestoreWatchError("global seats watch error", err);
-      if (String(err?.code || "").includes("permission-denied") && !GL.hasShownPermissionAlert) {
-        GL.hasShownPermissionAlert = true;
-        alert("global_seats 권한이 없습니다. Firestore Rules 배포 상태를 확인해주세요.");
-      }
+      // 예전엔 권한 오류면 "Firestore Rules 배포 상태를 확인" 알림을 띄우고 끝이었다 —
+      // 근무자 폰에선 대부분 백그라운드 복귀 직후 토큰 갱신 전 일시 오류라, 다시 붙이면 된다.
+      onRealtimeWatchError("global seats watch error", err);
     }
   );
 
@@ -1017,7 +1071,7 @@ export function bindRealtime() {
       applyWaitingSnapshot(snap);
     },
     (err) => {
-      logFirestoreWatchError("global waiting watch error", err);
+      onRealtimeWatchError("global waiting watch error", err);
       void refreshGlobalWaitingFromServer();
     }
   );
@@ -1036,7 +1090,7 @@ export function bindRealtime() {
     dealerAttendanceQueryForTournament(GL.tournamentId),
     applyDealerAttendanceSnap,
     (err) => {
-      logFirestoreWatchError("dealer attendance watch error", err);
+      onRealtimeWatchError("dealer attendance watch error", err);
       if (!GL.attendanceWaiting.length) {
         GL.attendanceFilterReady = true;
       }

@@ -12,9 +12,12 @@ export async function clearFirestoreCacheAndReload() {
   clearing = true;
   try {
     const list = typeof indexedDB.databases === "function" ? await indexedDB.databases() : [];
+    // Firestore 캐시(firestore/[DEFAULT]/…)만 지운다 — 예전엔 /firebase/ 도 매칭해서
+    // 로그인 정보 저장소(firebaseLocalStorageDb)까지 지워, "연결 새로고침"을 누르면
+    // 로그아웃돼 로그인 화면으로 튕겼다.
     const names = (list || [])
       .map((d) => d?.name || "")
-      .filter((name) => /firestore|firebase/i.test(name));
+      .filter((name) => /^firestore\//i.test(name));
     await Promise.all(
       names.map(
         (name) =>
