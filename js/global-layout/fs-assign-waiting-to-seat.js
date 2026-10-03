@@ -493,6 +493,28 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
           for (const id of toDelete) {
             tx.delete(globalWaitingDocRef(db, GL.tournamentId, id));
           }
+          // 교체돼 대기로 돌아간 사람 — 5분 뒤 공개 예정이던 배치 알림을 취소한다.
+          if (existingIncomingUid) {
+            tx.set(
+              getAttendanceRef(db, GL.tournamentId, existingIncomingUid),
+              {
+                uid: existingIncomingUid,
+                email: String(seatData.incomingPersonEmail || "").trim(),
+                name: existingIncomingName,
+                tournamentId: GL.tournamentId,
+                status: "waiting",
+                statusChangedAt: now,
+                updatedAt: now,
+                updatedAtServer: serverTimestamp()
+              },
+              { merge: true }
+            );
+            tx.set(
+              doc(db, "layout_notifications", existingIncomingUid),
+              buildSeatClearedNotificationWrite({ createdAt: now, updatedAtServer: serverTimestamp() }),
+              { merge: true }
+            );
+          }
         }
 
         const assigneeExistingRows = assigneeWaitingSnaps
@@ -574,11 +596,14 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
               },
               { merge: true }
             );
-            tx.set(
-              doc(db, "layout_notifications", prevUid),
-              buildSeatClearedNotificationWrite({ createdAt: now, updatedAtServer: serverTimestamp() }),
-              { merge: true }
-            );
+            // 다른 좌석에도 앉아 있는 사람이면 그 좌석 배지를 지우면 안 된다.
+            if (!prevHasOtherSeat) {
+              tx.set(
+                doc(db, "layout_notifications", prevUid),
+                buildSeatClearedNotificationWrite({ createdAt: now, updatedAtServer: serverTimestamp() }),
+                { merge: true }
+              );
+            }
           }
 
           undoSeatBefore = {
@@ -1116,10 +1141,11 @@ export async function cancelIncomingSeatSwap(seatId = "") {
           },
           { merge: true }
         );
-        // 5분 공개 알림이 아직 안 나갔으면 취소되게 확인됨으로 표시해 둔다.
+        // 5분 공개 알림 취소 + "내 배치됨" 배지 해제 — acknowledged만 켜면 type이
+        // seat_assigned로 남아 근무자 화면엔 취소된 좌석이 배치된 것처럼 계속 보인다.
         tx.set(
           doc(db, "layout_notifications", incomingUid),
-          { acknowledged: true, updatedAt: now, updatedAtServer: serverTimestamp() },
+          buildSeatClearedNotificationWrite({ createdAt: now, updatedAtServer: serverTimestamp() }),
           { merge: true }
         );
       }

@@ -286,6 +286,34 @@ export async function deleteGlobalSeat(seatKey = "", options = {}) {
       // 여기서 바로 갱신하지 않으면 이 아래 markSkipSeatRecovery()로 인해 실시간 스냅샷
       // 기반 복구(recoverRemovedSeatPeopleToWaiting)도 이 삭제 건은 건너뛰게 되어,
       // 실제로는 어느 좌석에도 없는데 "배치중" 상태만 영구히 남는 유령 상태가 생긴다.
+      // 교대 확정 대기 중(incomingPerson)이던 사람 — 좌석이 없어졌으니 대기로 돌리고
+      // 5분 뒤 공개 예정이던 배치 알림도 취소한다.
+      const incomingUid = String(data.incomingPersonUid || "").trim();
+      const incomingName = String(data.incomingPerson || "").trim();
+      if (incomingUid && !isEmptyPerson(incomingName) && !attendanceSyncedUids.has(incomingUid)) {
+        attendanceSyncedUids.add(incomingUid);
+        const incomingNow = Date.now();
+        void setDoc(
+          getAttendanceRef(db, GL.tournamentId, incomingUid),
+          {
+            uid: incomingUid,
+            email: String(data.incomingPersonEmail || "").trim(),
+            name: incomingName,
+            tournamentId: GL.tournamentId,
+            status: "waiting",
+            statusChangedAt: incomingNow,
+            updatedAt: incomingNow,
+            updatedAtServer: serverTimestamp()
+          },
+          { merge: true }
+        ).catch((err) => console.warn("deleteGlobalSeat incoming attendance sync:", err));
+        void setDoc(
+          doc(db, "layout_notifications", incomingUid),
+          buildSeatClearedNotificationWrite({ createdAt: incomingNow, updatedAtServer: serverTimestamp() }),
+          { merge: true }
+        ).catch((err) => console.warn("deleteGlobalSeat incoming notification sync:", err));
+      }
+
       const occupantUid = String(data.personUid || "").trim();
       const occupantEmail = String(data.personEmail || "").trim();
       const occupantName = String(data.person || "").trim();
@@ -311,6 +339,15 @@ export async function deleteGlobalSeat(seatKey = "", options = {}) {
           },
           { merge: true }
         ).catch((err) => console.warn("deleteGlobalSeat attendance sync:", err));
+        // 출석만 "대기"로 돌리고 layout_notifications를 안 바꾸면 근무자 화면에
+        // 삭제된 좌석의 "내 배치됨" 배지가 계속 남는다.
+        if (!hasOtherSeat) {
+          void setDoc(
+            doc(db, "layout_notifications", occupantUid),
+            buildSeatClearedNotificationWrite({ createdAt: Date.now(), updatedAtServer: serverTimestamp() }),
+            { merge: true }
+          ).catch((err) => console.warn("deleteGlobalSeat notification sync:", err));
+        }
       }
     }
 

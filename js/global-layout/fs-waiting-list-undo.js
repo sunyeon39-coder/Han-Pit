@@ -1,9 +1,15 @@
 import { db } from "../firebase.js";
 import {
   deleteDoc,
+  doc,
   setDoc,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import {
+  buildSeatAssignedNotificationWrite,
+  buildSeatAssignedTargetUrl,
+  buildSeatClearedNotificationWrite
+} from "../shared/seat-notification-push.js";
 import { GL } from "./state.js";
 import { getAttendanceRef, isEmptyPerson, makeUid, resolveGlobalSeatDocRefForUndo } from "./utils.js";
 import { getCandidateSeatRefsForPerson } from "./seat-candidates.js";
@@ -360,6 +366,55 @@ function syncGlobalWaitingFromPayload(payload = {}, mode = "undo") {
   replaceGlobalWaitingLocal(nextWaiting);
 }
 
+// 근무자 화면의 "내 배치됨" 배지는 layout_notifications/{uid}만 본다 — 되돌리기/다시하기로
+// 좌석 점유자가 바뀌었는데 이 문서를 안 바꾸면, 좌석에서 빠진 사람 화면에 배치가 계속 남거나
+// 다시 앉은 사람 화면엔 배치가 안 뜬다. 복원된 배치는 acknowledged:true로 써서 배지만
+// 갱신하고 알림(모달·푸시)은 다시 울리지 않는다.
+function seatNotificationRef(uid) {
+  return doc(db, "layout_notifications", String(uid || "").trim());
+}
+
+function seatLabelForUndo(seatId = "", fallback = "") {
+  const sid = String(seatId || "").trim();
+  const seat = (GL.globalSeats || []).find((s) => String(s?.seatId || "").trim() === sid);
+  return String(seat?.label || seat?.no || fallback || "").trim();
+}
+
+function seatRestoredNotificationWrite(uid, { eventId = "", boxId = "", seatId = "", seatLabel = "" } = {}, now = Date.now()) {
+  return {
+    ...buildSeatAssignedNotificationWrite(uid, {
+      tournamentId: GL.tournamentId,
+      eventId: String(eventId || "").trim(),
+      boxId: String(boxId || "").trim(),
+      seatId: String(seatId || "").trim(),
+      seatLabel: String(seatLabel || "").trim(),
+      targetUrl: buildSeatAssignedTargetUrl(GL.tournamentId, eventId, boxId),
+      createdAt: now,
+      notifyAt: now,
+      updatedAt: now,
+      updatedAtServer: serverTimestamp()
+    }),
+    acknowledged: true,
+    acknowledgedAt: now
+  };
+}
+
+function setSeatClearedNotification(tx, uid, now = Date.now()) {
+  const u = String(uid || "").trim();
+  if (!u) return;
+  tx.set(
+    seatNotificationRef(u),
+    buildSeatClearedNotificationWrite({ createdAt: now, updatedAtServer: serverTimestamp() }),
+    { merge: true }
+  );
+}
+
+function setSeatRestoredNotification(tx, uid, seatInfo = {}, now = Date.now()) {
+  const u = String(uid || "").trim();
+  if (!u) return;
+  tx.set(seatNotificationRef(u), seatRestoredNotificationWrite(u, seatInfo, now), { merge: true });
+}
+
 async function undoAssignPayload(payload) {
   const seatRef = resolveUndoSeatRef(payload);
   const now = Date.now();
@@ -423,7 +478,19 @@ async function undoAssignPayload(payload) {
     }
 
     const seatUid = String(seatBefore?.personUid || "").trim();
+    if (uid && uid !== seatUid) setSeatClearedNotification(tx, uid, now);
     if (seatUid) {
+      setSeatRestoredNotification(
+        tx,
+        seatUid,
+        {
+          eventId: payload.eventId,
+          boxId: payload.boxId,
+          seatId: payload.targetSeatId,
+          seatLabel: seatLabelForUndo(payload.targetSeatId)
+        },
+        now
+      );
       tx.set(
         getAttendanceRef(db, GL.tournamentId, seatUid),
         {
@@ -484,6 +551,17 @@ async function undoClearSeatPayload(payload) {
 
     const uid = String(seatBefore.personUid || "").trim();
     if (uid) {
+      setSeatRestoredNotification(
+        tx,
+        uid,
+        {
+          eventId: payload.eventId,
+          boxId: payload.boxId,
+          seatId: payload.targetSeatId,
+          seatLabel: seatLabelForUndo(payload.targetSeatId)
+        },
+        now
+      );
       tx.set(
         getAttendanceRef(db, GL.tournamentId, uid),
         {
@@ -597,6 +675,12 @@ async function redoAssignPayload(payload) {
     }
 
     if (waitingUid) {
+      setSeatRestoredNotification(
+        tx,
+        waitingUid,
+        { eventId, boxId, seatId: targetSeatId, seatLabel: seatLabelForUndo(targetSeatId) },
+        now
+      );
       tx.set(
         getAttendanceRef(db, GL.tournamentId, waitingUid),
         {
@@ -614,6 +698,7 @@ async function redoAssignPayload(payload) {
     }
 
     if (prevUid && !isEmptyPerson(prevName)) {
+      if (prevUid !== waitingUid) setSeatClearedNotification(tx, prevUid, now);
       const bumpJoinedAt = Number(payload.swapReturnedJoinedAt || 0) || now;
       tx.set(
         getAttendanceRef(db, GL.tournamentId, prevUid),
@@ -737,6 +822,7 @@ async function redoClearSeatPayload(payload) {
     }
 
     if (prevUid) {
+      if (!hasOtherSeat) setSeatClearedNotification(tx, prevUid, now);
       tx.set(
         getAttendanceRef(db, GL.tournamentId, prevUid),
         {
@@ -832,6 +918,58 @@ function finishUndoRedoUiRefresh(snap = null) {
   updateGlobalMetaToolbar();
 }
 
+/** 좌석 삭제 되돌리기/다시하기 — 그 좌석에 앉아 있던 사람의 출석·배치 배지도 같이 맞춘다 */
+async function syncDeletedSeatOccupant(seatDoc = {}, seatInfo = {}, mode = "undo") {
+  const uid = String(seatDoc.personUid || "").trim();
+  const name = String(seatDoc.person || "").trim();
+  if (!uid || isEmptyPerson(name)) return;
+  const now = Date.now();
+  const restoring = mode === "undo";
+  const hasOtherSeat =
+    !restoring &&
+    (GL.globalSeats || []).some(
+      (s) =>
+        String(s?.seatId || "").trim() !== String(seatInfo.seatId || "").trim() &&
+        String(s?.personUid || "").trim() === uid &&
+        !isEmptyPerson(String(s?.person || "").trim())
+    );
+  try {
+    await setDoc(
+      getAttendanceRef(db, GL.tournamentId, uid),
+      {
+        uid,
+        email: String(seatDoc.personEmail || "").trim(),
+        name,
+        tournamentId: GL.tournamentId,
+        status: restoring || hasOtherSeat ? "assigned" : "waiting",
+        statusChangedAt: restoring ? Number(seatDoc.seatedAt || 0) || now : now,
+        updatedAt: now,
+        updatedAtServer: serverTimestamp()
+      },
+      { merge: true }
+    );
+    if (restoring) {
+      await setDoc(
+        seatNotificationRef(uid),
+        seatRestoredNotificationWrite(
+          uid,
+          { ...seatInfo, seatLabel: String(seatDoc.label ?? seatDoc.no ?? "").trim() },
+          now
+        ),
+        { merge: true }
+      );
+    } else if (!hasOtherSeat) {
+      await setDoc(
+        seatNotificationRef(uid),
+        buildSeatClearedNotificationWrite({ createdAt: now, updatedAtServer: serverTimestamp() }),
+        { merge: true }
+      );
+    }
+  } catch (err) {
+    console.warn("syncDeletedSeatOccupant:", err);
+  }
+}
+
 export async function undoLastGlobalAction() {
   if (!canManageGlobalLayoutOps()) return;
   const snap = popGlobalUndo();
@@ -865,6 +1003,7 @@ export async function undoLastGlobalAction() {
         firestoreDocId: snap.firestoreDocId
       });
       await setDoc(seatRef, d, { merge: true });
+      await syncDeletedSeatOccupant(d, { eventId: eid, boxId: bid, seatId: sid }, "undo");
       applySeatSnapshotToGlobalSeats(
         {
           ...d,
@@ -925,6 +1064,7 @@ export async function redoLastGlobalAction() {
         firestoreDocId: snap.firestoreDocId
       });
       await deleteDoc(seatRef);
+      await syncDeletedSeatOccupant(d, { eventId: eid, boxId: bid, seatId: sid }, "redo");
       // undo의 add_seat 처리(removeSeatFromGlobalLayoutLocal)와 대칭 — 서버 스냅샷 도착 전에도 즉시 반영
       removeSeatFromGlobalLayoutLocal({ targetSeatId: sid, firestoreDocId: snap.firestoreDocId });
       await syncLayoutProjection(eid, bid);

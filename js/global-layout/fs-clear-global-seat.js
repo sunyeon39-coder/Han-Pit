@@ -178,6 +178,12 @@ export async function clearSeat(seatId = "") {
           tx.delete(globalWaitingDocRef(db, GL.tournamentId, id));
         }
         if (incomingUid) {
+          // 5분 뒤 공개 예정이던 배치 알림 취소 — 안 하면 비워진 좌석으로 알림이 간다.
+          tx.set(
+            doc(db, "layout_notifications", incomingUid),
+            buildSeatClearedNotificationWrite({ createdAt: now, updatedAtServer: serverTimestamp() }),
+            { merge: true }
+          );
           tx.set(
             getAttendanceRef(db, GL.tournamentId, incomingUid),
             {

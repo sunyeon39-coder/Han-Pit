@@ -1,7 +1,12 @@
 import { db } from "../firebase.js";
 import {
+  doc,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import {
+  buildSeatAssignedNotificationWrite,
+  buildSeatAssignedTargetUrl
+} from "../shared/seat-notification-push.js";
 import { GL } from "./state.js";
 import {
   getAttendanceRef,
@@ -151,6 +156,30 @@ async function restoreOrEmptyVacatedSeat(vacatedSeat, dealerStint, restoreCandid
           if (candidateWaitingSnaps[i]?.exists()) tx.delete(candidateWaitingRefs[i]);
         }
         if (candidateUid) {
+          // 다시 앉힌 이전 근무자 화면에도 "내 배치됨"이 떠야 한다 — 알림은 다시 울리지 않게
+          // acknowledged:true로 배지만 갱신한다.
+          const restoredEventId = String(seatData.currentEventId || seatData.mappedEventId || "").trim();
+          const restoredBoxId = String(seatData.boxId || "").trim();
+          tx.set(
+            doc(db, "layout_notifications", candidateUid),
+            {
+              ...buildSeatAssignedNotificationWrite(candidateUid, {
+                tournamentId: GL.tournamentId,
+                eventId: restoredEventId,
+                boxId: restoredBoxId,
+                seatId,
+                seatLabel: String(vacatedSeat.label || vacatedSeat.no || "").trim(),
+                targetUrl: buildSeatAssignedTargetUrl(GL.tournamentId, restoredEventId, restoredBoxId),
+                createdAt: now,
+                notifyAt: now,
+                updatedAt: now,
+                updatedAtServer: serverTimestamp()
+              }),
+              acknowledged: true,
+              acknowledgedAt: now
+            },
+            { merge: true }
+          );
           tx.set(
             getAttendanceRef(db, GL.tournamentId, candidateUid),
             {
