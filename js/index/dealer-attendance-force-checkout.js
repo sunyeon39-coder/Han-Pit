@@ -36,14 +36,19 @@ async function runCheckedOutCleanup(target, { clearGlobalSeats = false } = {}) {
   await Promise.all([
     // 통합배치도 좌석 비우기 — global_seats 쓰기는 관리자만 가능해서 관리자 퇴근 처리에서만.
     clearGlobalSeats ? clearUserFromGlobalSeats(tournamentId, target.uid) : Promise.resolve(0),
-    removeUserFromAllSeatsGlobal({ uid: target.uid }),
-    removeFromSharedWaitingOnCheckOut({
-      uid: target.uid,
-      email: target.email || "",
-      displayName: target.nickname || target.name || "",
-      nickname: target.nickname || target.name || "",
-      name: target.nickname || target.name || ""
-    }),
+    // 아래 두 쓰기(개별 배치도·알림 문서 type 변경)는 관리자만 가능 — 근무자 본인 퇴근에선
+    // 항상 거부되니 시도하지 않는다. 좌석 자체는 관리자가 비울 때 함께 정리된다.
+    clearGlobalSeats ? removeUserFromAllSeatsGlobal({ uid: target.uid }) : Promise.resolve(0),
+    removeFromSharedWaitingOnCheckOut(
+      {
+        uid: target.uid,
+        email: target.email || "",
+        displayName: target.nickname || target.name || "",
+        nickname: target.nickname || target.name || "",
+        name: target.nickname || target.name || ""
+      },
+      { selfOnly: !clearGlobalSeats }
+    ),
     setDoc(
       getAttendanceRef(tournamentId, target.uid),
       {
@@ -55,7 +60,7 @@ async function runCheckedOutCleanup(target, { clearGlobalSeats = false } = {}) {
       },
       { merge: true }
     ),
-    clearUserSeatNotification(target.uid)
+    clearGlobalSeats ? clearUserSeatNotification(target.uid) : Promise.resolve()
   ]);
 }
 

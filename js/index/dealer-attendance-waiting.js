@@ -157,9 +157,30 @@ export async function joinSharedWaitingOnCheckIn(user) {
   }
 }
 
-export async function removeFromSharedWaitingOnCheckOut(user) {
+export async function removeFromSharedWaitingOnCheckOut(user, { selfOnly = false } = {}) {
   const tournamentId = getTournamentId();
   if (!user || !tournamentId) return false;
+
+  // 근무자 본인 퇴근 — 규칙상 본인 uid 문서만 지울 수 있다. 이름·이메일로 찾은 다른 문서까지
+  // 지우려 하면 배치 전체가 권한 오류로 실패한다. 남은 잔여 문서는 관리자 화면이 정리한다.
+  if (selfOnly) {
+    const uid = String(user.uid || "").trim();
+    if (!uid) return false;
+    try {
+      const snap = await getDocs(
+        query(globalWaitingCollectionRef(db, tournamentId), where("uid", "==", uid))
+      );
+      if (snap.empty) return true;
+      const batch = writeBatch(db);
+      snap.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+      return true;
+    } catch (error) {
+      // 퇴근 자체(출석 문서)는 이미 저장됐다 — 대기 문서 정리 실패로 근무자에게 오류를 띄우지 않는다.
+      console.warn("removeFromSharedWaitingOnCheckOut (self):", error?.code || error);
+      return false;
+    }
+  }
 
   const uid = String(user.uid || "").trim();
   const email = String(user.email || "").trim().toLowerCase();
