@@ -429,6 +429,10 @@ function shouldKeepLocalSeatOverRemoteOccupied(prevSeat, nextSeat) {
   if (!isEmptyPerson(prevName) || isEmptyPerson(nextName)) return false;
   const clearedAt = Number(prevSeat?.__localClearedAt || 0);
   if (!clearedAt) return false;
+  // 비운 뒤에 새로 앉힌 배치(seatedAt이 비운 시각 이후)는 지연 스냅샷이 아니라 진짜 새
+  // 상태다 — 이것까지 막으면 방금 한 배치가 화면에 안 뜬다.
+  const nextSeatedAt = Number(nextSeat?.seatedAt?.toMillis?.() ?? nextSeat?.seatedAt ?? 0) || 0;
+  if (nextSeatedAt >= clearedAt - 2000) return false;
   return Date.now() - clearedAt < RECENT_LOCAL_SEAT_MS;
 }
 

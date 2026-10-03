@@ -236,6 +236,8 @@ export function bindGlobalLayoutEventHandlers() {
             if (msg === "waiting_blocked") return `${waiting.name || waiting.uid}: BLOCK 상태라 배치할 수 없습니다.`;
             if (msg === "waiting_not_found") return `${waiting.name || waiting.uid}: 대기자가 이미 처리되었습니다.`;
             if (msg === "seat_not_found") return `${waiting.name || waiting.uid}: Seat 정보를 찾을 수 없습니다.`;
+            if (msg === "seat_mutation_busy") return `${waiting.name || waiting.uid}: 다른 좌석 저장이 끝나지 않아 배치하지 못했습니다. 다시 시도해 주세요.`;
+            if (msg === "assign_timeout") return `${waiting.name || waiting.uid}: 저장 응답이 없어 취소했습니다. 새로고침 후 확인해 주세요.`;
             return `${waiting.name || waiting.uid}: 배치 실패${assignSeatFailureHint(err)}`;
           });
           alert(`${confirmedCount}건 확정, ${failed.length}건 실패:\n${lines.join("\n")}`);
