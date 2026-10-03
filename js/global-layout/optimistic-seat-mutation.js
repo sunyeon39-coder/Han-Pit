@@ -48,6 +48,10 @@ function clearPersonOnSeatInMemory(seat = {}) {
     personEmail: "",
     seatedAt: null,
     status: "empty",
+    // 방금 로컬에서 비운 좌석 — 아직 서버 스냅샷이 이 변경을 반영하기 전(지연/캐시)에
+    // 도착한 "여전히 점유중" 스냅샷이 이 화면 반영을 되돌리지 않도록 표시해 둔다
+    // (realtime.js의 shouldKeepLocalSeatOverRemoteOccupied 참고).
+    __localClearedAt: Date.now(),
     // previousPerson 을 지우지 않으면(스왑 표시용 필드) 좌석이 실제로는 비었는데도
     // 딜러 명단(현재/다음)이 그 사람을 계속 붙잡고 보여주는 원인이 된다.
     previousPerson: "",

@@ -2087,3 +2087,26 @@ body.page-global-layout .global-layout-mobile .mobile-seat-row[class*="eb-palett
   background: rgba(118, 214, 138, 0.18);
   color: #b8f0c4;
 }
+
+.global-seat-history-restore-btn {
+  display: block;
+  margin-top: 8px;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(61, 219, 196, 0.4);
+  background: rgba(61, 219, 196, 0.12);
+  color: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.global-seat-history-restore-btn:hover {
+  background: rgba(61, 219, 196, 0.22);
+}
+
+.global-seat-history-restore-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

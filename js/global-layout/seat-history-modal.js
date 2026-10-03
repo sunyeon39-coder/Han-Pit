@@ -1,6 +1,6 @@
 import { GL } from "./state.js";
 import { escapeHtml, isEmptyPerson } from "./utils.js";
-import { canViewGlobalLayoutSeatHistory } from "./ops-access.js";
+import { canManageGlobalLayoutOps, canViewGlobalLayoutSeatHistory } from "./ops-access.js";
 import {
   getEventCardIdFromRecord,
   parseEventInstanceDocId
@@ -12,8 +12,12 @@ import {
   getSeatHistoryView,
   seatHistoryReasonLabel
 } from "./seat-history.js";
+import { restoreSeatFromHistoryEntry } from "./fs-seat-history-restore.js";
 
 const MOVE_CANCEL_PX = 14;
+let currentHistorySeatKey = "";
+let currentHistoryPastEntries = [];
+let restoreInFlight = false;
 
 function getEls() {
   const root = document.getElementById("globalSeatHistoryModal");
@@ -36,6 +40,7 @@ function resolveSeatCardId(seat) {
 }
 
 function renderHistoryList(view) {
+  const canRestore = canManageGlobalLayoutOps();
   const rows = [];
   if (view.current) {
     rows.push(`
@@ -46,15 +51,23 @@ function renderHistoryList(view) {
       </li>
     `);
   }
-  for (const item of view.past) {
+  view.past.forEach((item, idx) => {
+    const canRestoreRow = canRestore && !isEmptyPerson(String(item.person || "").trim());
     rows.push(`
       <li class="global-seat-history-row">
         <div class="global-seat-history-name">${escapeHtml(item.person || "-")}</div>
         <div class="global-seat-history-time">${escapeHtml(formatSeatHistoryRange(item.seatedAt, item.leftAt))}</div>
         <span class="global-seat-history-badge">${escapeHtml(seatHistoryReasonLabel(item.reason))}</span>
+        ${
+          canRestoreRow
+            ? `<button type="button" class="global-seat-history-restore-btn" data-restore-history-idx="${idx}">
+                이 딜러로 복원
+              </button>`
+            : ""
+        }
       </li>
     `);
-  }
+  });
   return rows.join("");
 }
 
@@ -65,6 +78,9 @@ export function openSeatHistoryModal(seatKey = "") {
   const seat = findGlobalSeatByAnyKey(seatKey);
   const view = getSeatHistoryView(seat);
   const seatLabel = view.label || seatKey || "-";
+
+  currentHistorySeatKey = String(seat?.seatId || seatKey || "").trim();
+  currentHistoryPastEntries = view.past;
 
   if (els.title) {
     els.title.textContent = `SEAT ${seatLabel} 배치 이력`;
@@ -112,13 +128,46 @@ export function tryOpenSeatHistoryFromPersonClick(e, seatKey = "") {
   return true;
 }
 
+async function handleRestoreClick(btn) {
+  if (restoreInFlight) return;
+  const idx = Number(btn.getAttribute("data-restore-history-idx"));
+  const entry = currentHistoryPastEntries[idx];
+  const seatKey = currentHistorySeatKey;
+  if (!entry || !seatKey) return;
+
+  const person = String(entry.person || "-").trim() || "-";
+  if (!confirm(`이 좌석을 "${person}" 님으로 복원할까요?\n지금 다른 좌석에 앉아 있다면 그 자리에서 빼오고, 빼온 자리는 가능하면 그 전 근무자로 되돌립니다.`)) {
+    return;
+  }
+
+  restoreInFlight = true;
+  btn.disabled = true;
+  try {
+    const ok = await restoreSeatFromHistoryEntry(seatKey, entry);
+    if (ok) {
+      closeSeatHistoryModal();
+    }
+  } catch (err) {
+    console.error("restoreSeatFromHistoryEntry:", err);
+    alert("복원에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+  } finally {
+    restoreInFlight = false;
+    btn.disabled = false;
+  }
+}
+
 export function initGlobalSeatHistoryModal() {
   const els = getEls();
   if (!els || els.root.dataset.bound === "1") return;
   els.root.dataset.bound = "1";
 
   els.root.addEventListener("click", (e) => {
-    if (e.target.closest("[data-close-seat-history]")) closeSeatHistoryModal();
+    if (e.target.closest("[data-close-seat-history]")) {
+      closeSeatHistoryModal();
+      return;
+    }
+    const restoreBtn = e.target.closest("[data-restore-history-idx]");
+    if (restoreBtn) void handleRestoreClick(restoreBtn);
   });
 
   document.addEventListener("keydown", (e) => {

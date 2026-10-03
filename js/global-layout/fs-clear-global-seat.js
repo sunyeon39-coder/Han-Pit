@@ -23,7 +23,10 @@ import {
   applyOptimisticClear,
   flushOptimisticGlobalLayoutUi
 } from "./optimistic-seat-mutation.js";
-import { markGlobalLayoutLocalMutation } from "./layout-mutation-guard.js";
+import {
+  markGlobalLayoutLocalMutation,
+  releaseStuckGlobalLayoutMutationFlags
+} from "./layout-mutation-guard.js";
 import {
   appendSeatHistoryPatch,
   entryFromSeatOccupant
@@ -33,6 +36,7 @@ import { runFirestoreTransactionWithRetry } from "../shared/firestore-transactio
 import { runSerializedGlobalWaitingWrite } from "./global-waiting-write-lock.js";
 
 export async function clearSeat(seatId = "") {
+  releaseStuckGlobalLayoutMutationFlags();
   const targetSeatId = String(seatId || "").trim();
   if (!targetSeatId || GL.seatMutationInFlight) return;
   const seat = GL.globalSeats.find((s) => String(s.seatId || "").trim() === targetSeatId);

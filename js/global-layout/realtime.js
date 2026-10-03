@@ -416,6 +416,22 @@ function shouldKeepLocalSeatOverRemoteEmpty(prevSeat, nextSeat) {
   return Date.now() - seatedAt < RECENT_LOCAL_SEAT_MS;
 }
 
+/**
+ * 방금 로컬에서 비운(clearSeat/dedup) 좌석 — 아직 이 변경이 반영되지 않은(지연/캐시) 서버
+ * 스냅샷이 "여전히 점유중"으로 도착해도, 짧은 유예 시간 동안은 되돌리지 않는다. 안 그러면
+ * 비우기 확인 직후 잠깐 원래 사람이 다시 보였다가 실제 커밋된 스냅샷이 도착해야 비워지는
+ * 것처럼 보여 "즉각 안 비워진다"는 체감 지연이 생긴다 — shouldKeepLocalSeatOverRemoteEmpty의
+ * 반대 방향 버전.
+ */
+function shouldKeepLocalSeatOverRemoteOccupied(prevSeat, nextSeat) {
+  const prevName = String(prevSeat?.person || "").trim();
+  const nextName = String(nextSeat?.person || "").trim();
+  if (!isEmptyPerson(prevName) || isEmptyPerson(nextName)) return false;
+  const clearedAt = Number(prevSeat?.__localClearedAt || 0);
+  if (!clearedAt) return false;
+  return Date.now() - clearedAt < RECENT_LOCAL_SEAT_MS;
+}
+
 function isRecentLocalSeatAdd(seat) {
   const sid = String(seat?.seatId || "").trim();
   // setDoc 이 아직 안 끝난(pending) 좌석이면 시간 유예와 무관하게 계속 보존한다.
@@ -439,15 +455,29 @@ function mergeGlobalSeatsFromSnapshot(prevSeats = [], nextSeats = []) {
   const merged = nextSeats.map((next) => {
     const sid = String(next?.seatId || "").trim();
     const prev = sid ? prevById.get(sid) : null;
-    if (!prev || !shouldKeepLocalSeatOverRemoteEmpty(prev, next)) return next;
-    return {
-      ...next,
-      person: prev.person,
-      personUid: prev.personUid,
-      personEmail: prev.personEmail,
-      seatedAt: prev.seatedAt,
-      status: prev.status || next.status || "occupied"
-    };
+    if (!prev) return next;
+    if (shouldKeepLocalSeatOverRemoteEmpty(prev, next)) {
+      return {
+        ...next,
+        person: prev.person,
+        personUid: prev.personUid,
+        personEmail: prev.personEmail,
+        seatedAt: prev.seatedAt,
+        status: prev.status || next.status || "occupied"
+      };
+    }
+    if (shouldKeepLocalSeatOverRemoteOccupied(prev, next)) {
+      return {
+        ...next,
+        person: "비어있음",
+        personUid: "",
+        personEmail: "",
+        seatedAt: null,
+        status: "empty",
+        __localClearedAt: prev.__localClearedAt
+      };
+    }
+    return next;
   });
   // 방금 로컬에서 만든 좌석이 아직 서버 스냅샷에 반영되기 전이라면
   // 스냅샷 목록에 없더라도 잠시 유지한다 — 생성 도중 박스가 사라지는 것 방지.
