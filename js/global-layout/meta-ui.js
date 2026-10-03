@@ -1,35 +1,28 @@
 import { GL } from "./state.js";
 import { isEmptyPerson } from "./utils.js";
-import { countTournamentWaitingQueue } from "../shared/tournament-waiting-queue.js";
 import { getCurrentTournamentWaiting, isWaitingBlocked } from "./waiting.js";
 
 export function updateGlobalLayoutWaitingMeta() {
+  // WAIT는 대기 패널에 실제로 보이는 목록(BLOCK 제외)과 같은 소스로 센다 — 예전엔
+  // countTournamentWaitingQueue를 따로 돌렸는데, 퇴근자(attendanceCheckedOutUids) 필터와
+  // 중복 행 BLOCK 병합(blockIndex)이 빠져 있어 목록보다 숫자가 크게 나왔다.
   const waiting = getCurrentTournamentWaiting();
   const blocked = waiting.filter((w) => isWaitingBlocked(w)).length;
-  const waitAssignable = countTournamentWaitingQueue({
-    globalWaiting: GL.globalWaiting,
-    tournamentId: GL.tournamentId,
-    attendanceInactiveUids: GL.attendanceInactiveUids,
-    globalSeats: GL.globalSeats,
-    attendanceFilterReady: GL.attendanceFilterReady === true,
-    attendanceWaitingRows: GL.attendanceWaiting,
-    excludeBlocked: true
-  });
-  // "확정 대기 중"인 인원은 대기 카운트에 안 잡힌다 — 이유가 두 가지다:
-  // (1) 배치확인만 누르고 아직 실제 저장 전(스테이징) 인원 — GL.pendingSeatAssignments.
-  // (2) 스왑이 실제로 저장은 됐지만 아직 finalize(0~10분) 전이라 밀려나는 기존
-  //     점유자가 아직 대기로 안 돌아온 상태 — seat.incomingPerson.
-  // 둘 다 좌석엔 이미 흰색으로 반영돼 있어서 "대기 0인데 화면엔 사람이 있네?"로 헷갈린다
-  // — 확정/finalize되면 결국 맞는 숫자로 정리되니, 그 사이엔 misleading한 0 대신 이
-  // "아직 최종 정리 전" 인원수를 보여준다. 스테이징과 incomingPerson은 서로 배타적인
-  // 상태(확정되는 순간 스테이징에서 빠지고 incomingPerson으로 넘어감)라 더해도 중복
-  // 집계가 안 되고, waitAssignable과는 겹칠 수 있어 둘 중 큰 값을 쓴다.
+  const waitVisible = waiting.length - blocked;
+  // "확정 대기 중" 인원은 목록엔 아직 없다:
+  // (1) 배치확인만 누르고 아직 실제 저장 전(스테이징) — GL.pendingSeatAssignments.
+  // (2) 스왑 저장 후 finalize(0~10분) 전이라 밀려날 기존 점유자 — seat.incomingPerson.
+  // 예전엔 max(목록, 이 인원)로 WAIT 자체를 덮어써서 목록과 숫자가 어긋났다 — 이제
+  // WAIT 숫자는 목록과 항상 일치시키고, 이 인원은 괄호로 따로 보여준다.
   const pendingCount = GL.pendingSeatAssignments?.size || 0;
   const incomingCount = (GL.globalSeats || []).filter(
     (s) => !isEmptyPerson(String(s?.incomingPerson || "").trim())
   ).length;
+  const transitCount = pendingCount + incomingCount;
   if (GL.waitingCountEl) {
-    GL.waitingCountEl.textContent = `WAIT: ${Math.max(waitAssignable, pendingCount + incomingCount)}`;
+    GL.waitingCountEl.textContent = transitCount
+      ? `WAIT: ${waitVisible} (+${transitCount})`
+      : `WAIT: ${waitVisible}`;
   }
   if (GL.blockedCountEl) {
     GL.blockedCountEl.textContent = `BLOCK: ${blocked}`;
