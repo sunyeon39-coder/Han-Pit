@@ -6,7 +6,12 @@
  */
 import { GL } from "./state.js";
 import { assignSelectedWaitingToSeat } from "./fs-assign-waiting-to-seat.js";
-import { applyOptimisticMyWaitingPick } from "./waiting-picks.js";
+import { applyOptimisticMyWaitingPick, clearMyWaitingPick } from "./waiting-picks.js";
+import { waitForSeatMutationIdle } from "./layout-mutation-guard.js";
+import { waitForSerializedGlobalWaitingWrites } from "./global-waiting-write-lock.js";
+
+/** 배치확인 일괄 저장 동시 실행 수 — 너무 크면 같은 문서 충돌·재시도가 늘어난다 */
+const BATCH_CONCURRENCY = 6;
 import { applyOptimisticAssign, flushOptimisticGlobalLayoutUi } from "./optimistic-seat-mutation.js";
 
 export function stagePendingSeatAssignment(seatId, waiting) {
@@ -83,37 +88,62 @@ export async function confirmAllPendingSeatAssignments({ immediate = false } = {
   // 위에서 다 확정된 것처럼 보이는데 숫자만 뒤늦게 뚝뚝 떨어지면 어색하다). 배치 전체가
   // 끝난 뒤 한 번에 지워서 숫자도 좌석과 같은 타이밍에 한 번에 떨어지게 한다.
   const doneSeatIds = new Set();
+  // 예전엔 좌석마다 순서대로 저장(트랜잭션 왕복 2~3회 × 인원수)해서 인원이 많으면 한참
+  // 걸렸다. 이제 앞선 쓰기를 기다린 뒤 좌석 뮤텍스를 배치 전체 동안 직접 잡고, 각 건은
+  // 동시에(최대 BATCH_CONCURRENCY) 보낸다. 건마다 공유 문서(찜 목록·잔여 대기 정리)를
+  // 건드리면 서로 충돌해 재시도로 오히려 느려지므로 그 정리는 끝나고 한 번만 한다.
+  let ownsSeatMutex = false;
   try {
-    for (const [seatId, pending] of entries) {
-      try {
-        // waitingSnapshot — 위 낙관적 반영 루프가 이미 GL.globalWaiting에서 이 사람들을
-        // 지웠으므로, 그 지우기 전 스냅샷을 넘겨야 트랜잭션 안에서 실제 대기 문서를
-        // 제대로 찾아 지울 수 있다(안 그러면 문서가 안 지워진 채 대기열에 잔상으로 남는다).
-        await assignSelectedWaitingToSeat(seatId, pending.waiting, now, {
-          skipOptimistic: true,
-          immediate,
-          waitingSnapshot: preBatchSnapshot?.globalWaiting
-        });
-        doneSeatIds.add(seatId);
-      } catch (err) {
-        const msg = String(err?.message || "").trim();
-        if (msg === "same_person_noop") {
-          // 네트워크가 잠깐 끊겼다가 재시도되는 등으로, 이 트랜잭션이 실제로는 이미
-          // 예전 시도에서 성공해서 이 사람이 이미 그 좌석에 정상 반영된 상태일 수 있다
-          // (그래서 "같은 사람"이라 다시 쓸 게 없다고 거부된 것). 이걸 진짜 실패로 보고
-          // 아래에서 화면을 배치 전으로 되돌리면, 이미 맞게 반영된 좌석은 그대로인데
-          // 그 사람만 대기 목록으로 다시 끌려나오는 모순이 생긴다 — 실패로 세지 않는다.
-          doneSeatIds.add(seatId);
-          continue;
+    if (entries.length) {
+      await waitForSerializedGlobalWaitingWrites();
+      if (!(await waitForSeatMutationIdle())) {
+        for (const [seatId, pending] of entries) {
+          failed.push({ seatId, waiting: pending.waiting, err: new Error("seat_mutation_busy") });
         }
-        console.error("confirmAllPendingSeatAssignments:", seatId, err);
-        failed.push({ seatId, waiting: pending.waiting, err });
+      } else {
+        GL.seatMutationInFlight = true;
+        ownsSeatMutex = true;
+        const queue = [...entries];
+        const worker = async () => {
+          while (queue.length) {
+            const [seatId, pending] = queue.shift();
+            try {
+              // waitingSnapshot — 위 낙관적 반영 루프가 이미 GL.globalWaiting에서 이 사람들을
+              // 지웠으므로, 그 지우기 전 스냅샷을 넘겨야 트랜잭션 안에서 실제 대기 문서를
+              // 제대로 찾아 지울 수 있다(안 그러면 문서가 안 지워진 채 대기열에 잔상으로 남는다).
+              await assignSelectedWaitingToSeat(seatId, pending.waiting, now, {
+                skipOptimistic: true,
+                immediate,
+                batchParallel: true,
+                waitingSnapshot: preBatchSnapshot?.globalWaiting
+              });
+              doneSeatIds.add(seatId);
+            } catch (err) {
+              const msg = String(err?.message || "").trim();
+              if (msg === "same_person_noop") {
+                // 네트워크가 잠깐 끊겼다가 재시도되는 등으로, 이 트랜잭션이 실제로는 이미
+                // 예전 시도에서 성공해서 이 사람이 이미 그 좌석에 정상 반영된 상태일 수 있다.
+                // 이걸 실패로 보고 화면을 배치 전으로 되돌리면 모순이 생기므로 실패로 세지 않는다.
+                doneSeatIds.add(seatId);
+                continue;
+              }
+              console.error("confirmAllPendingSeatAssignments:", seatId, err);
+              failed.push({ seatId, waiting: pending.waiting, err });
+            }
+          }
+        };
+        await Promise.all(
+          Array.from({ length: Math.min(BATCH_CONCURRENCY, entries.length) }, () => worker())
+        );
       }
     }
   } finally {
+    if (ownsSeatMutex) GL.seatMutationInFlight = false;
     for (const seatId of doneSeatIds) GL.pendingSeatAssignments.delete(seatId);
     if (entries.length) GL.batchSeatMutationDepth = Math.max(0, (GL.batchSeatMutationDepth || 0) - 1);
   }
+  // 건마다 생략했던 공유 문서 정리 — 내 "찜한 대기자" 표시 해제(실패해도 배치엔 영향 없음).
+  if (entries.length) void clearMyWaitingPick();
 
   // 개별 assignSelectedWaitingToSeat 호출은 skipOptimistic일 때 화면 갱신(선택 표시 포함)을
   // 건너뛰므로, 배치 전체가 끝난 지금 한 번만 직접 렌더한다 — 안 그러면 "배치확인 (N)"

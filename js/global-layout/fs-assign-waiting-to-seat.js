@@ -63,7 +63,7 @@ import {
 } from "./seat-history.js";
 import { logGlobalLayoutAttendance } from "./attendance-log.js";
 import { personIdentityMatches } from "../shared/tournament-waiting-queue.js";
-import { runSerializedGlobalWaitingWrite } from "./global-waiting-write-lock.js";
+import { runGlobalWaitingWriteDirect, runSerializedGlobalWaitingWrite } from "./global-waiting-write-lock.js";
 
 function uniqueDocRefs(refs = []) {
   const seen = new Set();
@@ -159,7 +159,12 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
   if (!targetSeatId) throw new Error("seat_not_found");
   // 예전엔 다른 좌석 쓰기가 진행 중이면 조용히 return 했다 — 배치확인은 그걸 "성공"으로
   // 세서 화면엔 배치된 것처럼 남고 실제론 저장이 안 되는(새로고침하면 사라지는) 사고가 났다.
-  if (!(await waitForSeatMutationIdle())) {
+  // batchParallel — 배치확인 일괄 저장(confirmAllPendingSeatAssignments)이 여러 건을 동시에
+  // 보낼 때. 그쪽이 배치 전체 동안 좌석 뮤텍스를 직접 잡고 있으므로 여기선 건드리지 않고,
+  // 모든 건이 공유하는 문서(찜 목록·잔여 대기 정리)도 건마다 쓰지 않는다(서로 충돌해 재시도로
+  // 느려지는 원인) — 배치가 끝난 뒤 한 번만 정리한다.
+  const batchParallel = opts?.batchParallel === true;
+  if (!batchParallel && !(await waitForSeatMutationIdle())) {
     throw new Error("seat_mutation_busy");
   }
 
@@ -230,7 +235,7 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
   let assignLogMeta = null;
   let wasOccupiedResolved = wasOccupiedNow;
 
-  GL.seatMutationInFlight = true;
+  if (!batchParallel) GL.seatMutationInFlight = true;
   try {
     const { eventId: ev0, boxId: bx0 } = resolveSeatEventBox(seat);
     const seatRefEarly = getGlobalSeatDocRef(seat, GL.tournamentId);
@@ -281,7 +286,8 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
       canonicalSeatBoxId = canonicalSeatBoxId || fallback.boxId;
     }
 
-    await runSerializedGlobalWaitingWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
+    const runWrite = batchParallel ? runGlobalWaitingWriteDirect : runSerializedGlobalWaitingWrite;
+    await runWrite(() => runFirestoreTransactionWithRetry(db, async (tx) => {
       const waitingId = String(waiting.id || "").trim();
       const waitingUid = String(waiting.uid || "").trim();
       const waitingEmail = String(waiting.email || "").trim();
@@ -391,7 +397,7 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
         // 이미 어딘가 앉아 있는데 대기열에도 유령처럼 남아있는 잔여 문서 — 이번 배정
         // 당사자는 위에서 별도로 지우니 제외. 다른 경로(예: finalize 스케줄러)로 생긴
         // 잔여물도 여기서 같이 정리된다.
-        const staleSeatedWaitingRefs = uniqueDocRefs(
+        const staleSeatedWaitingRefs = batchParallel ? [] : uniqueDocRefs(
           (GL.globalWaiting || [])
             .filter((w) => {
               const rid = String(w?.id || "").trim();
@@ -695,7 +701,7 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
           }
         }
 
-        if (nextOperatorPicks !== opPicksData.operatorPicks) {
+        if (!batchParallel && nextOperatorPicks !== opPicksData.operatorPicks) {
           tx.set(
             opPicksRef,
             { operatorPicks: nextOperatorPicks, updatedAt: now, updatedAtServer: serverTimestamp() },
@@ -776,7 +782,7 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
         })
       ]);
       // 이미 좌석에 앉아 있는 사람이 대기열에도 남아 있는 잔여 global_waiting 문서.
-      const staleSeatedWaitingRefs = uniqueDocRefs(
+      const staleSeatedWaitingRefs = batchParallel ? [] : uniqueDocRefs(
         (GL.globalWaiting || [])
           .filter((w) => {
             const rid = String(w?.id || "").trim();
@@ -899,7 +905,7 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
           tx.delete(staleSeatedWaitingRefs[i]);
         }
       }
-      if (nextOperatorPicks !== opPicksData.operatorPicks) {
+      if (!batchParallel && nextOperatorPicks !== opPicksData.operatorPicks) {
         tx.set(
           opPicksRef,
           { operatorPicks: nextOperatorPicks, updatedAt: now, updatedAtServer: serverTimestamp() },
@@ -988,10 +994,10 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
     // 배정 트랜잭션이 실패하면 그 안에 같이 넣어둔 "내 선택 표시" 해제도 서버에 반영되지
     // 않는다. 화면은 이미 낙관적으로 풀린 상태이므로, 다른 운영자 화면과 어긋나지 않게
     // 최선 노력으로 별도 정리한다(성공 경로의 지연에는 영향 없음).
-    void clearMyWaitingPick();
+    if (!batchParallel) void clearMyWaitingPick();
     throw err;
   } finally {
-    GL.seatMutationInFlight = false;
+    if (!batchParallel) GL.seatMutationInFlight = false;
   }
 
   // 배치확인(confirmAllPendingSeatAssignments)이 순서대로 이 함수를 여러 번 부를 때는

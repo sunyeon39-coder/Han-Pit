@@ -39,6 +39,36 @@ function withTimeout(promise, ms) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+function handleWriteTimeout(err) {
+  if (err?.code === "write_timeout") {
+    console.error("[global-waiting-write] write timed out", err);
+    // Firestore 로컬 캐시가 멈춘 경우가 대부분 — 캐시 비우고 새로고침하는 배너를 띄운다.
+    showFirestoreStallBanner("저장이 응답하지 않습니다. 연결을 새로고침해 주세요.");
+  }
+}
+
+/** 앞서 줄 선 쓰기들이 끝날 때까지(최대 PREV_WAIT_MS) 기다린다 — 일괄 병렬 저장 시작 전 */
+export function waitForSerializedGlobalWaitingWrites() {
+  return settleWithin(writeTail, PREV_WAIT_MS);
+}
+
+/**
+ * 줄 세우지 않고 바로 실행(타임아웃만 적용) — 배치확인 일괄 저장처럼 서로 다른 좌석·사람
+ * 문서를 건드리는 쓰기 여러 개를 동시에 보낼 때. 겹치는 문서가 있어도 Firestore
+ * 트랜잭션 재시도로 정합성은 유지된다.
+ */
+export async function runGlobalWaitingWriteDirect(fn) {
+  writesInFlight++;
+  try {
+    return await withTimeout(Promise.resolve().then(fn), WRITE_TIMEOUT_MS);
+  } catch (err) {
+    handleWriteTimeout(err);
+    throw err;
+  } finally {
+    writesInFlight--;
+  }
+}
+
 export function runSerializedGlobalWaitingWrite(fn) {
   const prev = writeTail;
   const run = settleWithin(prev, PREV_WAIT_MS).then(async () => {
@@ -46,11 +76,7 @@ export function runSerializedGlobalWaitingWrite(fn) {
     try {
       return await withTimeout(Promise.resolve().then(fn), WRITE_TIMEOUT_MS);
     } catch (err) {
-      if (err?.code === "write_timeout") {
-        console.error("[global-waiting-write] write timed out", err);
-        // Firestore 로컬 캐시가 멈춘 경우가 대부분 — 캐시 비우고 새로고침하는 배너를 띄운다.
-        showFirestoreStallBanner("저장이 응답하지 않습니다. 연결을 새로고침해 주세요.");
-      }
+      handleWriteTimeout(err);
       throw err;
     } finally {
       writesInFlight--;
