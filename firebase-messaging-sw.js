@@ -26,7 +26,7 @@ self.addEventListener("activate", (event) => {
 
 firebase.initializeApp({
   apiKey: "AIzaSyD6KXHIf1aaSDjbhHo8VtzbeMcaDIMP4SA",
-  authDomain: "hanagency-c2c0e.firebaseapp.com",
+  authDomain: "hanagency-c2c0e.web.app",
   projectId: "hanagency-c2c0e",
   storageBucket: "hanagency-c2c0e.firebasestorage.app",
   messagingSenderId: "238155510408",

@@ -12,7 +12,10 @@ import {
 
 const firebaseConfig = {
   apiKey: "AIzaSyD6KXHIf1aaSDjbhHo8VtzbeMcaDIMP4SA",
-  authDomain: "hanagency-c2c0e.firebaseapp.com",
+  // 앱과 같은 도메인으로 로그인 처리 — firebaseapp.com(다른 도메인)을 거치면 Safari·Chrome의
+  // 저장소 분리 때문에 계정을 골라도 로그인이 안 붙는 경우가 많았다.
+  // Google OAuth 클라이언트 승인 리디렉션 URI: https://hanagency-c2c0e.web.app/__/auth/handler
+  authDomain: "hanagency-c2c0e.web.app",
   projectId: "hanagency-c2c0e",
   storageBucket: "hanagency-c2c0e.firebasestorage.app",
   messagingSenderId: "238155510408",
