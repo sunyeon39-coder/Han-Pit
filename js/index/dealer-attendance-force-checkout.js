@@ -5,6 +5,7 @@ import { IX } from "./state.js";
 import { getAttendanceDocId, getAttendanceRef } from "./dealer-attendance-refs.js";
 import {
   removeUserFromAllSeatsGlobal,
+  clearUserFromGlobalSeats,
   removeFromSharedWaitingOnCheckOut,
   clearUserSeatNotification
 } from "./dealer-attendance-waiting.js";
@@ -28,11 +29,13 @@ function applyCheckedOutSeatClear(tournamentId, uid) {
   });
 }
 
-async function runCheckedOutCleanup(target) {
+async function runCheckedOutCleanup(target, { clearGlobalSeats = false } = {}) {
   const tournamentId = getTournamentId();
   if (!target?.uid || !tournamentId) return;
 
   await Promise.all([
+    // 통합배치도 좌석 비우기 — global_seats 쓰기는 관리자만 가능해서 관리자 퇴근 처리에서만.
+    clearGlobalSeats ? clearUserFromGlobalSeats(tournamentId, target.uid) : Promise.resolve(0),
     removeUserFromAllSeatsGlobal({ uid: target.uid }),
     removeFromSharedWaitingOnCheckOut({
       uid: target.uid,
@@ -66,7 +69,7 @@ export async function forceAdminCheckedOut(target) {
   applyCheckedOutSeatClear(tournamentId, target.uid);
 
   try {
-    await runCheckedOutCleanup(target);
+    await runCheckedOutCleanup(target, { clearGlobalSeats: true });
   } catch (err) {
     console.error("forceAdminCheckedOut cleanup:", err);
   }

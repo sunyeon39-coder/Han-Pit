@@ -41,6 +41,7 @@ export function seatHistoryReasonLabel(reason = "") {
   const r = String(reason || "").trim();
   if (r === "replace") return "교체";
   if (r === "clear") return "비우기";
+  if (r === "checkout") return "퇴근";
   if (r === "current") return "현재";
   return r || "-";
 }

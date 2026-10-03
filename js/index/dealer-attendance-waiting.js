@@ -7,7 +7,9 @@ import {
   query,
   where,
   setDoc,
-  writeBatch
+  writeBatch,
+  runTransaction,
+  serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 import { mergeOpsProfile, normalizeUserProfile } from "../shared/auth-helpers.js";
@@ -254,6 +256,87 @@ export async function removeUserFromAllSeatsGlobal(user) {
     console.error("❌ removeUserFromAllSeatsGlobal error:", error);
     return 0;
   }
+}
+
+const CHECKOUT_SEAT_HISTORY_MAX = 40;
+
+function isEmptySeatPersonName(name = "") {
+  const v = String(name || "").trim();
+  return !v || v === "비어있음";
+}
+
+/**
+ * 관리자 퇴근 처리 — 통합배치도(tournaments/{tid}/global_seats)에서 이 사람을 뺀다.
+ * removeUserFromAllSeatsGlobal 은 layout_events(개별 배치도 투영본)만 고쳐서, 통합배치도
+ * 좌석엔 퇴근한 사람이 그대로 남았다.
+ * - 앉아 있던 좌석: 비우고 배치 이력에 "퇴근"으로 남긴다. 그 좌석에 교대 확정 대기
+ *   (incomingPerson)가 걸려 있으면 그대로 둬서 서버 10분 확정 때 그 사람이 들어간다.
+ * - 교대 확정 대기로 예약돼 있던 좌석: 예약만 취소한다(기존 점유자는 그대로).
+ * 관리자 권한이 필요하다(global_seats 쓰기 규칙).
+ */
+export async function clearUserFromGlobalSeats(tournamentId, uid) {
+  const tid = String(tournamentId || "").trim();
+  const safeUid = String(uid || "").trim();
+  if (!tid || !safeUid) return 0;
+
+  const seatsCol = collection(db, "tournaments", tid, "global_seats");
+  const [occupiedSnap, incomingSnap] = await Promise.all([
+    getDocs(query(seatsCol, where("personUid", "==", safeUid))),
+    getDocs(query(seatsCol, where("incomingPersonUid", "==", safeUid)))
+  ]);
+  const refs = new Map();
+  for (const d of [...occupiedSnap.docs, ...incomingSnap.docs]) refs.set(d.ref.path, d.ref);
+
+  let changedCount = 0;
+  for (const ref of refs.values()) {
+    try {
+      const changed = await runTransaction(db, async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists()) return false;
+        const data = snap.data() || {};
+        const now = Date.now();
+        const patch = {};
+
+        if (String(data.personUid || "").trim() === safeUid && !isEmptySeatPersonName(data.person)) {
+          const history = Array.isArray(data.seatHistory) ? data.seatHistory.filter(Boolean) : [];
+          history.push({
+            person: String(data.person || "").trim(),
+            personUid: safeUid,
+            personEmail: String(data.personEmail || "").trim(),
+            seatedAt: Number(data.seatedAt) || now,
+            leftAt: now,
+            reason: "checkout"
+          });
+          Object.assign(patch, {
+            person: "비어있음",
+            personUid: "",
+            personEmail: "",
+            seatedAt: null,
+            status: "empty",
+            seatHistory: history.slice(-CHECKOUT_SEAT_HISTORY_MAX)
+          });
+        }
+        if (
+          String(data.incomingPersonUid || "").trim() === safeUid &&
+          !isEmptySeatPersonName(data.incomingPerson)
+        ) {
+          Object.assign(patch, {
+            incomingPerson: "",
+            incomingPersonUid: "",
+            incomingPersonEmail: "",
+            incomingAt: null
+          });
+        }
+        if (!Object.keys(patch).length) return false;
+        tx.set(ref, { ...patch, updatedAt: now, updatedAtServer: serverTimestamp() }, { merge: true });
+        return true;
+      });
+      if (changed) changedCount += 1;
+    } catch (error) {
+      console.error("❌ clearUserFromGlobalSeats error:", ref.path, error);
+    }
+  }
+  return changedCount;
 }
 
 export async function clearUserSeatNotification(uid) {
