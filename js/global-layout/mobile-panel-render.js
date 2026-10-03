@@ -1,3 +1,4 @@
+import { showToast } from "../shared/toast.js";
 import { auth } from "../firebase.js";
 import { layoutIsMobile } from "../layout/layout-main-route-env.js";
 import { GL } from "./state.js";
@@ -348,7 +349,7 @@ export function wireGlobalLayoutMobileEventsOnce() {
       if (!String(GL.selectedWaitingId || "").trim() || !sid) return;
       try {
         const { assignSelectedWaitingToSeat } = await loadFirestoreOps();
-        await assignSelectedWaitingToSeat(sid);
+        if ((await assignSelectedWaitingToSeat(sid)) === true) showToast("✓ 배치 완료 · 저장됨");
         fullRender();
       } catch (err) {
         console.error("mobile assign button error:", err);
@@ -428,7 +429,7 @@ export function wireGlobalLayoutMobileEventsOnce() {
         setMobileSeatSelection(sid);
         try {
           const { assignSelectedWaitingToSeat } = await loadFirestoreOps();
-          await assignSelectedWaitingToSeat(sid);
+          if ((await assignSelectedWaitingToSeat(sid)) === true) showToast("✓ 배치 완료 · 저장됨");
           fullRender();
         } catch (err) {
           if (String(err?.message || "").includes("same_person_noop")) {

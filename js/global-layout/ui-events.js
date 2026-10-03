@@ -1,4 +1,5 @@
 import { GL } from "./state.js";
+import { showToast } from "../shared/toast.js";
 import { layoutIsMobile } from "../layout/layout-main-route-env.js";
 import {
   getSeatById,
@@ -234,8 +235,16 @@ export function bindGlobalLayoutEventHandlers() {
         return;
       }
       btn.disabled = true;
+      // 저장 진행/결과를 바로 보여준다 — 예전엔 성공해도 아무 표시가 없어 됐는지 알 수 없었다.
+      const label = immediate ? "즉시확인" : "배치확인";
+      showToast(`${label} 저장 중… (${GL.pendingSeatAssignments.size}명)`, { tone: "busy", durationMs: 0 });
       try {
         const { confirmedCount, failed } = await confirmAllPendingSeatAssignments({ immediate });
+        if (!failed.length) {
+          showToast(`✓ ${label} 완료 · ${confirmedCount}명 저장됨`);
+        } else {
+          showToast(`${label}: ${confirmedCount}명 저장, ${failed.length}명 실패`, { tone: "warn", durationMs: 5000 });
+        }
         if (failed.length) {
           const lines = failed.map(({ waiting, err }) => {
             const msg = String(err?.message || "").trim();
@@ -250,6 +259,9 @@ export function bindGlobalLayoutEventHandlers() {
           });
           alert(`${confirmedCount}건 확정, ${failed.length}건 실패:\n${lines.join("\n")}`);
         }
+      } catch (err) {
+        console.error("confirmAllPendingSeatAssignments error:", err);
+        showToast(`${label} 실패 — 다시 시도해 주세요.`, { tone: "warn", durationMs: 5000 });
       } finally {
         renderSeats(GL.globalSeats);
         renderWaiting(getCurrentTournamentWaiting());

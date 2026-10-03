@@ -248,7 +248,7 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
         alert(layoutGate.message);
         // 배치확인(일괄)은 return을 성공으로 센다 — 실패로 알려야 화면을 되돌린다.
         if (skipOptimistic) throw new Error("layout_gate_failed");
-        return;
+        return false;
       }
     }
 
@@ -1034,6 +1034,7 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
     if (e === ev && b === bx) continue;
     scheduleSyncLayoutProjection(e, b);
   }
+  return true;
 }
 
 /**
