@@ -47,10 +47,18 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
+    // role 필드가 없던 문서(FCM 토큰 stub 등)에 본인이 role:"admin" 을 써넣지 못하게 — 누락은 "user" 로 취급
     function roleUnchanged() {
-      return !("role" in request.resource.data) ||
-        !("role" in resource.data) ||
-        request.resource.data.role == resource.data.role;
+      return request.resource.data.get('role', 'user') == resource.data.get('role', 'user');
+    }
+
+    // 신규 가입자가 users/{uid} 를 처음 만들 때 스스로 운영 권한을 넣지 못하게 한다.
+    // (isAdmin() 이 role=='admin' / allowedEvents / opsTournamentIds 만 보고 판단하므로,
+    //  예전 규칙에선 아무 구글 계정이나 가입하면서 role:"admin" 을 넣어 전체 운영 권한을 얻을 수 있었다)
+    function selfCreateHasNoOpsAccess() {
+      return request.resource.data.get('role', 'user') == 'user' &&
+        request.resource.data.get('allowedEvents', {}).size() == 0 &&
+        request.resource.data.get('opsTournamentIds', []).size() == 0;
     }
 
     // 누락 필드와 {} / "" 를 동일하게 취급 (FCM 토큰만 있는 users/{uid} stub → 로그인 setDoc 시 오탐 방지)
@@ -64,19 +72,30 @@ service cloud.firestore {
 
     match /users/{uid} {
       allow read: if signedIn();
-      allow create: if isSelf(uid);
-      allow update: if isAdmin() ||
+      // 다른 사용자의 권한(role/allowedEvents/accessCode) 변경은 허브「접근 관리」= 시스템 admin 전용.
+      // 예전엔 isAdmin()(아무 대회 운영자)이면 누구 문서든 고칠 수 있어, 한 대회 운영자가
+      // 스스로 모든 대회 권한을 부여하거나 다른 사람 권한을 지울 수 있었다.
+      allow create: if isAdminEmailToken() ||
+        (isSelf(uid) && selfCreateHasNoOpsAccess());
+      allow update: if isAdminEmailToken() ||
         (
           isSelf(uid) &&
           roleUnchanged() &&
           accessFieldsUnchanged()
         );
-      allow delete: if isAdmin();
+      allow delete: if isAdminEmailToken();
     }
 
     match /tournaments/{tournamentId} {
       allow read: if signedIn();
-      allow create, update, delete: if isAdmin();
+      // 대회 생성·삭제·이름/코드 변경은 허브(시스템 admin) 전용, 운영자는 통합 배치도 공지(topicText)만
+      allow create, delete: if isAdminEmailToken();
+      allow update: if isAdminEmailToken() ||
+        (
+          isAdmin() &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(["topicText", "updatedAt", "updatedAtServer"])
+        );
 
       match /events/{eventId} {
         allow read: if signedIn();
@@ -133,9 +152,10 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // floor_map(좌석 맵) — 맵 편집은 운영 UI 전용이라 일반 로그인 사용자의 쓰기를 막는다
     match /layout_shared/{docId} {
       allow read: if signedIn();
-      allow create, update: if signedIn();
+      allow create, update: if isAdmin();
       allow delete: if isAdmin();
     }
 
@@ -207,7 +227,8 @@ service cloud.firestore {
     // HAN 지원서: 본인만 작성, admin 만 열람·수정·삭제
     // 참고: rules 의 string.size() 는 UTF-8 바이트 길이(글자 수 아님). 한글 필드는 한도를 넉넉히 둔다.
     match /han_applications/{docId} {
-      allow read: if isAdmin();
+      // 지원자 개인정보(전화번호 등) — 허브 HAN지원 관리 화면과 같이 시스템 admin 만
+      allow read: if isAdminEmailToken();
       allow create: if signedIn() &&
         request.resource.data.keys().hasOnly([
           "applicantUid",
@@ -240,7 +261,7 @@ service cloud.firestore {
         request.resource.data.createdAt is int &&
         request.resource.data.createdAt > 0 &&
         request.resource.data.createdAt <= request.time.toMillis() + 300000;
-      allow update, delete: if isAdmin();
+      allow update, delete: if isAdminEmailToken();
     }
   }
 }

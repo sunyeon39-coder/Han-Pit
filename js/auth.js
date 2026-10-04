@@ -6,6 +6,7 @@ import {
   signOut
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { createGoogleAuthProvider } from "./shared/google-auth-provider.js";
+import { clearLoginProfileCache } from "./shared/login-profile-cache.js";
 import {
   isGoogleOAuthLikelyBlockedBrowser,
   shouldPreferGoogleRedirectOverPopup,
@@ -65,8 +66,24 @@ export function requireAuth(onAuthed) {
   });
 }
 
+/** 로그아웃 시 이 기기에 남은 프로필·운영 권한 힌트 제거 — 다음 사용자에게 이전 계정 권한 UI가 비치지 않게 */
+function clearLocalSessionCaches() {
+  clearLoginProfileCache();
+  try {
+    for (const store of [localStorage, sessionStorage]) {
+      for (let i = store.length - 1; i >= 0; i -= 1) {
+        const key = store.key(i);
+        if (key && key.startsWith("hanpit_gl_ops_hint_v1_")) store.removeItem(key);
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 export async function logout() {
   clearOAuthRedirectPending();
+  clearLocalSessionCaches();
   await signOut(auth);
   location.replace("./login.html");
 }

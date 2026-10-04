@@ -135,15 +135,38 @@ export async function ensureUserDoc(user) {
         : []
     };
 
-    await setDoc(
-      userRef,
-      {
+    try {
+      await setDoc(
+        userRef,
+        {
+          ...profile,
+          createdAt: legacyData.createdAt || serverTimestamp(),
+          lastLogin: serverTimestamp()
+        },
+        { merge: true }
+      );
+    } catch (err) {
+      if (err?.code !== "permission-denied") throw err;
+      // 보안 규칙상 본인이 운영 권한(role/allowedEvents)을 가진 문서를 새로 만들 수 없음 —
+      // 일반 계정으로 만들고, 운영 권한은 허브 접근 관리에서 다시 부여한다.
+      console.warn("[ensureUserDoc] legacy ops fields not migrated:", err);
+      const basic = {
         ...profile,
-        createdAt: legacyData.createdAt || serverTimestamp(),
-        lastLogin: serverTimestamp()
-      },
-      { merge: true }
-    );
+        role: resolveStoredUserRole(email, {}),
+        allowedEvents: {},
+        opsTournamentIds: []
+      };
+      await setDoc(
+        userRef,
+        {
+          ...basic,
+          createdAt: legacyData.createdAt || serverTimestamp(),
+          lastLogin: serverTimestamp()
+        },
+        { merge: true }
+      );
+      return { created: true, migrated: true, role: basic.role, profile: basic };
+    }
 
     return {
       created: true,

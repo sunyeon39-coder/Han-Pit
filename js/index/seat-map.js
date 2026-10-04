@@ -10,6 +10,7 @@ import {
 import { openModal, closeModal, escapeHtml } from "../shared/dom-utils.js";
 import { getStableEventBoxPaletteClass } from "../global-layout/event-box-palette.js";
 import { IX, refreshIndexDomRefs } from "./state.js";
+import { getTournamentId } from "./core-utils.js";
 
 /* ===============================
    SEAT MAP (ADD ONLY)
@@ -280,9 +281,14 @@ function bindSeatMapRealtime() {
     collection(db, "layout_events"),
     (snap) => {
       IX.seatMapData.clear();
+      // layout_events 는 모든 대회 공용 — 다른 대회 좌석이 이 대회 맵에 "배치됨"으로 칠해지지 않게 거른다
+      const tid = getTournamentId();
+      const eventIds = new Set((IX.events || []).map((e) => String(e?.id || "").trim()));
 
       snap.docs.forEach((d) => {
         const data = d.data() || {};
+        const docTid = String(data.tournamentId || "").trim();
+        if (tid && (docTid ? docTid !== tid : !eventIds.has(String(data.eventId || "").trim()))) return;
         const seats = Array.isArray(data.seats) ? data.seats : [];
 
         seats.forEach((seat) => {
@@ -312,7 +318,14 @@ function bindSeatMapRealtime() {
 /* load map */
 
 async function loadMapEditor() {
-  const snap = await getDoc(doc(db, "layout_shared", "floor_map"));
+  let snap;
+  try {
+    snap = await getDoc(doc(db, "layout_shared", "floor_map"));
+  } catch (err) {
+    console.error("loadMapEditor error:", err);
+    alert("맵을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    return;
+  }
 
   clearSeatMapSelection();
   if (!snap.exists()) {
@@ -531,11 +544,17 @@ export function wireSeatMapListeners() {
 /* save */
 
   IX.saveMapBtn?.addEventListener("click", async () => {
-  await setDoc(
-    doc(db, "layout_shared", "floor_map"),
-    { seats: IX.editorSeats },
-    { merge: true }
-  );
+    try {
+      await setDoc(
+        doc(db, "layout_shared", "floor_map"),
+        { seats: IX.editorSeats },
+        { merge: true }
+      );
+    } catch (err) {
+      console.error("save floor_map error:", err);
+      alert(`맵 저장 실패: ${err?.code || err?.message || err}`);
+      return;
+    }
 
     IX.seatMapLayout = [...IX.editorSeats];
     setSeatMapEditMode(false);
