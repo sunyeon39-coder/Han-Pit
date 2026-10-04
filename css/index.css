@@ -1292,6 +1292,12 @@ body {
   background:rgba(244,184,96,.16);
 }
 
+.dealer-status-pill.blocked{
+  color:#ffe1cc;
+  border-color:rgba(255,140,66,.45);
+  background:rgba(255,140,66,.18);
+}
+
 .dealer-status-pill.checked_out,
 .dealer-status-pill.off{
   color:#ffdbe0;
@@ -2265,7 +2271,8 @@ button.work-summary-time-chip{
 
   .dealer-admin-summary{
     display:grid;
-    grid-template-columns: repeat(3, minmax(0,1fr));
+    /* 대기·블락·배치중·퇴근·미출근 5칸을 한 줄에 */
+    grid-template-columns: repeat(5, minmax(0,1fr));
     gap:8px;
     margin-bottom:10px;
   }
@@ -2814,4 +2821,7 @@ button.work-summary-time-chip{
   border-top: 2px solid rgba(255, 255, 255, 0.16);
   border-bottom: none;
   color: var(--text-1);
+}
+.dealer-metric--blocked .dealer-metric-value{
+  color:#ffb27a;
 }

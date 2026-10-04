@@ -18,6 +18,7 @@ import { getDerivedAttendance, getWorkingMs } from "./dealer-attendance-derived.
 import { syncIndexOpsToolbar } from "./index-ops-chrome.js";
 import { bootstrapIndexDealerOps } from "./index-ops-bootstrap.js";
 import {
+  adminDisplayStatus,
   getAdminAttendanceList,
   getFilteredAdminAttendanceList,
   getAdminAttendanceStatusCounts
@@ -51,6 +52,10 @@ function renderDealerAdminSummaryHtml(counts) {
           <div class="dealer-metric">
             <div class="dealer-metric-label">대기</div>
             <div class="dealer-metric-value">${counts.waiting}</div>
+          </div>
+          <div class="dealer-metric dealer-metric--blocked">
+            <div class="dealer-metric-label">블락</div>
+            <div class="dealer-metric-value">${counts.blocked}</div>
           </div>
           <div class="dealer-metric">
             <div class="dealer-metric-label">배치중</div>
@@ -86,8 +91,8 @@ function renderDealerAdminListHtml() {
   </div>
 
   <div class="dealer-row-status">
-    <span class="dealer-status-pill ${escapeHtml(item.status || "off")}">
-      ${escapeHtml(getAttendanceStatusLabel(item.status || "off"))}
+    <span class="dealer-status-pill ${escapeHtml(adminDisplayStatus(item))}">
+      ${escapeHtml(adminDisplayStatus(item) === "blocked" ? "블락" : getAttendanceStatusLabel(item.status || "off"))}
     </span>
   </div>
 
@@ -188,7 +193,7 @@ function dealerAdminListFingerprint() {
   return list
     .map(
       (item) =>
-        `${item.uid}:${item.status || "off"}:${item.nickname || item.email || ""}:${item.currentSeatLabel || ""}:${getWorkingMs(item)}`
+        `${item.uid}:${adminDisplayStatus(item)}:${item.nickname || item.email || ""}:${item.currentSeatLabel || ""}:${getWorkingMs(item)}`
     )
     .join("|");
 }
@@ -337,6 +342,7 @@ export function renderDealerOps() {
   <select class="dealer-admin-filter" data-dealer-filter>
     <option value="all" ${IX.dealerAdminUi.status === "all" ? "selected" : ""}>전체</option>
     <option value="waiting" ${IX.dealerAdminUi.status === "waiting" ? "selected" : ""}>대기</option>
+    <option value="blocked" ${IX.dealerAdminUi.status === "blocked" ? "selected" : ""}>블락</option>
     <option value="assigned" ${IX.dealerAdminUi.status === "assigned" ? "selected" : ""}>배치중</option>
     <option value="checked_out" ${IX.dealerAdminUi.status === "checked_out" ? "selected" : ""}>퇴근</option>
     <option value="off" ${IX.dealerAdminUi.status === "off" ? "selected" : ""}>미출근</option>

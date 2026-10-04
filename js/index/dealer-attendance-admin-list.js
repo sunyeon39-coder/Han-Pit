@@ -100,6 +100,9 @@ function applyOpsStatusOverlay(item = {}, opsIndex = null) {
   return {
     ...item,
     status: "waiting",
+    // 통합 배치도에서 BLOCK 체크된 대기자 — 목록·필터에선 "블락"으로 따로 보여준다
+    // (status 는 waiting 유지: 근무 시간 계산 등은 대기와 동일)
+    blocked: waitRow.blockChecked === true,
     checkedInAt: item.checkedInAt || joinMs,
     checkedOutAt: null,
     statusChangedAt: item.statusChangedAt || joinMs,
@@ -253,18 +256,27 @@ function mergeQueueAndSeatRowsIntoAdminList(list, seenUids, opsIndex, tournament
   list.sort((a, b) => (a.nickname || "").localeCompare(b.nickname || "", "ko"));
 }
 
+/** 화면 표시용 상태 — 대기 중 BLOCK 이면 "blocked" */
+export function adminDisplayStatus(item = {}) {
+  const status = String(item?.status || "off").trim() || "off";
+  if (item?.blocked === true && (status === "waiting" || status === "checked_in")) return "blocked";
+  return status;
+}
+
 /** Admin 패널 요약 카드 — 목록(`getAdminAttendanceList`)과 동일한 status 기준 */
 export function getAdminAttendanceStatusCounts({ assignedSeatCount = null } = {}) {
   const counts = {
     waiting: 0,
+    blocked: 0,
     assigned: 0,
     checked_out: 0,
     off: 0
   };
 
   for (const item of getAdminAttendanceList()) {
-    const s = String(item.status || "off").trim();
-    if (s === "waiting") counts.waiting += 1;
+    const s = adminDisplayStatus(item);
+    if (s === "blocked") counts.blocked += 1;
+    else if (s === "waiting" || s === "checked_in") counts.waiting += 1;
     else if (s === "assigned") counts.assigned += 1;
     else if (s === "checked_out") counts.checked_out += 1;
     else if (s === "off") counts.off += 1;
@@ -290,7 +302,7 @@ export function getFilteredAdminAttendanceList() {
   let list = base.filter((item) => {
     const name = String(item.nickname || "").toLowerCase();
     const email = String(item.email || "").toLowerCase();
-    const status = String(item.status || "off").trim();
+    const status = adminDisplayStatus(item);
 
     const matchKeyword =
       !keyword ||
@@ -313,14 +325,16 @@ export function getFilteredAdminAttendanceList() {
   if (IX.dealerAdminUi.sort === "status") {
     const order = {
       waiting: 1,
-      assigned: 2,
-      checked_out: 3,
-      off: 4
+      checked_in: 1,
+      blocked: 2,
+      assigned: 3,
+      checked_out: 4,
+      off: 5
     };
 
     list.sort((a, b) => {
-      const ao = order[String(a.status || "off")] ?? 99;
-      const bo = order[String(b.status || "off")] ?? 99;
+      const ao = order[adminDisplayStatus(a)] ?? 99;
+      const bo = order[adminDisplayStatus(b)] ?? 99;
       if (ao !== bo) return ao - bo;
       return String(a.nickname || "").localeCompare(String(b.nickname || ""), "ko");
     });
