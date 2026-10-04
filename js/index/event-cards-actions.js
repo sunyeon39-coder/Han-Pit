@@ -13,7 +13,10 @@ import {
 } from "../shared/tournament-event-instance.js";
 import { resolveEventDocIdFromForm, resolveSelectedEventDocId } from "./event-cards-ids.js";
 import { ensureLayoutEventShellAfterCardSave } from "./event-cards-layout-shell.js";
-import { forceCheckOutUsersForDeletedEvent } from "./event-cards-delete-cleanup.js";
+import {
+  forceCheckOutUsersForDeletedEvent,
+  purgeDeletedEventData
+} from "./event-cards-delete-cleanup.js";
 import { upsertIndexEventInCache, removeIndexEventFromCache } from "./event-cards-loaders.js";
 
 function canManageCurrentTournamentOps() {
@@ -141,7 +144,7 @@ export async function deleteEventCardCurrent() {
   }
 
   const ok = confirm(
-    `"${cardId || docId}" (${IX.eventCardDate?.value || "날짜 없음"}) 카드를 삭제할까요?\n배치 중인 딜러는 강제 퇴근 처리됩니다.`
+    `"${cardId || docId}" (${IX.eventCardDate?.value || "날짜 없음"}) 카드를 삭제할까요?\n배치 중인 딜러는 강제 퇴근 처리되고,\n이 이벤트의 좌석·배치 이력·배치도 데이터도 모두 삭제됩니다.`
   );
   if (!ok) return;
 
@@ -150,6 +153,8 @@ export async function deleteEventCardCurrent() {
       eventId: docId,
       boxId
     });
+
+    await purgeDeletedEventData({ eventId: docId });
 
     await deleteDoc(getEventDocRef(docId));
 

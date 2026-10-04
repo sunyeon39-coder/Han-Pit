@@ -236,3 +236,57 @@ export async function forceCheckOutUsersForDeletedEvent({ eventId = "", boxId = 
 
   return { affectedUsers };
 }
+
+function refMatchesEvent(docSnap, eid) {
+  const d = docSnap.data() || {};
+  if (String(docSnap.id || "").startsWith(`${eid}__`)) return true;
+  return (
+    String(d.eventId || "").trim() === eid ||
+    String(d.currentEventId || "").trim() === eid ||
+    String(d.mappedEventId || "").trim() === eid
+  );
+}
+
+async function deleteRefsInBatches(refs = []) {
+  for (const refsChunk of chunkArray(refs, 400)) {
+    const batch = writeBatch(db);
+    refsChunk.forEach((ref) => batch.delete(ref));
+    await commitBatchWithRetry(batch, { maxRetries: 1, retryDelayMs: 250 });
+  }
+}
+
+/**
+ * 이벤트 카드 삭제 시 그 이벤트 ID에 묶인 데이터를 전부 지운다.
+ * 같은 ID로 카드를 다시 만들었을 때 예전 좌석·배치 이력·배치도가 되살아나지 않게 한다.
+ * - tournaments/{tid}/global_seats : 해당 이벤트 좌석 문서
+ * - tournaments/{tid}/global_seats_archive : 해당 이벤트 좌석 배치 이력 보관본
+ * - layout_events : 해당 이벤트 배치도 문서
+ * 출퇴근 로그(dealer_attendance_logs)는 근무 요약·인건비 근거라 남긴다.
+ */
+export async function purgeDeletedEventData({ eventId = "" } = {}) {
+  const tournamentId = ensureTournamentContextOrAlert();
+  const eid = String(eventId || "").trim();
+  if (!tournamentId || !eid) return { deleted: 0 };
+  if (!canUseTournamentOps(auth.currentUser?.email, IX.currentUserProfile, tournamentId)) {
+    return { deleted: 0 };
+  }
+
+  const [seatsSnap, archiveSnap, layoutSnap] = await Promise.all([
+    getDocs(collection(db, "tournaments", tournamentId, "global_seats")),
+    getDocs(collection(db, "tournaments", tournamentId, "global_seats_archive")),
+    getDocs(collection(db, "layout_events"))
+  ]);
+
+  const refs = [
+    ...seatsSnap.docs.filter((d) => refMatchesEvent(d, eid)),
+    ...archiveSnap.docs.filter((d) => refMatchesEvent(d, eid)),
+    ...layoutSnap.docs.filter((d) => {
+      if (!refMatchesEvent(d, eid)) return false;
+      const t = String(d.data()?.tournamentId || "").trim();
+      return !t || t === tournamentId;
+    })
+  ].map((d) => d.ref);
+
+  await deleteRefsInBatches(refs);
+  return { deleted: refs.length };
+}
