@@ -181,6 +181,8 @@ function buildGlobalLayoutHref() {
 }
 
 let indexAuthFlowGen = 0;
+let selfAttendanceActionInFlight = false;
+const adminCheckoutInFlight = new Set();
 let indexSessionUid = "";
 let indexOpsResyncTimer = 0;
 
@@ -563,6 +565,10 @@ function wireIndexPageControls() {
       if (selfBtn && user) {
         const action = String(selfBtn.getAttribute("data-self-action") || "").trim();
         if (!action) return;
+        // 빠른 연속 탭으로 출근/퇴근이 두 번 기록(로그 2건)되지 않게 처리 중엔 무시
+        if (selfAttendanceActionInFlight) return;
+        selfAttendanceActionInFlight = true;
+        try {
 
         if (action === "waiting") {
           if (typeof window.hanPitEnsureFreshBuild === "function") {
@@ -602,6 +608,9 @@ function wireIndexPageControls() {
             alert("퇴근 처리에 실패했습니다. 잠시 후 다시 시도해 주세요.");
           }
           return;
+        }
+        } finally {
+          selfAttendanceActionInFlight = false;
         }
       }
 
@@ -643,6 +652,8 @@ function wireIndexPageControls() {
               return;
             }
 
+            if (adminCheckoutInFlight.has(uid)) return;
+            adminCheckoutInFlight.add(uid);
             try {
               const ok = await forceAdminCheckedOut(target);
               if (!ok) return;
@@ -650,6 +661,8 @@ function wireIndexPageControls() {
             } catch (err) {
               console.error("forceAdminCheckedOut:", err);
               alert("퇴근 처리에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+            } finally {
+              adminCheckoutInFlight.delete(uid);
             }
           }
         }

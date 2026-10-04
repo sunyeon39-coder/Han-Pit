@@ -96,5 +96,8 @@ export function isTournamentActive(tournament) {
   const startOfDay = new Date(start);
   startOfDay.setHours(0, 0, 0, 0);
 
-  return !(now < startOfDay || now > end);
+  // 운영일은 06:00~익일 05:59 — 마지막 날 야간 근무(자정 이후)가 대회 종료로 허브에 튕기지 않게
+  const endOfOperationalDay = new Date(end.getTime() + 6 * 60 * 60 * 1000);
+
+  return !(now < startOfDay || now > endOfOperationalDay);
 }

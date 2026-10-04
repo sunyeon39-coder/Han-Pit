@@ -84,15 +84,29 @@ export async function hasRemoteAssignedSeatForUser(attendance = {}, uid = "") {
   }
 }
 
-export async function ensureMeRecovered(user) {
+let ensureMeRecoveredInflight = null;
+
+/** 좌석·출석 스냅샷마다 호출됨 — 동시에 여러 번 돌지 않게 하나로 묶는다 */
+export function ensureMeRecovered(user) {
+  if (ensureMeRecoveredInflight) return ensureMeRecoveredInflight;
+  ensureMeRecoveredInflight = ensureMeRecoveredOnce(user).finally(() => {
+    ensureMeRecoveredInflight = null;
+  });
+  return ensureMeRecoveredInflight;
+}
+
+async function ensureMeRecoveredOnce(user) {
   const tournamentId = getTournamentId();
   if (!user || !tournamentId) return;
 
   const raw = getBaseAttendance(user);
   const seatInfo = getMySeatInfo(user.uid);
 
-  const { state: waitingStateDoc } = await getSharedWaitingState(tournamentId);
-  const waitingList = Array.isArray(waitingStateDoc.waiting) ? waitingStateDoc.waiting : [];
+  // 대기 목록 실시간 구독이 서버 값을 받았으면 그걸 쓴다 — 예전엔 좌석 스냅샷이 올 때마다
+  // global_waiting 전체를 다시 읽어(근무자 수 × 좌석 변경 횟수) 읽기 비용이 컸다.
+  const waitingList = IX.globalWaitingServerSynced
+    ? IX.globalWaiting || []
+    : (await getSharedWaitingState(tournamentId)).state.waiting || [];
 
   const nickname =
     String(IX.currentUserProfile?.nickname || user.displayName || "").trim() ||

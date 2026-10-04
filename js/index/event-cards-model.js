@@ -5,9 +5,12 @@ import { IX } from "./state.js";
 export function getStatus(date, start, close) {
   const now = getNowInAppTime();
   const startTime = parseDateTime(date, start);
-  const closeTime = parseDateTime(date, close);
+  let closeTime = parseDateTime(date, close);
 
   if (!startTime || !closeTime) return "scheduled";
+  // 등록 마감이 자정을 넘기는 경우(예: 20:00 시작 · 02:00 마감) — 마감은 다음 날로 본다.
+  // 예전엔 같은 날짜로 계산돼 시작하자마자 CLOSED 로 표시됐다.
+  if (closeTime <= startTime) closeTime = new Date(closeTime.getTime() + 24 * 60 * 60 * 1000);
 
   const openTime = new Date(startTime.getTime() - 30 * 60 * 1000);
 

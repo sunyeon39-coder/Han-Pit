@@ -4,7 +4,6 @@ import {
   doc,
   deleteDoc,
   getDocs,
-  getDocsFromServer,
   limit,
   onSnapshot,
   orderBy,
@@ -36,6 +35,7 @@ function getAttendanceActionLabel(action) {
   if (action === "adjust_check_out") return "퇴근 시각 수정";
   if (action === "adjust_work_session") return "근무 구간 수정";
   if (action === "delete_work_session") return "근무 구간 삭제";
+  if (action === "add_work_session") return "근무 구간 추가";
   if (action === "operational_day_reset") return "운영일 전환 초기화";
   return action || "기타";
 }
@@ -312,16 +312,8 @@ export function bindAttendanceLogsRealtime() {
   const tournamentId = getTournamentId();
   const q = buildAttendanceLogsQuery({ tournamentId });
 
-  void (async () => {
-    try {
-      const snap = await getDocsFromServer(q);
-      applyAttendanceLogPage(snap.docs, { append: false });
-      scheduleAttendanceLogsRender();
-    } catch (err) {
-      console.warn("bindAttendanceLogsRealtime server load:", err?.code || err);
-    }
-  })();
-
+  // 예전엔 같은 쿼리를 getDocsFromServer 로 한 번 더 읽어 창을 열 때마다 500건×2 read 가 났다 —
+  // onSnapshot 이 서버 값을 받아오므로 구독 하나로 충분하다.
   IX.stopAttendanceLogsWatch = onSnapshot(
     q,
     (snap) => {

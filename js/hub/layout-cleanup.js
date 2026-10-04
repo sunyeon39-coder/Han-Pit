@@ -120,9 +120,41 @@ export async function removeUserFromAllSeats(user, selectedTournamentId = "") {
   return removedCount;
 }
 
+/**
+ * 통합 배치도 정본(tournaments/{tid}/global_seats) 좌석에서도 뺀다 — 예전엔 layout_events(투영본)만
+ * 비워서, 권한을 해제해도 통합 배치도엔 그 사람이 계속 앉아 있는 것으로 남았다.
+ */
+async function removeUserFromGlobalSeats(user, tournamentId = "") {
+  const tid = String(tournamentId || "").trim();
+  const targetUid = String(user?.uid || "").trim();
+  if (!tid || !targetUid) return 0;
+  try {
+    const snap = await getDocs(
+      query(collection(db, "tournaments", tid, "global_seats"), where("personUid", "==", targetUid))
+    );
+    if (snap.empty) return 0;
+    const now = Date.now();
+    const batch = writeBatch(db);
+    snap.docs.forEach((d) => {
+      batch.set(
+        d.ref,
+        { person: "비어있음", personUid: "", personEmail: "", seatedAt: null, status: "empty", updatedAt: now },
+        { merge: true }
+      );
+    });
+    await batch.commit();
+    return snap.size;
+  } catch (err) {
+    console.error("removeUserFromGlobalSeats error:", err);
+    return 0;
+  }
+}
+
 export async function cleanupUserFromLayoutState(user, tournamentId = "") {
   const waitingRemoved = await removeUserFromEventWaiting(user, tournamentId);
-  const seatRemoved = await removeUserFromAllSeats(user, tournamentId);
+  const projectionRemoved = await removeUserFromAllSeats(user, tournamentId);
+  const globalRemoved = await removeUserFromGlobalSeats(user, tournamentId);
+  const seatRemoved = Math.max(projectionRemoved, globalRemoved);
 
   return {
     waitingRemoved,

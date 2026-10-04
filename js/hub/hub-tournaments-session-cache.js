@@ -1,3 +1,5 @@
+import { getOperationalEventDate } from "../shared/tournament-event-instance.js";
+
 const HUB_TOURNAMENTS_SESSION_KEY = "hanpit_hub_tournaments_v1";
 const HUB_TOURNAMENTS_LOCAL_KEY = "hanpit_hub_tournaments_ls_v1";
 const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -37,13 +39,13 @@ function isSavedToday(raw) {
   try {
     const savedAt = Number(JSON.parse(raw)?.savedAt || 0);
     if (!savedAt) return false;
-    return new Date(savedAt).toDateString() === new Date().toDateString();
+    return getOperationalEventDate(new Date(savedAt)) === getOperationalEventDate();
   } catch {
     return false;
   }
 }
 
-/** 오늘 저장된 캐시만 — 부트 즉시 표시용 (전날 대회 목록이 먼저 보이지 않게) */
+/** 현재 운영일(06:00 기준)에 저장된 캐시만 — 부트 즉시 표시용 (전날 대회 목록이 먼저 보이지 않게) */
 export function readHubTournamentsTodayCache() {
   try {
     const raw =

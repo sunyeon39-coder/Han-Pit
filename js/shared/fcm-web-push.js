@@ -148,17 +148,8 @@ export async function showSeatAssignedOsNotification({
   try {
     const reg = await getOrRegisterFcmServiceWorker();
     if (!reg) throw new Error("sw_unavailable");
-    if (reg.active) {
-      reg.active.postMessage({
-        type: "HAN_PIT_SHOW_NOTIFICATION",
-        title: String(title || "Han Pit").trim() || "Han Pit",
-        body: noteOpts.body,
-        tag: notifyTag,
-        targetUrl: noteOpts.data.targetUrl,
-        appBadgeCount: noteOpts.data.appBadgeCount,
-        uid: String(uid || "").trim()
-      });
-    }
+    // 예전엔 SW 에 HAN_PIT_SHOW_NOTIFICATION 메시지도 보내고 여기서도 showNotification 을 호출해
+    // 같은 알림이 두 번(renotify → 진동·소리 2회) 울렸다 — 페이지에서 한 번만 띄운다.
     await reg.showNotification(String(title || "Han Pit").trim() || "Han Pit", noteOpts);
     return true;
   } catch (e) {

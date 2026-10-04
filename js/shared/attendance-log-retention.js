@@ -1,6 +1,7 @@
 import { db } from "../firebase.js";
 import {
   collection,
+  getCountFromServer,
   getDocs,
   limit,
   orderBy,
@@ -66,31 +67,23 @@ export async function maybePruneAttendanceLogsForTournament(tournamentId = "", o
       deleted += oldSnap.docs.length;
     }
 
-    const recentSnap = await getDocs(
-      query(
-        col,
-        where("tournamentId", "==", tid),
-        orderBy("createdAt", "desc"),
-        limit(ATTENDANCE_LOG_MAX_PER_TOURNAMENT + 1)
-      )
-    );
-    if (recentSnap.size > ATTENDANCE_LOG_MAX_PER_TOURNAMENT) {
-      const threshold = Number(recentSnap.docs[recentSnap.docs.length - 1].data()?.createdAt || 0);
-      if (threshold > 0) {
-        const excessSnap = await getDocs(
-          query(
-            col,
-            where("tournamentId", "==", tid),
-            where("createdAt", "<=", threshold),
-            limit(PRUNE_BATCH)
-          )
-        );
-        if (excessSnap.docs.length) {
-          const batch = writeBatch(db);
-          for (const d of excessSnap.docs) batch.delete(d.ref);
-          await batch.commit();
-          deleted += excessSnap.docs.length;
-        }
+    // 예전엔 최신 30001건을 통째로 읽어 개수를 셌다(관리자 접속마다 최대 3만 read) — 집계 쿼리로 대체
+    const countSnap = await getCountFromServer(query(col, where("tournamentId", "==", tid)));
+    const excess = Number(countSnap.data()?.count || 0) - ATTENDANCE_LOG_MAX_PER_TOURNAMENT;
+    if (excess > 0) {
+      const excessSnap = await getDocs(
+        query(
+          col,
+          where("tournamentId", "==", tid),
+          orderBy("createdAt", "asc"),
+          limit(Math.min(excess, PRUNE_BATCH))
+        )
+      );
+      if (excessSnap.docs.length) {
+        const batch = writeBatch(db);
+        for (const d of excessSnap.docs) batch.delete(d.ref);
+        await batch.commit();
+        deleted += excessSnap.docs.length;
       }
     }
   } catch (err) {

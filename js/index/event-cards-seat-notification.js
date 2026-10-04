@@ -399,8 +399,6 @@ export function bindMySeatAssignment(user) {
         return;
       }
 
-      activeSeatNotificationId = notificationKey;
-
       const message = buildSeatAssignedNotifyMessage({
         eventId: data.eventId,
         eventTitle: data.eventTitle,
@@ -408,7 +406,10 @@ export function bindMySeatAssignment(user) {
         seatLabel: data.seatLabel
       });
 
+      // 화면이 보일 때만 "표시함"으로 기록한다 — 예전엔 백그라운드에서도 기록해 버려서,
+      // 포그라운드 복귀 재확인(recheckOnResume)이 같은 알림이라며 모달을 끝내 안 띄웠다.
       if (typeof document !== "undefined" && document.visibilityState === "visible" && document.hasFocus()) {
+        activeSeatNotificationId = notificationKey;
         void showSeatAssignmentModal({
           message,
           uid: user.uid

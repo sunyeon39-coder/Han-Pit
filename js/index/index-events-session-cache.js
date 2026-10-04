@@ -1,3 +1,5 @@
+import { getOperationalEventDate } from "../shared/tournament-event-instance.js";
+
 const INDEX_EVENTS_SESSION_KEY = "hanpit_index_events_v1";
 const INDEX_EVENTS_LOCAL_KEY = "hanpit_index_events_ls_v1";
 const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -38,7 +40,7 @@ function readIndexEventsLocalCache(tournamentId = "") {
   }
 }
 
-/** 오늘 저장된 캐시만 — 부트 즉시 표시용 (전날 이벤트가 먼저 보이지 않게) */
+/** 현재 운영일(06:00 기준)에 저장된 캐시만 — 부트 즉시 표시용 (전날 이벤트가 먼저 보이지 않게) */
 export function readIndexEventsTodayCache(tournamentId = "") {
   const tid = String(tournamentId || "").trim();
   if (!tid) return null;
@@ -49,7 +51,7 @@ export function readIndexEventsTodayCache(tournamentId = "") {
     ]) {
       if (!raw) continue;
       const savedAt = Number(JSON.parse(raw)?.savedAt || 0);
-      if (!savedAt || new Date(savedAt).toDateString() !== new Date().toDateString()) continue;
+      if (!savedAt || getOperationalEventDate(new Date(savedAt)) !== getOperationalEventDate()) continue;
       const events = readCacheEntry(raw, tid, LOCAL_MAX_AGE_MS);
       if (events) return events;
     }

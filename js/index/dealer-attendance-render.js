@@ -23,6 +23,8 @@ import {
   getAdminAttendanceStatusCounts
 } from "./dealer-attendance-admin-list.js";
 
+let lastEmptyBootstrapAt = 0;
+
 function syncDealerAdminUiFromDom() {
   const root = IX.dealerOpsMount;
   if (!root) return;
@@ -432,7 +434,9 @@ export function renderDealerOps() {
     }
   }
 
-  if (isAdmin && !getAdminAttendanceList().length) {
+  // 빈 대회에서도 전체 렌더마다 서버 재조회(대기·좌석·출석·명단 4회 읽기)가 반복되지 않게 30초 간격 제한
+  if (isAdmin && !getAdminAttendanceList().length && Date.now() - lastEmptyBootstrapAt > 30_000) {
+    lastEmptyBootstrapAt = Date.now();
     void bootstrapIndexDealerOps({ force: true });
   }
 }

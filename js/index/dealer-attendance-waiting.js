@@ -46,23 +46,18 @@ function formatCheckInError(error) {
 =============================== */
 async function isUserAlreadySeated(userUid) {
   if (!userUid) return false;
+  const tid = getTournamentId();
+  if (!tid) return false;
 
+  // 예전엔 모든 대회의 layout_events(투영본) 전체를 읽었다 — 이 대회 global_seats(정본)만 uid 로 조회
   try {
-    const snap = await getDocs(collection(db, "layout_events"));
-
-    for (const docSnap of snap.docs) {
-      const data = docSnap.data() || {};
-      const seats = Array.isArray(data.seats) ? data.seats : [];
-
-      const found = seats.some((seat) => {
-        if (!seat || typeof seat !== "object") return false;
-        return String(seat.personUid || "").trim() === String(userUid).trim();
-      });
-
-      if (found) return true;
-    }
-
-    return false;
+    const snap = await getDocs(
+      query(
+        collection(db, "tournaments", tid, "global_seats"),
+        where("personUid", "==", String(userUid).trim())
+      )
+    );
+    return snap.docs.some((d) => !isEmptySeatPersonName(d.data()?.person));
   } catch (err) {
     console.warn("isUserAlreadySeated:", err?.code || err);
     return false;
@@ -227,6 +222,10 @@ export async function removeFromSharedWaitingOnCheckOut(user, { selfOnly = false
 export async function removeUserFromAllSeatsGlobal(user) {
   if (!user?.uid) return 0;
 
+  const tid = getTournamentId();
+  if (!tid) return 0;
+  const eventIds = new Set((IX.events || []).map((e) => String(e?.id || "").trim()).filter(Boolean));
+
   try {
     const snap = await getDocs(collection(db, "layout_events"));
     let removedCount = 0;
@@ -234,6 +233,9 @@ export async function removeUserFromAllSeatsGlobal(user) {
     await Promise.all(
       snap.docs.map(async (docSnap) => {
         const data = docSnap.data() || {};
+        // layout_events 는 모든 대회가 공유하는 컬렉션 — 다른 대회 배치도의 좌석까지 비우지 않게 이 대회 것만
+        const docTid = String(data.tournamentId || "").trim();
+        if (docTid ? docTid !== tid : !eventIds.has(String(data.eventId || "").trim())) return;
         const seats = Array.isArray(data.seats) ? data.seats : [];
         let changed = false;
 

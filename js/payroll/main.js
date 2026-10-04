@@ -136,6 +136,8 @@ async function bootstrapPayrollPage(user) {
   }
 
   await dataPromise;
+  // 캐시 프로필이 없던 첫 진입에선 출석을 "본인 것만" 읽었을 수 있다 — 권한 확인 후 대회 전체로 다시 읽음
+  if (IX.dealerAttendanceMap.size <= 1) await loadDealerAttendanceOnce();
   await table.loadPayrollTable();
   table.bindViewTabs(document.getElementById("payrollViewTabs"));
   table.bindExportButton(document.getElementById("payrollExportBtn"));
@@ -160,6 +162,9 @@ async function bootstrapPayrollPage(user) {
     if (isSameAuthSession(payrollSessionUid, user)) return;
 
     payrollSessionUid = user.uid;
-    void bootstrapPayrollPage(user);
+    void bootstrapPayrollPage(user).catch((err) => {
+      console.error("bootstrapPayrollPage error:", err);
+      showPayrollDenied("인건비 데이터를 불러오지 못했습니다. 새로고침해 주세요.");
+    });
   });
 })();

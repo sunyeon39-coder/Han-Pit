@@ -92,9 +92,10 @@ async function loadAttendanceLogsForUid(uid) {
   const tournamentId = String(getTournamentId() || "").trim();
   if (!safeUid) return [];
   try {
-    const snap = await getDocs(
-      query(collection(db, "dealer_attendance_logs"), where("uid", "==", safeUid))
-    );
+    // 다른 대회 로그까지 전부 읽지 않도록 대회 조건도 서버 쿼리에 건다(등호 조건 2개는 단일 필드 인덱스로 처리됨)
+    const constraints = [where("uid", "==", safeUid)];
+    if (tournamentId) constraints.push(where("tournamentId", "==", tournamentId));
+    const snap = await getDocs(query(collection(db, "dealer_attendance_logs"), ...constraints));
     return snap.docs
       .map((d) => normalizeAttendanceLog({ id: d.id, ...(d.data() || {}) }))
       .filter(

@@ -30,6 +30,7 @@ export function bindIndexGlobalWaitingRealtime() {
   if (!tournamentId) {
     return;
   }
+  IX.globalWaitingServerSynced = false;
 
   IX.stopGlobalWaitingWatch = onSnapshot(
     globalWaitingCollectionRef(db, tournamentId),
@@ -42,6 +43,7 @@ export function bindIndexGlobalWaitingRealtime() {
         return;
       }
       IX.globalWaiting = nextWaiting;
+      if (!snap.metadata?.fromCache) IX.globalWaitingServerSynced = true;
       writeIndexGlobalWaitingCache(tournamentId, nextWaiting);
       scheduleRenderDealerOps();
 

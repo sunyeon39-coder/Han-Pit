@@ -82,6 +82,8 @@ export const IX = {
   dealerGlobalSeats: [],
   /** tournaments/{tid}/global_waiting — 통합배치도와 동일 대기열 */
   globalWaiting: [],
+  /** bindIndexGlobalWaitingRealtime 이 서버 스냅샷을 한 번이라도 받았는지 */
+  globalWaitingServerSynced: false,
   stopGlobalWaitingWatch: null,
 
   dealerAdminUi: {

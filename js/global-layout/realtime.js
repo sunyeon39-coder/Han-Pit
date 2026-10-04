@@ -726,7 +726,7 @@ function applyGlobalSeatsFromSnapshot(snap, prevSeatsRef = { value: [] }) {
   return { mergedSeats, removedOccupiedSeats, nextSeats, historyGaps };
 }
 
-async function refreshGlobalWaitingFromServer() {
+async function refreshGlobalWaitingFromServerOnce() {
   if (isFirestoreQuotaCoolingDown()) return;
   if (GL.waitingMutationInFlight) return;
   try {
@@ -762,7 +762,7 @@ async function fetchGlobalSeatsSnapFromCache() {
   return getDocs(globalSeatsCollectionRef());
 }
 
-async function refreshGlobalSeatsFromServer() {
+async function refreshGlobalSeatsFromServerOnce() {
   if (!GL.tournamentId) return;
 
   const applySnap = (snap, { fromServer = false } = {}) => {
@@ -804,6 +804,26 @@ async function refreshGlobalSeatsFromServer() {
       "좌석 데이터를 불러오지 못했습니다(연결 지연). 연결 새로고침을 눌러 주세요."
     );
   }
+}
+
+// 세션 시작·재구독·포그라운드 복귀가 겹치면 같은 컬렉션을 동시에 여러 번 서버에서 읽었다 — 진행 중인 조회에 합류
+let waitingServerFetch = null;
+let seatsServerFetch = null;
+function refreshGlobalWaitingFromServer() {
+  if (!waitingServerFetch) {
+    waitingServerFetch = refreshGlobalWaitingFromServerOnce().finally(() => {
+      waitingServerFetch = null;
+    });
+  }
+  return waitingServerFetch;
+}
+function refreshGlobalSeatsFromServer() {
+  if (!seatsServerFetch) {
+    seatsServerFetch = refreshGlobalSeatsFromServerOnce().finally(() => {
+      seatsServerFetch = null;
+    });
+  }
+  return seatsServerFetch;
 }
 
 export { disposeGlobalLayoutRealtime };

@@ -18,6 +18,20 @@ import { operatorPicksDocRef } from "../shared/tournament-waiting-queue.js";
 
 const WAITING_REF = () => operatorPicksDocRef(db, GL.tournamentId);
 
+/**
+ * operatorPicks 맵의 uid 항목 하나만 바꾸는 setDoc(merge) 페이로드.
+ * setDoc 은 `"operatorPicks.<uid>"` 같은 점 표기 키를 중첩 경로가 아니라 "글자 그대로의 필드명"으로
+ * 저장한다(updateDoc 만 경로로 해석) — 예전 코드가 그렇게 써서 선택 표시가 operatorPicks 맵에
+ * 들어가지 않아 다른 운영자 화면에 안 보였고, 문서엔 점이 든 최상위 필드만 쌓였다.
+ * 중첩 객체로 쓰고, 예전 방식으로 생긴 최상위 필드도 같이 지운다.
+ */
+function operatorPickPatch(uid, value) {
+  return {
+    operatorPicks: { [uid]: value },
+    [`operatorPicks.${uid}`]: deleteField()
+  };
+}
+
 /** ops 없는 uid · waitingId 없는 항목 제거 */
 const deniedOperatorPickUids = new Set();
 
@@ -47,8 +61,12 @@ export function applyOperatorPicksFromDoc(data = {}, meta = {}) {
 
   const myUid = String(GL.currentUser?.uid || auth.currentUser?.uid || "").trim();
   if (myUid && !canManageGlobalLayoutOps()) {
+    // 문서에 내 항목이 실제로 있을 때만 지운다 — 예전엔 근무자 화면 전원이 이 문서가 바뀔 때마다
+    // (운영자가 대기자를 고를 때마다) 삭제 쓰기를 보내, 같은 문서에 쓰기가 몰리고 그 쓰기가 다시
+    // 스냅샷을 불러 반복되는 원인이었다.
+    const hadMine = Boolean(raw && typeof raw === "object" && raw[myUid]);
     delete picks[myUid];
-    void clearOperatorPickForUid(myUid);
+    if (hadMine) void clearOperatorPickForUid(myUid);
   }
 
   GL.operatorPicks = picks;
@@ -144,6 +162,7 @@ export async function pruneOperatorPicksWithoutOps() {
     const patch = {};
     for (const uid of staleUids) {
       if (!uid) continue;
+      patch.operatorPicks = { ...(patch.operatorPicks || {}), [uid]: deleteField() };
       patch[`operatorPicks.${uid}`] = deleteField();
       deniedOperatorPickUids.add(uid);
     }
@@ -189,7 +208,7 @@ export async function clearOperatorPickForUid(uid = "") {
   deniedOperatorPickUids.add(id);
   try {
     await runSerializedGlobalWaitingWrite(() =>
-      setDoc(WAITING_REF(), { [`operatorPicks.${id}`]: deleteField() }, { merge: true })
+      setDoc(WAITING_REF(), operatorPickPatch(id, deleteField()), { merge: true })
     );
   } catch (err) {
     console.warn("clearOperatorPickForUid:", err?.code || err);
@@ -348,19 +367,17 @@ export async function syncMyWaitingPick(waitingId = "") {
     // (특히 스왑처럼 트랜잭션이 큰 경우) 체감 지연이 커진다.
     await runSerializedGlobalWaitingWrite(() => {
       if (!wid) {
-        return setDoc(WAITING_REF(), { [`operatorPicks.${uid}`]: deleteField() }, { merge: true });
+        return setDoc(WAITING_REF(), operatorPickPatch(uid, deleteField()), { merge: true });
       }
       return setDoc(
         WAITING_REF(),
-        {
-          [`operatorPicks.${uid}`]: {
-            waitingId: wid,
-            tournamentId: String(GL.tournamentId || "").trim(),
-            displayName: getOperatorDisplayName(GL.userProfile, GL.currentUser),
-            color: GL.layoutAccentColor,
-            updatedAt: Date.now()
-          }
-        },
+        operatorPickPatch(uid, {
+          waitingId: wid,
+          tournamentId: String(GL.tournamentId || "").trim(),
+          displayName: getOperatorDisplayName(GL.userProfile, GL.currentUser),
+          color: GL.layoutAccentColor,
+          updatedAt: Date.now()
+        }),
         { merge: true }
       );
     });

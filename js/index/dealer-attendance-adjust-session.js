@@ -68,7 +68,7 @@ function buildAttendancePatchForSessionEdit({
     !isOpen &&
     checkedOutAt > 0 &&
     timesNear(checkedOutAt, prevEnd) &&
-    isAttendanceFromCurrentOperationalDay({ checkedOutAt: nextEnd }, now)
+    isAttendanceFromCurrentOperationalDay({ checkedInAt: nextEnd }, now)
   ) {
     patch.checkedOutAt = nextEnd;
   }

@@ -37,7 +37,8 @@ function dealerAttendanceFingerprint() {
   const parts = [];
   IX.dealerAttendanceMap.forEach((v, k) => {
     parts.push(
-      `${k}:${String(v?.status || "")}:${String(v?.nickname || v?.name || "")}:${Number(v?.checkedInAt || 0)}:${Number(v?.checkedOutAt || 0)}`
+      // 휴식 시작·누적·좌석 라벨만 바뀐 변경도 다시 그리도록 updatedAt 등 포함
+      `${k}:${String(v?.status || "")}:${String(v?.nickname || v?.name || "")}:${Number(v?.checkedInAt || 0)}:${Number(v?.checkedOutAt || 0)}:${Number(v?.breakStartedAt || 0)}:${Number(v?.totalBreakMs || 0)}:${Number(v?.statusChangedAt || 0)}:${String(v?.currentSeatLabel || "")}:${Number(v?.updatedAt || 0)}`
     );
   });
   return parts.sort().join("|");

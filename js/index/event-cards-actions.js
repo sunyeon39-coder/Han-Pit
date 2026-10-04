@@ -135,8 +135,11 @@ export async function deleteEventCardCurrent() {
   }
 
   const docId = resolveSelectedEventDocId();
-  const cardId = IX.eventCardId.value.trim();
-  const boxId = IX.eventCardBoxId.value.trim();
+  // 폼 입력값을 고쳐 둔 상태에서 삭제해도 실제 삭제 대상(드롭다운 선택 카드) 기준으로 정리한다
+  const selected = IX.events.find((e) => String(e.id || "") === docId) || null;
+  const parsed = parseEventInstanceDocId(docId);
+  const cardId = String(selected?.cardId || parsed?.cardId || IX.eventCardId.value).trim();
+  const boxId = String(selected?.boxId || parsed?.boxId || IX.eventCardBoxId.value).trim();
 
   if (!docId) {
     alert("삭제할 카드가 없습니다.");
@@ -144,7 +147,7 @@ export async function deleteEventCardCurrent() {
   }
 
   const ok = confirm(
-    `"${cardId || docId}" (${IX.eventCardDate?.value || "날짜 없음"}) 카드를 삭제할까요?\n배치 중인 딜러는 강제 퇴근 처리되고,\n이 이벤트의 좌석·배치 이력·배치도 데이터도 모두 삭제됩니다.`
+    `"${cardId || docId}" (${selected?.date || parsed?.date || IX.eventCardDate?.value || "날짜 없음"}) 카드를 삭제할까요?\n배치 중인 딜러는 강제 퇴근 처리되고,\n이 이벤트의 좌석·배치 이력·배치도 데이터도 모두 삭제됩니다.`
   );
   if (!ok) return;
 

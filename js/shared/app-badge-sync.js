@@ -1,6 +1,9 @@
 import { doc, setDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { clearDocumentTitleBadge } from "./fcm-web-push.js";
 
+let lastPersistUid = "";
+let lastPersistAt = 0;
+
 async function clearAppBadgePersisted(db, uid) {
   if (!db || !uid) return;
   try {
@@ -10,6 +13,11 @@ async function clearAppBadgePersisted(db, uid) {
     }
   } catch (_) {}
   clearDocumentTitleBadge();
+  // 화면 전환마다 users 문서를 쓰면 프로필 실시간 구독이 매번 다시 돌아 읽기가 늘어난다 — 30초에 한 번만
+  const now = Date.now();
+  if (lastPersistUid === uid && now - lastPersistAt < 30_000) return;
+  lastPersistUid = uid;
+  lastPersistAt = now;
   try {
     await setDoc(doc(db, "users", uid), { appBadgeCount: 0 }, { merge: true });
   } catch (err) {
