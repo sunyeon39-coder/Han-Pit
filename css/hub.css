@@ -1822,3 +1822,42 @@ body {
   margin-top: 16px;
   width: 100%;
 }
+/* HAN지원 — 새 지원서 배지 (아이폰 앱 아이콘 배지 스타일) */
+.top-btn.han-support {
+  position: relative;
+  overflow: visible;
+}
+
+.han-support-badge {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #ff3b30;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px var(--bg, #0a0d12), 0 2px 6px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  animation: han-badge-pop 0.25s ease-out;
+}
+
+@keyframes han-badge-pop {
+  from { transform: scale(0.4); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@media (max-width: 900px) {
+  /* 모바일 상단 버튼 줄은 가로 스크롤(overflow)이라 위로 튀어나온 배지가 잘린다 — 위 여백 확보 */
+  .hub-actions {
+    padding-top: 8px;
+    margin-top: -8px;
+    padding-right: 8px;
+  }
+}

@@ -4,15 +4,99 @@ import {
   collection,
   deleteDoc,
   doc,
+  limit,
   onSnapshot,
   orderBy,
-  query
+  query,
+  setDoc
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 
 import { closeModal, escapeHtml, openModal } from "../shared/dom-utils.js";
 import { getIsAdminUser } from "./hub-helpers.js";
 
 let unsubApplications = null;
+
+/* ── 새 지원서 배지 (시스템 admin) ─────────────────────────────
+ * HAN지원 버튼 오른쪽 위에 아이폰 앱 배지처럼 "확인 안 한 지원서 수"를 표시한다.
+ * 마지막으로 지원서 창을 연 시각을 users/{uid}.hanApplicationsSeenAt 에 저장해
+ * 폰·PC 어느 쪽에서 열어도 함께 지워진다.
+ */
+const HAN_BADGE_SCAN_LIMIT = 100;
+let badgeUid = "";
+let badgeSeenAt = 0;
+let badgeLatestCreatedAts = [];
+let stopBadgeAppsWatch = null;
+let stopBadgeSeenWatch = null;
+
+function renderHanSupportBadge(btn) {
+  if (!btn) return;
+  const count = badgeUid
+    ? badgeLatestCreatedAts.filter((ms) => ms > badgeSeenAt).length
+    : 0;
+  let badge = btn.querySelector(".han-support-badge");
+  if (!count) {
+    badge?.remove();
+    btn.removeAttribute("data-unread");
+    return;
+  }
+  if (!badge) {
+    badge = document.createElement("span");
+    badge.className = "han-support-badge";
+    badge.setAttribute("aria-hidden", "true");
+    btn.appendChild(badge);
+  }
+  const label = count >= HAN_BADGE_SCAN_LIMIT ? "99+" : String(Math.min(count, 99));
+  badge.textContent = label;
+  btn.setAttribute("data-unread", label);
+  btn.setAttribute("aria-label", `HAN지원 · 새 지원서 ${label}건`);
+}
+
+function stopHanSupportBadgeWatch(btn) {
+  stopBadgeAppsWatch?.();
+  stopBadgeSeenWatch?.();
+  stopBadgeAppsWatch = null;
+  stopBadgeSeenWatch = null;
+  badgeUid = "";
+  badgeLatestCreatedAts = [];
+  renderHanSupportBadge(btn);
+  btn?.setAttribute("aria-label", "HAN지원");
+}
+
+function startHanSupportBadgeWatch(user, btn) {
+  if (!user?.uid || badgeUid === user.uid) return;
+  stopHanSupportBadgeWatch(btn);
+  badgeUid = user.uid;
+  badgeSeenAt = 0;
+
+  stopBadgeSeenWatch = onSnapshot(
+    doc(db, "users", user.uid),
+    (snap) => {
+      badgeSeenAt = Number(snap.data()?.hanApplicationsSeenAt || 0) || 0;
+      renderHanSupportBadge(btn);
+    },
+    (err) => console.warn("han badge seen watch:", err?.code || err)
+  );
+  stopBadgeAppsWatch = onSnapshot(
+    query(collection(db, "han_applications"), orderBy("createdAt", "desc"), limit(HAN_BADGE_SCAN_LIMIT)),
+    (snap) => {
+      badgeLatestCreatedAts = snap.docs.map((d) => Number(d.data()?.createdAt || 0) || 0);
+      renderHanSupportBadge(btn);
+    },
+    (err) => console.warn("han badge apps watch:", err?.code || err)
+  );
+}
+
+/** 지원서 창을 열면 배지를 바로 지우고, 본 시각을 계정에 저장 */
+function markHanApplicationsSeen(btn) {
+  if (!badgeUid) return;
+  const latest = Math.max(Date.now(), ...badgeLatestCreatedAts);
+  badgeSeenAt = latest;
+  renderHanSupportBadge(btn);
+  void setDoc(doc(db, "users", badgeUid), { hanApplicationsSeenAt: latest }, { merge: true }).catch((err) =>
+    console.warn("han badge mark seen:", err?.code || err)
+  );
+}
 
 function getApplicantDisplayName(user, profile) {
   if (!user) return "";
@@ -174,7 +258,15 @@ export function wireHanSupportHub({ hubRefs, hubState }) {
   }
 
   hanSupportBtn?.addEventListener("click", () => {
+    if (getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) {
+      markHanApplicationsSeen(hanSupportBtn);
+    }
     openHanSupportModal();
+  });
+
+  const stopBadgeAuthWatch = onAuthStateChanged(auth, (user) => {
+    if (user && getIsAdminUser(user, null)) startHanSupportBadgeWatch(user, hanSupportBtn);
+    else stopHanSupportBadgeWatch(hanSupportBtn);
   });
 
   hanSupportCloseBtn?.addEventListener("click", (e) => {
@@ -311,5 +403,7 @@ export function wireHanSupportHub({ hubRefs, hubState }) {
 
   return () => {
     stopAdminApplicationsWatch();
+    stopBadgeAuthWatch();
+    stopHanSupportBadgeWatch(hanSupportBtn);
   };
 }
