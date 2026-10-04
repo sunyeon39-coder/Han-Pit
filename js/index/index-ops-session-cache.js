@@ -1,17 +1,18 @@
 import {
+  readGlobalSeatsBootCache,
   readGlobalSeatsCache,
   readGlobalSeatsLegacyCache,
   writeGlobalSeatsCache
 } from "../global-layout/global-seats-session-cache.js";
 
 const WAITING_SESSION_PREFIX = "hanpit_index_global_waiting_v1_";
-const WAITING_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+const WAITING_MAX_AGE_MS = 30 * 60 * 1000;
 
 function waitingKeyFor(tournamentId = "") {
   return `${WAITING_SESSION_PREFIX}${String(tournamentId || "na").trim()}`;
 }
 
-export { readGlobalSeatsCache, readGlobalSeatsLegacyCache, writeGlobalSeatsCache };
+export { readGlobalSeatsBootCache, readGlobalSeatsCache, readGlobalSeatsLegacyCache, writeGlobalSeatsCache };
 
 export function readIndexGlobalWaitingCache(tournamentId = "") {
   const id = String(tournamentId || "").trim();

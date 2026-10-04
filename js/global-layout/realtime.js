@@ -814,6 +814,24 @@ export async function refreshGlobalLayoutOpsDataFromServer() {
 }
 
 /**
+ * 백그라운드 복귀·네트워크 복구 시 좌석·대기를 바로 서버에서 다시 읽음.
+ * 대기 중인 재구독 백오프가 있으면 기다리지 않고 즉시 다시 붙인다.
+ */
+let lastResumeResyncAt = 0;
+export function resyncGlobalLayoutOnResume() {
+  if (!GL.tournamentId || !auth.currentUser) return;
+  if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+  if (realtimeRebindTimer && !isSeatMutationBusy() && !GL.waitingMutationInFlight) {
+    bindRealtime();
+  }
+  const now = Date.now();
+  if (now - lastResumeResyncAt < 1000) return;
+  lastResumeResyncAt = now;
+  if (isSeatMutationBusy() || GL.waitingMutationInFlight) return;
+  void refreshGlobalLayoutOpsDataFromServer();
+}
+
+/**
  * 실시간 구독(onSnapshot)은 오류가 한 번 나면 Firestore가 그 구독을 영구히 끊는다. 예전엔
  * 다시 붙이는 코드가 없어서, 근무자 폰이 백그라운드에 있다 돌아오며 토큰 갱신 전에 요청이
  * 나가 권한 오류가 나는 등 일시적인 오류 한 번이면 새로고침 전까지 좌석·대기가 안 바뀌거나
@@ -825,7 +843,7 @@ const REALTIME_REBIND_MAX_DELAY_MS = 30_000;
 
 function scheduleRealtimeRebind(reason = "") {
   if (realtimeRebindTimer || !GL.tournamentId) return;
-  const delay = Math.min(REALTIME_REBIND_MAX_DELAY_MS, 2000 * 2 ** realtimeRebindAttempts);
+  const delay = Math.min(REALTIME_REBIND_MAX_DELAY_MS, 500 * 2 ** realtimeRebindAttempts);
   realtimeRebindAttempts += 1;
   if (realtimeRebindAttempts >= 4) {
     showFirestoreStallBanner("실시간 연결이 끊겼습니다. 연결 새로고침을 눌러 주세요.");

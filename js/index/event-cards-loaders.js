@@ -14,6 +14,7 @@ import { scheduleIndexCardsRender } from "./index-realtime-ui.js";
 import {
   readIndexEventsLegacyCache,
   readIndexEventsPersistedCache,
+  readIndexEventsTodayCache,
   writeIndexEventsSessionCache
 } from "./index-events-session-cache.js";
 import { applyIndexGlobalSeatsSnapshot } from "./dealer-attendance-realtime.js";
@@ -70,9 +71,24 @@ function applyEventsSnap(snap, tournamentId = "") {
   return IX.events;
 }
 
+let eventsServerFetch = null;
+
 async function refreshEventsFromServer(tournamentId = "") {
   const tid = String(tournamentId || getTournamentId() || "").trim();
   if (!tid || isFirestoreQuotaCoolingDown()) return;
+  if (eventsServerFetch) return eventsServerFetch;
+  eventsServerFetch = refreshEventsFromServerOnce(tid).finally(() => {
+    eventsServerFetch = null;
+  });
+  return eventsServerFetch;
+}
+
+/** 백그라운드 복귀·재연결 시 즉시 서버 기준 이벤트 목록으로 맞춤 */
+export function refreshIndexEventsNow() {
+  return refreshEventsFromServer(getTournamentId());
+}
+
+async function refreshEventsFromServerOnce(tid) {
   try {
     const serverSnap = await getDocsFromServer(getEventsCollectionRef(tid));
     applyEventsSnap(serverSnap, tid);
@@ -90,7 +106,10 @@ async function refreshEventsFromServer(tournamentId = "") {
 export function seedIndexEventsFromSessionCache() {
   const tournamentId = getTournamentId();
   if (!tournamentId) return false;
-  return restoreIndexEventsFromPersistedCache(tournamentId);
+  const cached = readIndexEventsTodayCache(tournamentId);
+  if (!cached?.length) return false;
+  IX.events = cached;
+  return true;
 }
 
 /** 허브에서 대회 카드 hover 시 Firestore 캐시·sessionStorage 워밍 */
@@ -208,6 +227,12 @@ export function bindEventsRealtime(tournamentId = "") {
     getEventsCollectionRef(tid),
     (snap) => {
       if (shouldSkipEmptyEventsSnapshot(snap, tid)) return;
+
+      /* 영구 캐시 첫 스냅샷은 전날 데이터일 수 있음 — 보이는 목록이 있으면 서버 값을 바로 받아 덮음 */
+      if (snap.metadata?.fromCache) {
+        void refreshEventsFromServer(tid);
+        if (IX.events.length) return;
+      }
 
       const beforeSig = eventsListSignature(IX.events);
       applyEventsSnap(snap, tid);

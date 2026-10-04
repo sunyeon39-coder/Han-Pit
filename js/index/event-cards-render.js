@@ -2,7 +2,7 @@ import { escapeHtml } from "../shared/dom-utils.js";
 import { formatDateTitle } from "./time-utils.js";
 import { getTournamentId } from "./core-utils.js";
 import { IX, refreshIndexDomRefs } from "./state.js";
-import { readIndexEventsPersistedCache } from "./index-events-session-cache.js";
+import { readIndexEventsTodayCache } from "./index-events-session-cache.js";
 import {
   getStatus,
   getStatusLabel,
@@ -77,7 +77,7 @@ function restoreEventsForRender() {
   if (IX.events.length) return true;
   const tid = getTournamentId();
   if (!tid) return false;
-  const cached = readIndexEventsPersistedCache(tid);
+  const cached = readIndexEventsTodayCache(tid);
   if (!cached?.length) return false;
   IX.events = cached;
   return true;

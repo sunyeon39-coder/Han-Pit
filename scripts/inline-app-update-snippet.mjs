@@ -108,7 +108,7 @@ export function buildInlineAppUpdateSnippet(v) {
   var IS_FAST_UPDATE=IS_PWA||isMobileDevice();
   var MIN_CHECK_MS=IS_FAST_UPDATE?500:15000;
   var POLL_MS=IS_FAST_UPDATE?5000:60000;
-  var BOOT_CHECK_MS=IS_FAST_UPDATE?100:3000;
+  var BOOT_CHECK_MS=100;
 
   function swScope(){
     var p=location.pathname||"/";

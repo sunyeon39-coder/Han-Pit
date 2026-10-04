@@ -20,6 +20,7 @@ import { scheduleRenderDealerOps } from "./dealer-attendance-render.js";
 import { loadDealerAttendanceOnce } from "./dealer-attendance-load-once.js";
 import { loadTournamentDealerRosterOnce } from "./dealer-attendance-roster.js";
 import {
+  readGlobalSeatsBootCache,
   readGlobalSeatsCache,
   readGlobalSeatsLegacyCache,
   readIndexGlobalWaitingCache,
@@ -63,7 +64,7 @@ export function seedIndexOpsFromSessionCache() {
     seeded = true;
   }
 
-  const seats = readGlobalSeatsCache(tournamentId) || readGlobalSeatsLegacyCache(tournamentId);
+  const seats = readGlobalSeatsBootCache(tournamentId);
   if (seats?.length) {
     applyIndexOpsSeatsFromGlRows(seats, { scheduleRender: false });
     seeded = true;

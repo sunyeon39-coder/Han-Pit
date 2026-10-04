@@ -47,6 +47,21 @@ export function readGlobalSeatsLegacyCache(tournamentId = "") {
   return null;
 }
 
+/** 진입 즉시 표시용 — 최근 30분 내 본 좌석만 (오래된 좌석 상태가 먼저 보이지 않게) */
+const BOOT_MAX_AGE_MS = 30 * 60 * 1000;
+export function readGlobalSeatsBootCache(tournamentId = "") {
+  const id = String(tournamentId || "").trim();
+  if (!id) return null;
+  try {
+    return (
+      readCacheEntry(sessionStorage.getItem(sessionKeyFor(id)), BOOT_MAX_AGE_MS) ||
+      readCacheEntry(localStorage.getItem(localKeyFor(id)), BOOT_MAX_AGE_MS)
+    );
+  } catch {
+    return null;
+  }
+}
+
 export function readGlobalSeatsCache(tournamentId = "") {
   const id = String(tournamentId || "").trim();
   if (!id) return null;

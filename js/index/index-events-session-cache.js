@@ -38,6 +38,27 @@ function readIndexEventsLocalCache(tournamentId = "") {
   }
 }
 
+/** 오늘 저장된 캐시만 — 부트 즉시 표시용 (전날 이벤트가 먼저 보이지 않게) */
+export function readIndexEventsTodayCache(tournamentId = "") {
+  const tid = String(tournamentId || "").trim();
+  if (!tid) return null;
+  try {
+    for (const raw of [
+      sessionStorage.getItem(INDEX_EVENTS_SESSION_KEY),
+      localStorage.getItem(INDEX_EVENTS_LOCAL_KEY)
+    ]) {
+      if (!raw) continue;
+      const savedAt = Number(JSON.parse(raw)?.savedAt || 0);
+      if (!savedAt || new Date(savedAt).toDateString() !== new Date().toDateString()) continue;
+      const events = readCacheEntry(raw, tid, LOCAL_MAX_AGE_MS);
+      if (events) return events;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function readIndexEventsPersistedCache(tournamentId = "") {
   const tid = String(tournamentId || "").trim();
   if (!tid) return null;

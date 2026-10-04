@@ -42,7 +42,7 @@ import {
   deleteEventCardCurrent,
   bindMySeatAssignment
 } from "./event-cards.js";
-import { seedIndexEventsFromSessionCache } from "./event-cards-loaders.js";
+import { refreshIndexEventsNow, seedIndexEventsFromSessionCache } from "./event-cards-loaders.js";
 import { loadTournamentDealerRosterOnce } from "./dealer-attendance-roster.js";
 
 import {
@@ -824,19 +824,27 @@ window.addEventListener("hanpit-index-tournament-ready", () => {
   }
 });
 
+/* 백그라운드 복귀·재연결 시 이벤트 목록·카드 상태를 즉시 서버 기준으로 맞춤 */
+function refreshIndexOnForeground() {
+  if (document.visibilityState !== "visible" || !auth.currentUser) return;
+  refreshCardStatuses();
+  void refreshIndexEventsNow();
+}
+window.addEventListener("pageshow", refreshIndexOnForeground);
+window.addEventListener("online", refreshIndexOnForeground);
+
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return;
+  refreshIndexOnForeground();
   if (indexOpsAccessOk(auth.currentUser)) return;
   window.clearTimeout(indexOpsResyncTimer);
-  indexOpsResyncTimer = window.setTimeout(() => {
-    indexOpsResyncTimer = 0;
-    void ensureIndexOpsChrome(auth.currentUser);
-  }, 300);
+  indexOpsResyncTimer = 0;
+  void ensureIndexOpsChrome(auth.currentUser);
 });
 
 setInterval(() => {
-  refreshCardStatuses();
-}, 30000);
+  if (document.visibilityState === "visible") refreshCardStatuses();
+}, 5000);
 
 setInterval(() => {
   if (IX.currentTournament && !isTournamentActive(IX.currentTournament)) {

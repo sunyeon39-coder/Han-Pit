@@ -906,7 +906,7 @@ export function bindHubForegroundAccessResync(uid) {
     if (!immediate && elapsed < 4000) return;
 
     clearTimeout(timer);
-    const delay = immediate ? 500 : 2000;
+    const delay = immediate ? 0 : 300;
     timer = setTimeout(() => {
       timer = null;
       void resyncHubAccessFromServer(uid);
