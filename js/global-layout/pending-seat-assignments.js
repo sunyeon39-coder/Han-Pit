@@ -9,6 +9,7 @@ import { assignSelectedWaitingToSeat } from "./fs-assign-waiting-to-seat.js";
 import { applyOptimisticMyWaitingPick, clearMyWaitingPick } from "./waiting-picks.js";
 import { waitForSeatMutationIdle } from "./layout-mutation-guard.js";
 import { waitForSerializedGlobalWaitingWrites } from "./global-waiting-write-lock.js";
+import { scheduleGlobalLayoutResyncAfterBatch } from "./realtime.js";
 
 /** 배치확인 일괄 저장 동시 실행 수 — 너무 크면 같은 문서 충돌·재시도가 늘어난다 */
 const BATCH_CONCURRENCY = 6;
@@ -170,6 +171,9 @@ export async function confirmAllPendingSeatAssignments({ immediate = false } = {
     }
     flushOptimisticGlobalLayoutUi();
   }
+
+  // 새로고침 없이도 대기 목록에 배치된 사람이 남지 않게 서버 기준으로 한 번 더 맞춘다
+  if (entries.length) scheduleGlobalLayoutResyncAfterBatch();
 
   return { confirmedCount: entries.length - failed.length, failed };
 }

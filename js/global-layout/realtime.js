@@ -828,6 +828,26 @@ function refreshGlobalSeatsFromServer() {
 
 export { disposeGlobalLayoutRealtime };
 
+/**
+ * 배치확인(일괄)이 끝난 뒤 서버 기준으로 대기·좌석을 다시 맞춘다.
+ * 일괄 저장 중엔 실시간 반영을 미뤘다가 끝나면 한 번에 적용하는데, 그때 적용된 게 중간 단계
+ * 스냅샷이면 이미 배치된 사람이 대기에 남아 보였다(새로고침해야 사라짐). 마지막 커밋 스냅샷이
+ * 늦게 오는 경우까지 잡도록 두 번(직후·조금 뒤) 다시 읽는다.
+ */
+export function scheduleGlobalLayoutResyncAfterBatch() {
+  const run = (attempt = 0) => {
+    if (isSeatMutationBusy() || GL.waitingMutationInFlight) {
+      if (attempt < 20) setTimeout(() => run(attempt + 1), 300);
+      return;
+    }
+    lastWaitingUiFingerprint = "";
+    lastSeatsUiFingerprint = "";
+    void refreshGlobalLayoutOpsDataFromServer();
+  };
+  setTimeout(() => run(), 400);
+  setTimeout(() => run(), 2500);
+}
+
 /** 세션 시작·캐시 공백 시 서버에서 대기·좌석을 한 번 더 읽음 */
 export async function refreshGlobalLayoutOpsDataFromServer() {
   await Promise.all([refreshGlobalWaitingFromServer(), refreshGlobalSeatsFromServer()]);

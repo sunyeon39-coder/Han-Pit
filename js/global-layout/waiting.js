@@ -253,7 +253,8 @@ export function mergeIncomingGlobalWaiting(incoming = [], local = []) {
       const hasMatch = rows.some((row) => personIdentityMatches(row, pending?.target || {}));
       if (hasMatch) continue;
       const localRow = (local || []).find((row) => personIdentityMatches(row, pending?.target || {}));
-      if (localRow) {
+      // 서버에서 대기 문서가 지워진 이유가 "좌석에 배치됨"이면 BLOCK 잠금 때문에 되살리지 않는다
+      if (localRow && !isPersonSeatedInGlobalSeats(GL.globalSeats, localRow)) {
         rows.push(applyPendingBlockPatch({ ...localRow }, pending));
       }
     }
