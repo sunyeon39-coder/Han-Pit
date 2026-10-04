@@ -50,6 +50,7 @@ import {
   disposeHubPeriodicAccessResync,
   loadAllUsers,
   loadTournaments,
+  refreshHubTournamentsNow,
   loadUserProfile,
   resyncHubAccessFromServer,
   healNonAdminUsersToBasic,
@@ -91,7 +92,7 @@ ensureDocumentShellBackground();
 instantDismissAllBootLoaders();
 markPageBootLoaded(hubRefs.eventListEl);
 
-const hubSeededFromSession = seedHubTournamentsFromSessionCache();
+const hubSeededFromSession = seedHubTournamentsFromSessionCache({ todayOnly: true });
 seedHubUsersFromSessionCache();
 hubState.tournamentsListReady = hubSeededFromSession;
 hubState.tournamentsBootstrapping = !hubSeededFromSession;
@@ -496,6 +497,10 @@ async function bootstrapHubSession(user) {
 
   applyHubAccessChromeEarly(user);
 
+  /* 프로필 로드를 기다리지 않고 대회 목록 서버 확인·실시간 구독을 바로 시작 */
+  bindTournamentsRealtime();
+  void refreshHubTournamentsNow();
+
   try {
   bootTimeoutId = window.setTimeout(() => {
     if (flow !== hubState.hubAuthFlowGen) return;
@@ -566,7 +571,6 @@ async function bootstrapHubSession(user) {
 
   scheduleBackgroundUserProfileSync(user);
 
-  bindTournamentsRealtime();
   bindMyProfileRealtime(user.uid);
 
   if (isAppDebugEnabled()) {

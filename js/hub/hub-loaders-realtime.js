@@ -39,6 +39,7 @@ import { populateTournamentSelect } from "./hub-admin-ui.js";
 import {
   readHubTournamentsLegacyCache,
   readHubTournamentsPersistedCache,
+  readHubTournamentsTodayCache,
   writeHubTournamentsSessionCache
 } from "./hub-tournaments-session-cache.js";
 import {
@@ -53,6 +54,34 @@ import {
 /** 오프라인·PWA에서 빈 캐시 스냅샷이 서버로 읽은 목록을 지우는 것을 막음 */
 function shouldSkipEmptyCacheSnapshot(snap, cachedCount = 0) {
   return Boolean(snap?.empty && snap.metadata?.fromCache && cachedCount > 0);
+}
+
+let tournamentsServerFetch = null;
+
+/**
+ * 서버에서 대회 목록을 바로 다시 읽어 카드 갱신 — 실시간 구독 유무와 무관.
+ * 영구 캐시/백그라운드 복귀 직후 전날 대회가 남아 보이는 지연을 없앱니다.
+ */
+export function refreshHubTournamentsNow() {
+  if (isFirestoreQuotaCoolingDown()) return Promise.resolve(hubState.tournamentsCache);
+  if (tournamentsServerFetch) return tournamentsServerFetch;
+  tournamentsServerFetch = getDocsFromServer(collection(db, "tournaments"))
+    .then((serverSnap) => {
+      applyTournamentsSnap(serverSnap);
+      hubState.tournamentsListReady = true;
+      hubState.tournamentsBootstrapping = false;
+      scheduleHubTournamentsRender();
+      return hubState.tournamentsCache;
+    })
+    .catch((err) => {
+      noteFirestoreQuotaExceeded(err);
+      console.warn("refreshHubTournamentsNow:", err?.code || err);
+      return hubState.tournamentsCache;
+    })
+    .finally(() => {
+      tournamentsServerFetch = null;
+    });
+  return tournamentsServerFetch;
 }
 
 async function refreshTournamentsFromServer() {
@@ -138,8 +167,12 @@ export function prefetchHubTournamentsCache() {
 }
 
 /** 허브 부트 직후 sessionStorage 목록으로 즉시 카드 표시 */
-export function seedHubTournamentsFromSessionCache() {
-  if (!restoreTournamentsFromPersistedCache()) return false;
+export function seedHubTournamentsFromSessionCache(options = {}) {
+  if (options.todayOnly) {
+    const cached = readHubTournamentsTodayCache();
+    if (!cached?.length) return false;
+    hubState.tournamentsCache = sortTournaments(cached);
+  } else if (!restoreTournamentsFromPersistedCache()) return false;
   hubState.tournamentsListReady = true;
   return true;
 }
@@ -643,8 +676,14 @@ export function bindTournamentsRealtime() {
     (snap) => {
       if (shouldSkipEmptyCacheSnapshot(snap, hubState.tournamentsCache.length)) return;
 
+      /* 영구 캐시(IndexedDB) 첫 스냅샷은 전날 목록일 수 있음 — 이미 보이는 목록이 있으면 덮지 말고 서버 값을 바로 받음 */
+      if (snap.metadata?.fromCache) {
+        void refreshHubTournamentsNow();
+        if (hubState.tournamentsCache.length) return;
+      }
+
       if (snap.empty) {
-        void refreshTournamentsFromServer();
+        void refreshHubTournamentsNow();
         return;
       } else {
         hubState.tournamentsCache = sortTournaments(snap.docs.map(normalizeTournamentDoc));
@@ -824,10 +863,7 @@ export async function resyncHubAccessFromServer(uid, options = {}) {
       applyHubOpsChrome(user);
     }
 
-    if (!hubState.stopTournamentsWatch) {
-      await loadTournaments({ forceServer: true });
-      scheduleHubTournamentsRender();
-    }
+    await refreshHubTournamentsNow();
 
     const isAdmin = getIsAdminUser(hubState.currentUser, hubState.currentUserProfile);
     if (isAdmin) {
@@ -877,16 +913,30 @@ export function bindHubForegroundAccessResync(uid) {
     }, delay);
   };
 
+  /* 대회 목록은 스로틀 없이 즉시 서버 확인 — 복귀 시 전날 대회가 남아 보이지 않게 */
+  const refreshTournamentsIfVisible = () => {
+    if (!hubState.currentUser || hubState.currentUser.uid !== uid) return;
+    if (document.visibilityState !== "visible") return;
+    void refreshHubTournamentsNow();
+  };
+
   const onVisibility = () => {
-    if (document.visibilityState === "visible") schedule(false);
+    if (document.visibilityState === "visible") {
+      refreshTournamentsIfVisible();
+      schedule(false);
+    }
   };
 
   const onPageShow = (ev) => {
+    refreshTournamentsIfVisible();
     if (ev.persisted) schedule(true);
     else if (document.visibilityState === "visible") schedule(false);
   };
 
-  const onOnline = () => schedule(true);
+  const onOnline = () => {
+    refreshTournamentsIfVisible();
+    schedule(true);
+  };
 
   document.addEventListener("visibilitychange", onVisibility);
   window.addEventListener("pageshow", onPageShow);

@@ -33,6 +33,29 @@ function readHubTournamentsLocalCache() {
   }
 }
 
+function isSavedToday(raw) {
+  try {
+    const savedAt = Number(JSON.parse(raw)?.savedAt || 0);
+    if (!savedAt) return false;
+    return new Date(savedAt).toDateString() === new Date().toDateString();
+  } catch {
+    return false;
+  }
+}
+
+/** 오늘 저장된 캐시만 — 부트 즉시 표시용 (전날 대회 목록이 먼저 보이지 않게) */
+export function readHubTournamentsTodayCache() {
+  try {
+    const raw =
+      sessionStorage.getItem(HUB_TOURNAMENTS_SESSION_KEY) ||
+      localStorage.getItem(HUB_TOURNAMENTS_LOCAL_KEY);
+    if (!isSavedToday(raw)) return null;
+    return readCacheEntry(raw, LOCAL_MAX_AGE_MS);
+  } catch {
+    return null;
+  }
+}
+
 /** sessionStorage → localStorage 순으로 마지막으로 확인된 대회 목록 */
 export function readHubTournamentsPersistedCache() {
   return readHubTournamentsSessionCache() || readHubTournamentsLocalCache();
