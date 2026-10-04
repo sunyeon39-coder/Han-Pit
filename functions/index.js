@@ -387,7 +387,10 @@ async function finalizeOneIncomingSwap(seatDocSnap) {
 
     const incomingUid = String(fresh.incomingPersonUid || "").trim();
     const incomingEmail = String(fresh.incomingPersonEmail || "").trim();
-    const now = Date.now();
+    // 실제 교대 시각 = 배치확인(incomingAt) + 10분. 1분 주기 크론이 늦게 돌아도(최대 ~1분+콜드스타트)
+    // 새 딜러 착석·이전 딜러 대기 시작 시각이 밀리지 않게 이 값을 쓴다 — 클라이언트 화면도
+    // 같은 시각으로 미리 계산해 보여주므로 확정 순간 시간이 튀지 않는다.
+    const now = Math.min(Date.now(), incomingAtMs + SEAT_SWAP_SETTLE_MS);
 
     // 클라이언트(seat-history.js)와 동일한 형태로 "교체" 이력을 남긴다 — 배치 이력 보기에
     // 스왑이 빠지지 않게.

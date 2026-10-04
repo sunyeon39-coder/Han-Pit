@@ -117,7 +117,10 @@ function buildGlobalSeatBoxState(s, idx, paletteMap) {
   const selectedClass = GL.selectedSeatIds.has(seatId) ? "selected" : "";
   const x = Number.isFinite(Number(s.x)) ? Number(s.x) : getSeatPosition(idx).x;
   const y = Number.isFinite(Number(s.y)) ? Number(s.y) : getSeatPosition(idx).y;
-  const seatedAtMs = occupied ? toMillis(s.seatedAt || 0) : 0;
+  // 색 기준 시각은 오른쪽 Seat 목록과 같이 "지금 보여주는 사람" 기준(swapDisplay.timeBasisMs) —
+  // 교대 확정 시점엔 서버가 seatedAt 을 바꾸기 전(최대 ~1분)까지 이전 딜러 착석 시간으로
+  // 칠해져 목록(초록)과 캔버스(주황)가 어긋났다.
+  const seatedAtMs = occupied ? swapDisplay?.timeBasisMs || toMillis(s.seatedAt || 0) : 0;
   const elapsedMs = occupied ? (seatedAtMs > 0 ? Date.now() - seatedAtMs : 0) : 0;
   const timerCls = occupied ? timerClass(elapsedMs) : "";
   const isBlinkOn = swapDisplay?.highlight === true;
@@ -186,13 +189,18 @@ export function updateCanvasSeatTimerClasses() {
       box.classList.remove("t-green", "t-yellow", "t-orange", "t-red");
       return;
     }
-    const seatedAtMs = toMillis(s.seatedAt || 0);
+    const swapDisplay = GL.pendingSeatAssignments.get(id)
+      ? null
+      : resolveSeatSwapDisplay(s, now, { isAdminView });
+    // 오른쪽 Seat 목록 타이머와 같은 기준 — 교대 확정 순간 목록과 동시에 색이 바뀌게
+    const seatedAtMs = swapDisplay?.timeBasisMs || toMillis(s.seatedAt || 0);
     const elapsed = seatedAtMs > 0 ? now - seatedAtMs : 0;
     const cls = timerClass(elapsed);
-    box.classList.remove("t-green", "t-yellow", "t-orange", "t-red");
-    box.classList.add(cls);
-    if (!GL.pendingSeatAssignments.get(id)) {
-      const swapDisplay = resolveSeatSwapDisplay(s, now, { isAdminView });
+    if (!box.classList.contains(cls)) {
+      box.classList.remove("t-green", "t-yellow", "t-orange", "t-red");
+      box.classList.add(cls);
+    }
+    if (swapDisplay) {
       box.classList.toggle("is-confirm-blink", swapDisplay.highlight);
       const personEl = box.querySelector(".seat-person");
       if (personEl) personEl.textContent = swapDisplay.name || "-";

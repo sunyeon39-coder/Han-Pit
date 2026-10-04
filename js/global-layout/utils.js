@@ -480,7 +480,12 @@ export function resolveSeatSwapDisplay(seat = {}, nowMs = Date.now(), { isAdminV
 
   if (!isEmptyPerson(incomingName)) {
     const { isRecent, isBlinkPhase, isBlinkOn } = getSeatConfirmHighlightState(incomingAt, nowMs);
-    if (!isRecent) return { name: incomingName, highlight: false, timeBasisMs: incomingAt };
+    // 교대 구간(10분)이 끝나 실제로 자리를 넘겨받은 상태 — 서버 확정(1분 주기)을 기다리지 않고
+    // 넘겨받은 시각(incomingAt + 10분)부터 새 딜러 시간을 센다. 서버도 같은 시각을 seatedAt 으로
+    // 기록하므로 확정되는 순간 시간·색이 튀지 않는다.
+    if (!isRecent) {
+      return { name: incomingName, highlight: false, timeBasisMs: incomingAt + CONFIRM_RECENT_MS };
+    }
     if (!isAdminView && !isBlinkPhase) {
       // 근무자 화면: 공개 시점(REVEAL) 전에는 교대 확정 대기 사실 자체를 숨긴다 —
       // 실제 occupant(currentName)는 아직 그대로이므로 그걸 보여준다.
