@@ -6,6 +6,8 @@
  * - createdAt 30분 초과 문서는 FCM 생략 (재시도·늦은 트리거만 차단)
  * - dedupKey 는 Cloud Function 내부 중복 전송 방지용
  *
+ * 런타임: Node.js 22 (firebase.json functions.runtime) — 2026-10 Node 20 지원 종료로 업그레이드
+ *
  * 배포: Blaze 플랜에서
  *   cd functions && npm install && cd .. && firebase deploy --only functions
  *
