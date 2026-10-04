@@ -135,6 +135,28 @@ function bindGlobalLayoutPushUiOnce() {
   });
 }
 
+const GL_OPS_HINT_PREFIX = "hanpit_gl_ops_hint_v1_";
+
+/** 다음 진입 시 global-layout.html 인라인 스크립트가 첫 페인트부터 관리자 레이아웃을 쓰도록 */
+function writeGlobalLayoutOpsHint(canOps) {
+  if (!GL.tournamentId) return;
+  try {
+    if (canOps) localStorage.setItem(GL_OPS_HINT_PREFIX + GL.tournamentId, "1");
+    else localStorage.removeItem(GL_OPS_HINT_PREFIX + GL.tournamentId);
+  } catch {
+    /* ignore */
+  }
+}
+
+function readGlobalLayoutOpsHint() {
+  if (!GL.tournamentId) return false;
+  try {
+    return localStorage.getItem(GL_OPS_HINT_PREFIX + GL.tournamentId) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export function startGlobalLayoutApp() {
   ensureDocumentShellBackground();
   initGlFromUrl();
@@ -145,6 +167,10 @@ export function startGlobalLayoutApp() {
   instantDismissAllBootLoaders();
   markPageBootLoaded(GL.app);
   // 진입 즉시 마지막으로 본 좌석을 캔버스에 그려 반응성을 높인다(이후 realtime 이 최신값으로 교체).
+  if (readGlobalLayoutOpsHint()) {
+    document.body.classList.remove("gl-view-only");
+    setPanelOpen(!layoutIsMobile());
+  }
   const cachedSeats = readGlobalSeatsBootCache(GL.tournamentId);
   if (cachedSeats?.length) {
     GL.globalSeats = cachedSeats;
@@ -194,6 +220,7 @@ export function startGlobalLayoutApp() {
     const protectedFromDemotion = wasAdmin && globalLayoutSessionStarted && GL.opsServerVerified;
     const canOps = rawCanOps || protectedFromDemotion;
     GL.isAdminUser = canOps;
+    writeGlobalLayoutOpsHint(canOps);
     GL.layoutAccentColor = resolveLayoutAccentColor(
       GL.userProfile,
       user.uid || "",
@@ -479,6 +506,23 @@ export function startGlobalLayoutApp() {
       GL.userProfile = readLoginProfileCache(user.uid) || readBootUserProfile(user);
       seedMyUserProfileCache(GL.userProfile);
       markPageBootLoaded(GL.app);
+
+      /* 캐시된 프로필로 권한이 확인되면 대회 메타(서버 왕복)를 기다리지 않고 바로 세션 시작 */
+      if (syncGlobalLayoutOpsFromProfile(user)) {
+        GL.opsServerVerified = true;
+        startGlobalLayoutSession(user);
+        void loadGlobalLayoutTournamentMeta().then(() => {
+          if (globalLayoutSessionUid !== user.uid) return;
+          if (!GL.topicText) {
+            GL.topicText = String(GL.currentTournament?.topicText || "");
+            renderGlobalLayoutTopicBar();
+          }
+          refreshGlobalLayoutAdminUi();
+        });
+        void ensureGlobalLayoutOpsChrome(user);
+        void refreshGlobalLayoutOpsProfileBackground(user);
+        return;
+      }
 
       await loadGlobalLayoutTournamentMeta();
 

@@ -372,6 +372,21 @@
       <div id="panelContent"></div>
     </div>
   </aside>
+  <script id="han-pit-gl-ops-hint">
+  /* 이 기기에서 운영 권한이 확인된 적 있으면 첫 화면부터 관리자 레이아웃(패널)으로 — 진입 시 펼쳐졌다 정리되는 현상 방지 */
+  (function(){
+    try{
+      var tid=new URLSearchParams(location.search).get("tournamentId")||sessionStorage.getItem("tournamentId")||"";
+      if(!tid||localStorage.getItem("hanpit_gl_ops_hint_v1_"+tid)!=="1")return;
+      document.body.classList.remove("gl-view-only");
+      if(window.innerWidth>1180){
+        var p=document.getElementById("pcPanel"),a=document.getElementById("app");
+        if(p)p.classList.add("open");
+        if(a)a.classList.add("with-panel");
+      }
+    }catch(e){}
+  })();
+  </script>
 
   <div id="mobileSheet" class="mobile-sheet" aria-label="mobile sheet">
     <button id="mobileAddSeat" class="sheet-btn" type="button">+ Seat 추가</button>
