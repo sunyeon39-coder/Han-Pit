@@ -539,7 +539,14 @@ function normAlertKind(data = {}) {
   return data && data.alertActive === true ? "emergency" : "";
 }
 
-/** 이 대회를 조작할 수 있는 사용자 uid 집합 (firestore.rules isAdmin() 과 동일 기준) */
+// app_config.js ADMIN_EMAILS 와 동기화 — 시스템 admin 은 모든 대회 알림을 받는다
+const SYSTEM_ADMIN_EMAILS = ["sunyeon9501@gmail.com"];
+
+/**
+ * 이 대회를 운영하는 사용자 uid 집합 — 이 대회 직접 허용 운영자 + 시스템 admin.
+ * 예전엔 role=="admin" 전체를 넣어, 다른 대회만 맡은 운영자까지 이 대회 비상 알림을 받았다
+ * (role 은 어느 대회든 직접 허용이 하나라도 있으면 admin 이 된다).
+ */
 async function collectTournamentAdminUids(tournamentId) {
   const tid = String(tournamentId || "").trim();
   const uids = new Set();
@@ -547,7 +554,7 @@ async function collectTournamentAdminUids(tournamentId) {
   const queries = [
     db.collection("users").where("opsTournamentIds", "array-contains", tid),
     db.collection("users").where(new FieldPath("allowedEvents", tid), "==", true),
-    db.collection("users").where("role", "==", "admin")
+    db.collection("users").where("email", "in", SYSTEM_ADMIN_EMAILS)
   ];
   const results = await Promise.allSettled(queries.map((q) => q.get()));
   results.forEach((r, i) => {
@@ -705,26 +712,26 @@ async function pruneLogsOlderThan(cutoffMs) {
   return deleted;
 }
 
-async function pruneGlobalExcess() {
-  const snap = await db
-    .collection(ATTENDANCE_LOGS)
-    .orderBy("createdAt", "desc")
-    .limit(LOG_MAX_TOTAL + 1)
-    .get();
-  if (snap.size <= LOG_MAX_TOTAL) return 0;
-
-  const threshold = toMillis(snap.docs[snap.docs.length - 1].data().createdAt);
-  if (!threshold) return 0;
-
+/** query 결과 중 createdAt 오래된 순으로 excess 건을 삭제 — 예전처럼 상한+1건을 통째로 읽지 않는다 */
+async function deleteOldestExcess(baseQuery, excess, maxRounds = 30) {
   let deleted = 0;
-  for (let round = 0; round < 30; round++) {
+  for (let round = 0; round < maxRounds && deleted < excess; round++) {
     const n = await deleteLogQuery(
-      db.collection(ATTENDANCE_LOGS).where("createdAt", "<=", threshold)
+      baseQuery.orderBy("createdAt", "asc"),
+      Math.min(LOG_DELETE_BATCH, excess - deleted)
     );
     if (!n) break;
     deleted += n;
   }
   return deleted;
+}
+
+async function pruneGlobalExcess() {
+  // 예전엔 최신 80001건을 매일 읽어 개수를 셌다 — count() 집계 쿼리로 대체
+  const total = (await db.collection(ATTENDANCE_LOGS).count().get()).data().count;
+  const excess = total - LOG_MAX_TOTAL;
+  if (excess <= 0) return 0;
+  return deleteOldestExcess(db.collection(ATTENDANCE_LOGS), excess);
 }
 
 async function prunePerTournamentExcess() {
@@ -741,27 +748,11 @@ async function prunePerTournamentExcess() {
 
   let deleted = 0;
   for (const tid of tids) {
-    const snap = await db
-      .collection(ATTENDANCE_LOGS)
-      .where("tournamentId", "==", tid)
-      .orderBy("createdAt", "desc")
-      .limit(LOG_MAX_PER_TOURNAMENT + 1)
-      .get();
-    if (snap.size <= LOG_MAX_PER_TOURNAMENT) continue;
-
-    const threshold = toMillis(snap.docs[snap.docs.length - 1].data().createdAt);
-    if (!threshold) continue;
-
-    for (let round = 0; round < 15; round++) {
-      const n = await deleteLogQuery(
-        db
-          .collection(ATTENDANCE_LOGS)
-          .where("tournamentId", "==", tid)
-          .where("createdAt", "<=", threshold)
-      );
-      if (!n) break;
-      deleted += n;
-    }
+    const base = db.collection(ATTENDANCE_LOGS).where("tournamentId", "==", tid);
+    const count = (await base.count().get()).data().count;
+    const excess = count - LOG_MAX_PER_TOURNAMENT;
+    if (excess <= 0) continue;
+    deleted += await deleteOldestExcess(base, excess, 15);
   }
   return deleted;
 }
