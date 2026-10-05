@@ -7,7 +7,11 @@ import { renderSeats, refreshGlobalLayoutPcOpsPanel, invalidateWaitingPanelFinge
 import { renderGlobalLayoutMobile } from "./mobile-panel-render.js";
 import { getCurrentTournamentWaiting } from "./waiting.js";
 import { isEmptyPerson } from "./utils.js";
-import { rebuildWaitingAfterSeatToWait } from "./fs-waiting-merge.js";
+import {
+  rebuildWaitingAfterSeatToWait,
+  resolveClearedSeatCarryOverAt,
+  resolveWaitingCarryOverConfirmAt
+} from "./fs-waiting-merge.js";
 import { isPersonSeatedInGlobalSeats } from "./waiting.js";
 import { personIdentityMatches } from "../shared/tournament-waiting-queue.js";
 import {
@@ -131,7 +135,7 @@ export function applyOptimisticAssign({ targetSeatId, waiting, seat, now: nowOve
   const hadExistingIncoming = !isEmptyPerson(String(target?.incomingPerson || "").trim());
   // 0~5분 사이 다른 좌석에서 취소된 배치확인이었다면 그때 실렸던 원래 확정 시각을
   // 이어받는다(fs-assign-waiting-to-seat.js와 동일 규칙) — 즉시확인은 예약 개념이 없다.
-  const carryOverConfirmAt = !immediate ? Number(waiting?.carryOverConfirmAt) || 0 : 0;
+  const carryOverConfirmAt = !immediate ? resolveWaitingCarryOverConfirmAt(waiting, now) : 0;
   const nextTarget =
     wasOccupied && !immediate
       ? {
@@ -286,7 +290,11 @@ export function applyOptimisticClear({ targetSeatId, seat }) {
         GL.tournamentId,
         prevPerson,
         now,
-        { source: "seat_clear", resetJoinedAt: true }
+        {
+          source: "seat_clear",
+          resetJoinedAt: true,
+          carryOverConfirmAt: resolveClearedSeatCarryOverAt(target?.seatedAt, now)
+        }
       );
     }
   }

@@ -41,7 +41,8 @@ import { buildSeatAssignedNotifyMessage } from "../shared/seat-notification-labe
 import {
   rebuildWaitingAfterSeatToWait,
   waitingRowMatchesPerson,
-  resolveCanonicalWaitingDocId
+  resolveCanonicalWaitingDocId,
+  resolveWaitingCarryOverConfirmAt
 } from "./fs-waiting-merge.js";
 import { pushGlobalUndo } from "./undo-stack.js";
 import { captureSeatShellSnapshot } from "./utils.js";
@@ -296,7 +297,7 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
       // 0~5분 사이 다른 좌석에서 취소된 배치확인이었다면, 그때 대기 문서에 실어둔
       // 원래 확정 시각을 이어받는다(cancelIncomingSeatSwap 참고) — 즉시확인(immediate)은
       // 예약 개념 자체가 없으므로 항상 now를 쓴다.
-      const carryOverConfirmAt = !immediate ? Number(waiting.carryOverConfirmAt) || 0 : 0;
+      const carryOverConfirmAt = !immediate ? resolveWaitingCarryOverConfirmAt(waiting, now) : 0;
 
       const seatSnap = await tx.get(seatRef);
       if (!seatSnap?.exists()) throw new Error("seat_not_found");

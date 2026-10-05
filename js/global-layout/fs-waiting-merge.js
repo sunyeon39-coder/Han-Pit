@@ -1,5 +1,30 @@
 import { getWaitingRowJoinMs } from "../shared/tournament-waiting-queue.js";
 import { resolveAttendanceWaitingJoinMs } from "../shared/attendance-operational-day.js";
+import { SEAT_SWAP_SETTLE_MS } from "../shared/seat-notification-push.js";
+
+// 대기 문서에 실린 carryOverConfirmAt을 이어받는 최대 나이 — 빠진 뒤 대기에서 한참 쉬다가
+// 다시 배치되는 건 새 착석이므로, 원래 배치확인 시각에서 이만큼 지났으면 무시한다.
+const CARRY_OVER_CONFIRM_MAX_AGE_MS = 20 * 60 * 1000;
+
+/**
+ * 배치확인 직후(0~10분) 좌석에서 빼는 경우(다른 좌석으로 옮기려는 정정) — 그 착석 시각을
+ * 대기 문서의 carryOverConfirmAt으로 넘겨, 다른 좌석에 다시 배치될 때 타이머가 00부터
+ * 새로 시작하지 않고 처음 배치된 시각부터 이어지게 한다. 10분이 지난 착석은 넘기지 않는다.
+ */
+export function resolveClearedSeatCarryOverAt(seatedAt, nowMs = Date.now()) {
+  const v = Number(seatedAt) || 0;
+  if (!v) return null;
+  const elapsed = (Number(nowMs) || Date.now()) - v;
+  return elapsed >= 0 && elapsed < SEAT_SWAP_SETTLE_MS ? v : null;
+}
+
+/** 배치 시 이어받을 carryOverConfirmAt(없거나 너무 오래됐으면 0) */
+export function resolveWaitingCarryOverConfirmAt(waiting, nowMs = Date.now()) {
+  const v = Number(waiting?.carryOverConfirmAt) || 0;
+  if (!v) return 0;
+  const age = (Number(nowMs) || Date.now()) - v;
+  return age >= 0 && age <= CARRY_OVER_CONFIRM_MAX_AGE_MS ? v : 0;
+}
 
 /**
  * "이 사람의 대기 문서 id는 이거다" — 서버(functions/index.js의 finalizeOneIncomingSwap이

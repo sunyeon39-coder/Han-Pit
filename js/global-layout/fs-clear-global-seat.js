@@ -16,7 +16,11 @@ import { findGlobalWaitingEntryRefs, diffGlobalWaitingRows } from "./waiting-ent
 import { globalWaitingDocRef } from "../shared/tournament-waiting-queue.js";
 import { buildSeatClearedNotificationWrite } from "../shared/seat-notification-push.js";
 import { scheduleSyncLayoutProjection } from "./fs-layout-projection.js";
-import { rebuildWaitingAfterSeatToWait, resolveCanonicalWaitingDocId } from "./fs-waiting-merge.js";
+import {
+  rebuildWaitingAfterSeatToWait,
+  resolveCanonicalWaitingDocId,
+  resolveClearedSeatCarryOverAt
+} from "./fs-waiting-merge.js";
 import { pushGlobalUndo } from "./undo-stack.js";
 import { captureSeatShellSnapshot } from "./utils.js";
 import {
@@ -250,7 +254,11 @@ export async function clearSeat(seatId = "") {
             GL.tournamentId,
             { uid: prevUid, email: prevEmail, name: prevName },
             now,
-            { source: "seat_clear", resetJoinedAt: true }
+            {
+              source: "seat_clear",
+              resetJoinedAt: true,
+              carryOverConfirmAt: resolveClearedSeatCarryOverAt(seatData.seatedAt, now)
+            }
           );
           const { toSet, toDelete } = diffGlobalWaitingRows(existingWaitingRows, nextWaitingRows);
           for (const { id, data } of toSet) {
