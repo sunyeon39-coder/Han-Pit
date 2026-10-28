@@ -137,9 +137,20 @@ export function buildInlineAppUpdateSnippet(v) {
     try{sessionStorage.setItem(LAST_TARGET,String(ver||""));}catch(e){}
   }
 
+  function reloadBlocked(){
+    // 배치확인 대기·저장 중·입력 중에는 새로고침을 미룬다 — 다음 폴링/복귀 때 다시 시도
+    try{
+      if(typeof window.hanPitAutoReloadBlocked==="function"&&window.hanPitAutoReloadBlocked())return true;
+      var ae=document.activeElement;
+      if(ae&&(ae.tagName==="TEXTAREA"||(ae.tagName==="INPUT"&&!/^(button|checkbox|radio|submit)$/i.test(ae.type||""))))return true;
+    }catch(e){}
+    return false;
+  }
+
   function reloadTo(ver){
     ver=String(ver||"").trim();
     if(!ver||ver===pageBuild)return;
+    if(reloadBlocked())return;
     if(!IS_PWA&&lastTarget()===ver)return;
     setLastTarget(ver);
     persist(ver);

@@ -85,6 +85,7 @@ import {
   wireGlobalSeatNotificationVisibilityResync
 } from "../shared/global-seat-notification-watch.js";
 import { bindAppBadgeClearOnForeground } from "../shared/app-badge-sync.js";
+import { setAuthLaunchHint, clearAuthLaunchHint } from "../shared/auth-launch-hint.js";
 
 initHubRefs();
 ensureDocumentShellBackground();
@@ -617,9 +618,12 @@ onAuthStateChanged(auth, (user) => {
       disposeGlobalSeatNotifyVisibility = null;
     }
     disposeHubSessionWatches();
+    clearAuthLaunchHint();
     location.replace("./login.html");
     return;
   }
+
+  setAuthLaunchHint(user.uid);
 
   if (isSameAuthSession(hubSessionUid, user)) {
     hubState.currentUser = user;

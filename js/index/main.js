@@ -25,6 +25,7 @@ import {
 } from "../shared/tournament-event-instance.js";
 import { isTournamentActive } from "./time-utils.js";
 import { IX, refreshIndexDomRefs } from "./state.js";
+import { clearAuthLaunchHint } from "../shared/auth-launch-hint.js";
 
 import {
   loadEvents,
@@ -711,6 +712,7 @@ onAuthStateChanged(auth, async (user) => {
     indexAuthFlowGen += 1;
     resetIndexOpsChromeState();
     disposeIndexRealtimeWatches();
+    clearAuthLaunchHint();
     location.replace("./login.html");
     return;
   }

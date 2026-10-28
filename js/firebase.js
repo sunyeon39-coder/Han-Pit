@@ -3,7 +3,8 @@ import { getAuth } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-aut
 import {
   initializeFirestore,
   persistentLocalCache,
-  persistentMultipleTabManager
+  persistentMultipleTabManager,
+  persistentSingleTabManager
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
   getMessaging,
@@ -47,8 +48,9 @@ function isStandalonePwa() {
   }
 }
 
+/** WebKit(iPhone·iPad 의 모든 브라우저·PWA, macOS Safari) — Android/PC Chrome PWA 는 제외 */
 export function isSafariLikeFirestoreClient() {
-  return isSafariLikeBrowser() || isStandalonePwa();
+  return isSafariLikeBrowser();
 }
 
 /**
@@ -59,9 +61,15 @@ export function isSafariLikeFirestoreClient() {
  * 웹에서는 enableNetwork/disableNetwork 토글 시 "Target ID already exists" 가
  * 발생하므로 사용하지 않습니다 (Firebase 지원팀 권고).
  */
+// iPhone 홈 화면 PWA 는 Safari 와 저장소가 분리된 창 하나뿐 — multi-tab 매니저는 백그라운드에서
+// 얼어붙은 이전 페이지가 IndexedDB primary lease 를 쥐고 있으면 복귀 후 읽기·쓰기가 멈추는
+// (연결 새로고침 배너) 원인이 된다. 단일 탭 매니저 + forceOwnership 으로 새 페이지가 항상 소유권을 가져간다.
+// (Android/PC PWA 는 브라우저 탭과 저장소를 공유하므로 multi-tab 유지)
 const firestoreSettings = {
   localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager()
+    tabManager: isStandalonePwa() && isSafariLikeBrowser()
+      ? persistentSingleTabManager({ forceOwnership: true })
+      : persistentMultipleTabManager()
   }),
   // WebChannel 스트림이 끊기면 읽기가 영원히 pending — 자동 long-polling 전환
   experimentalAutoDetectLongPolling: true
@@ -78,6 +86,14 @@ if (isSafariLikeFirestoreClient()) {
 }
 
 export const db = initializeFirestore(app, firestoreSettings);
+
+// 뒤로가기 캐시(bfcache)로 되살아난 페이지는 위 forceOwnership 으로 캐시 소유권을 이미 넘겨준 상태 —
+// 그대로 쓰면 Firestore 가 멈추므로 새로 불러온다.
+if (isStandalonePwa() && isSafariLikeBrowser()) {
+  window.addEventListener("pageshow", (ev) => {
+    if (ev.persisted) location.reload();
+  });
+}
 
 export { app };
 export const auth = getAuth(app);

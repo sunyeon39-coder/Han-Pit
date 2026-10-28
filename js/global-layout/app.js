@@ -1,6 +1,15 @@
 import { auth, db } from "../firebase.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { GL, initGlFromUrl, initGlDomRefs } from "./state.js";
+import { isGlobalWaitingWriteInFlight } from "./global-waiting-write-lock.js";
+import { setAuthLaunchHint, clearAuthLaunchHint } from "../shared/auth-launch-hint.js";
+
+// 배포 직후 자동 새로고침이 "배치확인" 대기(이 세션 메모리에만 있음)나 저장 중인 쓰기를 날리지 않게
+window.hanPitAutoReloadBlocked = () =>
+  GL.pendingSeatAssignments.size > 0 ||
+  GL.seatMutationInFlight ||
+  GL.waitingMutationInFlight ||
+  isGlobalWaitingWriteInFlight();
 import { resolveLayoutAccentColor } from "../shared/layout-operator-colors.js";
 import { clearMyWaitingPick, pruneOperatorPicksWithoutOps, refreshOperatorPicksFromServer } from "./waiting-picks.js";
 import { layoutIsMobile, ALERT_VOLUME, SOUND_ENABLED_KEY } from "../layout/layout-main-route-env.js";
@@ -487,10 +496,12 @@ export function startGlobalLayoutApp() {
       GL.opsServerVerified = false;
       disposeMyUserProfileRealtime();
       void clearMyWaitingPick();
+      clearAuthLaunchHint();
       location.replace("./login.html");
       return;
     }
 
+    setAuthLaunchHint(user.uid);
     if (isSameAuthSession(globalLayoutSessionUid, user)) {
       GL.currentUser = user;
       void bootstrapAppPush(user.uid);

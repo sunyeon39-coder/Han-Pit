@@ -275,6 +275,18 @@
 </script>
   <!-- /han-pit-asset-fix -->
   <meta name="han-pit-build" content="20261028150214" />
+  <script id="han-pit-launch-skip">
+  // PWA 재실행(홈 화면 아이콘)·구버전 start_url 로 로그인 화면에 왔는데 이 기기에 로그인된 계정이
+  // 있었으면 Firebase 로딩을 기다리지 않고 허브로 보낸다. 허브가 실제 로그인 여부를 확인하고,
+  // 로그아웃 상태면 힌트를 지운 뒤 다시 이 화면으로 보낸다 (js/shared/auth-launch-hint.js).
+  (function(){
+    try{
+      if(!localStorage.getItem("hanpit_auth_launch_hint_v1"))return;
+      if(sessionStorage.getItem("hanpit:oauthRedirectPending")==="1")return;
+      location.replace("./hub.html");
+    }catch(e){}
+  })();
+  </script>
   <!-- han-pit-perf-hints -->
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
   <link rel="preconnect" href="https://firebase.googleapis.com" crossorigin />

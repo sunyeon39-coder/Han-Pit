@@ -7,6 +7,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { createGoogleAuthProvider } from "./shared/google-auth-provider.js";
 import { clearLoginProfileCache } from "./shared/login-profile-cache.js";
+import { clearAuthLaunchHint } from "./shared/auth-launch-hint.js";
 import {
   isGoogleOAuthLikelyBlockedBrowser,
   shouldPreferGoogleRedirectOverPopup,
@@ -59,6 +60,7 @@ export async function loginWithGoogle() {
 export function requireAuth(onAuthed) {
   onAuthStateChanged(auth, (user) => {
     if (!user) {
+      clearAuthLaunchHint();
       location.replace("./login.html");
     } else {
       onAuthed(user);
@@ -69,6 +71,7 @@ export function requireAuth(onAuthed) {
 /** 로그아웃 시 이 기기에 남은 프로필·운영 권한 힌트 제거 — 다음 사용자에게 이전 계정 권한 UI가 비치지 않게 */
 function clearLocalSessionCaches() {
   clearLoginProfileCache();
+  clearAuthLaunchHint();
   try {
     for (const store of [localStorage, sessionStorage]) {
       for (let i = store.length - 1; i >= 0; i -= 1) {

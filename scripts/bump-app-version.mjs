@@ -138,7 +138,7 @@ for (const name of htmlFiles) {
 const manifestPath = join(root, "manifest.json");
 try {
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-  manifest.start_url = `./login.html?_hanpit_v=${v}`;
+  manifest.start_url = `./hub.html?_hanpit_v=${v}`;
   if (Array.isArray(manifest.icons)) {
     manifest.icons = manifest.icons.map((icon) => {
       if (!icon?.src) return icon;

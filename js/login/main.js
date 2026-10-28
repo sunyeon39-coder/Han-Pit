@@ -217,11 +217,16 @@ async function resolveStoredProfileForLogin(user) {
     return cached;
   }
 
-  const fast = await syncUserProfileFast(user);
+  // PWA 복귀 직후 Firestore 연결이 늦으면 getDoc 이 한참 멈춰 로그인 화면에 갇혔다 — 단계마다 시간 제한
+  const fast = (await raceFirestoreTimeout(syncUserProfileFast(user), 6000)) || {
+    ok: false,
+    timedOut: true
+  };
   if (fast.ok && hasValidNickname(fast.profile)) return fast.profile;
 
+  let full = null;
   if (!fast.ok || fast.needsFullSync) {
-    const full = await syncUserProfile(user);
+    full = (await raceFirestoreTimeout(syncUserProfile(user), 8000)) || { ok: false, timedOut: true };
     if (full.ok && hasValidNickname(full.profile)) return full.profile;
   }
 
@@ -235,10 +240,15 @@ async function resolveStoredProfileForLogin(user) {
     return cached;
   }
 
-  return buildOptimisticProfileFromAuthUser(
+  const optimistic = buildOptimisticProfileFromAuthUser(
     user,
     fast.profile || fresh || cached || {}
   );
+  // 문서를 한 번도 읽지 못했으면(전부 시간 초과) 신규 가입 모달 대신 허브로 — 허브가 프로필을 다시 읽는다
+  if (fast.timedOut && (!full || full.timedOut) && !fresh) {
+    return { ...optimistic, __profileUnknown: true };
+  }
+  return optimistic;
 }
 
 /** Firestore·캐시 확인 후 허브 진입 또는 최초 가입 모달 */
@@ -250,6 +260,14 @@ async function finalizeLoginFlow(user) {
     setLoginBusy(true);
     try {
       const profile = await resolveStoredProfileForLogin(user);
+
+      if (profile?.__profileUnknown) {
+        const { __profileUnknown, ...rest } = profile;
+        scheduleLoginProfileBackgroundSync(user);
+        if (hasValidNickname(rest)) writeLoginProfileCache(user.uid, rest);
+        redirectToHubImmediately();
+        return;
+      }
 
       if (hasValidNickname(profile)) {
         completeLoginWithProfile(user, profile);
