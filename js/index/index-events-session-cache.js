@@ -80,6 +80,8 @@ export function readIndexEventsLegacyCache(tournamentId = "") {
       if (String(o?.tournamentId || "").trim() !== tid) continue;
       const events = Array.isArray(o?.events) ? o.events : null;
       if (events?.length) return events;
+      // 같은 대회의 빈 목록 기록이 더 최근 상태 — 옛 저장소로 넘어가지 않는다
+      if (events) return null;
     }
     return null;
   } catch {
@@ -90,7 +92,8 @@ export function readIndexEventsLegacyCache(tournamentId = "") {
 export function writeIndexEventsSessionCache(tournamentId = "", events = []) {
   const tid = String(tournamentId || "").trim();
   const list = Array.isArray(events) ? events : [];
-  if (!tid || !list.length) return;
+  // 빈 목록도 저장 — 서버가 "카드 0개"라고 확인했는데 이전 목록이 남아 삭제한 카드가 되살아나던 문제
+  if (!tid) return;
   const payload = JSON.stringify({ tournamentId: tid, savedAt: Date.now(), events: list });
   try {
     sessionStorage.setItem(INDEX_EVENTS_SESSION_KEY, payload);

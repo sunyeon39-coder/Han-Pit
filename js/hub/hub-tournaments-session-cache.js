@@ -79,8 +79,8 @@ export function readHubTournamentsLegacyCache() {
 }
 
 export function writeHubTournamentsSessionCache(list = []) {
+  // 빈 목록도 저장 — 마지막 대회를 지운 뒤 이전 목록이 되살아나지 않게
   const safe = Array.isArray(list) ? list : [];
-  if (!safe.length) return;
   const payload = JSON.stringify({ savedAt: Date.now(), list: safe });
   try {
     sessionStorage.setItem(HUB_TOURNAMENTS_SESSION_KEY, payload);

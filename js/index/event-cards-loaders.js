@@ -30,8 +30,14 @@ function eventsListSignature(events = []) {
     .join("\0");
 }
 
+/** 서버가 직접 확인한 결과(캐시 아님) — 비어 있어도 그대로 믿는다 */
+function isServerConfirmedSnap(snap) {
+  return Boolean(snap) && snap.metadata?.fromCache === false;
+}
+
 function shouldSkipEmptyEventsSnapshot(snap, tournamentId = "") {
   if (!snap?.empty) return false;
+  if (isServerConfirmedSnap(snap)) return false;
 
   const tid = String(tournamentId || getTournamentId() || "").trim();
   if (IX.events.length > 0) return true;
@@ -52,6 +58,12 @@ function restoreIndexEventsFromPersistedCache(tournamentId = "") {
 function applyEventsSnap(snap, tournamentId = "") {
   const tid = String(tournamentId || getTournamentId() || "").trim();
   if (!snap || snap.empty) {
+    // 관리자가 마지막 카드까지 지운 경우 — 서버 확인된 빈 목록이면 화면·저장된 목록 모두 비운다
+    if (isServerConfirmedSnap(snap)) {
+      IX.events = [];
+      if (tid) writeIndexEventsSessionCache(tid, []);
+      return IX.events;
+    }
     if (snap?.metadata?.fromCache) {
       if (IX.events.length > 0) return IX.events;
       restoreIndexEventsFromPersistedCache(tid);
@@ -118,7 +130,7 @@ export function prefetchIndexEventsCache(tournamentId = "") {
   if (!tid) return Promise.resolve();
   return getDocs(collection(db, "tournaments", tid, "events"))
     .then((snap) => {
-      if (!snap.empty) {
+      if (!snap.empty || isServerConfirmedSnap(snap)) {
         writeIndexEventsSessionCache(tid, normalizeEvents(snap.docs));
       }
     })
@@ -173,7 +185,8 @@ export async function loadEvents(tournamentId = "", options = {}) {
       try {
         const serverSnap = await getDocsFromServer(getEventsCollectionRef(tid));
         applyEventsSnap(serverSnap, tid);
-        if (IX.events.length) return;
+        // 서버가 비었다고 답했으면 그게 정답 — 아래 영구 캐시(지워진 카드 포함 가능)로 넘어가지 않는다
+        return;
       } catch (err) {
         noteFirestoreQuotaExceeded(err);
         console.warn("loadEvents forceServer:", err?.code || err);

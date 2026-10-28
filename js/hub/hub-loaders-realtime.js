@@ -135,6 +135,12 @@ export function removeHubTournamentFromCache(tournamentId = "") {
 
 /** 빈 Firestore 스냅샷으로 목록을 지우지 않음 — 데이터가 있을 때만 갱신 */
 function applyTournamentsSnap(snap) {
+  // 서버가 확인한 빈 목록(모든 대회 삭제)은 그대로 반영 — 예전엔 이전 목록을 유지·복구해 삭제한 대회가 계속 보였다
+  if (snap?.empty && snap.metadata?.fromCache === false) {
+    hubState.tournamentsCache = [];
+    writeHubTournamentsSessionCache([]);
+    return hubState.tournamentsCache;
+  }
   if (!snap || snap.empty) {
     if (snap?.metadata?.fromCache) return hubState.tournamentsCache;
     if (hubState.tournamentsCache.length > 0) return hubState.tournamentsCache;
@@ -185,12 +191,10 @@ export async function loadTournaments(options = {}) {
     if (forceServer && !isFirestoreQuotaCoolingDown()) {
       try {
         const serverSnap = await getDocsFromServer(col);
-        if (!serverSnap.empty) {
-          applyTournamentsSnap(serverSnap);
-          hubState.tournamentsListReady = true;
-          hubState.tournamentsBootstrapping = false;
-          return hubState.tournamentsCache;
-        }
+        applyTournamentsSnap(serverSnap);
+        hubState.tournamentsListReady = true;
+        hubState.tournamentsBootstrapping = false;
+        return hubState.tournamentsCache;
       } catch (err) {
         noteFirestoreQuotaExceeded(err);
         console.warn("loadTournaments forceServer:", err?.code || err);
