@@ -2138,12 +2138,56 @@ body.page-global-layout .layout-canvas-viewport {
 /* ===== 통합 배치도: 운영 admin 의 펼친 폴더블·태블릿 (폭 600~1180 캔버스) ===== */
 @media (min-width: 600px) and (max-width: 1180px) {
 
+  /* 대기·Seat 패널을 오른쪽 대신 화면 아래 독으로 — 좌: 대기 / 우: Seat, 손잡이로 접기·펼치기 */
+  body.page-global-layout:not(.gl-mobile-mode) {
+    --gl-dock-h: 46vh;
+    --gl-dock-collapsed-h: 46px;
+  }
+
   body.page-global-layout:not(.gl-mobile-mode) .pc-panel {
-    width: 50vw;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: auto;
+    height: var(--gl-dock-h);
+    transform: none;
+    border-left: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.4);
+    transition: height 0.2s ease;
+    overflow: hidden;
+  }
+
+  body.page-global-layout:not(.gl-mobile-mode) #app {
+    box-sizing: border-box;
   }
 
   body.page-global-layout:not(.gl-mobile-mode) #app.with-panel {
-    padding-right: calc(50vw + 8px);
+    padding-right: 14px;
+    padding-bottom: calc(var(--gl-dock-h) + 8px);
+  }
+
+  body.page-global-layout:not(.gl-mobile-mode) .gl-dock-toggle {
+    display: flex;
+  }
+
+  body.page-global-layout.gl-dock-collapsed:not(.gl-mobile-mode) .pc-panel {
+    height: var(--gl-dock-collapsed-h);
+  }
+
+  body.page-global-layout.gl-dock-collapsed:not(.gl-mobile-mode) .pc-panel .panel-body {
+    display: none;
+  }
+
+  body.page-global-layout.gl-dock-collapsed:not(.gl-mobile-mode) #app.with-panel {
+    padding-bottom: calc(var(--gl-dock-collapsed-h) + 8px);
+  }
+
+  body.page-global-layout:not(.gl-mobile-mode) .global-pc-ops-col--wait .row,
+  body.page-global-layout:not(.gl-mobile-mode) .global-pc-ops-col--seat .seat-manage-row {
+    min-width: 0;
   }
 
   body.page-global-layout:not(.gl-mobile-mode) .topbar .app-mark-img {
@@ -2175,4 +2219,32 @@ body.page-global-layout .layout-canvas-viewport {
     min-width: 96px;
     min-height: 44px;
   }
+}
+
+/* 폴더블 독 손잡이 — 독 모드(위 미디어 쿼리)에서만 보임 */
+body.page-global-layout .gl-dock-toggle {
+  display: none;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  height: 46px;
+  padding: 0 16px;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(238, 242, 255, 0.86);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+body.page-global-layout .gl-dock-toggle__grip {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.35);
 }

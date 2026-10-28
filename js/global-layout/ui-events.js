@@ -426,6 +426,30 @@ export function bindGlobalLayoutEventHandlers() {
     }
   });
 
+  // 폴더블 독(아래 대기·Seat 패널) 접기·펼치기 — 기기에 기억
+  const dockToggle = document.getElementById("glDockToggle");
+  const DOCK_COLLAPSED_KEY = "hanpit_gl_dock_collapsed_v1";
+  const applyDockCollapsed = (collapsed) => {
+    document.body.classList.toggle("gl-dock-collapsed", collapsed);
+    dockToggle?.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    const label = dockToggle?.querySelector(".gl-dock-toggle__label");
+    if (label) label.textContent = collapsed ? "대기 · Seat 펼치기" : "대기 · Seat 접기";
+  };
+  try {
+    applyDockCollapsed(localStorage.getItem(DOCK_COLLAPSED_KEY) === "1");
+  } catch {
+    applyDockCollapsed(false);
+  }
+  dockToggle?.addEventListener("click", () => {
+    const next = !document.body.classList.contains("gl-dock-collapsed");
+    applyDockCollapsed(next);
+    try {
+      localStorage.setItem(DOCK_COLLAPSED_KEY, next ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  });
+
   GL.menuBtn?.addEventListener("click", () => {
     if (layoutIsMobile()) {
       setPanelOpen(false);
