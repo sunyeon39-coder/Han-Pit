@@ -15,13 +15,13 @@ import { db } from "../firebase.js";
 import { isAdminEmail } from "../app_config.js";
 import {
   hasAnyDirectEventAllow,
+  hasDirectEventAllowFor,
   normalizeUserProfile,
   resolveDirectOpsRole,
   sanitizeAllowedEvents
 } from "../shared/auth-helpers.js";
 import {
   buildOpsProfilePatch,
-  isDirectOpsAdmin,
   syncLoginCacheForOpsProfile
 } from "../shared/tournament-ops-access.js";
 import { clearOpsSessionSnapshot } from "../shared/login-profile-cache.js";
@@ -47,11 +47,10 @@ function buildOpsTournamentIds(nextAllowed = {}) {
   return Object.keys(sanitizeAllowedEvents(nextAllowed));
 }
 
-/** 대회 관리(생성·삭제)·유저 직접 허용·코드 관리 — 시스템 admin 또는 직접 허용 admin (Firestore rules 의 isAdmin() 과 동일 기준) */
+/** 대회 관리(생성·삭제)·유저 직접 허용·코드 관리 — 시스템 admin 전용 (Firestore rules 의 isAdminEmailToken() 과 동일 기준) */
 function requireHubSystemAdmin(actionLabel = "이 작업") {
   if (getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) return true;
-  if (isDirectOpsAdmin(hubState.currentUser?.email, hubState.currentUserProfile)) return true;
-  alert(`${actionLabel}은(는) admin 계정만 가능합니다.`);
+  alert(`${actionLabel}은(는) 시스템 admin 계정만 가능합니다.`);
   return false;
 }
 
@@ -107,6 +106,12 @@ export async function saveTournament() {
     return;
   }
 
+  const selectedId = String(hubRefs.adminEventSelect?.value || "").trim();
+  if (getTournamentById(id) && selectedId !== id) {
+    const overwrite = confirm(`"${id}" 대회가 이미 있습니다. 내용을 덮어쓸까요?`);
+    if (!overwrite) return;
+  }
+
   try {
     await setDoc(
       doc(db, "tournaments", id),
@@ -149,6 +154,7 @@ export async function deleteTournamentCurrent() {
 
   try {
     await deleteDoc(doc(db, "tournaments", id));
+    const revoked = await stripDeletedTournamentFromUsers(id);
 
     removeHubTournamentFromCache(id);
     renderTournaments(hubState.tournamentsCache, hubState.currentUserProfile, hubState.currentUser);
@@ -161,11 +167,56 @@ export async function deleteTournamentCurrent() {
       renderAdminUserList();
     }
 
-    alert("대회가 삭제되었습니다.");
+    alert(
+      revoked > 0
+        ? `대회가 삭제되었습니다. (직접 허용 ${revoked}명 해제)`
+        : "대회가 삭제되었습니다."
+    );
   } catch (err) {
     console.error(err);
     alert("대회 삭제에 실패했습니다.");
   }
+}
+
+/** 삭제된 대회의 직접 허용을 유저 문서에서 제거 — 남겨두면 rules 상 전 대회 운영 권한이 유지됨 */
+async function stripDeletedTournamentFromUsers(tournamentId) {
+  const lowerId = String(tournamentId || "").trim().toLowerCase();
+  if (!lowerId) return 0;
+  const snap = await getDocs(collection(db, "users"));
+  let fixed = 0;
+  await Promise.all(
+    snap.docs.map((d) => {
+      const data = d.data() || {};
+      const prevAllowed = sanitizeAllowedEvents(data.allowedEvents);
+      const prevOps = Array.isArray(data.opsTournamentIds) ? data.opsTournamentIds : [];
+      const nextAllowed = Object.fromEntries(
+        Object.entries(prevAllowed).filter(([k]) => k.toLowerCase() !== lowerId)
+      );
+      const opsHit = prevOps.some((x) => String(x || "").trim().toLowerCase() === lowerId);
+      if (Object.keys(nextAllowed).length === Object.keys(prevAllowed).length && !opsHit) {
+        return null;
+      }
+      const updates = {
+        allowedEvents: nextAllowed,
+        opsTournamentIds: buildOpsTournamentIds(nextAllowed),
+        role: resolveDirectOpsRole(data.email, nextAllowed)
+      };
+      return updateDoc(d.ref, updates)
+        .then(() => {
+          fixed += 1;
+          const cached = hubState.usersCache.find((u) => u.uid === d.id);
+          if (cached) {
+            cached.allowedEvents = nextAllowed;
+            cached._rawAllowedEvents = { ...nextAllowed };
+            cached._rawOpsTournamentIds = updates.opsTournamentIds;
+            cached.role = updates.role;
+            cached._rawRole = updates.role;
+          }
+        })
+        .catch((err) => console.warn("[stripDeletedTournamentFromUsers]", d.id, err?.code || err));
+    })
+  );
+  return fixed;
 }
 
 export async function grantEventDirectly(uid, eventId) {
@@ -281,11 +332,18 @@ export async function revokeEventDirectly(uid, eventId) {
 
     for (const targetUid of targetUids) {
       const user = hubState.usersCache.find((u) => u.uid === targetUid);
+      // 캐시에 없는 같은 이메일 계정이면 {} 로 덮어써 다른 대회 허용까지 지워지던 문제 — 서버 문서 기준
+      const userSnap = await getDoc(doc(db, "users", targetUid));
       const prevAllowed = sanitizeAllowedEvents(
-        user?._rawAllowedEvents ?? user?.allowedEvents ?? {}
+        userSnap.exists()
+          ? userSnap.data()?.allowedEvents
+          : user?._rawAllowedEvents ?? user?.allowedEvents
       );
       const nextAllowed = { ...prevAllowed };
-      delete nextAllowed[eventId];
+      const lowerId = eventId.toLowerCase();
+      for (const key of Object.keys(nextAllowed)) {
+        if (key.toLowerCase() === lowerId) delete nextAllowed[key];
+      }
 
       const updates = {
         allowedEvents: nextAllowed,
@@ -318,7 +376,7 @@ export async function revokeEventDirectly(uid, eventId) {
       const userCode = String(user?.accessCode || "").trim();
       const stillAllowed =
         isAdminEmail(email) ||
-        hasAnyDirectEventAllow(nextAllowed) ||
+        hasDirectEventAllowFor(nextAllowed, eventId) ||
         (userCode && requiredCode && userCode === requiredCode);
 
       if (user && !stillAllowed) {

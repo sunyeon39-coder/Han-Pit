@@ -374,24 +374,18 @@ export async function healNonAdminUsersToBasic(users = [], options = {}) {
   }
   if (hubState.usersRoleHealInFlight) return { fixed: 0, skipped: true };
 
+  // 확인창 문구대로 시스템 admin 외 전원의 role·allowedEvents·opsTournamentIds 를 비운다.
+  // (예전엔 직접 허용이 있는 유저를 먼저 걸러내 allowedEvents 가 하나도 지워지지 않았고,
+  //  opsTournamentIds 도 남아 rules 의 isAdmin() 이 계속 true 였다)
   const toFix = (users || []).filter((u) => {
     if (!u?.uid) return false;
     if (isSystemAdminEmail(u.email)) return false;
-    if (userRecordHasDirectOpsAllow(u)) return false;
-
     const rawRole = String(u._rawRole || u.role || "")
       .trim()
       .toLowerCase();
-    if (rawRole !== "admin") {
-      if (stripAllowedEvents) {
-        const rawAllowed = sanitizeAllowedEvents(u._rawAllowedEvents || u.allowedEvents);
-        return Object.keys(rawAllowed).length > 0;
-      }
-      return false;
-    }
-    const rawAllowed = sanitizeAllowedEvents(u._rawAllowedEvents || u.allowedEvents);
-    if (Object.keys(rawAllowed).length > 0) return false;
-    return true;
+    const rawAllowedKeys = Object.keys(u._rawAllowedEvents || u.allowedEvents || {});
+    const rawOps = Array.isArray(u._rawOpsTournamentIds) ? u._rawOpsTournamentIds : [];
+    return rawRole === "admin" || rawAllowedKeys.length > 0 || rawOps.length > 0;
   });
 
   if (!toFix.length) return { fixed: 0 };
@@ -403,18 +397,14 @@ export async function healNonAdminUsersToBasic(users = [], options = {}) {
     // 유저 문서는 서로 독립적이므로 병렬로 보내고, 개별 실패는 나머지를 막지 않게 처리한다.
     await Promise.all(
       toFix.map((u) => {
-        const updates = { role: "user" };
-        if (stripAllowedEvents) {
-          updates.allowedEvents = {};
-        }
+        const updates = { role: "user", allowedEvents: {}, opsTournamentIds: [] };
         return updateDoc(doc(db, "users", u.uid), updates)
           .then(() => {
             u.role = "user";
             u._rawRole = "user";
-            if (stripAllowedEvents) {
-              u.allowedEvents = {};
-              u._rawAllowedEvents = {};
-            }
+            u.allowedEvents = {};
+            u._rawAllowedEvents = {};
+            u._rawOpsTournamentIds = [];
             fixed += 1;
           })
           .catch((err) => {
@@ -510,8 +500,10 @@ function applyUsersCacheFromSnap(snap) {
   }
   hubState.usersCache = snap.docs.map(normalizeUserDoc);
   hubState._hubAdminUsersFp = "";
-  healStaleUserRolesFromCache(hubState.usersCache);
-  healStaleAllowedEventsFromCache(hubState.usersCache);
+  if (getIsAdminUser(hubState.currentUser, hubState.currentUserProfile)) {
+    healStaleUserRolesFromCache(hubState.usersCache);
+    healStaleAllowedEventsFromCache(hubState.usersCache);
+  }
   writeHubUsersSessionCache(hubState.usersCache);
   return hubState.usersCache;
 }
@@ -824,7 +816,7 @@ export function bindMyProfileRealtime(uid) {
             scheduleHubAdminRender();
           }
         }
-      );
+      ).catch((err) => console.warn("bindMyProfileRealtime enrich:", err?.code || err));
 
       if (snap.metadata.fromCache) {
         /* onSnapshot + resyncHubAccessFromServer(90s) 로 충분 — 캐시마다 forceServer resync 제거 */

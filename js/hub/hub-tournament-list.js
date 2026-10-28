@@ -53,7 +53,7 @@ function tournamentsListFingerprint(list = [], userProfile, user) {
       )
         ? 1
         : 0;
-      return `${t.id}|${t.name}|${t.startDate}|${t.endDate}|${enabled}|${canOps}`;
+      return `${t.id}|${t.name}|${t.logoText}|${t.startDate}|${t.endDate}|${enabled}|${canOps}`;
     })
     .join(";");
 }
