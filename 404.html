@@ -8,7 +8,7 @@
     document.documentElement.style.backgroundColor="#060c17";
     document.documentElement.style.colorScheme="dark";
   }catch(e){}
-  var BUILD="20261028150214";
+  var BUILD="20261028151050";
   var KEY="hanPitAppVersion";
   var LAST_TARGET="hanPitReloadTarget";
   var meta=document.querySelector('meta[name="han-pit-build"]');
@@ -67,9 +67,20 @@
     try{sessionStorage.setItem(LAST_TARGET,String(ver||""));}catch(e){}
   }
 
+  function reloadBlocked(){
+    // 배치확인 대기·저장 중·입력 중에는 새로고침을 미룬다 — 다음 폴링/복귀 때 다시 시도
+    try{
+      if(typeof window.hanPitAutoReloadBlocked==="function"&&window.hanPitAutoReloadBlocked())return true;
+      var ae=document.activeElement;
+      if(ae&&(ae.tagName==="TEXTAREA"||(ae.tagName==="INPUT"&&!/^(button|checkbox|radio|submit)$/i.test(ae.type||""))))return true;
+    }catch(e){}
+    return false;
+  }
+
   function reloadTo(ver){
     ver=String(ver||"").trim();
     if(!ver||ver===pageBuild)return;
+    if(reloadBlocked())return;
     if(!IS_PWA&&lastTarget()===ver)return;
     setLastTarget(ver);
     persist(ver);
@@ -274,7 +285,7 @@
 })();
 </script>
   <!-- /han-pit-asset-fix -->
-  <meta name="han-pit-build" content="20261028150214" />
+  <meta name="han-pit-build" content="20261028151050" />
   <!-- han-pit-perf-hints -->
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
   <link rel="preconnect" href="https://firebase.googleapis.com" crossorigin />
