@@ -27,6 +27,7 @@ import {
 import { clearOpsSessionSnapshot } from "../shared/login-profile-cache.js";
 import { getIsAdminUser, isValidDocId } from "./hub-helpers.js";
 import { cleanupUserFromLayoutState } from "./layout-cleanup.js";
+import { hasLeftoverTournamentData, purgeTournamentData } from "./tournament-purge.js";
 import { clearOperatorPickForUid } from "../global-layout/waiting-picks.js";
 import { hubState } from "./hub-state.js";
 import { hubRefs } from "./hub-dom-refs.js";
@@ -107,12 +108,27 @@ export async function saveTournament() {
   }
 
   const selectedId = String(hubRefs.adminEventSelect?.value || "").trim();
-  if (getTournamentById(id) && selectedId !== id) {
+  const isNewTournament = !getTournamentById(id);
+  if (!isNewTournament && selectedId !== id) {
     const overwrite = confirm(`"${id}" 대회가 이미 있습니다. 내용을 덮어쓸까요?`);
     if (!overwrite) return;
   }
 
   try {
+    // 예전에 같은 ID로 쓰던 대회의 카드·좌석·대기·출퇴근 기록이 남아 있으면 새 대회에 그대로 보인다
+    if (isNewTournament && (await hasLeftoverTournamentData(id))) {
+      const clear = confirm(
+        `"${id}" ID로 예전에 사용한 데이터(이벤트 카드 · 좌석 · 대기 · 출퇴근 기록)가 남아 있습니다.\n` +
+          "모두 지우고 새 대회로 시작할까요?\n\n[확인] 지우고 새로 시작  ·  [취소] 저장 안 함"
+      );
+      if (!clear) return;
+      const purge = await purgeTournamentData(id);
+      if (purge.failed.length) {
+        alert(`이전 데이터 일부를 지우지 못했습니다: ${purge.failed.join(", ")}\n잠시 후 다시 시도해 주세요.`);
+        return;
+      }
+    }
+
     await setDoc(
       doc(db, "tournaments", id),
       { name, startDate, endDate, logoText, requiredCode },
@@ -149,10 +165,28 @@ export async function deleteTournamentCurrent() {
     return;
   }
 
-  const ok = confirm(`"${id}" 대회를 삭제할까요?`);
-  if (!ok) return;
+  // 대회에 딸린 데이터까지 모두 지우므로(되돌릴 수 없음) 대회 ID를 직접 입력해 확인
+  const typed = prompt(
+    `"${id}" 대회와 이 대회의 모든 데이터를 삭제합니다.\n` +
+      "이벤트 카드 · 좌석 · 대기 · 좌석 이력 · 출퇴근 기록 · 인건비 설정이 함께 지워지며 되돌릴 수 없습니다.\n\n" +
+      "계속하려면 대회 ID를 정확히 입력하세요."
+  );
+  if (typed == null) return;
+  if (String(typed).trim() !== id) {
+    alert("대회 ID가 일치하지 않아 삭제하지 않았습니다.");
+    return;
+  }
 
   try {
+    // 하위 데이터를 먼저 지운다 — 대회 문서부터 지우면 중간 실패 시 목록에선 사라졌는데 데이터는 남는다
+    const purge = await purgeTournamentData(id);
+    if (purge.failed.length) {
+      alert(
+        `일부 데이터를 지우지 못해 대회 삭제를 중단했습니다: ${purge.failed.join(", ")}\n` +
+          "잠시 후 다시 시도해 주세요. (이미 지운 데이터는 복구되지 않습니다)"
+      );
+      return;
+    }
     await deleteDoc(doc(db, "tournaments", id));
     const revoked = await stripDeletedTournamentFromUsers(id);
 
@@ -168,9 +202,8 @@ export async function deleteTournamentCurrent() {
     }
 
     alert(
-      revoked > 0
-        ? `대회가 삭제되었습니다. (직접 허용 ${revoked}명 해제)`
-        : "대회가 삭제되었습니다."
+      `대회와 관련 데이터 ${purge.deleted}건을 삭제했습니다.` +
+        (revoked > 0 ? ` (직접 허용 ${revoked}명 해제)` : "")
     );
   } catch (err) {
     console.error(err);
