@@ -433,14 +433,14 @@ export function bindGlobalLayoutEventHandlers() {
     document.body.classList.toggle("gl-dock-collapsed", collapsed);
     dockToggle?.setAttribute("aria-expanded", collapsed ? "false" : "true");
     const label = dockToggle?.querySelector(".gl-dock-toggle__label");
-    if (label) label.textContent = collapsed ? "대기 · Seat 펼치기" : "대기 · Seat 접기";
+    if (label) label.textContent = collapsed ? "대기 · Seat 펼치기" : "대기 · Seat 접기 · 끌어서 높이 조절";
   };
   try {
     applyDockCollapsed(localStorage.getItem(DOCK_COLLAPSED_KEY) === "1");
   } catch {
     applyDockCollapsed(false);
   }
-  dockToggle?.addEventListener("click", () => {
+  const toggleDockCollapsed = () => {
     const next = !document.body.classList.contains("gl-dock-collapsed");
     applyDockCollapsed(next);
     try {
@@ -448,7 +448,60 @@ export function bindGlobalLayoutEventHandlers() {
     } catch {
       /* ignore */
     }
+  };
+
+  // 손잡이를 위아래로 끌면 독 높이 조절(화면의 25~80%), 그냥 탭하면 접기·펼치기
+  const DOCK_HEIGHT_KEY = "hanpit_gl_dock_height_ratio_v1";
+  const applyDockHeightRatio = (ratio) => {
+    const r = Math.min(0.8, Math.max(0.25, Number(ratio) || 0));
+    if (!r) return;
+    document.body.style.setProperty("--gl-dock-h", `${Math.round(r * 1000) / 10}vh`);
+  };
+  try {
+    const saved = Number(localStorage.getItem(DOCK_HEIGHT_KEY));
+    if (saved) applyDockHeightRatio(saved);
+  } catch {
+    /* ignore */
+  }
+  let dockDrag = null;
+  dockToggle?.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    dockDrag = { id: e.pointerId, y: e.clientY, moved: false, ratio: 0 };
+    try {
+      dockToggle.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
   });
+  dockToggle?.addEventListener("pointermove", (e) => {
+    if (!dockDrag || e.pointerId !== dockDrag.id) return;
+    if (!dockDrag.moved && Math.abs(e.clientY - dockDrag.y) < 8) return;
+    if (!dockDrag.moved) {
+      dockDrag.moved = true;
+      if (document.body.classList.contains("gl-dock-collapsed")) toggleDockCollapsed();
+      GL.pcPanel?.style.setProperty("transition", "none");
+    }
+    const vh = window.innerHeight || 1;
+    dockDrag.ratio = (vh - e.clientY) / vh;
+    applyDockHeightRatio(dockDrag.ratio);
+  });
+  const endDockDrag = (e) => {
+    if (!dockDrag || e.pointerId !== dockDrag.id) return;
+    const drag = dockDrag;
+    dockDrag = null;
+    GL.pcPanel?.style.removeProperty("transition");
+    if (!drag.moved) {
+      if (e.type === "pointerup") toggleDockCollapsed();
+      return;
+    }
+    try {
+      localStorage.setItem(DOCK_HEIGHT_KEY, String(Math.min(0.8, Math.max(0.25, drag.ratio))));
+    } catch {
+      /* ignore */
+    }
+  };
+  dockToggle?.addEventListener("pointerup", endDockDrag);
+  dockToggle?.addEventListener("pointercancel", endDockDrag);
 
   GL.menuBtn?.addEventListener("click", () => {
     if (layoutIsMobile()) {
