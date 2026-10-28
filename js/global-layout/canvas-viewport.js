@@ -92,6 +92,67 @@ export function refreshGlobalLayoutAlignButtonState() {
 }
 
 let layoutPanSession = null;
+/** 두 손가락 확대/축소 — 터치 pointerId → 좌표 */
+const touchPointers = new Map();
+let pinchSession = null;
+
+function touchPinchMetrics() {
+  const [a, b] = [...touchPointers.values()];
+  return {
+    dist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+    midX: (a.x + b.x) / 2,
+    midY: (a.y + b.y) / 2
+  };
+}
+
+/** 두 번째 손가락이 닿으면 진행 중이던 화면 이동·좌석 드래그를 원위치하고 핀치로 전환 */
+function beginPinch(canvas) {
+  if (layoutPanSession) {
+    layoutPanSession.viewport.classList.remove("is-panning");
+    layoutPanSession = null;
+  }
+  const drag = GL.dragState;
+  if (drag) {
+    for (const [sid, p] of drag.startPositions || []) {
+      const b = drag.boxesById?.get(sid);
+      if (!b) continue;
+      b.style.left = `${p.left}px`;
+      b.style.top = `${p.top}px`;
+    }
+    GL.dragState = null;
+  }
+  const m = touchPinchMetrics();
+  pinchSession = {
+    canvas,
+    startDist: m.dist,
+    startMidX: m.midX,
+    startMidY: m.midY,
+    startZoom: GL.canvasZoom || 1,
+    ox: GL.canvasPanX,
+    oy: GL.canvasPanY
+  };
+}
+
+function onTouchPointerMove(e) {
+  if (e.pointerType !== "touch" || !touchPointers.has(e.pointerId)) return;
+  touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (!pinchSession || touchPointers.size < 2) return;
+  const m = touchPinchMetrics();
+  GL.canvasZoom = clampCanvasZoom(pinchSession.startZoom * (m.dist / pinchSession.startDist));
+  GL.canvasPanX = pinchSession.ox + (m.midX - pinchSession.startMidX);
+  GL.canvasPanY = pinchSession.oy + (m.midY - pinchSession.startMidY);
+  applyGlobalLayoutCanvasTransform(pinchSession.canvas);
+}
+
+function onTouchPointerEnd(e) {
+  if (e.pointerType !== "touch" || !touchPointers.delete(e.pointerId)) return;
+  if (pinchSession && touchPointers.size < 2) {
+    pinchSession = null;
+    // 손가락을 뗄 때 생기는 click 이 좌석 배치/선택으로 처리되지 않게
+    GL.suppressSeatClickUntil = Date.now() + 350;
+    saveCanvasViewToStorage();
+  }
+}
 let globalPanListenersBound = false;
 let lastLoadedStorageKey = "";
 
@@ -135,6 +196,10 @@ function ensureGlobalPanListeners() {
     },
     { passive: true }
   );
+
+  window.addEventListener("pointermove", onTouchPointerMove, { passive: true });
+  window.addEventListener("pointerup", onTouchPointerEnd);
+  window.addEventListener("pointercancel", onTouchPointerEnd);
 
   window.addEventListener("mouseup", (e) => endGlobalLayoutPanSession(e));
   window.addEventListener("pointerup", (e) => endGlobalLayoutPanSession(e));
@@ -213,6 +278,25 @@ export function wireGlobalLayoutCanvasViewport(viewport, canvas) {
   viewport.addEventListener(
     "pointerdown",
     (e) => {
+      if (e.pointerType === "touch") {
+        // 새 제스처의 첫 손가락 — 다시 그려진 캔버스 때문에 pointerup 을 못 받은 잔여 기록 정리
+        if (e.isPrimary) {
+          touchPointers.clear();
+          pinchSession = null;
+        }
+        touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (touchPointers.size === 2) {
+          beginPinch(canvas);
+          // 두 번째 손가락이 좌석 위여도 좌석 드래그(#app pointerdown)로 넘어가지 않게
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        if (touchPointers.size > 2 || pinchSession) {
+          e.stopPropagation();
+          return;
+        }
+      }
       if (e.pointerType === "mouse" && e.button !== 0) return;
       if (!e.target || !isPanBackgroundTarget(e.target, viewport, e)) return;
       const stealSeatPan =

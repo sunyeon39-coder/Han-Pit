@@ -201,7 +201,13 @@ export function startGlobalLayoutApp() {
 
   function refreshGlobalLayoutAdminUi() {
     syncGlobalLayoutMobileChrome();
+    const wasMobile = layoutIsMobile();
     document.body.classList.toggle("gl-view-only", !canManageGlobalLayoutOps());
+    // 폴더블·태블릿은 운영 권한 여부에 따라 목록형 ↔ 캔버스가 바뀐다
+    if (layoutIsMobile() !== wasMobile) {
+      GL.mobileSheet?.classList.remove("open");
+      setPanelOpen(!layoutIsMobile());
+    }
     renderSeats(GL.globalSeats);
     renderWaiting(getCurrentTournamentWaiting());
     renderSeatPanel();

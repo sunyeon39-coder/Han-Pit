@@ -519,6 +519,8 @@ export function bindGlobalLayoutEventHandlers() {
       startX: e.clientX,
       startY: e.clientY,
       startPositions,
+      // 손가락 탭은 2px 이상 흔들리기 쉬워 "이동"으로 잡히고 배치 탭이 무시됐다
+      moveThreshold: e.pointerType === "mouse" ? 2 : 8,
       moved: false
     };
     box.setPointerCapture?.(e.pointerId);
@@ -601,7 +603,9 @@ export function bindGlobalLayoutEventHandlers() {
     const st = GL.dragState;
     const dx = e.clientX - st.startX;
     const dy = e.clientY - st.startY;
-    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+    if (!st.moved) {
+      const th = st.moveThreshold || 2;
+      if (Math.abs(dx) <= th && Math.abs(dy) <= th) return;
       st.moved = true;
     }
     const z = Math.max(0.15, GL.canvasZoom || 1);

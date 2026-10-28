@@ -279,23 +279,23 @@ body.page-global-layout .pc-panel .global-meta-actions {
   display: none !important;
 }
 
-@media (min-width: 1181px) {
-  body.page-global-layout #mobileSheet,
-  body.page-global-layout .mobile-sheet {
+/* 캔버스 화면 (PC·운영 admin 의 펼친 폴더블·태블릿) — body.gl-mobile-mode 는 js/layout/layout-main-route-env.js 가 붙임 */
+body.page-global-layout:not(.gl-mobile-mode) #mobileSheet,
+  body.page-global-layout:not(.gl-mobile-mode) .mobile-sheet {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
     pointer-events: none !important;
   }
 
-  body.page-global-layout #app.with-panel {
+  body.page-global-layout:not(.gl-mobile-mode) #app.with-panel {
     padding-right: min(calc(48vw + 14px), 654px);
   }
 
-  body.page-global-layout.gl-view-only #app {
+  body.page-global-layout:not(.gl-mobile-mode).gl-view-only #app {
     padding-right: 14px;
   }
-}
+
 
 .pc-panel .global-meta-actions .seat-meta-btn {
   min-height: 28px;
@@ -843,36 +843,36 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
   display: none;
 }
 
-@media (max-width: 1180px) {
-  #app {
+/* 목록형 모바일 화면 (body.gl-mobile-mode) */
+body.page-global-layout.gl-mobile-mode #app {
     padding-right: 14px;
     display: flex;
     flex-direction: column;
     min-height: 0;
   }
 
-  #app.with-panel {
+  body.page-global-layout.gl-mobile-mode #app.with-panel {
     padding-right: 14px;
   }
 
   /* 모바일: layout.html 과 동일하게 카드 목록(#app) + 하단 시트 */
-  body.page-global-layout #pcPanel {
+  body.page-global-layout.gl-mobile-mode #pcPanel {
     display: none !important;
   }
 
-  body.page-global-layout #pcPanel.open {
+  body.page-global-layout.gl-mobile-mode #pcPanel.open {
     display: none !important;
   }
 
-  body.page-global-layout #canvasZoomBar {
+  body.page-global-layout.gl-mobile-mode #canvasZoomBar {
     display: none !important;
   }
 
-  body.page-global-layout #mobileSheet {
+  body.page-global-layout.gl-mobile-mode #mobileSheet {
     display: block !important;
   }
 
-  body.page-global-layout .global-mobile-meta {
+  body.page-global-layout.gl-mobile-mode .global-mobile-meta {
     display: flex;
     flex-wrap: nowrap;
     gap: 6px;
@@ -881,31 +881,31 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     scrollbar-width: none;
   }
 
-  body.page-global-layout .global-mobile-meta::-webkit-scrollbar {
+  body.page-global-layout.gl-mobile-mode .global-mobile-meta::-webkit-scrollbar {
     display: none;
   }
 
-  body.page-global-layout .global-mobile-meta .hint-pill {
+  body.page-global-layout.gl-mobile-mode .global-mobile-meta .hint-pill {
     flex-shrink: 0;
     padding: 4px 8px;
     font-size: 11px;
     white-space: nowrap;
   }
 
-  body.page-global-layout .mobile-lookup-card .mobile-lookup-field {
+  body.page-global-layout.gl-mobile-mode .mobile-lookup-card .mobile-lookup-field {
     display: flex;
     flex-direction: column;
     gap: 6px;
     margin-bottom: 12px;
   }
 
-  body.page-global-layout .mobile-lookup-card .mobile-lookup-field label {
+  body.page-global-layout.gl-mobile-mode .mobile-lookup-card .mobile-lookup-field label {
     font-size: 12px;
     font-weight: 800;
     color: rgba(238, 241, 244, 0.72);
   }
 
-  body.page-global-layout .mobile-lookup-card .mobile-lookup-field input {
+  body.page-global-layout.gl-mobile-mode .mobile-lookup-card .mobile-lookup-field input {
     width: 100%;
     box-sizing: border-box;
     padding: 10px 12px;
@@ -916,27 +916,27 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     font-size: 14px;
   }
 
-  body.page-global-layout .mobile-lookup-card .mobile-lookup-field input::placeholder {
+  body.page-global-layout.gl-mobile-mode .mobile-lookup-card .mobile-lookup-field input::placeholder {
     color: rgba(238, 241, 244, 0.35);
   }
 
-  body.page-global-layout .mobile-lookup-card .mobile-lookup-field input:focus {
+  body.page-global-layout.gl-mobile-mode .mobile-lookup-card .mobile-lookup-field input:focus {
     outline: none;
     border-color: rgba(61, 219, 196, 0.6);
   }
 
-  body.page-global-layout .mobile-lookup-card .mobile-lookup-hint {
+  body.page-global-layout.gl-mobile-mode .mobile-lookup-card .mobile-lookup-hint {
     font-size: 13px;
     font-weight: 800;
     color: var(--accent-blue, #3ddbc4);
     margin-bottom: 10px;
   }
 
-  body.page-global-layout .mobile-lookup-card .mobile-lookup-hint--result {
+  body.page-global-layout.gl-mobile-mode .mobile-lookup-card .mobile-lookup-hint--result {
     font-size: 17px;
   }
 
-  body.page-global-layout .mobile-lookup-card .mobile-lookup-placeholder {
+  body.page-global-layout.gl-mobile-mode .mobile-lookup-card .mobile-lookup-placeholder {
     padding: 14px 12px;
     margin-bottom: 8px;
     border-radius: 8px;
@@ -947,7 +947,7 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     text-align: center;
   }
 
-  body.page-global-layout .mobile-lookup-card .mobile-lookup-section {
+  body.page-global-layout.gl-mobile-mode .mobile-lookup-card .mobile-lookup-section {
     padding: 12px;
     margin-bottom: 10px;
     border-radius: 8px;
@@ -955,11 +955,11 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     background: rgba(255, 255, 255, 0.02);
   }
 
-  body.page-global-layout .mobile-lookup-card .mobile-lookup-section:last-child {
+  body.page-global-layout.gl-mobile-mode .mobile-lookup-card .mobile-lookup-section:last-child {
     margin-bottom: 0;
   }
 
-  body.page-global-layout .mobile-lookup-card .mobile-lookup-section-label {
+  body.page-global-layout.gl-mobile-mode .mobile-lookup-card .mobile-lookup-section-label {
     font-size: 12px;
     font-weight: 900;
     letter-spacing: 0.06em;
@@ -967,13 +967,13 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     margin-bottom: 10px;
   }
 
-  body.page-global-layout .mobile-lookup-card .mobile-lookup-section-label span {
+  body.page-global-layout.gl-mobile-mode .mobile-lookup-card .mobile-lookup-section-label span {
     font-weight: 650;
     color: rgba(238, 241, 244, 0.5);
     letter-spacing: 0;
   }
 
-  body.page-global-layout .mobile-lookup-card .mobile-lookup-row {
+  body.page-global-layout.gl-mobile-mode .mobile-lookup-card .mobile-lookup-row {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -981,11 +981,11 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     color: rgba(238, 241, 244, 0.75);
   }
 
-  body.page-global-layout .mobile-lookup-card .mobile-lookup-dash {
+  body.page-global-layout.gl-mobile-mode .mobile-lookup-card .mobile-lookup-dash {
     color: rgba(238, 241, 244, 0.35);
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-wait-group-label {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-wait-group-label {
     margin: 10px 0 6px;
     padding: 0 2px;
     font-size: 11px;
@@ -995,7 +995,7 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     color: rgba(186, 220, 255, 0.88);
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-wait-group-label--block {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-wait-group-label--block {
     margin-top: 14px;
     padding-top: 10px;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
@@ -1003,7 +1003,7 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
   }
 
   /* Seat 행: 번호·이름·버튼·타이머 한 줄 (layout.html 과 동일) */
-  body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-mainline {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-row.compact .mobile-seat-mainline {
     display: flex;
     flex-direction: row;
     flex-wrap: nowrap;
@@ -1018,7 +1018,7 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     scrollbar-width: thin;
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-seat-name-cluster {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-name-cluster {
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -1027,7 +1027,7 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     flex: 1 1 0;
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-seat-eb-meta {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-eb-meta {
     margin-top: 2px;
     font-size: 11px;
     line-height: 1.25;
@@ -1036,7 +1036,7 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     word-break: break-all;
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-person {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-row.compact .mobile-seat-person {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1048,7 +1048,7 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     min-width: 0;
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-inline-actions {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-row.compact .mobile-seat-inline-actions {
     display: flex;
     flex-shrink: 0;
     flex-wrap: nowrap;
@@ -1057,19 +1057,19 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     order: unset;
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-right {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-row.compact .mobile-seat-right {
     flex-shrink: 0;
     order: unset;
     margin-left: 0;
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-pill-btn {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-row.compact .mobile-pill-btn {
     padding: 4px 8px;
     font-size: 11px;
     min-height: 28px;
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-seat-col-header {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-col-header {
     display: flex;
     align-items: center;
     gap: 5px;
@@ -1080,16 +1080,16 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     color: rgba(238, 241, 244, 0.45);
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-seat-col-header-name {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-col-header-name {
     flex: 1 1 auto;
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-seat-col-header-cell {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-col-header-cell {
     flex: 0 0 44px;
     text-align: center;
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-col {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-row.compact .mobile-seat-col {
     flex: 0 0 44px;
     text-align: center;
     font-size: 13px;
@@ -1098,26 +1098,26 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     color: rgba(238, 241, 244, 0.9);
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-col--next {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-row.compact .mobile-seat-col--next {
     color: rgba(238, 241, 244, 0.4);
   }
 
   /* 딜러 명단 행 크기를 대기 패널의 "다음 배치가 여기에 표시됩니다" 박스와 맞춘다 —
      padding/radius/글자 크기를 그 박스 기준(.mobile-lookup-placeholder)으로 통일. */
-  body.page-global-layout .global-layout-mobile .mobile-seat-row.compact {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-row.compact {
     padding: 14px 12px;
     border-radius: 8px;
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-person {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-row.compact .mobile-seat-person {
     font-size: 13px;
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-seat-row.compact .mobile-seat-col {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-row.compact .mobile-seat-col {
     font-size: 13px;
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-seat-more-btn {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-more-btn {
     flex-shrink: 0;
     width: 28px;
     height: 28px;
@@ -1130,7 +1130,7 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     line-height: 1;
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-seat-actions-row {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-actions-row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -1140,45 +1140,45 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     border-top: 1px solid var(--border);
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-seat-actions-row[hidden] {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-actions-row[hidden] {
     display: none;
   }
 
   /* "배치확인" 후 5~10분 구간 — 30초 간격 강조(교대 임박 경고) */
-  body.page-global-layout .global-layout-mobile .mobile-seat-row.is-confirm-blink {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-row.is-confirm-blink {
     background: var(--gl-highlight, #fff);
     border-color: var(--gl-highlight, #fff);
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-seat-row.is-confirm-blink .mobile-seat-person,
-  body.page-global-layout .global-layout-mobile .mobile-seat-row.is-confirm-blink .mobile-seat-col,
-  body.page-global-layout .global-layout-mobile .mobile-seat-row.is-confirm-blink .mobile-seat-eb-meta {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-row.is-confirm-blink .mobile-seat-person,
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-row.is-confirm-blink .mobile-seat-col,
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-row.is-confirm-blink .mobile-seat-eb-meta {
     color: #000000;
   }
 
   /* 본인(isSelf) 이름은 반전 강조 중에도 원래 주황색을 유지 */
-  body.page-global-layout .global-layout-mobile .mobile-seat-row.is-confirm-blink .mobile-seat-person.is-self:not(.is-empty) {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-seat-row.is-confirm-blink .mobile-seat-person.is-self:not(.is-empty) {
     color: #ff9a3c;
     text-shadow: 0 0 12px rgba(255, 154, 60, 0.35);
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-wait-row.compact .mobile-seat-name-cluster {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-wait-row.compact .mobile-seat-name-cluster {
     flex-wrap: wrap;
     gap: 5px;
     align-items: center;
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-wait-row.compact .mobile-seat-person {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-wait-row.compact .mobile-seat-person {
     flex: 0 1 auto;
     min-width: 0;
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-wait-row.compact .wait-pick-badges {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-wait-row.compact .wait-pick-badges {
     margin-top: 0;
     flex-shrink: 0;
   }
 
-  body.page-global-layout .global-layout-mobile .mobile-wait-row.compact .wait-block-badge {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .mobile-wait-row.compact .wait-block-badge {
     height: 18px;
     padding: 0 6px;
     font-size: 9px;
@@ -1186,21 +1186,21 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
   }
 
   /* 모바일에서는 event/box 메타·카드 ID 라벨 숨김 (구버전 HTML·캐시 대비) */
-  body.page-global-layout .global-layout-mobile .seat-manage-submeta,
-  body.page-global-layout .global-layout-mobile .meta-line.seat-manage-submeta,
-  body.page-global-layout .global-layout-mobile [data-gl-event-meta] {
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .seat-manage-submeta,
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile .meta-line.seat-manage-submeta,
+  body.page-global-layout.gl-mobile-mode .global-layout-mobile [data-gl-event-meta] {
     display: none !important;
   }
 
-  body.page-global-layout #app {
+  body.page-global-layout.gl-mobile-mode #app {
     overflow: hidden;
     display: flex;
     flex-direction: column;
     min-height: 0;
   }
 
-  body.page-global-layout #app > .mobile,
-  body.page-global-layout #app > .global-layout-mobile {
+  body.page-global-layout.gl-mobile-mode #app > .mobile,
+  body.page-global-layout.gl-mobile-mode #app > .global-layout-mobile {
     flex: 1 1 auto;
     min-height: 0;
     width: 100%;
@@ -1213,12 +1213,12 @@ body.page-global-layout .seat-inline-actions .seat-icon-btn {
     padding-bottom: 96px;
   }
 
-  body.page-global-layout .seat-manage-row .seat-inline-actions {
+  body.page-global-layout.gl-mobile-mode .seat-manage-row .seat-inline-actions {
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: 8px;
   }
-}
+
 
 /* ---------- Seat 수정 모달 (패널 Seat 추가 카드와 동일 톤) ---------- */
 .global-seat-edit-modal {
@@ -2109,4 +2109,70 @@ body.page-global-layout .global-layout-mobile .mobile-seat-row[class*="eb-palett
 .global-seat-history-restore-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+
+/* ===== 통합 배치도: 목록형 모바일 시트 (layout.css 의 1180px 규칙에서 분리) ===== */
+body.page-global-layout.gl-mobile-mode #mobileSheet {
+    display: block;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: -100%;
+    z-index: 9999;
+    transition: bottom 0.25s ease;
+    background: rgba(8, 14, 28, 0.96);
+  }
+
+  body.page-global-layout.gl-mobile-mode #mobileSheet.open {
+    bottom: 0;
+  }
+
+
+/* ===== 통합 배치도: 터치 캔버스 — 빈 곳 한 손가락 이동·두 손가락 확대/축소는 JS 가 처리 ===== */
+body.page-global-layout .layout-canvas-viewport {
+  touch-action: none;
+  overscroll-behavior: contain;
+}
+
+/* ===== 통합 배치도: 운영 admin 의 펼친 폴더블·태블릿 (폭 600~1180 캔버스) ===== */
+@media (min-width: 600px) and (max-width: 1180px) {
+
+  body.page-global-layout:not(.gl-mobile-mode) .pc-panel {
+    width: 50vw;
+  }
+
+  body.page-global-layout:not(.gl-mobile-mode) #app.with-panel {
+    padding-right: calc(50vw + 8px);
+  }
+
+  body.page-global-layout:not(.gl-mobile-mode) .topbar .app-mark-img {
+    height: 34px;
+    max-width: 120px;
+  }
+
+  body.page-global-layout:not(.gl-mobile-mode) .topbar .top-right {
+    flex-wrap: nowrap;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  body.page-global-layout:not(.gl-mobile-mode) .topbar .top-right::-webkit-scrollbar {
+    display: none;
+  }
+
+  body.page-global-layout:not(.gl-mobile-mode) .topbar .top-right > * {
+    flex-shrink: 0;
+  }
+
+  /* 가로/세로 정렬은 ⌘/Ctrl 다중 선택 전용 — 터치 화면에선 숨김 */
+  body.page-global-layout:not(.gl-mobile-mode) .layout-canvas-align-btn {
+    display: none;
+  }
+
+  body.page-global-layout:not(.gl-mobile-mode) .pc-canvas .seat-box {
+    min-width: 96px;
+    min-height: 44px;
+  }
 }

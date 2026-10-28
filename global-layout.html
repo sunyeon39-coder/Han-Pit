@@ -306,6 +306,10 @@
   <link rel="stylesheet" href="./css/global-layout.css?v=20261028151050" />
 </head>
 <body class="page-global-layout gl-view-only">
+  <script id="gl-mobile-mode-init">
+  // 첫 화면부터 목록형/캔버스 CSS 가 맞게 — 이후 js/layout/layout-main-route-env.js layoutIsMobile() 이 갱신
+  if(window.innerWidth<=1180)document.body.classList.add("gl-mobile-mode");
+  </script>
   <!-- han-pit-boot-dismiss -->
 <script id="han-pit-boot-dismiss">
 (function(){
