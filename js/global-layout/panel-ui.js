@@ -448,7 +448,9 @@ export function renderWaiting(_waiting) {
       ) || 0;
     const blockAccumulatedMs = Number(w.blockAccumulatedMs || 0) || 0;
     const blockCheckedAtMs = Number(w.blockCheckedAt || 0) || 0;
-    const deleteBtn = canManageGlobalLayoutOps()
+    // 근무자가 직접 출근해 들어온 대기(계정 uid 있음)는 삭제 버튼 없음 — 운영자가 손으로 넣은 이름만 삭제
+    const isSelfCheckIn = Boolean(String(w.uid || "").trim());
+    const deleteBtn = canManageGlobalLayoutOps() && !isSelfCheckIn
       ? `<button class="pill-inline danger" type="button" data-delete-wid="${escapeHtml(wid)}">삭제</button>`
       : "";
     return `
