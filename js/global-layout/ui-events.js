@@ -426,28 +426,18 @@ export function bindGlobalLayoutEventHandlers() {
     }
   });
 
-  // 폴더블 독(아래 대기·Seat 패널) 접기·펼치기 — 기기에 기억
+  // 폴더블 독(아래 대기·Seat 패널) 접기·펼치기
   const dockToggle = document.getElementById("glDockToggle");
-  const DOCK_COLLAPSED_KEY = "hanpit_gl_dock_collapsed_v1";
   const applyDockCollapsed = (collapsed) => {
     document.body.classList.toggle("gl-dock-collapsed", collapsed);
     dockToggle?.setAttribute("aria-expanded", collapsed ? "false" : "true");
     const label = dockToggle?.querySelector(".gl-dock-toggle__label");
     if (label) label.textContent = collapsed ? "대기 · Seat 펼치기" : "대기 · Seat 접기 · 끌어서 높이 조절";
   };
-  try {
-    applyDockCollapsed(localStorage.getItem(DOCK_COLLAPSED_KEY) === "1");
-  } catch {
-    applyDockCollapsed(false);
-  }
+  // 처음엔 항상 아래로 숨겨 둔다 — 손잡이(-)를 탭하거나 끌어 올리면 펼쳐진다.
+  applyDockCollapsed(true);
   const toggleDockCollapsed = () => {
-    const next = !document.body.classList.contains("gl-dock-collapsed");
-    applyDockCollapsed(next);
-    try {
-      localStorage.setItem(DOCK_COLLAPSED_KEY, next ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
+    applyDockCollapsed(!document.body.classList.contains("gl-dock-collapsed"));
   };
 
   // 손잡이를 위아래로 끌면 독 높이 조절(화면의 25~80%), 그냥 탭하면 접기·펼치기
@@ -587,16 +577,33 @@ export function bindGlobalLayoutEventHandlers() {
     requestAnimationFrame(() => document.getElementById("manualWaitingNameInput")?.focus());
   });
 
-  window.addEventListener("resize", () => {
-    if (layoutIsMobile()) {
-      setPanelOpen(false);
-      GL.mobileSheet?.classList.remove("open");
-    } else {
-      GL.mobileSheet?.classList.remove("open");
-    }
+  // 화면 크기에 맞춰 목록형 ↔ 캔버스(독) 전환. iOS PWA 는 백그라운드로 나갈 때 잠깐 작은 크기로
+  // resize 를 보내고, 돌아올 때는 resize 없이 원래 크기로 복귀하는 경우가 있어서 — 그대로 두면
+  // 폴더블에서 목록형에 갇혀 아래 대기·Seat 독이 사라진다. 포그라운드 복귀 때도 다시 맞춘다.
+  let lastLayoutMobile = layoutIsMobile();
+  const syncLayoutModeToViewport = () => {
+    const mobile = layoutIsMobile();
+    const changed = mobile !== lastLayoutMobile;
+    lastLayoutMobile = mobile;
+    GL.mobileSheet?.classList.remove("open");
+    if (mobile) setPanelOpen(false);
+    else if (changed) setPanelOpen(true);
     renderSeats(GL.globalSeats);
-    if (!layoutIsMobile()) refreshGlobalLayoutPcOpsPanel();
-  });
+    if (!mobile) refreshGlobalLayoutPcOpsPanel();
+  };
+  window.addEventListener("resize", syncLayoutModeToViewport);
+  const resyncLayoutModeOnResume = () => {
+    if (document.visibilityState === "hidden") return;
+    const recheck = () => {
+      if (layoutIsMobile() !== lastLayoutMobile) syncLayoutModeToViewport();
+    };
+    requestAnimationFrame(recheck);
+    window.setTimeout(recheck, 300);
+    window.setTimeout(recheck, 1000);
+  };
+  document.addEventListener("visibilitychange", resyncLayoutModeOnResume);
+  window.addEventListener("pageshow", resyncLayoutModeOnResume);
+  window.addEventListener("focus", resyncLayoutModeOnResume);
 
   window.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
