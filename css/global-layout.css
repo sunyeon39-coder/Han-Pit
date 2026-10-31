@@ -2361,7 +2361,7 @@ body.page-global-layout .layout-canvas-viewport {
 @media (min-width: 600px) and (max-width: 1180px) {
   body.page-global-layout:not(.gl-mobile-mode) {
     --topbar-h: 0px;
-    --gl-dock-collapsed-h: 16px;
+    --gl-dock-collapsed-h: 24px;
   }
 
   body.page-global-layout:not(.gl-mobile-mode) .topbar {
@@ -2418,7 +2418,7 @@ body.page-global-layout .layout-canvas-viewport {
   }
 
   body.page-global-layout:not(.gl-mobile-mode) .gl-dock-toggle {
-    height: 16px;
+    height: 24px;
     padding: 0;
   }
 
