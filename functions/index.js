@@ -185,7 +185,10 @@ async function sendSeatAssignedNotificationIfDue(uid, notifyRef, after) {
   }
 
   const title = PUSH_APP_TITLE;
-  const body = buildSeatAssignedPushBody(after);
+  // 배치확인 후 0~10분 사이 다른 좌석으로 옮겨진 경우 — 앞서 받은 알림과 헷갈리지 않게 표시.
+  const body = after.seatChanged === true
+    ? `[배치 변경] ${buildSeatAssignedPushBody(after)}`
+    : buildSeatAssignedPushBody(after);
   const targetUrl = resolveTargetUrlForPush(after.targetUrl);
 
   void userRef.set({appBadgeCount: FieldValue.increment(1)}, {merge: true}).catch((e) => {
@@ -239,6 +242,75 @@ async function sendSeatAssignedNotificationIfDue(uid, notifyRef, after) {
   }
 }
 
+/**
+ * 배치확인 후 10분(SEAT_SWAP_SETTLE_MS) 안에 그 배치가 취소(seat_cleared)됐는데 이전 좌석
+ * 알림이 이미 발송된 경우 — 같은 OS 알림 tag 로 "배치 취소"를 보내 잠금 화면에 이전 좌석이
+ * 그대로 남아 근무자가 헷갈리지 않게 한다. 다른 좌석으로 다시 배치되면 그 알림이 이 tag 를
+ * 다시 덮어쓴다("[배치 변경]").
+ */
+async function sendSeatCancelledNotificationIfNeeded(uid, notifyRef, before, after) {
+  if (String(before.type || "").trim() !== "seat_assigned") return;
+  if (String(after.type || "").trim() !== "seat_cleared") return;
+  const sentKey = buildDedupKey(uid, before);
+  if (String(before.fcmSeatNotifyDedupKey || "") !== sentKey) return; // 이전 배치 알림이 안 나갔음
+  const createdMs = toMillis(before.createdAt);
+  if (!createdMs || Date.now() - createdMs > SEAT_SWAP_SETTLE_MS) return;
+
+  const cancelKey = `cancel|${sentKey}`;
+  let claimed = false;
+  try {
+    claimed = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(notifyRef);
+      if (!snap.exists) return false;
+      const cur = snap.data() || {};
+      // 그 사이 다른 좌석에 다시 배치됐다면 그 배치 알림이 tag 를 덮어쓴다 — 취소는 생략.
+      if (String(cur.type || "").trim() !== "seat_cleared") return false;
+      if (String(cur.fcmSeatCancelKey || "") === cancelKey) return false;
+      tx.set(notifyRef, {fcmSeatCancelKey: cancelKey}, {merge: true});
+      return true;
+    });
+  } catch (e) {
+    console.error("[notifyLayoutSeatAssigned] cancel claim failed", uid, e);
+    return;
+  }
+  if (!claimed) return;
+
+  const userSnap = await db.doc(`users/${uid}`).get();
+  const token = userSnap.exists ? String(userSnap.get("fcmToken") || "").trim() : "";
+  if (!token) return;
+
+  const targetUrl = resolveTargetUrlForPush(before.targetUrl);
+  try {
+    await messaging.send({
+      token,
+      data: {
+        title: PUSH_APP_TITLE,
+        body: `[배치 취소] ${buildSeatAssignedPushBody(before)} — 앱에서 현재 배치를 확인하세요.`,
+        targetUrl,
+        appBadgeCount: "",
+        dedupKey: cancelKey,
+        notifyTag: buildSeatNotifyTag(uid),
+        uid
+      },
+      android: {priority: "high"},
+      apns: {
+        headers: {"apns-priority": "10"},
+        payload: {aps: {contentAvailable: true}}
+      },
+      webpush: {
+        fcmOptions: {link: targetUrl},
+        headers: {Urgency: "high", TTL: "600"}
+      }
+    });
+  } catch (err) {
+    const code = String(err?.code || "");
+    console.error("[notifyLayoutSeatAssigned] cancel FCM failed", uid, code, err?.message || err);
+    if (code === "messaging/invalid-registration-token" || code === "messaging/registration-token-not-registered") {
+      await db.doc(`users/${uid}`).set({fcmToken: ""}, {merge: true});
+    }
+  }
+}
+
 exports.notifyLayoutSeatAssigned = onDocumentWritten(
   {
     document: "layout_notifications/{uid}",
@@ -254,6 +326,11 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten(
 
     const uid = String(event.params.uid || "").trim();
     if (!uid) return;
+
+    const before = change.before.exists ? change.before.data() || {} : null;
+    if (before) {
+      await sendSeatCancelledNotificationIfNeeded(uid, change.after.ref, before, after);
+    }
 
     await sendSeatAssignedNotificationIfDue(uid, change.after.ref, after);
   }

@@ -11,6 +11,17 @@ export const STALE_SEAT_NOTIFY_MAX_AGE_MS = 30 * 60 * 1000;
 export const SEAT_SWAP_REVEAL_DELAY_MS = 5 * 60 * 1000;
 export const SEAT_SWAP_SETTLE_MS = 10 * 60 * 1000;
 
+/**
+ * 배치 알림 공개 시각(notifyAt) — 배치확인 시각(confirmAt) + REVEAL. 0~10분 사이 다른 좌석으로
+ * 옮겨 confirmAt을 이어받은 경우 화면(seatedAt/incomingAt 기준)은 원래 시각에 공개되므로,
+ * 알림도 "변경 시각 + 5분"이 아니라 그 시각에 맞춘다 — 이미 지났으면 지금 바로 보낸다.
+ */
+export function resolveSeatNotifyAt(confirmAt, now = Date.now(), immediate = false) {
+  if (immediate) return now;
+  const base = Number(confirmAt) > 0 ? Number(confirmAt) : now;
+  return Math.max(now, base + SEAT_SWAP_REVEAL_DELAY_MS);
+}
+
 /** notifyAt 이 아직 안 지났으면 남은 ms(양수), 지났거나 없으면 0 — 공개 시점 이전 자동 숨김용 */
 export function seatNotificationDelayMs(data = {}, now = Date.now()) {
   const notifyAt = Number(data?.notifyAt);
@@ -65,6 +76,8 @@ export function buildSeatAssignedNotificationWrite(uid, fields = {}) {
     type: "seat_assigned",
     acknowledged: false,
     supersededAt: now,
+    // merge 쓰기라 직전 "배치 변경" 표시가 다음 일반 배치에 남지 않게 기본값을 명시한다.
+    seatChanged: false,
     ...fields,
     createdAt: now,
     ...seatAssignedNotificationMergeExtras()

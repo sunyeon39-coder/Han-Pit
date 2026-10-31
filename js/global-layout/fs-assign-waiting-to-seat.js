@@ -2,7 +2,7 @@ import {
   buildSeatAssignedNotificationWrite,
   buildSeatAssignedTargetUrl,
   buildSeatClearedNotificationWrite,
-  SEAT_SWAP_REVEAL_DELAY_MS
+  resolveSeatNotifyAt
 } from "../shared/seat-notification-push.js";
 import { runFirestoreTransactionWithRetry } from "../shared/firestore-transaction-retry.js";
 import { auth, db } from "../firebase.js";
@@ -545,6 +545,8 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
         undoSeatSnapshot = captureSeatShellSnapshot(seat, seatData);
 
         let prevHasOtherSeat = false;
+        // 교대 공개(REVEAL)·확정(SETTLE) 기준 시각 — 즉시확인은 now.
+        let swapConfirmAt = now;
         if (immediate) {
           // ── 즉시확인: 예약 없이 지금 바로 실제 occupant를 교체한다 ──────────
           prevHasOtherSeat = prevOtherSeatSnaps.some((docSnap) => {
@@ -665,23 +667,25 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
         } else {
           undoSeatBefore = null; // 실제 occupant는 안 바뀌므로 되돌릴 게 없다 — undo 스택엔 안 올린다.
 
+          // 이 좌석에 이미 다른 사람이 "확정 대기 중"이었다면(선택을 바꾼 경우) 그
+          // 사람의 incomingAt을 그대로 물려받는다 — 안 그러면 0~5분 구간에 마음이
+          // 바뀌어 다른 사람으로 바꿀 때마다 10분 카운트가 매번 새로 시작돼서, 바꾼
+          // 횟수만큼 실제 확정이 계속 늦춰지는 문제가 있었다. 처음 배치확인을 누른
+          // 시점 기준으로 10분이 되면 확정되게 한다.
+          swapConfirmAt =
+            hasExistingIncoming && existingIncomingAt > 0
+              ? existingIncomingAt
+              : carryOverConfirmAt > 0
+                ? carryOverConfirmAt
+                : now;
+
           tx.set(
             seatRef,
             {
               incomingPerson: waitingName,
               incomingPersonUid: waitingUid,
               incomingPersonEmail: waitingEmail,
-              // 이 좌석에 이미 다른 사람이 "확정 대기 중"이었다면(선택을 바꾼 경우) 그
-              // 사람의 incomingAt을 그대로 물려받는다 — 안 그러면 0~5분 구간에 마음이
-              // 바뀌어 다른 사람으로 바꿀 때마다 10분 카운트가 매번 새로 시작돼서, 바꾼
-              // 횟수만큼 실제 확정이 계속 늦춰지는 문제가 있었다. 처음 배치확인을 누른
-              // 시점 기준으로 10분이 되면 확정되게 한다.
-              incomingAt:
-                hasExistingIncoming && existingIncomingAt > 0
-                  ? existingIncomingAt
-                  : carryOverConfirmAt > 0
-                    ? carryOverConfirmAt
-                    : now,
+              incomingAt: swapConfirmAt,
               // 이 좌석이 예전에(즉시확인, 또는 직전 스왑의 finalize로) instantConfirm:true로
               // 정착돼 있었을 수 있다 — 이번엔 새로 예약을 거는 정상 스왑이니, 0~5분 강조/
               // 5~10분 반전이 다시 정상적으로 보이도록 꺼둔다.
@@ -733,7 +737,9 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
                   seatLabel: seat.label || seat.no || ""
                 }),
                 createdAt: now,
-                notifyAt: immediate ? now : now + SEAT_SWAP_REVEAL_DELAY_MS,
+                notifyAt: resolveSeatNotifyAt(swapConfirmAt, now, immediate),
+                // 0~10분 사이 다른 좌석에서 옮겨온 경우 — 푸시를 "배치 변경"으로 보낸다.
+                seatChanged: !immediate && carryOverConfirmAt > 0,
                 updatedAt: now,
                 updatedAtServer: serverTimestamp()
               })
@@ -954,7 +960,8 @@ export async function assignSelectedWaitingToSeat(seatId = "", waitingOverride =
                 seatLabel: seat.label || seat.no || ""
               }),
               createdAt: now,
-              notifyAt: immediate ? now : now + SEAT_SWAP_REVEAL_DELAY_MS,
+              notifyAt: resolveSeatNotifyAt(carryOverConfirmAt > 0 ? carryOverConfirmAt : now, now, immediate),
+              seatChanged: !immediate && carryOverConfirmAt > 0,
               updatedAt: now,
               updatedAtServer: serverTimestamp()
             })
