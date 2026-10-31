@@ -2389,6 +2389,7 @@ body.page-global-layout .layout-canvas-viewport {
 
   body.page-global-layout:not(.gl-mobile-mode) .gl-topic-bar {
     touch-action: none;
+    cursor: pointer;
   }
 
   body.page-global-layout:not(.gl-mobile-mode) .gl-topbar-pull {

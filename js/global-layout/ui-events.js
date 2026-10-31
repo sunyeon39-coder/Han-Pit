@@ -494,7 +494,7 @@ export function bindGlobalLayoutEventHandlers() {
   dockToggle?.addEventListener("pointercancel", endDockDrag);
 
   // 폴더블 독 모드 — 상단 메뉴(topbar)는 기본 숨김(css/global-layout.css). 맨 위 손잡이나 TOPIC 줄을
-  // 아래로 끌면(또는 손잡이 탭) 내려오고, 위로 밀거나 바깥을 누르거나 8초간 손대지 않으면 다시 숨는다.
+  // 탭하거나 아래로 끌면 내려오고, 위로 밀거나 바깥을 누르거나 8초간 손대지 않으면 다시 숨는다.
   const topbarEl = document.querySelector(".topbar");
   const topbarPull = document.getElementById("glTopbarPull");
   const TOPBAR_AUTO_HIDE_MS = 8000;
@@ -527,7 +527,7 @@ export function bindGlobalLayoutEventHandlers() {
     el?.addEventListener("pointercancel", end);
   };
   watchTopbarSwipe(topbarPull, { dir: 1, onTap: () => setTopbarOpen(true) });
-  watchTopbarSwipe(document.getElementById("topicBar"), { dir: 1 });
+  watchTopbarSwipe(document.getElementById("topicBar"), { dir: 1, onTap: () => setTopbarOpen(true) });
   watchTopbarSwipe(topbarEl, { dir: -1 });
   document.addEventListener(
     "pointerdown",
