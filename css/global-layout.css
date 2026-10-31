@@ -2352,12 +2352,8 @@ body.page-global-layout .layout-canvas-viewport {
   }
 }
 
-/* 폴더블(아이폰 폴드 등) 독 모드 — 상단 메뉴는 기본 숨김, 맨 위에서 아래로 끌면 내려온다.
+/* 폴더블(아이폰 폴드 등) 독 모드 — 상단 메뉴는 기본 숨김, TOPIC 줄을 탭하거나 아래로 끌면 내려온다.
    손잡이는 얇은 막대(-)만, 수동 "+ 대기" 입력은 숨김. 열고 닫기는 js/global-layout/ui-events.js */
-.gl-topbar-pull {
-  display: none;
-}
-
 @media (min-width: 600px) and (max-width: 1180px) {
   body.page-global-layout:not(.gl-mobile-mode) {
     --topbar-h: 0px;
@@ -2382,6 +2378,17 @@ body.page-global-layout .layout-canvas-viewport {
     transform: none;
   }
 
+  /* TOPIC 이 비어 줄이 숨겨지면 열 손잡이가 없으니 상단 메뉴를 원래대로 늘 보여 준다 */
+  body.page-global-layout:not(.gl-mobile-mode):has(#topicBar[hidden]) {
+    --topbar-h: 72px;
+  }
+
+  body.page-global-layout:not(.gl-mobile-mode):has(#topicBar[hidden]) .topbar {
+    position: sticky;
+    transform: none;
+    box-shadow: none;
+  }
+
   /* iOS 가 위아래 스와이프를 스크롤로 가져가 pointercancel 내지 않게 */
   body.page-global-layout:not(.gl-mobile-mode) .topbar {
     touch-action: pan-x;
@@ -2390,32 +2397,6 @@ body.page-global-layout .layout-canvas-viewport {
   body.page-global-layout:not(.gl-mobile-mode) .gl-topic-bar {
     touch-action: none;
     cursor: pointer;
-  }
-
-  body.page-global-layout:not(.gl-mobile-mode) .gl-topbar-pull {
-    display: flex;
-    position: fixed;
-    top: 0;
-    left: 25%;
-    right: 25%;
-    z-index: 290;
-    height: calc(18px + env(safe-area-inset-top, 0px));
-    align-items: flex-end;
-    justify-content: center;
-    padding-bottom: 5px;
-    box-sizing: border-box;
-    touch-action: none;
-  }
-
-  body.page-global-layout.gl-topbar-open:not(.gl-mobile-mode) .gl-topbar-pull {
-    display: none;
-  }
-
-  body.page-global-layout .gl-topbar-pull__grip {
-    width: 44px;
-    height: 4px;
-    border-radius: 2px;
-    background: rgba(255, 255, 255, 0.3);
   }
 
   body.page-global-layout:not(.gl-mobile-mode) .gl-dock-toggle {
