@@ -2352,6 +2352,89 @@ body.page-global-layout .layout-canvas-viewport {
   }
 }
 
+/* 폴더블(아이폰 폴드 등) 독 모드 — 상단 메뉴는 기본 숨김, 맨 위에서 아래로 끌면 내려온다.
+   손잡이는 얇은 막대(-)만, 수동 "+ 대기" 입력은 숨김. 열고 닫기는 js/global-layout/ui-events.js */
+.gl-topbar-pull {
+  display: none;
+}
+
+@media (min-width: 600px) and (max-width: 1180px) {
+  body.page-global-layout:not(.gl-mobile-mode) {
+    --topbar-h: 0px;
+    --gl-dock-collapsed-h: 16px;
+  }
+
+  body.page-global-layout:not(.gl-mobile-mode) .topbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 300;
+    height: 72px;
+    padding-top: env(safe-area-inset-top, 0px);
+    box-sizing: content-box;
+    transform: translateY(-110%);
+    transition: transform 0.22s ease;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  }
+
+  body.page-global-layout.gl-topbar-open:not(.gl-mobile-mode) .topbar {
+    transform: none;
+  }
+
+  /* iOS 가 위아래 스와이프를 스크롤로 가져가 pointercancel 내지 않게 */
+  body.page-global-layout:not(.gl-mobile-mode) .topbar {
+    touch-action: pan-x;
+  }
+
+  body.page-global-layout:not(.gl-mobile-mode) .gl-topic-bar {
+    touch-action: none;
+  }
+
+  body.page-global-layout:not(.gl-mobile-mode) .gl-topbar-pull {
+    display: flex;
+    position: fixed;
+    top: 0;
+    left: 25%;
+    right: 25%;
+    z-index: 290;
+    height: calc(18px + env(safe-area-inset-top, 0px));
+    align-items: flex-end;
+    justify-content: center;
+    padding-bottom: 5px;
+    box-sizing: border-box;
+    touch-action: none;
+  }
+
+  body.page-global-layout.gl-topbar-open:not(.gl-mobile-mode) .gl-topbar-pull {
+    display: none;
+  }
+
+  body.page-global-layout .gl-topbar-pull__grip {
+    width: 44px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.3);
+  }
+
+  body.page-global-layout:not(.gl-mobile-mode) .gl-dock-toggle {
+    height: 16px;
+    padding: 0;
+  }
+
+  body.page-global-layout:not(.gl-mobile-mode) .gl-dock-toggle__label {
+    display: none;
+  }
+
+  body.page-global-layout:not(.gl-mobile-mode) .gl-dock-toggle__grip {
+    width: 44px;
+  }
+
+  body.page-global-layout:not(.gl-mobile-mode) .pc-panel .gl-manual-wait-form {
+    display: none !important;
+  }
+}
+
 /* 폴더블 독 손잡이 — 독 모드(위 미디어 쿼리)에서만 보임 */
 body.page-global-layout .gl-dock-toggle {
   display: none;

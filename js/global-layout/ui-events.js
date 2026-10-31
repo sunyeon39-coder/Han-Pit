@@ -503,6 +503,56 @@ export function bindGlobalLayoutEventHandlers() {
   dockToggle?.addEventListener("pointerup", endDockDrag);
   dockToggle?.addEventListener("pointercancel", endDockDrag);
 
+  // 폴더블 독 모드 — 상단 메뉴(topbar)는 기본 숨김(css/global-layout.css). 맨 위 손잡이나 TOPIC 줄을
+  // 아래로 끌면(또는 손잡이 탭) 내려오고, 위로 밀거나 바깥을 누르거나 8초간 손대지 않으면 다시 숨는다.
+  const topbarEl = document.querySelector(".topbar");
+  const topbarPull = document.getElementById("glTopbarPull");
+  const TOPBAR_AUTO_HIDE_MS = 8000;
+  let topbarHideTimer = 0;
+  const setTopbarOpen = (open) => {
+    window.clearTimeout(topbarHideTimer);
+    document.body.classList.toggle("gl-topbar-open", open);
+    if (open) topbarHideTimer = window.setTimeout(() => setTopbarOpen(false), TOPBAR_AUTO_HIDE_MS);
+  };
+  const watchTopbarSwipe = (el, { dir, onTap }) => {
+    let start = null;
+    el?.addEventListener("pointerdown", (e) => {
+      start = { id: e.pointerId, y: e.clientY, done: false };
+    });
+    el?.addEventListener("pointermove", (e) => {
+      if (!start || start.done || e.pointerId !== start.id) return;
+      const dy = e.clientY - start.y;
+      if (dir > 0 ? dy > 24 : dy < -24) {
+        start.done = true;
+        setTopbarOpen(dir > 0);
+      }
+    });
+    const end = (e) => {
+      if (!start || e.pointerId !== start.id) return;
+      const s = start;
+      start = null;
+      if (!s.done && e.type === "pointerup" && onTap) onTap();
+    };
+    el?.addEventListener("pointerup", end);
+    el?.addEventListener("pointercancel", end);
+  };
+  watchTopbarSwipe(topbarPull, { dir: 1, onTap: () => setTopbarOpen(true) });
+  watchTopbarSwipe(document.getElementById("topicBar"), { dir: 1 });
+  watchTopbarSwipe(topbarEl, { dir: -1 });
+  document.addEventListener(
+    "pointerdown",
+    (e) => {
+      if (!document.body.classList.contains("gl-topbar-open")) return;
+      if (topbarEl?.contains(e.target)) {
+        setTopbarOpen(true); // 메뉴 안에서 조작 중이면 자동 숨김 타이머 연장
+        return;
+      }
+      if (topbarPull?.contains(e.target) || document.getElementById("topicBar")?.contains(e.target)) return;
+      setTopbarOpen(false);
+    },
+    true
+  );
+
   GL.menuBtn?.addEventListener("click", () => {
     if (layoutIsMobile()) {
       setPanelOpen(false);

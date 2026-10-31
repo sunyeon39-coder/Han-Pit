@@ -520,7 +520,7 @@ export function renderWaiting(_waiting) {
   }
 
   waitCol.innerHTML = `
-    <div class="global-form single admin-only ${canManageGlobalLayoutOps() ? "" : "hidden"}">
+    <div class="global-form single admin-only gl-manual-wait-form ${canManageGlobalLayoutOps() ? "" : "hidden"}">
       <input id="manualWaitingNameInput" placeholder="-" autocomplete="off" />
       <button id="addManualWaitingBtn" class="pill-inline full" type="button">+ 대기</button>
     </div>
