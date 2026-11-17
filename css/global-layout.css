@@ -2182,6 +2182,16 @@ body.page-global-layout .layout-canvas-viewport {
     height: var(--gl-dock-collapsed-h);
   }
 
+  /* iOS 홈 화면 앱(아이폰 폴드, 투명 상태바): 배치 기준 높이(innerHeight·100dvh)가 실제 화면(100lvh)보다
+     상태바만큼 짧아 bottom:0 독 아래가 비어 보인다. 그 차이만큼 독을 화면 맨 아래로 내린다.
+     #app 은 100vh(=실제 높이) 기준이라 독 높이 여백과 그대로 맞물린다. 브라우저 탭에선 lvh-dvh 가
+     툴바 높이라 건드리면 안 되므로 standalone 에서만. */
+  @media (display-mode: standalone) {
+    body.page-global-layout:not(.gl-mobile-mode) .pc-panel {
+      bottom: min(0px, calc(100dvh - 100lvh));
+    }
+  }
+
   body.page-global-layout.gl-dock-collapsed:not(.gl-mobile-mode) .pc-panel .panel-body {
     display: none;
   }
