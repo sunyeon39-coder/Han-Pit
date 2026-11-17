@@ -313,13 +313,10 @@
   </script>
   <script id="gl-rotation-fix">
   // iOS 홈 화면 앱(아이폰 폴드)에서 회전 뒤 위쪽 여백이 남거나 TOPIC 이 밀려 숨는 문제 — 회전 직후
-  // viewport 메타를 다시 써서 WebKit 이 안전영역·뷰포트를 재계산하게 하고 스크롤을 0 으로 되돌린다.
+  // 문서 스크롤을 0 으로 되돌린다. (viewport 메타 재설정은 화면 배율을 0.85 로 틀어 아래 여백을 만들어 제거)
   (function(){
-    var meta=document.querySelector('meta[name="viewport"]');
-    var base=meta?meta.getAttribute("content"):"";
     var lastW=innerWidth,lastH=innerHeight;
     function kick(){
-      if(meta){meta.setAttribute("content",base+", maximum-scale=1");meta.setAttribute("content",base);}
       if(scrollY||document.documentElement.scrollTop)window.scrollTo(0,0);
     }
     function onRotate(){
