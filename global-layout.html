@@ -301,7 +301,6 @@
   <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
   <meta name="theme-color" content="#090a0d" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="mobile-web-app-capable" content="yes" />
   <link rel="stylesheet" href="./css/layout.css?v=20261117051459" />
   <link rel="stylesheet" href="./css/global-layout.css?v=20261117051459" />
@@ -328,28 +327,6 @@
       if(document.body.classList.contains("gl-mobile-mode"))return;
       if(scrollY||document.documentElement.scrollTop)window.scrollTo(0,0);
     },{passive:true});
-    // ※ 임시 진단(아래 여백 원인 확인용) — 열 때·회전할 때 15초간 좌상단에 뷰포트 수치 표시
-    var box=null,hideT=0;
-    function mk(css){var d=document.createElement("div");d.style.cssText="position:fixed;left:0;top:0;width:1px;visibility:hidden;pointer-events:none;"+css;document.body.appendChild(d);return d;}
-    function diag(tag){
-      var p={vh:mk("height:100vh"),lvh:mk("height:100lvh"),svh:mk("height:100svh"),dvh:mk("height:100dvh"),fix:mk("bottom:0"),pct:mk("height:100%")};
-      var sa=mk("padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)");
-      var cs=getComputedStyle(sa),vv=window.visualViewport,h=function(k){return Math.round(p[k].getBoundingClientRect().height);};
-      var dock=document.querySelector(".pc-panel"),dr=dock?dock.getBoundingClientRect():null;
-      var t=tag+" "+new Date().toLocaleTimeString()+
-        "\ninner "+innerWidth+"x"+innerHeight+" outer "+outerWidth+"x"+outerHeight+" dpr "+devicePixelRatio+
-        "\nscreen "+screen.width+"x"+screen.height+" avail "+screen.availWidth+"x"+screen.availHeight+
-        "\nvv "+(vv?Math.round(vv.width)+"x"+Math.round(vv.height)+" scale "+vv.scale.toFixed(3)+" offTop "+Math.round(vv.offsetTop):"-")+
-        "\nvh "+h("vh")+" lvh "+h("lvh")+" svh "+h("svh")+" dvh "+h("dvh")+" fixed0-0 "+h("fix")+" pct "+h("pct")+
-        "\nsafe T"+cs.paddingTop+" R"+cs.paddingRight+" B"+cs.paddingBottom+" L"+cs.paddingLeft+
-        "\ndock top "+(dr?Math.round(dr.top):"-")+" bottom "+(dr?Math.round(dr.bottom):"-")+" docH "+document.documentElement.scrollHeight;
-      Object.keys(p).forEach(function(k){p[k].remove();});sa.remove();
-      if(!box){box=document.createElement("pre");box.style.cssText="position:fixed;left:8px;top:calc(env(safe-area-inset-top,0px) + 60px);z-index:2147483647;margin:0;padding:8px 10px;max-width:92vw;white-space:pre-wrap;font:12px/1.35 ui-monospace,Menlo,monospace;color:#9ff;background:rgba(0,0,0,.85);border:1px solid #3ddbc4;border-radius:8px;pointer-events:none";document.body.appendChild(box);}
-      box.textContent=t;box.style.display="";
-      clearTimeout(hideT);hideT=setTimeout(function(){box.style.display="none";},15000);
-    }
-    setTimeout(function(){diag("load");},1500);
-    window.addEventListener("orientationchange",function(){setTimeout(function(){diag("rotate");},1000);});
     window.addEventListener("orientationchange",onRotate);
     window.addEventListener("resize",function(){
       var landscapeFlip=(innerWidth>innerHeight)!==(lastW>lastH);
