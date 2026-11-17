@@ -2374,6 +2374,15 @@ body.page-global-layout .layout-canvas-viewport {
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   }
 
+  /* 독 모드는 캔버스·독이 각자 스크롤하므로 문서 자체는 스크롤되면 안 된다 — 회전 뒤 iOS 가
+     문서를 위로 밀어 둔 채 남겨 TOPIC 줄이 상태바 뒤로 숨던 문제 */
+  html:has(body.page-global-layout:not(.gl-mobile-mode)),
+  body.page-global-layout:not(.gl-mobile-mode) {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
   body.page-global-layout.gl-topbar-open:not(.gl-mobile-mode) .topbar {
     transform: none;
   }
