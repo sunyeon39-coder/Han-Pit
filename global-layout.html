@@ -312,42 +312,19 @@
   if(window.innerWidth<=1180)document.body.classList.add("gl-mobile-mode");
   </script>
   <script id="gl-rotation-fix">
-  // iOS 홈 화면 앱(아이폰 폴드)에서 세로→가로 회전 뒤 위쪽 여백이 남는 문제 — 회전 직후
+  // iOS 홈 화면 앱(아이폰 폴드)에서 회전 뒤 위쪽 여백이 남거나 TOPIC 이 밀려 숨는 문제 — 회전 직후
   // viewport 메타를 다시 써서 WebKit 이 안전영역·뷰포트를 재계산하게 하고 스크롤을 0 으로 되돌린다.
-  // ※ 임시 진단: 회전할 때마다 10초간 좌하단에 뷰포트 수치를 띄운다(원인 확인 후 제거).
   (function(){
     var meta=document.querySelector('meta[name="viewport"]');
     var base=meta?meta.getAttribute("content"):"";
-    var probe=document.createElement("div");
-    probe.style.cssText="position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)";
-    document.body.appendChild(probe);
-    var box=null,hideT=0;
-    function info(tag){
-      var vv=window.visualViewport,cs=getComputedStyle(probe),tb=document.querySelector(".topbar"),app=document.getElementById("app");
-      var r=function(el){return el?Math.round(el.getBoundingClientRect().top):"-";};
-      return tag+" "+new Date().toLocaleTimeString()+
-        "\nscreen "+screen.width+"x"+screen.height+" orient "+(screen.orientation?screen.orientation.type:window.orientation)+
-        "\ninner "+innerWidth+"x"+innerHeight+" client "+document.documentElement.clientWidth+"x"+document.documentElement.clientHeight+
-        "\nvv "+(vv?Math.round(vv.width)+"x"+Math.round(vv.height)+" offTop "+Math.round(vv.offsetTop)+" pageTop "+Math.round(vv.pageTop)+" scale "+vv.scale.toFixed(2):"-")+
-        "\nscrollY "+Math.round(scrollY)+" safeTop "+cs.paddingTop+" safeBot "+cs.paddingBottom+
-        "\nbodyTop "+r(document.body)+" topbarTop "+r(tb)+" appTop "+r(app)+" docH "+document.documentElement.scrollHeight+
-        "\ncls "+["gl-mobile-mode","has-topic-bar","gl-topbar-open"].filter(function(c){return document.body.classList.contains(c);}).join(",");
-    }
-    function show(tag){
-      if(!box){box=document.createElement("pre");box.style.cssText="position:fixed;left:8px;bottom:8px;z-index:2147483647;margin:0;padding:8px 10px;max-width:92vw;white-space:pre-wrap;font:11px/1.35 ui-monospace,Menlo,monospace;color:#9ff;background:rgba(0,0,0,.82);border:1px solid #3ddbc4;border-radius:8px;pointer-events:none";document.body.appendChild(box);}
-      box.textContent=(box.textContent&&box.style.display!=="none"?box.textContent.split("\n\n").slice(-1)[0]+"\n\n":"")+info(tag);
-      box.style.display="";
-      clearTimeout(hideT);hideT=setTimeout(function(){box.style.display="none";box.textContent="";},10000);
-    }
     var lastW=innerWidth,lastH=innerHeight;
     function kick(){
       if(meta){meta.setAttribute("content",base+", maximum-scale=1");meta.setAttribute("content",base);}
       if(scrollY||document.documentElement.scrollTop)window.scrollTo(0,0);
     }
     function onRotate(){
-      show("before");
       kick();
-      [120,400,900].forEach(function(ms){setTimeout(function(){kick();if(ms===900)show("after");},ms);});
+      [120,400,900].forEach(function(ms){setTimeout(kick,ms);});
     }
     // 독 모드(폴더블)에선 문서가 스크롤될 일이 없으니 밀리면 즉시 맨 위로
     window.addEventListener("scroll",function(){

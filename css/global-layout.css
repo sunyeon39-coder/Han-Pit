@@ -3,6 +3,11 @@ html, body {
   padding: 0;
 }
 
+/* 투명 상태바 — 상태바 높이만큼은 비워 둔다(app-shared.css --safe-top). 위 padding:0 이 지우지 않게 */
+body {
+  padding-top: var(--safe-top);
+}
+
 #app {
   height: calc(100vh - var(--safe-top) - var(--topbar-h));
   padding: 14px;
