@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <!-- han-pit-inline-update -->
+<script id="han-pit-inline-update">
+(function(){
+  try{
+    document.documentElement.style.backgroundColor="#060c17";
+    document.documentElement.style.colorScheme="dark";
+  }catch(e){}
+  var BUILD="20260714174837";
+  var KEY="hanPitAppVersion";
+  var LAST_TARGET="hanPitReloadTarget";
+  var meta=document.querySelector('meta[name="han-pit-build"]');
+  var pageBuild=meta?String(meta.getAttribute("content")||"").trim():BUILD;
+  var lastCheckAt=0;
+  var checking=false;
+  var swReloadGuard=false;
+
+  function isPwaStandalone(){
+    try{
+      if(window.navigator.standalone===true)return true;
+      if(window.matchMedia){
+        if(window.matchMedia("(display-mode: standalone)").matches)return true;
+        if(window.matchMedia("(display-mode: fullscreen)").matches)return true;
+      }
+    }catch(e){}
+    return false;
+  }
+
+  var IS_PWA=isPwaStandalone();
+  var MIN_CHECK_MS=IS_PWA?2000:15000;
+  var POLL_MS=IS_PWA?15000:60000;
+  var BOOT_CHECK_MS=IS_PWA?400:3000;
+
+  function swScope(){
+    var p=location.pathname||"/";
+    var i=p.lastIndexOf("/");
+    var b=i<0?"/":p.slice(0,i+1);
+    return b.endsWith("/")?b:b+"/";
+  }
+
+  function persist(ver){
+    if(!ver)return;
+    try{localStorage.setItem(KEY,String(ver));}catch(e){}
+  }
+
+  function syncBustParam(ver){
+    if(!ver)return;
+    var loc=new URL(location.href);
+    if(loc.searchParams.get("_hanpit_v")===ver)return;
+    loc.searchParams.set("_hanpit_v",ver);
+    try{history.replaceState(null,"",loc.toString());}catch(e){}
+  }
+
+  function lastTarget(){
+    try{return sessionStorage.getItem(LAST_TARGET)||"";}catch(e){return "";}
+  }
+  function setLastTarget(ver){
+    try{sessionStorage.setItem(LAST_TARGET,String(ver||""));}catch(e){}
+  }
+
+  function reloadTo(ver){
+    ver=String(ver||"").trim();
+    if(!ver||ver===pageBuild)return;
+    if(!IS_PWA&&lastTarget()===ver)return;
+    setLastTarget(ver);
+    persist(ver);
+    var loc=new URL(location.href);
+    loc.searchParams.set("_hanpit_v",ver);
+    if(IS_PWA)loc.searchParams.set("_hanpit_pwa",String(Date.now()));
+    location.replace(loc.toString());
+  }
+
+  function syncManifestForPwa(){
+    if(!IS_PWA)return Promise.resolve();
+    return fetch("./manifest.json?t="+Date.now(),{cache:"no-store",credentials:"same-origin"})
+      .then(function(r){return r.ok?r.json():null;})
+      .then(function(m){
+        if(!m)return;
+        var start=String(m.start_url||"").trim();
+        if(start){
+          try{localStorage.setItem("hanPitManifestStartUrl",start);}catch(e){}
+        }
+      })
+      .catch(function(){});
+  }
+
+  if(pageBuild){
+    persist(pageBuild);
+    syncBustParam(pageBuild);
+  }
+
+  function activateWaitingWorker(worker){
+    if(!worker)return;
+    try{
+      if(typeof worker.postMessage==="function"){
+        worker.postMessage({type:"HAN_PIT_SKIP_WAITING"});
+      }
+    }catch(e){}
+    try{
+      if(typeof worker.skipWaiting==="function")worker.skipWaiting();
+    }catch(e){}
+  }
+
+  function wireSwRegistration(reg){
+    if(!reg||reg.__hanPitUpdateWired)return;
+    reg.__hanPitUpdateWired=true;
+    if(reg.waiting)activateWaitingWorker(reg.waiting);
+    reg.addEventListener("updatefound",function(){
+      var installing=reg.installing;
+      if(!installing)return;
+      installing.addEventListener("statechange",function(){
+        if(installing.state!=="installed")return;
+        if(reg.waiting)activateWaitingWorker(reg.waiting);
+        if(navigator.serviceWorker.controller)checkRemoteVersion(true);
+      });
+    });
+  }
+
+  function registerSwOnly(){
+    if(!("serviceWorker" in navigator))return;
+    var run=function(){
+      navigator.serviceWorker.register("./firebase-messaging-sw.js",{scope:swScope()})
+        .then(function(reg){
+          wireSwRegistration(reg);
+          if(typeof reg.update==="function")reg.update();
+        })
+        .catch(function(){});
+    };
+    if(IS_PWA){
+      run();
+      return;
+    }
+    if(typeof requestIdleCallback==="function"){
+      requestIdleCallback(run,{timeout:8000});
+    }else{
+      setTimeout(run,2000);
+    }
+  }
+
+  function updateSw(){
+    if(!("serviceWorker" in navigator)||!navigator.serviceWorker.getRegistration)return;
+    navigator.serviceWorker.getRegistration().then(function(reg){
+      if(reg&&typeof reg.update==="function"){
+        var p=reg.update();
+        if(p&&typeof p.catch==="function")p.catch(function(){});
+      }
+      if(reg)wireSwRegistration(reg);
+    }).catch(function(){});
+  }
+
+  function checkRemoteVersion(force){
+    if(!pageBuild||checking)return;
+    var host=String(location.hostname||"").toLowerCase();
+    if(host==="localhost"||host==="127.0.0.1"||host==="0.0.0.0")return;
+    var now=Date.now();
+    if(!force&&now-lastCheckAt<MIN_CHECK_MS)return;
+    lastCheckAt=now;
+    checking=true;
+    fetch("./app-version.json?t="+now,{cache:"no-store",credentials:"same-origin"})
+      .then(function(r){return r.ok?r.json():null;})
+      .then(function(d){
+        checking=false;
+        var remote=String((d&&(d.v||d.version))||"").trim();
+        if(!remote||remote===pageBuild){
+          if(remote)persist(remote);
+          syncBustParam(remote||pageBuild);
+          return syncManifestForPwa();
+        }
+        updateSw();
+        reloadTo(remote);
+        return syncManifestForPwa();
+      })
+      .catch(function(){checking=false;});
+  }
+
+  function onResume(force){
+    if(document.visibilityState==="hidden")return;
+    updateSw();
+    checkRemoteVersion(force===true||IS_PWA);
+  }
+
+  if("serviceWorker" in navigator){
+    navigator.serviceWorker.addEventListener("controllerchange",function(){
+      if(swReloadGuard)return;
+      swReloadGuard=true;
+      updateSw();
+      checkRemoteVersion(true);
+      if(IS_PWA){
+        setTimeout(function(){
+          try{
+            var stored=localStorage.getItem(KEY)||"";
+            if(stored&&stored!==pageBuild)reloadTo(stored);
+          }catch(e){}
+        },300);
+      }
+    });
+    navigator.serviceWorker.addEventListener("message",function(ev){
+      var msg=ev&&ev.data;
+      if(!msg||msg.type!=="HAN_PIT_SW_ACTIVATED")return;
+      onResume(true);
+    });
+  }
+
+  registerSwOnly();
+  if(IS_PWA)void syncManifestForPwa();
+  setTimeout(function(){checkRemoteVersion(true);},BOOT_CHECK_MS);
+  setInterval(function(){
+    if(document.visibilityState!=="hidden")checkRemoteVersion(false);
+  },POLL_MS);
+  document.addEventListener("visibilitychange",function(){onResume(true);});
+  window.addEventListener("pageshow",function(){onResume(true);});
+  window.addEventListener("focus",function(){onResume(true);});
+})();
+</script>
+  <!-- /han-pit-inline-update -->
+  <!-- han-pit-critical-shell -->
+  <style id="han-pit-critical-shell">html{color-scheme:dark;background:#060c17}body{margin:0;min-height:100%;background:#060c17;color:#eef2ff}.page-boot-loading,.page-boot-text{display:none!important}.layout-canvas-viewport,.canvas.pc-canvas{background:#0a1022}</style>
+  <!-- /han-pit-critical-shell -->
+  <!-- han-pit-asset-fix -->
+  <script id="han-pit-asset-fix">
+(function(){
+  function appBase(){
+    var p=location.pathname||"/";
+    var i=p.lastIndexOf("/");
+    return i<0?"/":p.slice(0,i+1);
+  }
+  function appUrl(rel){
+    rel=String(rel||"").replace(/^\.\//,"");
+    return location.origin+appBase()+rel;
+  }
+  function applyMarks(){
+    var meta=document.querySelector('meta[name="han-pit-build"]');
+    var tag=meta?String(meta.getAttribute("content")||"").trim():"";
+    var q=tag?"?v="+encodeURIComponent(tag):"";
+    var url=appUrl("icons/han-pit-wordmark.png")+q;
+    document.querySelectorAll("img.app-mark-img").forEach(function(img){
+      if(img.getAttribute("src")!==url)img.setAttribute("src",url);
+    });
+  }
+  if(document.readyState==="loading"){
+    document.addEventListener("DOMContentLoaded",applyMarks);
+  }else{
+    applyMarks();
+  }
+})();
+</script>
+  <!-- /han-pit-asset-fix -->
+  <meta name="han-pit-build" content="20260714174837" />
+  <!-- han-pit-perf-hints -->
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
+  <link rel="preconnect" href="https://firebase.googleapis.com" crossorigin />
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin />
+  <link rel="dns-prefetch" href="https://www.gstatic.com" />
+  <link rel="modulepreload" href="./js/hub.js?v=20260714174837" crossorigin />
+  <!-- /han-pit-perf-hints -->
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+  />
+  <title>Han Pit – Hub</title>
+  <link rel="manifest" href="./manifest.json?v=20260714174837" />
+  <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png" />
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+  <meta name="theme-color" content="#090a0d" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <link rel="stylesheet" href="./css/app-shared.css?v=20260714174837" />
+  <link rel="stylesheet" href="./css/hub.css?v=20260714174837" />
+  <link rel="stylesheet" href="./css/add-to-home-hint.css?v=20260714174837" />
+</head>
+<body>
+  <!-- han-pit-boot-dismiss -->
+<script id="han-pit-boot-dismiss">
+(function(){
+  function dismiss(){
+    var list=document.querySelectorAll(".page-boot-loading,.page-boot-text");
+    for(var i=0;i<list.length;i++)list[i].remove();
+    ["indexRoot","eventList","app"].forEach(function(id){
+      var el=document.getElementById(id);
+      if(el)el.dataset.pageBootLoaded="1";
+    });
+  }
+  dismiss();
+  if(document.readyState==="loading"){
+    document.addEventListener("DOMContentLoaded",dismiss,{once:true});
+  }
+})();
+</script>
+<!-- /han-pit-boot-dismiss -->
+  <header class="hub-top">
+    <h1 class="brand brand--mark">
+      <a class="app-mark" href="./hub.html" aria-label="Han Pit Hub">
+        <img
+          class="app-mark-img"
+          src="./icons/han-pit-wordmark.png?v=3"
+          alt="Han Pit"
+          width="220"
+          height="55"
+          decoding="async"
+        />
+      </a>
+    </h1>
+
+    <div class="hub-actions">
+      <button id="hubEnablePushBtn" class="top-btn push-offer hidden" type="button">알림 켜기</button>
+      <button id="hanSupportBtn" class="top-btn han-support" type="button">HAN지원</button>
+      <button id="profileBtn" class="top-btn profile" type="button">Profile</button>
+      <button id="adminBtn" class="top-btn admin hidden" type="button">Access Manage</button>
+      <button id="logoutBtn" class="top-btn logout" type="button">Logout</button>
+    </div>
+  </header>
+
+  <main class="hub-main">
+    <section id="eventList" class="event-list">
+      <p class="page-boot-text">대회 목록 불러오는 중…</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- HAN 지원 Modal -->
+  <div id="hanSupportModal" class="modal-backdrop">
+    <div class="modal-card han-support-card">
+      <h2>HAN 지원</h2>
+
+      <form id="hanSupportForm">
+        <div class="form-group">
+          <label for="hanName">이름</label>
+          <input
+            id="hanName"
+            name="name"
+            type="text"
+            required
+            maxlength="100"
+            autocomplete="off"
+            readonly
+            class="han-name-locked"
+            aria-readonly="true"
+          />
+        </div>
+        <div class="form-group">
+          <label for="hanAge">나이</label>
+          <input
+            id="hanAge"
+            name="age"
+            type="text"
+            required
+            maxlength="3"
+            inputmode="numeric"
+            pattern="[0-9]+"
+            title="숫자만 입력해 주세요."
+            placeholder="예: 28"
+          />
+        </div>
+        <div class="form-group">
+          <label for="hanGender">성별</label>
+          <select id="hanGender" name="gender" required>
+            <option value="" disabled selected>선택</option>
+            <option value="남성">남성</option>
+            <option value="여성">여성</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="hanPhone">휴대폰 번호</label>
+          <input id="hanPhone" name="phone" type="tel" required maxlength="40" autocomplete="tel" placeholder="010-0000-0000" />
+        </div>
+        <div class="form-group">
+          <label for="hanExperience">경력</label>
+          <textarea
+            id="hanExperience"
+            name="experience"
+            rows="4"
+            required
+            maxlength="150"
+            placeholder="-"
+          ></textarea>
+        </div>
+        <div class="modal-actions">
+          <button id="hanSupportCloseBtn" class="btn ghost" type="button">닫기</button>
+          <button id="hanSupportSubmitBtn" class="btn primary" type="submit">제출</button>
+        </div>
+      </form>
+
+      <div id="hanSupportAdminWrap" class="han-support-admin hidden" aria-hidden="true">
+        <h3 class="han-support-admin-title">지원 내역</h3>
+        <div id="hanSupportAdminList" class="han-support-admin-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Profile Modal -->
+  <div id="profileModal" class="modal-backdrop">
+    <div class="modal-card">
+      <h2>내 프로필</h2>
+
+      <div class="form-group">
+        <label for="profileEmail">이메일</label>
+        <input id="profileEmail" type="text" disabled />
+      </div>
+
+      <div class="form-group">
+        <label for="profileNickname">닉네임</label>
+        <input id="profileNickname" type="text" maxlength="7" placeholder="-" />
+      </div>
+
+      <div class="form-group">
+        <label for="profileAccessCode">내 접근 코드</label>
+        <input id="profileAccessCode" type="text" disabled />
+      </div>
+
+      <div class="modal-actions">
+        <button id="closeProfileBtn" class="btn ghost" type="button">닫기</button>
+        <button id="saveProfileBtn" class="btn primary" type="button">저장</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Admin Modal -->
+     <!-- User Manage Modal -->
+  <div id="userManageModal" class="modal-backdrop user-manage-backdrop">
+    <div class="modal-card user-manage-card">
+      <div class="user-manage-handle" aria-hidden="true"></div>
+
+      <div class="user-manage-head">
+        <div>
+          <h2 id="manageUserName">유저 관리</h2>
+          <div id="manageUserEmail" class="user-manage-email">이메일</div>
+        </div>
+        <button id="closeUserManageBtn" class="icon-close-btn" type="button" aria-label="닫기">✕</button>
+      </div>
+
+      <div id="manageUserMeta" class="user-manage-meta"></div>
+
+      <div class="user-manage-section">
+        <div class="user-manage-section-title">권한 관리</div>
+        <div class="user-manage-actions">
+          <button id="manageAllowBtn" class="row-btn allow wide" type="button">직접 허용</button>
+          <button id="manageRevokeBtn" class="row-btn revoke wide" type="button">허용 해제</button>
+        </div>
+      </div>
+
+      <div class="user-manage-section">
+        <div class="user-manage-section-title">코드 관리</div>
+        <div class="user-manage-actions">
+          <button id="manageAssignCodeBtn" class="row-btn assign wide" type="button">코드 부여</button>
+          <button id="manageRemoveCodeBtn" class="row-btn remove-code wide" type="button">코드 제거</button>
+          <button id="manageViewCodeBtn" class="row-btn view wide" type="button">코드 보기</button>
+        </div>
+      </div>
+
+      <div class="modal-actions user-manage-footer">
+        <button id="closeUserManageFooterBtn" class="btn ghost" type="button">닫기</button>
+      </div>
+    </div>
+  </div>
+  <div id="adminModal" class="modal-backdrop">
+    <div class="modal-card admin-modal-card">
+      <h2>접근 허용 관리</h2>
+
+      <div class="admin-layout">
+        <!-- 대회 관리 -->
+        <section class="admin-block">
+          <div class="admin-block-head">
+            <h3>대회 관리</h3>
+            <button id="newTournamentBtn" class="mini-btn" type="button">새 대회</button>
+          </div>
+
+          <div class="form-group">
+            <label for="adminEventSelect">대회 선택</label>
+            <select id="adminEventSelect"></select>
+          </div>
+
+          <div class="form-group">
+            <label for="adminTournamentId">대회 ID</label>
+            <input id="adminTournamentId" type="text" placeholder="-" />
+          </div>
+
+          <div class="form-group">
+            <label for="adminTournamentName">대회명</label>
+            <input id="adminTournamentName" type="text" placeholder="-" />
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="adminTournamentStartDate">시작일</label>
+              <input id="adminTournamentStartDate" type="text" placeholder="-" />
+            </div>
+
+            <div class="form-group">
+              <label for="adminTournamentEndDate">종료일</label>
+              <input id="adminTournamentEndDate" type="text" placeholder="-" />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="adminTournamentLogoText">로고 텍스트</label>
+              <input id="adminTournamentLogoText" type="text" placeholder="-" />
+            </div>
+
+            <div class="form-group">
+              <label for="adminEventCode">공용 코드</label>
+              <input id="adminEventCode" type="text" placeholder="-" />
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button id="saveTournamentBtn" class="btn primary" type="button">대회 저장</button>
+            <button id="deleteTournamentBtn" class="btn danger" type="button">대회 삭제</button>
+          </div>
+        </section>
+
+        <!-- 유저 허용 관리 -->
+        <section class="admin-block">
+          <h3>가입 유저 목록</h3>
+
+          <div class="form-group compact">
+            <label for="adminSearchInput">유저 검색</label>
+            <input id="adminSearchInput" type="text" placeholder="이름 또는 이메일 검색" autocomplete="off" />
+          </div>
+
+          <div class="admin-user-bulk-bar">
+            <label class="admin-bulk-select-all">
+              <input type="checkbox" id="adminBulkSelectAll" />
+              <span>전체 선택 (현재 목록)</span>
+            </label>
+            <div class="admin-bulk-actions">
+              <button id="adminBulkAssignCodeBtn" type="button" class="mini-btn">일괄 코드 부여</button>
+              <button id="adminBulkRemoveCodeBtn" type="button" class="mini-btn admin-bulk-remove-btn">일괄 코드 제거</button>
+              <button id="adminResetBasicRolesBtn" type="button" class="mini-btn admin-bulk-remove-btn">잘못된 admin 정리</button>
+            </div>
+          </div>
+
+          <div id="adminUserList" class="user-list"></div>
+        </section>
+      </div>
+
+      <div class="admin-footer">
+  <div class="modal-actions">
+    <button id="closeAdminBtn" class="btn ghost" type="button">닫기</button>
+  </div>
+</div>
+  </div>
+
+  <script type="module" src="./js/hub.js?v=20260714174837"></script>
+</body>
+</html>
