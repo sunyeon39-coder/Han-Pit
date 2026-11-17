@@ -4,7 +4,7 @@ html, body {
 }
 
 #app {
-  height: calc(100vh - var(--topbar-h));
+  height: calc(100vh - var(--safe-top) - var(--topbar-h));
   padding: 14px;
   padding-right: 14px;
   display: flex;
@@ -13,7 +13,7 @@ html, body {
 }
 
 body.page-global-layout.has-topic-bar #app {
-  height: calc(100vh - var(--topbar-h) - var(--gl-topic-h));
+  height: calc(100vh - var(--safe-top) - var(--topbar-h) - var(--gl-topic-h));
 }
 
 #app.with-panel {
@@ -585,7 +585,7 @@ body.page-global-layout .pc-panel .seat-add-one-row,
 }
 
 .global-list {
-  max-height: calc(100vh - var(--topbar-h) - 260px);
+  max-height: calc(100vh - var(--safe-top) - var(--topbar-h) - 260px);
   overflow: auto;
   padding-right: 4px;
 }
@@ -2385,6 +2385,11 @@ body.page-global-layout .layout-canvas-viewport {
 
   body.page-global-layout:not(.gl-mobile-mode):has(#topicBar[hidden]) .topbar {
     position: sticky;
+    /* 상태바 여백은 body padding-top(--safe-top)이 이미 비워 두므로 여기선 겹쳐 넣지 않는다 */
+    top: var(--safe-top);
+    height: var(--topbar-h);
+    padding-top: var(--topbar-pad-y);
+    box-sizing: border-box;
     transform: none;
     box-shadow: none;
   }
