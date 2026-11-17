@@ -14,19 +14,13 @@ function eventCardKey(eventId, boxId) {
   return `${String(eventId || "").trim()}::${String(boxId || "").trim()}`;
 }
 
-/** 종료(CLOSED)된 이벤트는 같은 날짜 안에서 맨 아래로, 전부 종료된 날짜 묶음은 목록 맨 아래로 —
- *  다음 진행할 일정이 늘 위에 오게. 그 외에는 날짜·시작 시각 순서를 그대로 둔다. */
+/** 그날 이벤트가 전부 종료(CLOSED)되면 그 날짜 묶음을 목록 맨 아래로 — 다음 날짜가 위로 올라온다.
+ *  날짜 안의 카드 순서는 그대로(시작 시각 순). */
 function orderGroupsClosedLast(groups) {
   const isClosed = (e) => getStatus(e.date, e.start, e.close) === "closed";
-  const ordered = groups.map(([date, list]) => {
-    const open = list.filter((e) => !isClosed(e));
-    const closed = list.filter(isClosed);
-    return { date, list: [...open, ...closed], allClosed: open.length === 0 };
-  });
-  return [
-    ...ordered.filter((g) => !g.allClosed),
-    ...ordered.filter((g) => g.allClosed)
-  ].map((g) => [g.date, g.list]);
+  const done = groups.filter(([, list]) => list.every(isClosed));
+  const active = groups.filter(([, list]) => !list.every(isClosed));
+  return [...active, ...done];
 }
 
 function buildEventCardInnerHtml(e, status) {
