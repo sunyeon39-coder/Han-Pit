@@ -14,6 +14,21 @@ function eventCardKey(eventId, boxId) {
   return `${String(eventId || "").trim()}::${String(boxId || "").trim()}`;
 }
 
+/** 종료(CLOSED)된 이벤트는 같은 날짜 안에서 맨 아래로, 전부 종료된 날짜 묶음은 목록 맨 아래로 —
+ *  다음 진행할 일정이 늘 위에 오게. 그 외에는 날짜·시작 시각 순서를 그대로 둔다. */
+function orderGroupsClosedLast(groups) {
+  const isClosed = (e) => getStatus(e.date, e.start, e.close) === "closed";
+  const ordered = groups.map(([date, list]) => {
+    const open = list.filter((e) => !isClosed(e));
+    const closed = list.filter(isClosed);
+    return { date, list: [...open, ...closed], allClosed: open.length === 0 };
+  });
+  return [
+    ...ordered.filter((g) => !g.allClosed),
+    ...ordered.filter((g) => g.allClosed)
+  ].map((g) => [g.date, g.list]);
+}
+
 function buildEventCardInnerHtml(e, status) {
   const seatSummaryText = formatSeatSummary(e.id, e.boxId);
   const assignedHere =
@@ -59,18 +74,21 @@ export function patchEventCardsLight() {
   const cards = IX.root.querySelectorAll(".event-card[data-event-key]");
   if (!cards.length) return false;
 
+  let closedChanged = false;
   cards.forEach((card) => {
     const [eventId, boxId] = String(card.dataset.eventKey || "").split("::");
     const e = IX.events.find((ev) => ev.id === eventId && ev.boxId === boxId);
     if (!e) return;
     const status = getStatus(e.date, e.start, e.close);
+    if ((status === "closed") !== card.classList.contains("closed")) closedChanged = true;
     card.className = `event-card ${status}`;
     card.dataset.date = e.date;
     card.dataset.start = e.start;
     card.dataset.close = e.close;
     card.innerHTML = buildEventCardInnerHtml(e, status);
   });
-  return true;
+  // 종료 여부가 바뀌면 순서가 달라지므로 전체 render 로 넘긴다
+  return !closedChanged;
 }
 
 function restoreEventsForRender() {
@@ -99,7 +117,7 @@ export function render() {
     return;
   }
 
-  const groups = groupByDate(IX.events);
+  const groups = orderGroupsClosedLast(groupByDate(IX.events));
   const desiredKeys = new Set();
   const existingByKey = new Map();
   IX.root.querySelectorAll(".event-card[data-event-key]").forEach((card) => {
@@ -149,12 +167,14 @@ export function render() {
 }
 
 export function refreshCardStatuses() {
+  let closedChanged = false;
   document.querySelectorAll(".event-card").forEach((card) => {
     const status = getStatus(
       card.dataset.date,
       card.dataset.start,
       card.dataset.close
     );
+    if ((status === "closed") !== card.classList.contains("closed")) closedChanged = true;
 
     card.classList.remove("scheduled", "opened", "running", "closed");
     card.classList.add(status);
@@ -165,4 +185,6 @@ export function refreshCardStatuses() {
       pill.textContent = getStatusLabel(status);
     }
   });
+  // 방금 종료된(또는 시간이 바뀌어 다시 열린) 이벤트가 있으면 순서를 다시 맞춘다
+  if (closedChanged) render();
 }
