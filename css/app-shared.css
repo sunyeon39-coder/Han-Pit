@@ -8,7 +8,7 @@
 :root {
   /* 워드마크 확대에 맞춰 살짝 올림 — layout/index/hub/global-layout 공통 */
   --topbar-h: 72px;
-  /* 투명 상태바(black-translucent) — 앱이 상태바 밑까지 깔리므로 그 높이만큼 직접 비운다 */
+  /* 상단 안전영역(상태바·노치) 높이 — 기본 상태바 모드에선 보통 0 */
   --safe-top: env(safe-area-inset-top, 0px);
   --topbar-pad-y: 5px;
   --topbar-pad-x: 14px;
@@ -415,10 +415,9 @@ a.app-mark {
   cursor: pointer;
 }
 
-/* ===== iOS 홈 화면 앱 상태바 =====
-   apple-mobile-web-app-status-bar-style=black-translucent 라 웹뷰가 화면 맨 위부터 깔린다.
-   (기본 모드에선 아이폰 폴드 등에서 세로→가로 회전 후 iOS 가 상태바 자리를 빈 띠로 남겨 둠)
-   body 를 상태바 높이만큼 내리고, 그 자리는 고정 띠로 덮어 스크롤된 내용이 비치지 않게 한다. */
+/* ===== iOS 상단 안전영역 =====
+   상태바 기본 모드라 대개 0 이지만, 안전영역이 생기는 화면에선 그만큼 내용을 내리고 그 자리를 덮는다.
+   ※ black-translucent 는 쓰지 말 것 — 아이폰 폴드에서 앱 화면이 아래쪽으로 상태바만큼 잘린다. */
 body {
   padding-top: var(--safe-top);
 }

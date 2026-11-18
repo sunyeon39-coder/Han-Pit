@@ -325,6 +325,7 @@
     // 독 모드(폴더블)에선 문서가 스크롤될 일이 없으니 밀리면 즉시 맨 위로
     window.addEventListener("scroll",function(){
       if(document.body.classList.contains("gl-mobile-mode"))return;
+      if(!matchMedia("(min-width: 600px) and (max-width: 1180px)").matches)return;
       if(scrollY||document.documentElement.scrollTop)window.scrollTo(0,0);
     },{passive:true});
     window.addEventListener("orientationchange",onRotate);
