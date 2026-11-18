@@ -2436,6 +2436,14 @@ body.page-global-layout .layout-canvas-viewport {
   }
 }
 
+/* 폴더블 가로 화면 — iOS 상태바(시계·배터리)가 화면 오른쪽 위 모서리를 덮어 Back 버튼이 잘 안 눌린다.
+   상단 메뉴 오른쪽을 그만큼 비워 버튼들을 왼쪽으로 당긴다. */
+@media (min-width: 600px) and (max-width: 1180px) and (orientation: landscape) {
+  body.page-global-layout:not(.gl-mobile-mode) .topbar {
+    padding-right: 104px;
+  }
+}
+
 /* 폴더블 독 손잡이 — 독 모드(위 미디어 쿼리)에서만 보임 */
 body.page-global-layout .gl-dock-toggle {
   display: none;
