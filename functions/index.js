@@ -916,3 +916,13 @@ exports.pruneDealerAttendanceLogs = onSchedule(
     console.info("[pruneDealerAttendanceLogs]", {byAge, byTournament, byTotal});
   }
 );
+
+/* =====================================================================
+ * 출퇴근 시각 서버 검증 — 근무자 본인이 쓴 출근 문서·로그·대기 행의 시각을 서버 시각 기준으로
+ * 검증하고, 과거로 당긴 조작은 되돌린다 (functions/attendance-guard.js 참고).
+ * ===================================================================== */
+const {buildAttendanceGuards} = require("./attendance-guard");
+const attendanceGuards = buildAttendanceGuards({region: "asia-northeast3", systemAdminEmails: SYSTEM_ADMIN_EMAILS});
+exports.guardDealerAttendance = attendanceGuards.guardDealerAttendance;
+exports.guardGlobalWaitingTimes = attendanceGuards.guardGlobalWaitingTimes;
+exports.guardAttendanceLogCreate = attendanceGuards.guardAttendanceLogCreate;
