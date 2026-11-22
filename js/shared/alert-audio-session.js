@@ -46,16 +46,23 @@ export function isIosLike() {
  * pulses: [주파수(Hz), 길이(초), 다음 펄스까지 쉼(초)]
  */
 const TONES = {
-  call: [[2600, 0.16, 0.06], [2000, 0.16, 0.06], [2600, 0.16, 0.06], [2000, 0.22, 0]],
-  seat: [[2300, 0.18, 0.07], [2300, 0.18, 0.07], [2300, 0.24, 0]],
-  alert: [[2800, 0.14, 0.05], [2800, 0.14, 0.05], [2800, 0.14, 0]]
+  // 호출: 끊김 없는 사이렌(2.4→3.4→2.4kHz) — 같은 최대 음량이라도 쉼 없이 오르내리는 소리가 가장 크게 들린다
+  call: [[2400, 0.46, 0, 3400], [3400, 0.46, 0.04, 2400]],
+  // 사람 귀·폰 스피커가 가장 민감한 ~3kHz, 쉼은 최소
+  seat: [[3000, 0.24, 0.03], [3000, 0.24, 0.03], [3000, 0.3, 0]],
+  alert: [[3200, 0.15, 0.03], [3200, 0.15, 0.03], [3200, 0.15, 0]]
 };
 
 /** 16-bit mono PCM WAV → Blob URL */
 function buildToneUrl(pulses) {
   const rate = 22050;
-  const AMP = 0.97;
-  const parts = pulses.map(([freq, dur, gap]) => ({ freq, n: Math.floor(rate * dur), gapN: Math.floor(rate * gap) }));
+  const AMP = 1;
+  const parts = pulses.map(([freq, dur, gap, freqEnd]) => ({
+    freq,
+    freqEnd: freqEnd || freq,
+    n: Math.floor(rate * dur),
+    gapN: Math.floor(rate * gap)
+  }));
   const total = parts.reduce((acc, p) => acc + p.n + p.gapN, 0);
   const buf = new ArrayBuffer(44 + total * 2);
   const v = new DataView(buf);
@@ -76,11 +83,13 @@ function buildToneUrl(pulses) {
   let o = 44;
   const attack = Math.floor(rate * 0.004);
   const release = Math.floor(rate * 0.012);
-  for (const { freq, n, gapN } of parts) {
+  let phase = 0;
+  for (const { freq, freqEnd, n, gapN } of parts) {
     for (let i = 0; i < n; i += 1) {
       // 딸깍 소리만 막는 아주 짧은 어택/릴리즈, 나머지는 최대 음량 유지
       const env = Math.min(1, i / attack, (n - i) / release);
-      const phase = (freq * i) / rate;
+      // 주파수를 시작→끝으로 선형 이동(사이렌). 위상 누적이라 이어지는 펄스도 끊김 없이 연결된다
+      phase += (freq + ((freqEnd - freq) * i) / n) / rate;
       const sq = phase - Math.floor(phase) < 0.5 ? 1 : -1;
       v.setInt16(o, Math.round(sq * env * AMP * 32767), true);
       o += 2;

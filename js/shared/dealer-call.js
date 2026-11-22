@@ -13,7 +13,6 @@ import { holdAlertAudioSession, playIosMediaBeep } from "./alert-audio-session.j
 
 /** 이 시간 지난 호출은 화면에 띄우지 않는다(서버 푸시도 같은 기준) */
 export const DEALER_CALL_MAX_AGE_MS = 10 * 60 * 1000;
-const SOUND_ENABLED_KEY = "boxboard_sound_enabled_v1";
 
 function callRef(uid) {
   return doc(db, "layout_calls", String(uid || "").trim());
@@ -103,8 +102,9 @@ function beep() {
     gain.connect(audioCtx.destination);
     const osc = audioCtx.createOscillator();
     osc.type = "square";
-    osc.frequency.setValueAtTime(2600, now);
-    osc.frequency.setValueAtTime(2000, now + 0.18);
+    osc.frequency.setValueAtTime(2400, now);
+    osc.frequency.linearRampToValueAtTime(3400, now + 0.18);
+    osc.frequency.linearRampToValueAtTime(2400, now + 0.36);
     osc.connect(gain);
     osc.start(now);
     osc.stop(now + 0.37);
@@ -121,13 +121,6 @@ function vibrate(pattern) {
   }
 }
 
-function soundLoopAllowed() {
-  try {
-    return localStorage.getItem(SOUND_ENABLED_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
 
 function stopAlerting() {
   if (soundTimer) clearInterval(soundTimer);
@@ -153,7 +146,8 @@ function showModal(data, uid) {
   beep();
   vibrate([400, 200, 400]);
   stopAlerting();
-  if (soundLoopAllowed()) {
+  // 호출은 놓치면 안 되므로 소리 설정과 무관하게 확인할 때까지 1초마다 반복
+  {
     soundTimer = setInterval(() => {
       beep();
       vibrate([400, 200, 400]);

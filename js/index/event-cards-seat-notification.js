@@ -133,7 +133,7 @@ export function bindMySeatAssignment(user) {
 
       const osc = ctx.createOscillator();
       osc.type = "square";
-      osc.frequency.setValueAtTime(2300, now);
+      osc.frequency.setValueAtTime(3000, now);
       osc.connect(gain);
       osc.start(now);
       osc.stop(now + 0.36);

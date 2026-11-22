@@ -123,7 +123,7 @@ export function initSeatAlerts({ db, tournamentId, getUid, canManage, onLocalTog
         gain.connect(audioCtx.destination);
         const osc = audioCtx.createOscillator();
         osc.type = "square";
-        osc.frequency.setValueAtTime(2800, s);
+        osc.frequency.setValueAtTime(3200, s);
         osc.connect(gain);
         osc.start(s);
         osc.stop(s + 0.26);
