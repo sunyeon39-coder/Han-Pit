@@ -926,3 +926,84 @@ const attendanceGuards = buildAttendanceGuards({region: "asia-northeast3", syste
 exports.guardDealerAttendance = attendanceGuards.guardDealerAttendance;
 exports.guardGlobalWaitingTimes = attendanceGuards.guardGlobalWaitingTimes;
 exports.guardAttendanceLogCreate = attendanceGuards.guardAttendanceLogCreate;
+
+/* =====================================================================
+ * 운영자 → 딜러 호출 푸시 (js/shared/dealer-call.js) — 배치 알림과 같은 data-only FCM.
+ * layout_calls/{uid}.calledAt 이 바뀔 때마다 한 번. 호출 키(fcmCallKey)로 중복 발송 방지.
+ * ===================================================================== */
+const DEALER_CALL_MAX_AGE_MS = 10 * 60 * 1000;
+
+exports.notifyDealerCall = onDocumentWritten(
+  {document: "layout_calls/{uid}", region: "asia-northeast3"},
+  async (event) => {
+    const change = event.data;
+    if (!change || !change.after || !change.after.exists) return;
+    const after = change.after.data() || {};
+    const before = change.before && change.before.exists ? change.before.data() || {} : {};
+    const uid = String(event.params.uid || "").trim();
+    const calledAt = toMillis(after.calledAt);
+    if (!uid || !calledAt || after.acknowledged === true) return;
+    if (calledAt === toMillis(before.calledAt)) return; // 확인 처리 등 다른 변경
+    if (Date.now() - calledAt > DEALER_CALL_MAX_AGE_MS) return;
+
+    const callKey = `call|${uid}|${calledAt}`;
+    let claimed = false;
+    try {
+      claimed = await db.runTransaction(async (tx) => {
+        const snap = await tx.get(change.after.ref);
+        if (!snap.exists) return false;
+        const cur = snap.data() || {};
+        if (toMillis(cur.calledAt) !== calledAt) return false; // 그 사이 다시 호출됨 → 그 이벤트가 보냄
+        if (String(cur.fcmCallKey || "") === callKey) return false;
+        tx.set(change.after.ref, {fcmCallKey: callKey}, {merge: true});
+        return true;
+      });
+    } catch (e) {
+      console.error("[notifyDealerCall] claim failed", uid, e);
+      return;
+    }
+    if (!claimed) return;
+
+    const userRef = db.doc(`users/${uid}`);
+    const userSnap = await userRef.get();
+    const token = userSnap.exists ? String(userSnap.get("fcmToken") || "").trim() : "";
+    if (!token) {
+      console.info("[notifyDealerCall] no fcm token", uid);
+      return;
+    }
+    const who = String(after.calledByName || "").trim() || "운영자";
+    const tid = String(after.tournamentId || "").trim();
+    const targetUrl = resolveTargetUrlForPush(
+      tid ? `./global-layout.html?tournamentId=${encodeURIComponent(tid)}` : "./global-layout.html"
+    );
+    try {
+      await messaging.send({
+        token,
+        data: {
+          title: PUSH_APP_TITLE,
+          body: `[호출] ${who} 님이 호출했습니다. 운영석으로 와 주세요.`,
+          targetUrl,
+          appBadgeCount: "",
+          dedupKey: callKey,
+          notifyTag: `hanpit-call-${uid}`,
+          uid
+        },
+        android: {priority: "high"},
+        apns: {
+          headers: {"apns-priority": "10"},
+          payload: {aps: {contentAvailable: true}}
+        },
+        webpush: {
+          fcmOptions: {link: targetUrl},
+          headers: {Urgency: "high", TTL: "600"}
+        }
+      });
+    } catch (err) {
+      const code = String(err?.code || "");
+      console.error("[notifyDealerCall] FCM send failed", uid, code, err?.message || err);
+      if (code === "messaging/invalid-registration-token" || code === "messaging/registration-token-not-registered") {
+        await userRef.set({fcmToken: ""}, {merge: true});
+      }
+    }
+  }
+);

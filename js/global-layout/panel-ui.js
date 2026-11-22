@@ -492,6 +492,7 @@ export function renderWaiting(_waiting) {
         </div>
         <div class="seat-inline-actions">
           ${deleteBtn}
+          ${isAdminViewForWaiting && isSelfCheckIn ? `<button class="pill-inline wait-call-btn" type="button" data-call-wid="${escapeHtml(wid)}" data-call-uid="${escapeHtml(String(w.uid || "").trim())}" data-call-name="${escapeHtml(String(w.name || "").trim())}" title="딜러에게 호출 알림 보내기">호출</button>` : ""}
           <span class="time-chip ${tClass}" data-wait-start="${startMs}" data-wait-id="${escapeHtml(wid)}">${fmtElapsed(elapsed)}</span>
         </div>
       </div>

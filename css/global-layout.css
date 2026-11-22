@@ -2538,3 +2538,16 @@ body.page-global-layout .gl-dock-toggle__grip {
   border-color: #ff5a5a;
   opacity: 0.8;
 }
+
+/* 대기 딜러 호출 버튼 (js/shared/dealer-call.js) */
+body.page-global-layout .wait-panel-row .wait-call-btn {
+  flex: 0 0 auto;
+  border-color: rgba(245, 159, 0, 0.75);
+  background: rgba(245, 159, 0, 0.16);
+  color: #ffd43b;
+  font-weight: 800;
+}
+
+body.page-global-layout .wait-panel-row .wait-call-btn:disabled {
+  opacity: 0.55;
+}

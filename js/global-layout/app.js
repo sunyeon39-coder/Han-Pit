@@ -1,3 +1,4 @@
+import { bindMyDealerCallWatch } from "../shared/dealer-call.js";
 import { auth, db } from "../firebase.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { GL, initGlFromUrl, initGlDomRefs } from "./state.js";
@@ -406,6 +407,7 @@ export function startGlobalLayoutApp() {
     void bootstrapAppPush(user.uid);
     flushAppBadgeIfVisible();
     ensureGlobalLayoutMobileSeatNotify(user);
+    bindMyDealerCallWatch(user);
 
     setPanelOpen(!layoutIsMobile());
     bindRealtime();

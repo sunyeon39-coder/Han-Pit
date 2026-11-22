@@ -1,3 +1,4 @@
+import { bindMyDealerCallWatch } from "../shared/dealer-call.js";
 import { auth, db } from "../firebase.js";
 
 import {
@@ -726,6 +727,7 @@ onAuthStateChanged(auth, async (user) => {
   const flow = ++indexAuthFlowGen;
   disposeIndexRealtimeWatches();
   bindMySeatAssignment(user);
+  bindMyDealerCallWatch(user);
 
   try {
     refreshIndexDomRefs();

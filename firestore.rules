@@ -184,6 +184,18 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin() && docId != "global_waiting";
     }
 
+    // 운영자 → 딜러 호출 (js/shared/dealer-call.js). 딜러 본인은 확인 처리만.
+    match /layout_calls/{uid} {
+      allow read: if isSelf(uid) || isAdmin();
+      allow create, update: if isAdmin() ||
+        (
+          isSelf(uid) &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(["acknowledged", "acknowledgedAt", "updatedAt"])
+        );
+      allow delete: if isAdmin();
+    }
+
     match /layout_notifications/{uid} {
       allow read: if isSelf(uid) || isAdmin();
       allow create, update: if isAdmin() ||

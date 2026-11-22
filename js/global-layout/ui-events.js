@@ -1,5 +1,7 @@
 import { GL } from "./state.js";
 import { showToast } from "../shared/toast.js";
+import { sendDealerCall } from "../shared/dealer-call.js";
+import { getOperatorDisplayName } from "./waiting-picks.js";
 import { layoutIsMobile } from "../layout/layout-main-route-env.js";
 import {
   getSeatById,
@@ -350,6 +352,45 @@ export function bindGlobalLayoutEventHandlers() {
         renderSeatPanel();
         renderSeats(GL.globalSeats);
         refreshGlobalLayoutAlignButtonState();
+      }
+      return;
+    }
+
+    const callBtn = e.target.closest("[data-call-wid]");
+    if (callBtn) {
+      // 대기 딜러 호출 — 배치 알림과 같은 방식(푸시 + 딜러 화면 모달)으로 알린다
+      const wid = String(callBtn.getAttribute("data-call-wid") || "").trim();
+      const found = (GL.globalWaiting || []).find((x) => String(x?.id || "").trim() === wid);
+      const w = {
+        uid: String(callBtn.getAttribute("data-call-uid") || found?.uid || "").trim(),
+        name: String(callBtn.getAttribute("data-call-name") || found?.name || "").trim()
+      };
+      const uid = w.uid;
+      if (!uid) {
+        showToast("계정이 없는 대기자는 호출할 수 없습니다.", { tone: "warn" });
+        return;
+      }
+      if (callBtn.disabled) return;
+      callBtn.disabled = true;
+      try {
+        await sendDealerCall({
+          uid,
+          name: String(w?.name || "").trim(),
+          tournamentId: GL.tournamentId,
+          calledByUid: String(GL.currentUser?.uid || "").trim(),
+          calledByName: getOperatorDisplayName(GL.userProfile, GL.currentUser)
+        });
+        showToast(`📣 ${String(w?.name || "").trim() || "딜러"} 호출 알림 보냄`);
+        callBtn.textContent = "호출됨";
+      } catch (err) {
+        console.error("sendDealerCall:", err);
+        showToast("호출 실패 — 다시 시도해 주세요.", { tone: "warn", durationMs: 4000 });
+      } finally {
+        // 연타 방지 — 잠시 뒤 다시 누를 수 있게
+        setTimeout(() => {
+          callBtn.disabled = false;
+          callBtn.textContent = "호출";
+        }, 5000);
       }
       return;
     }
