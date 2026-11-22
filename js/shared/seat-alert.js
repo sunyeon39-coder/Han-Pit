@@ -1,4 +1,4 @@
-import { holdAlertAudioSession } from "./alert-audio-session.js";
+import { holdAlertAudioSession, playIosMediaBeep } from "./alert-audio-session.js";
 /**
  * 좌석 상태 표시(Seat Alert) — 통합 배치도·일반 배치도 공통.
  *
@@ -106,6 +106,7 @@ export function initSeatAlerts({ db, tournamentId, getUid, canManage, onLocalTog
     } catch {
       /* noop */
     }
+    if (playIosMediaBeep("alert")) return;
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;

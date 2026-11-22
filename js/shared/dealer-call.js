@@ -9,7 +9,7 @@
  */
 import { db } from "../firebase.js";
 import { doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { holdAlertAudioSession } from "./alert-audio-session.js";
+import { holdAlertAudioSession, playIosMediaBeep } from "./alert-audio-session.js";
 
 /** 이 시간 지난 호출은 화면에 띄우지 않는다(서버 푸시도 같은 기준) */
 export const DEALER_CALL_MAX_AGE_MS = 10 * 60 * 1000;
@@ -86,6 +86,8 @@ function ensureModal() {
 }
 
 function beep() {
+  // 아이폰: 무음 스위치를 무시하는 <audio> 재생
+  if (playIosMediaBeep("call")) return;
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;

@@ -1,4 +1,4 @@
-import { holdAlertAudioSession } from "../shared/alert-audio-session.js";
+import { holdAlertAudioSession, playIosMediaBeep } from "../shared/alert-audio-session.js";
 import { db } from "../firebase.js";
 import { doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
@@ -118,6 +118,7 @@ export function bindMySeatAssignment(user) {
   }
 
   function playSeatModalBeep() {
+    if (playIosMediaBeep("seat")) return true;
     holdAlertAudioSession();
     const ctx = ensureSeatModalAudioContext();
     if (!ctx) return false;

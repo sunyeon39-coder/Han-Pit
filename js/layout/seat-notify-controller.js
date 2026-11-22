@@ -1,4 +1,4 @@
-import { holdAlertAudioSession } from "../shared/alert-audio-session.js";
+import { holdAlertAudioSession, playIosMediaBeep } from "../shared/alert-audio-session.js";
 import { escapeHtml } from "../shared/dom-utils.js";
 import { buildSeatAssignedNotifyMessage } from "../shared/seat-notification-label.js";
 import {
@@ -117,6 +117,7 @@ export function createLayoutSeatNotifyController({
   }
 
   function playBeep() {
+    if (playIosMediaBeep("seat")) return true;
     holdAlertAudioSession();
     const ctx = ensureAudioContext();
     if (!ctx) return false;
