@@ -201,7 +201,12 @@ async function ensureMeRecoveredOnce(user) {
         name: nickname
       };
       const canonicalRef = globalWaitingDocRef(db, tournamentId, `w_${user.uid}`);
-      const matchRefs = findGlobalWaitingEntryRefs(db, tournamentId, waitingList, person);
+      // 이름/이메일만 같은 "다른 계정" 행은 건드리지 않는다 — 본인 uid 행이나 주인 없는(수동 입력) 행만
+      const ownOrUnclaimed = (waitingList || []).filter((w) => {
+        const wUid = String(w?.uid || "").trim();
+        return !wUid || wUid === user.uid;
+      });
+      const matchRefs = findGlobalWaitingEntryRefs(db, tournamentId, ownOrUnclaimed, person);
       const refs = matchRefs.some((r) => r.path === canonicalRef.path)
         ? matchRefs
         : [canonicalRef, ...matchRefs];

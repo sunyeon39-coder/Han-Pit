@@ -21,6 +21,7 @@ const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {initializeApp} = require("firebase-admin/app");
 const {getFirestore, FieldValue, FieldPath} = require("firebase-admin/firestore");
 const {getMessaging} = require("firebase-admin/messaging");
+const {getAuth} = require("firebase-admin/auth");
 
 setGlobalOptions({region: "asia-northeast3"});
 
@@ -337,6 +338,12 @@ exports.notifyLayoutSeatAssigned = onDocumentWritten(
 );
 
 const SEAT_NOTIFY_SWEEP_LIMIT = 200;
+const SEAT_NOTIFY_SWEEP_MAX_PAGES = 10;
+/**
+ * 스윕 하한 — notifyAt 은 배치확인 시각(이어받은 착석 포함, 최대 20분 전)+REVEAL 이라 createdAt 보다
+ * 최대 ~20분 이를 수 있다. 이보다 오래된 문서는 createdAt 이 STALE(30분)을 넘겨 어차피 안 보낸다.
+ */
+const SEAT_NOTIFY_SWEEP_WINDOW_MS = 90 * 60 * 1000;
 
 /**
  * notifyAt(교대 공개 시점, REVEAL) 이 지났지만 아직 못 보낸 배치 알림을 1분마다 훑어 발송한다.
@@ -351,30 +358,52 @@ exports.sendDueLayoutSeatNotifications = onSchedule(
   },
   async () => {
     const now = Date.now();
-    let snap;
-    try {
-      snap = await db
-        .collection("layout_notifications")
-        .where("type", "==", "seat_assigned")
-        .where("acknowledged", "==", false)
-        .where("notifyAt", "<=", now)
-        .limit(SEAT_NOTIFY_SWEEP_LIMIT)
-        .get();
-    } catch (e) {
-      console.error("[sendDueLayoutSeatNotifications] query failed", e);
-      return;
-    }
-    if (snap.empty) return;
-
-    for (const docSnap of snap.docs) {
-      const uid = docSnap.id;
+    // 이미 보냈지만 아직 확인(acknowledged) 안 된 알림도 이 조건에 계속 걸린다. 예전엔 limit 200 한
+    // 페이지만 notifyAt 오름차순으로 읽어, 그런 지난 알림이 200건 넘게 쌓이면 방금 도래한 알림이
+    // 뒤로 밀려 못 나갔다. (1) 아래 하한으로 어차피 stale 처리될 오래된 문서는 빼고 (2) 페이지를
+    // 끝까지 넘기며 (3) 이미 보낸 건 트랜잭션 없이 건너뛴다. 기존 복합 인덱스 그대로 쓴다.
+    const lowerBound = now - SEAT_NOTIFY_SWEEP_WINDOW_MS;
+    let processed = 0;
+    let skippedSent = 0;
+    let lastDoc = null;
+    for (let page = 0; page < SEAT_NOTIFY_SWEEP_MAX_PAGES; page += 1) {
+      let snap;
       try {
-        await sendSeatAssignedNotificationIfDue(uid, docSnap.ref, docSnap.data() || {});
+        let q = db
+          .collection("layout_notifications")
+          .where("type", "==", "seat_assigned")
+          .where("acknowledged", "==", false)
+          .where("notifyAt", ">=", lowerBound)
+          .where("notifyAt", "<=", now)
+          .orderBy("notifyAt")
+          .limit(SEAT_NOTIFY_SWEEP_LIMIT);
+        if (lastDoc) q = q.startAfter(lastDoc);
+        snap = await q.get();
       } catch (e) {
-        console.error("[sendDueLayoutSeatNotifications] failed", uid, e);
+        console.error("[sendDueLayoutSeatNotifications] query failed", e);
+        break;
       }
+      if (snap.empty) break;
+      for (const docSnap of snap.docs) {
+        const uid = docSnap.id;
+        const data = docSnap.data() || {};
+        if (String(data.fcmSeatNotifyDedupKey || "") === buildDedupKey(uid, data)) {
+          skippedSent += 1;
+          continue;
+        }
+        try {
+          await sendSeatAssignedNotificationIfDue(uid, docSnap.ref, data);
+          processed += 1;
+        } catch (e) {
+          console.error("[sendDueLayoutSeatNotifications] failed", uid, e);
+        }
+      }
+      lastDoc = snap.docs[snap.docs.length - 1];
+      if (snap.size < SEAT_NOTIFY_SWEEP_LIMIT) break;
     }
-    console.info("[sendDueLayoutSeatNotifications] processed", snap.size);
+    if (processed || skippedSent) {
+      console.info("[sendDueLayoutSeatNotifications] processed", processed, "already sent", skippedSent);
+    }
   }
 );
 
@@ -457,6 +486,16 @@ async function finalizeOneIncomingSwap(seatDocSnap) {
     const freshSnap = await tx.get(seatRef);
     if (!freshSnap.exists) return;
     const fresh = freshSnap.data() || {};
+    // 쿼리~트랜잭션 사이에 기존 점유자가 바뀌었으면(강제 퇴근·즉시 교체 등) 위에서 구한
+    // prev* 값이 틀리다 — 이번엔 건너뛰고 다음 분 실행이 최신 데이터로 다시 처리하게 한다.
+    if (
+      String(fresh.person || "").trim() !== prevName ||
+      String(fresh.personUid || "").trim() !== prevUid ||
+      String(fresh.personEmail || "").trim() !== prevEmail
+    ) {
+      console.info("[finalizeIncomingSeatSwaps] occupant changed, retry next run", seatRef.path);
+      return;
+    }
     const incomingName = String(fresh.incomingPerson || "").trim();
     if (!incomingName) return; // 이미 취소됐거나 다른 실행에서 처리됨
     const incomingAtMs = toMillis(fresh.incomingAt);
@@ -539,6 +578,9 @@ async function finalizeOneIncomingSwap(seatDocSnap) {
             tournamentId,
             joinedAt: now,
             createdAt: now,
+            // 클라이언트 rebuildWaitingAfterSeatToWait 와 같이 항상 비운다 — merge 쓰기라 예전 예약
+            // 취소 때 실린 값이 남아 다음 배치의 incomingAt/notifyAt 으로 잘못 이어붙었다.
+            carryOverConfirmAt: null,
             source: "seat_swap_finalized"
           },
           {merge: true}
@@ -629,15 +671,35 @@ const SYSTEM_ADMIN_EMAILS = ["sunyeon9501@gmail.com"];
  * 예전엔 role=="admin" 전체를 넣어, 다른 대회만 맡은 운영자까지 이 대회 비상 알림을 받았다
  * (role 은 어느 대회든 직접 허용이 하나라도 있으면 admin 이 된다).
  */
+let systemAdminUidsCache = null;
+let systemAdminUidsCachedAt = 0;
+async function resolveSystemAdminUids() {
+  if (systemAdminUidsCache && Date.now() - systemAdminUidsCachedAt < 10 * 60 * 1000) return systemAdminUidsCache;
+  const uids = [];
+  for (const email of SYSTEM_ADMIN_EMAILS) {
+    try {
+      const rec = await getAuth().getUserByEmail(email);
+      if (rec && rec.uid && rec.emailVerified !== false) uids.push(rec.uid);
+    } catch (e) {
+      console.warn("[notifyGlobalSeatAlert] system admin lookup failed", e && e.code);
+    }
+  }
+  systemAdminUidsCache = uids;
+  systemAdminUidsCachedAt = Date.now();
+  return uids;
+}
+
 async function collectTournamentAdminUids(tournamentId) {
   const tid = String(tournamentId || "").trim();
   const uids = new Set();
   if (!tid) return uids;
   const queries = [
     db.collection("users").where("opsTournamentIds", "array-contains", tid),
-    db.collection("users").where(new FieldPath("allowedEvents", tid), "==", true),
-    db.collection("users").where("email", "in", SYSTEM_ADMIN_EMAILS)
+    db.collection("users").where(new FieldPath("allowedEvents", tid), "==", true)
   ];
+  // 시스템 admin 은 users 문서의 email 필드(본인이 고칠 수 있음)가 아니라 Firebase Auth 의
+  // 실제 로그인 이메일로 찾는다 — 예전엔 아무나 email 필드를 바꿔 모든 대회 알림을 받을 수 있었다.
+  for (const uid of await resolveSystemAdminUids()) uids.add(uid);
   const results = await Promise.allSettled(queries.map((q) => q.get()));
   results.forEach((r, i) => {
     if (r.status !== "fulfilled") {

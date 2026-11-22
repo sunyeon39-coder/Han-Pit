@@ -121,18 +121,42 @@ service cloud.firestore {
 
       // 대기자 1명 = 문서 1개 (layout_shared/global_waiting 배열 하나를 쓰던 방식에서
       // 분산 — 여러 운영자가 동시에 써도 서로 다른 대기자 문서면 충돌하지 않는다)
+      // 근무자 본인 쓰기는 (1) 새 문서의 uid 가 본인이고 (2) 기존 문서가 본인 것이거나 아직 주인 없는
+      // (운영자가 이름만 넣은) 행일 때만 — 예전엔 남의 대기 행도 uid 만 본인으로 바꿔 덮어쓸 수 있었다.
+      // 삭제도 같은 조건: 출근 트랜잭션이 본인 중복 행을 정리(tx.delete)하는데 admin 전용이라
+      // 중복 행이 있는 근무자는 출근 자체가 실패했다.
       match /global_waiting/{entryId} {
         allow read: if signedIn();
-        allow create, update: if isAdmin() ||
+        allow create: if isAdmin() ||
           (signedIn() && request.resource.data.uid == request.auth.uid);
-        allow delete: if isAdmin();
+        allow update: if isAdmin() ||
+          (
+            signedIn() &&
+            request.resource.data.uid == request.auth.uid &&
+            resource.data.get('uid', '') in [request.auth.uid, '', null]
+          );
+        allow delete: if isAdmin() ||
+          (signedIn() && resource.data.get('uid', '') in [request.auth.uid, '', null]);
       }
 
       // 운영자별 "찜한 대기자" 등 — global_waiting과 자주 같이 바뀌지만 별도 문서로 분리
       // operatorStaged(배치확인 전 임시 배치 공유)는 관리자 화면 전용 — 근무자가 가짜 "배치중"을 못 쓰게
+      // operatorPicks 도 운영자 전용(좌석 배정 트랜잭션이 읽는 문서) — 근무자는 권한을 잃은 뒤 남은
+      // "자기 항목 지우기"만 허용한다.
       match /global_waiting_meta/{docId} {
         allow read: if signedIn();
-        allow create, update: if isAdmin() || (docId != "operatorStaged" && signedIn());
+        allow create: if isAdmin();
+        allow update: if isAdmin() ||
+          (
+            signedIn() &&
+            docId == "operatorPicks" &&
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(["operatorPicks", "operatorPicks." + request.auth.uid]) &&
+            request.resource.data.get("operatorPicks", {})
+              .diff(resource.data.get("operatorPicks", {})).affectedKeys()
+              .hasOnly([request.auth.uid]) &&
+            !(request.auth.uid in request.resource.data.get("operatorPicks", {}))
+          );
         allow delete: if isAdmin();
       }
     }
@@ -154,10 +178,10 @@ service cloud.firestore {
     }
 
     // floor_map(좌석 맵) — 맵 편집은 운영 UI 전용이라 일반 로그인 사용자의 쓰기를 막는다
+    // 규칙은 "하나라도 허용하면 허용"이라 위 global_waiting 잠금이 이 와일드카드에 뚫리지 않게 제외한다
     match /layout_shared/{docId} {
       allow read: if signedIn();
-      allow create, update: if isAdmin();
-      allow delete: if isAdmin();
+      allow create, update, delete: if isAdmin() && docId != "global_waiting";
     }
 
     match /layout_notifications/{uid} {
