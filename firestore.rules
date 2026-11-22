@@ -129,9 +129,10 @@ service cloud.firestore {
       }
 
       // 운영자별 "찜한 대기자" 등 — global_waiting과 자주 같이 바뀌지만 별도 문서로 분리
+      // operatorStaged(배치확인 전 임시 배치 공유)는 관리자 화면 전용 — 근무자가 가짜 "배치중"을 못 쓰게
       match /global_waiting_meta/{docId} {
         allow read: if signedIn();
-        allow create, update: if signedIn();
+        allow create, update: if isAdmin() || (docId != "operatorStaged" && signedIn());
         allow delete: if isAdmin();
       }
     }

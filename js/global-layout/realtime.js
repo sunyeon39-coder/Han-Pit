@@ -65,7 +65,7 @@ import {
   operatorPicksDocRef
 } from "../shared/tournament-waiting-queue.js";
 import { invalidateWaitingPanelFingerprint } from "./panel-ui.js";
-import { publishMyStagedSeats, watchRemoteStagedSeats } from "./remote-staged-seats.js";
+import { watchRemoteStagedSeats } from "./remote-staged-seats.js";
 import { resolveAttendanceWaitingJoinMs } from "../shared/attendance-operational-day.js";
 import { mergeIncomingGlobalWaiting, replaceGlobalWaitingLocal } from "./waiting.js";
 import { dedupeGlobalWaitingRows } from "../shared/tournament-waiting-queue.js";
@@ -1154,7 +1154,6 @@ export function bindRealtime() {
     invalidateWaitingPanelFingerprint();
     scheduleGlobalLayoutRealtimeUi({ seats: true, seatPanel: true, waiting: true });
   });
-  publishMyStagedSeats();
 
   GL.stopAttendanceWatch = onSnapshot(
     dealerAttendanceQueryForTournament(GL.tournamentId),

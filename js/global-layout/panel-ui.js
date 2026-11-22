@@ -107,20 +107,23 @@ function seatPanelFingerprint(seats = []) {
 function buildGlobalSeatBoxState(s, idx, paletteMap) {
   const seatId = String(s.seatId || "").trim();
   const pending = GL.pendingSeatAssignments.get(seatId) || null;
-  // 다른 관리자가 "배치확인" 전에 이 seat 에 넣어둔 사람 (내 임시 배치가 있으면 내 것이 우선)
-  const remoteStaged = pending ? [] : getRemoteStagedForSeat(seatId);
+  const isAdminView = canManageGlobalLayoutOps();
+  // 다른 관리자가 "배치확인" 전에 이 seat 에 넣어둔 사람 (내 임시 배치가 있으면 내 것이 우선).
+  // 실제 좌석은 아직 안 바뀌었으므로 앉아 있는 사람·교대 표시는 그대로 두고 라벨만 붙인다.
+  const remoteStaged = pending ? [] : getRemoteStagedForSeat(seatId, isAdminView);
   const remote = remoteStaged[0] || null;
   const occupied = !isEmptyPerson(String(s.person || "").trim());
-  const swapDisplay = occupied && !pending && !remote
-    ? resolveSeatSwapDisplay(s, Date.now(), { isAdminView: canManageGlobalLayoutOps() })
+  const swapDisplay = occupied && !pending
+    ? resolveSeatSwapDisplay(s, Date.now(), { isAdminView })
     : null;
   const name = pending
     ? String(pending.waiting?.name || "").trim() || "-"
-    : remote
-      ? remote.name || "-"
-      : swapDisplay
-        ? swapDisplay.name || "-"
+    : swapDisplay
+      ? swapDisplay.name || "-"
+      : remote && !occupied
+        ? remote.name || "-"
         : "-";
+  const remoteLabel = remote ? remoteStagedLabel(remoteStaged, { withName: occupied }) : "";
   const isSelf = occupied && isSeatAssignedToCurrentUser(s, auth.currentUser, GL.userProfile);
   const personClass = [occupied || pending || remote ? "seat-person" : "seat-person is-empty", isSelf ? "is-self" : ""]
     .filter(Boolean)
@@ -136,7 +139,7 @@ function buildGlobalSeatBoxState(s, idx, paletteMap) {
   const timerCls = occupied ? timerClass(elapsedMs) : "";
   const isBlinkOn = swapDisplay?.highlight === true;
   const paletteClass = getEventBoxPaletteClass(s, paletteMap);
-  const alertClass = seatAlertClass(s, canManageGlobalLayoutOps());
+  const alertClass = seatAlertClass(s, isAdminView);
   const seatBoxClass = [
     "seat-box",
     paletteClass,
@@ -169,7 +172,7 @@ function buildGlobalSeatBoxState(s, idx, paletteMap) {
         ${historyBtnHtml}
         <div class="seat-title">SEAT ${escapeHtml(canvasLabel)}</div>
         <div class="${personClass}">${escapeHtml(name)}</div>
-        ${remote ? `<div class="seat-remote-stage" style="--op-color:${escapeHtml(remote.color)}">${escapeHtml(remoteStagedLabel(remoteStaged))}</div>` : ""}
+        ${remote ? `<div class="seat-remote-stage" style="--op-color:${escapeHtml(remote.color)}">${escapeHtml(remoteLabel)}</div>` : ""}
       `
   };
 }
@@ -202,7 +205,7 @@ export function updateCanvasSeatTimerClasses() {
       box.classList.remove("t-green", "t-yellow", "t-orange", "t-red");
       return;
     }
-    const swapDisplay = GL.pendingSeatAssignments.get(id) || getRemoteStagedForSeat(id).length
+    const swapDisplay = GL.pendingSeatAssignments.get(id)
       ? null
       : resolveSeatSwapDisplay(s, now, { isAdminView });
     // 오른쪽 Seat 목록 타이머와 같은 기준 — 교대 확정 순간 목록과 동시에 색이 바뀌게
@@ -435,13 +438,14 @@ export function renderWaiting(_waiting) {
     [...GL.pendingSeatAssignments.values()].map((p) => String(p.waiting?.id || "").trim()).filter(Boolean)
   );
 
+  const isAdminViewForWaiting = canManageGlobalLayoutOps();
   const buildWaitRowHtml = (w) => {
     const wid = String(w.id || "");
     const pickUi = waitingRowPickClass(wid);
     const selected = pickUi.isSelected;
     const blocked = isWaitingBlocked(w);
     const isStagedForSeat = pendingWaitingIds.has(wid);
-    const remoteStagedWait = isStagedForSeat ? [] : getRemoteStagedForWaiting(wid);
+    const remoteStagedWait = isStagedForSeat ? [] : getRemoteStagedForWaiting(wid, isAdminViewForWaiting);
     const startMs = getWaitingDisplayStartMs(w);
     const elapsed = Date.now() - startMs;
     const tClass = timerClass(elapsed);
@@ -564,8 +568,7 @@ export function updateSeatPanelTimers() {
     const rowKey = String(row.getAttribute("data-select-seat") || "").trim();
     const seat = seatByRowKey.get(rowKey);
     const seatId = String(seat?.seatId || "").trim();
-    const hasPending =
-      !!seat && (!!GL.pendingSeatAssignments.get(seatId) || getRemoteStagedForSeat(seatId).length > 0);
+    const hasPending = !!seat && !!GL.pendingSeatAssignments.get(seatId);
     const swapDisplay = seat && !hasPending ? resolveSeatSwapDisplay(seat, now, { isAdminView }) : null;
 
     if (swapDisplay) {
@@ -658,19 +661,20 @@ export function renderSeatPanel() {
     .map((s) => {
       const seatId = String(s.seatId || "").trim();
       const pending = GL.pendingSeatAssignments.get(seatId) || null;
-      const remoteStaged = pending ? [] : getRemoteStagedForSeat(seatId);
+      const remoteStaged = pending ? [] : getRemoteStagedForSeat(seatId, isAdminViewForPanel);
       const remote = remoteStaged[0] || null;
       const occupied = !isEmptyPerson(String(s.person || "").trim());
-      const swapDisplay = occupied && !pending && !remote
+      const swapDisplay = occupied && !pending
         ? resolveSeatSwapDisplay(s, Date.now(), { isAdminView: isAdminViewForPanel })
         : null;
       const name = pending
         ? String(pending.waiting?.name || "").trim() || "-"
-        : remote
-          ? remote.name || "-"
-          : swapDisplay
-            ? swapDisplay.name || "-"
+        : swapDisplay
+          ? swapDisplay.name || "-"
+          : remote && !occupied
+            ? remote.name || "-"
             : "-";
+      const remoteLabel = remote ? remoteStagedLabel(remoteStaged, { withName: occupied }) : "";
       const isSelf = occupied && isSeatAssignedToCurrentUser(s, auth.currentUser, GL.userProfile);
       const firestoreDocId = String(s.__firestoreDocId || "").trim();
       const rowKey = getGlobalSeatRowKey(s);
@@ -684,12 +688,12 @@ export function renderSeatPanel() {
       const isBlinkOn = swapDisplay?.highlight === true;
       const ebMeta = !occupied ? formatSeatPanelEventBoxMeta(s) : "";
       return `
-      <div class="seat-manage-row gl-panel-list-row ${paletteClass} ${selectedRowClass} ${seatAlertClass(s, canManageGlobalLayoutOps())} ${pending ? "is-pending-assign" : ""} ${remote ? "is-remote-pending-assign" : ""} ${isBlinkOn ? "is-confirm-blink" : ""}" style="${remote ? `--op-color:${escapeHtml(remote.color)}` : ""}" data-select-seat="${escapeHtml(rowKey)}" data-firestore-doc="${escapeHtml(firestoreDocId)}">
+      <div class="seat-manage-row gl-panel-list-row ${paletteClass} ${selectedRowClass} ${seatAlertClass(s, isAdminViewForPanel)} ${pending ? "is-pending-assign" : ""} ${remote ? "is-remote-pending-assign" : ""} ${isBlinkOn ? "is-confirm-blink" : ""}" style="${remote ? `--op-color:${escapeHtml(remote.color)}` : ""}" data-select-seat="${escapeHtml(rowKey)}" data-firestore-doc="${escapeHtml(firestoreDocId)}">
         <div class="seat-manage-main seat-manage-main--oneline">
           <div class="seat-manage-namewrap seat-manage-namewrap--with-num">
             <span class="seat-manage-num">${escapeHtml(seatCanvasDigitsOnly(s.label, s.no))}</span>
             <div class="seat-manage-namecol">
-              <span class="seat-manage-name ${occupied || pending || remote ? "" : "is-empty"} ${isSelf ? "is-self" : ""}">${escapeHtml(name)}</span>${remote ? `<span class="seat-remote-stage" style="--op-color:${escapeHtml(remote.color)}">${escapeHtml(remoteStagedLabel(remoteStaged))}</span>` : ""}
+              <span class="seat-manage-name ${occupied || pending || remote ? "" : "is-empty"} ${isSelf ? "is-self" : ""}">${escapeHtml(name)}</span>${remote ? `<span class="seat-remote-stage" style="--op-color:${escapeHtml(remote.color)}">${escapeHtml(remoteLabel)}</span>` : ""}
               ${ebMeta ? `<span class="seat-manage-eb-meta muted">${escapeHtml(ebMeta)}</span>` : ""}
             </div>
           </div>

@@ -85,6 +85,18 @@ function clearLocalSessionCaches() {
 }
 
 export async function logout() {
+  // 로그인 상태가 필요한 정리 작업(예: 통합배치도 "배치중" 표시 삭제)을 잠깐 기다린다
+  try {
+    const hooks = Array.isArray(window.hanPitBeforeLogoutHooks) ? window.hanPitBeforeLogoutHooks : [];
+    if (hooks.length) {
+      await Promise.race([
+        Promise.allSettled(hooks.map((fn) => Promise.resolve().then(fn))),
+        new Promise((r) => setTimeout(r, 1500))
+      ]);
+    }
+  } catch {
+    /* ignore */
+  }
   clearOAuthRedirectPending();
   clearLocalSessionCaches();
   await signOut(auth);

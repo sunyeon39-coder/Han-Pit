@@ -7,7 +7,7 @@ import {
   setDoc
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { canUseTournamentOps, isSystemAdminEmail, normalizeUserProfile } from "../shared/auth-helpers.js";
-import { resolveLayoutAccentColor } from "../shared/layout-operator-colors.js";
+import { isValidLayoutAccentColor, resolveLayoutAccentColor } from "../shared/layout-operator-colors.js";
 import { GL } from "./state.js";
 import { escapeHtml } from "./utils.js";
 import { flushOptimisticGlobalLayoutUi } from "./optimistic-seat-mutation.js";
@@ -277,6 +277,19 @@ export function setWaitingRowSelection(waitingId = "") {
   void syncMyWaitingPick(wid);
 }
 
+/**
+ * 다른 운영자가 문서에 올린 이름·색을 화면에 쓰기 전에 정리 — 찜 표시(operatorPicks)와
+ * 임시 배치 표시(remote-staged-seats.js)가 같은 규칙을 쓰게 한 곳에 둔다.
+ * 색은 inline style 로 들어가므로 #RRGGBB 만 허용한다.
+ */
+export function normalizeOperatorIdentity(uid = "", entry = {}) {
+  const id = String(uid || "").trim();
+  const displayName = String(entry?.displayName || "").trim().slice(0, 40) || id.slice(0, 6) || "운영";
+  const rawColor = String(entry?.color || "").trim();
+  const color = isValidLayoutAccentColor(rawColor) ? rawColor : resolveLayoutAccentColor({}, id);
+  return { displayName, color };
+}
+
 export function getActiveOperatorPicks() {
   const tid = String(GL.tournamentId || "").trim();
   const myUid = String(GL.currentUser?.uid || auth.currentUser?.uid || "").trim();
@@ -289,11 +302,12 @@ export function getActiveOperatorPicks() {
     if (!waitingId) continue;
     const pickTid = String(pick.tournamentId || "").trim();
     if (pickTid && tid && pickTid !== tid) continue;
+    const { displayName, color } = normalizeOperatorIdentity(uid, pick);
     list.push({
       uid,
       waitingId,
-      displayName: String(pick.displayName || "").trim() || uid.slice(0, 6),
-      color: String(pick.color || "").trim() || resolveLayoutAccentColor({}, uid),
+      displayName,
+      color,
       isSelf: uid === myUid
     });
   }
