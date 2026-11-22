@@ -40,29 +40,26 @@ export function isIosLike() {
   }
 }
 
-/** 톤 정의: 주파수, 길이(초), 반복 횟수, 간격(초), 파형 */
+/**
+ * 톤 정의 — 휴대폰 스피커가 가장 크게 내는 2~2.6kHz 대역의 사각파를, 감쇠 없이 최대 음량으로
+ * 짧게 여러 번 끊어 울린다(처음 버전은 880~1kHz 삼각파 + 빠른 감쇠라 실제로 작게 들렸다).
+ * pulses: [주파수(Hz), 길이(초), 다음 펄스까지 쉼(초)]
+ */
 const TONES = {
-  call: { freq: 880, dur: 0.35, count: 1, gap: 0, wave: "triangle" },
-  seat: { freq: 1046.5, dur: 0.35, count: 1, gap: 0, wave: "triangle" },
-  alert: { freq: 1174.7, dur: 0.24, count: 2, gap: 0.04, wave: "square" }
+  call: [[2600, 0.16, 0.06], [2000, 0.16, 0.06], [2600, 0.16, 0.06], [2000, 0.22, 0]],
+  seat: [[2300, 0.18, 0.07], [2300, 0.18, 0.07], [2300, 0.24, 0]],
+  alert: [[2800, 0.14, 0.05], [2800, 0.14, 0.05], [2800, 0.14, 0]]
 };
 
-function sampleWave(wave, phase) {
-  const x = phase - Math.floor(phase);
-  if (wave === "square") return x < 0.5 ? 0.6 : -0.6;
-  // triangle
-  return 4 * Math.abs(x - 0.5) - 1;
-}
-
 /** 16-bit mono PCM WAV → Blob URL */
-function buildToneUrl({ freq, dur, count, gap, wave }) {
+function buildToneUrl(pulses) {
   const rate = 22050;
-  const beepN = Math.floor(rate * dur);
-  const gapN = Math.floor(rate * gap);
-  const total = count * beepN + (count - 1) * gapN;
+  const AMP = 0.97;
+  const parts = pulses.map(([freq, dur, gap]) => ({ freq, n: Math.floor(rate * dur), gapN: Math.floor(rate * gap) }));
+  const total = parts.reduce((acc, p) => acc + p.n + p.gapN, 0);
   const buf = new ArrayBuffer(44 + total * 2);
   const v = new DataView(buf);
-  const w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  const w = (o, str) => [...str].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
   w(0, "RIFF");
   v.setUint32(4, 36 + total * 2, true);
   w(8, "WAVE");
@@ -77,20 +74,20 @@ function buildToneUrl({ freq, dur, count, gap, wave }) {
   w(36, "data");
   v.setUint32(40, total * 2, true);
   let o = 44;
-  for (let b = 0; b < count; b += 1) {
-    for (let i = 0; i < beepN; i += 1) {
-      const t = i / rate;
-      // 짧은 어택 + 지수 감쇠 (Web Audio 비프와 비슷한 느낌)
-      const env = Math.min(1, t / 0.01) * Math.exp(-t * 9);
-      const s = sampleWave(wave, freq * t) * env * 0.9;
-      v.setInt16(o, Math.max(-1, Math.min(1, s)) * 32767, true);
+  const attack = Math.floor(rate * 0.004);
+  const release = Math.floor(rate * 0.012);
+  for (const { freq, n, gapN } of parts) {
+    for (let i = 0; i < n; i += 1) {
+      // 딸깍 소리만 막는 아주 짧은 어택/릴리즈, 나머지는 최대 음량 유지
+      const env = Math.min(1, i / attack, (n - i) / release);
+      const phase = (freq * i) / rate;
+      const sq = phase - Math.floor(phase) < 0.5 ? 1 : -1;
+      v.setInt16(o, Math.round(sq * env * AMP * 32767), true);
       o += 2;
     }
-    if (b < count - 1) {
-      for (let i = 0; i < gapN; i += 1) {
-        v.setInt16(o, 0, true);
-        o += 2;
-      }
+    for (let i = 0; i < gapN; i += 1) {
+      v.setInt16(o, 0, true);
+      o += 2;
     }
   }
   return URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
@@ -101,10 +98,11 @@ let unlocked = false;
 
 function ensureMediaEls() {
   if (mediaEls.size) return;
-  for (const [name, def] of Object.entries(TONES)) {
+  for (const [name, pulses] of Object.entries(TONES)) {
     const el = new Audio();
     el.preload = "auto";
-    el.src = buildToneUrl(def);
+    el.volume = 1;
+    el.src = buildToneUrl(pulses);
     el.setAttribute("playsinline", "");
     mediaEls.set(name, el);
   }

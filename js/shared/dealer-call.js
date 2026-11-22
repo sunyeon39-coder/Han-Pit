@@ -97,15 +97,17 @@ function beep() {
     const now = audioCtx.currentTime;
     const gain = audioCtx.createGain();
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.linearRampToValueAtTime(0.35, now + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+    gain.gain.linearRampToValueAtTime(0.9, now + 0.01);
+    gain.gain.setValueAtTime(0.9, now + 0.3);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.36);
     gain.connect(audioCtx.destination);
     const osc = audioCtx.createOscillator();
-    osc.type = "triangle";
-    osc.frequency.setValueAtTime(880, now);
+    osc.type = "square";
+    osc.frequency.setValueAtTime(2600, now);
+    osc.frequency.setValueAtTime(2000, now + 0.18);
     osc.connect(gain);
     osc.start(now);
-    osc.stop(now + 0.36);
+    osc.stop(now + 0.37);
   } catch {
     /* noop */
   }

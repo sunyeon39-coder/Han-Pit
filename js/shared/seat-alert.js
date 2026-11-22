@@ -118,12 +118,12 @@ export function initSeatAlerts({ db, tournamentId, getUid, canManage, onLocalTog
         const s = start + i * 0.28;
         const gain = audioCtx.createGain();
         gain.gain.setValueAtTime(0.0001, s);
-        gain.gain.linearRampToValueAtTime(0.35, s + 0.02);
+        gain.gain.linearRampToValueAtTime(0.9, s + 0.02);
         gain.gain.exponentialRampToValueAtTime(0.0001, s + 0.24);
         gain.connect(audioCtx.destination);
         const osc = audioCtx.createOscillator();
         osc.type = "square";
-        osc.frequency.setValueAtTime(1174.7, s);
+        osc.frequency.setValueAtTime(2800, s);
         osc.connect(gain);
         osc.start(s);
         osc.stop(s + 0.26);

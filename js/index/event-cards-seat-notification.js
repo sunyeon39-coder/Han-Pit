@@ -126,13 +126,14 @@ export function bindMySeatAssignment(user) {
       const now = ctx.currentTime;
       const gain = ctx.createGain();
       gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.linearRampToValueAtTime(0.35, now + 0.01);
+      gain.gain.linearRampToValueAtTime(0.9, now + 0.01);
+      gain.gain.setValueAtTime(0.9, now + 0.3);
       gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
       gain.connect(ctx.destination);
 
       const osc = ctx.createOscillator();
-      osc.type = "triangle";
-      osc.frequency.setValueAtTime(1046.5, now);
+      osc.type = "square";
+      osc.frequency.setValueAtTime(2300, now);
       osc.connect(gain);
       osc.start(now);
       osc.stop(now + 0.36);
