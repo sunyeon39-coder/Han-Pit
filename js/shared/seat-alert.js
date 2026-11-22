@@ -1,3 +1,4 @@
+import { holdAlertAudioSession } from "./alert-audio-session.js";
 /**
  * 좌석 상태 표시(Seat Alert) — 통합 배치도·일반 배치도 공통.
  *
@@ -108,6 +109,7 @@ export function initSeatAlerts({ db, tournamentId, getUid, canManage, onLocalTog
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
+      holdAlertAudioSession();
       if (!audioCtx) audioCtx = new AC();
       if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
       const start = audioCtx.currentTime;
