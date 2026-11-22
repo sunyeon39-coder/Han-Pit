@@ -140,13 +140,14 @@ let authSampleLogged = 0;
 async function isDealerSelfWrite(event, systemAdminEmails) {
   const type = String(event.authType || "");
   const uid = String(event.authId || "").trim();
-  if (authSampleLogged < 20) {
+  // 서버(Functions 등)의 쓰기는 authId 가 서비스 계정 이메일로 온다 — 사용자 조회 없이 건너뛴다
+  if (!uid || uid.includes("@") || type === "service_account" || type === "system") return null;
+  const admin = await isOpsAdminUid(uid, systemAdminEmails);
+  if (authSampleLogged < 30) {
     authSampleLogged += 1;
-    console.info("[attendanceGuard] auth sample", type || "(none)", uid ? "uid" : "no-uid");
+    console.info("[attendanceGuard] auth sample", type || "(none)", admin ? "ops" : "dealer");
   }
-  if (!uid || type === "service_account" || type === "system") return null;
-  if (await isOpsAdminUid(uid, systemAdminEmails)) return null;
-  return uid;
+  return admin ? null : uid;
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
