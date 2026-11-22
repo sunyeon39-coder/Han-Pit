@@ -65,6 +65,7 @@ import {
   operatorPicksDocRef
 } from "../shared/tournament-waiting-queue.js";
 import { invalidateWaitingPanelFingerprint } from "./panel-ui.js";
+import { publishMyStagedSeats, watchRemoteStagedSeats } from "./remote-staged-seats.js";
 import { resolveAttendanceWaitingJoinMs } from "../shared/attendance-operational-day.js";
 import { mergeIncomingGlobalWaiting, replaceGlobalWaitingLocal } from "./waiting.js";
 import { dedupeGlobalWaitingRows } from "../shared/tournament-waiting-queue.js";
@@ -181,6 +182,10 @@ function disposeGlobalLayoutRealtime() {
   if (GL.stopOperatorPicksWatch) {
     GL.stopOperatorPicksWatch();
     GL.stopOperatorPicksWatch = null;
+  }
+  if (GL.stopOperatorStagedWatch) {
+    GL.stopOperatorStagedWatch();
+    GL.stopOperatorStagedWatch = null;
   }
   if (GL.stopAttendanceWatch) {
     GL.stopAttendanceWatch();
@@ -1143,6 +1148,13 @@ export function bindRealtime() {
       logFirestoreWatchError("operator picks watch error", err);
     }
   );
+
+  // 다른 관리자의 "배치확인" 전 임시 배치 표시
+  GL.stopOperatorStagedWatch = watchRemoteStagedSeats(GL.tournamentId, () => {
+    invalidateWaitingPanelFingerprint();
+    scheduleGlobalLayoutRealtimeUi({ seats: true, seatPanel: true, waiting: true });
+  });
+  publishMyStagedSeats();
 
   GL.stopAttendanceWatch = onSnapshot(
     dealerAttendanceQueryForTournament(GL.tournamentId),

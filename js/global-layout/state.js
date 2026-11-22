@@ -24,6 +24,7 @@ export const GL = {
   stopSeatWatch: null,
   stopWaitingWatch: null,
   stopOperatorPicksWatch: null,
+  stopOperatorStagedWatch: null,
   stopAttendanceWatch: null,
   stopTopicWatch: null,
   topicBar: null,

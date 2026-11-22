@@ -2,7 +2,8 @@
  * "배치확인" 2중 확인 — admin이 seat을 고르면 즉시 Firestore에 쓰지 않고
  * 이 세션에만 있는 임시 상태로 먼저 보여준다("반전" 표시). "배치확인" 버튼을
  * 눌러야 실제 assignSelectedWaitingToSeat 이 실행돼 좌석에 반영된다.
- * 여러 관리자 화면 간에는 동기화되지 않는다(실수 방지용 로컬 안전장치).
+ * 임시 배치는 이 세션 로컬 상태지만, "누가 어디에 누구를 넣어뒀는지"는
+ * remote-staged-seats.js 로 다른 관리자 화면에도 표시된다(동시 배치 실수 방지).
  */
 import { GL } from "./state.js";
 import { assignSelectedWaitingToSeat } from "./fs-assign-waiting-to-seat.js";
@@ -10,6 +11,7 @@ import { applyOptimisticMyWaitingPick, clearMyWaitingPick } from "./waiting-pick
 import { waitForSeatMutationIdle } from "./layout-mutation-guard.js";
 import { waitForSerializedGlobalWaitingWrites } from "./global-waiting-write-lock.js";
 import { scheduleGlobalLayoutResyncAfterBatch } from "./realtime.js";
+import { confirmStageAgainstRemote, publishMyStagedSeats } from "./remote-staged-seats.js";
 
 /** 배치확인 일괄 저장 동시 실행 수 — 너무 크면 같은 문서 충돌·재시도가 늘어난다 */
 const BATCH_CONCURRENCY = 6;
@@ -17,16 +19,22 @@ import { applyOptimisticAssign, flushOptimisticGlobalLayoutUi } from "./optimist
 
 export function stagePendingSeatAssignment(seatId, waiting) {
   const sid = String(seatId || "").trim();
-  if (!sid || !waiting) return;
+  if (!sid || !waiting) return false;
+  // 다른 관리자가 이미 이 Seat / 이 대기자를 임시 배치해 두었으면 먼저 확인
+  if (!confirmStageAgainstRemote(sid, waiting)) return false;
   GL.pendingSeatAssignments.set(sid, { waiting, stagedAt: Date.now() });
   GL.selectedWaitingId = "";
   applyOptimisticMyWaitingPick("");
+  publishMyStagedSeats();
+  return true;
 }
 
 export function cancelPendingSeatAssignment(seatId) {
   const sid = String(seatId || "").trim();
   if (!sid) return false;
-  return GL.pendingSeatAssignments.delete(sid);
+  const removed = GL.pendingSeatAssignments.delete(sid);
+  if (removed) publishMyStagedSeats();
+  return removed;
 }
 
 export function getPendingSeatAssignment(seatId) {
@@ -142,6 +150,7 @@ export async function confirmAllPendingSeatAssignments({ immediate = false } = {
     if (ownsSeatMutex) GL.seatMutationInFlight = false;
     for (const seatId of doneSeatIds) GL.pendingSeatAssignments.delete(seatId);
     if (entries.length) GL.batchSeatMutationDepth = Math.max(0, (GL.batchSeatMutationDepth || 0) - 1);
+    if (entries.length) publishMyStagedSeats();
   }
   // 건마다 생략했던 공유 문서 정리 — 내 "찜한 대기자" 표시 해제(실패해도 배치엔 영향 없음).
   if (entries.length) void clearMyWaitingPick();

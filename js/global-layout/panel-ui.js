@@ -54,6 +54,12 @@ import { buildEventBoxPaletteMap, getEventBoxPaletteClass } from "./event-box-pa
 import { syncSeatBoxesInContainer } from "../shared/sync-seat-box-dom.js";
 import { canManageGlobalLayoutOps, canViewGlobalLayoutSeatHistory } from "./ops-access.js";
 import { seatAlertClass } from "../shared/seat-alert.js";
+import {
+  getRemoteStagedForSeat,
+  getRemoteStagedForWaiting,
+  remoteStagedFingerprint,
+  remoteStagedLabel
+} from "./remote-staged-seats.js";
 
 function buildGlobalSeatsByIdMap() {
   const map = new Map();
@@ -76,7 +82,7 @@ function waitingPanelFingerprint(waiting = []) {
     })
     .join(";");
   const pendingKey = [...GL.pendingSeatAssignments.keys()].sort().join(",");
-  return `S:${seatedKey}|W:${waitingKey}|M:${GL.waitingViewMode}|P:${pendingKey}`;
+  return `S:${seatedKey}|W:${waitingKey}|M:${GL.waitingViewMode}|P:${pendingKey}|R:${remoteStagedFingerprint()}`;
 }
 
 export function invalidateWaitingPanelFingerprint() {
@@ -86,7 +92,7 @@ export function invalidateWaitingPanelFingerprint() {
 function seatPanelFingerprint(seats = []) {
   const sel = String(GL.selectedWaitingId || "").trim();
   const pendingKey = [...GL.pendingSeatAssignments.keys()].sort().join(",");
-  return `${sel}|${GL.seatSortMode}|P:${pendingKey}|${seats
+  return `${sel}|${GL.seatSortMode}|P:${pendingKey}|R:${remoteStagedFingerprint()}|${seats
     .map((s) => {
       const sid = String(s.seatId || "").trim();
       const occupied = !isEmptyPerson(String(s.person || "").trim());
@@ -101,17 +107,22 @@ function seatPanelFingerprint(seats = []) {
 function buildGlobalSeatBoxState(s, idx, paletteMap) {
   const seatId = String(s.seatId || "").trim();
   const pending = GL.pendingSeatAssignments.get(seatId) || null;
+  // 다른 관리자가 "배치확인" 전에 이 seat 에 넣어둔 사람 (내 임시 배치가 있으면 내 것이 우선)
+  const remoteStaged = pending ? [] : getRemoteStagedForSeat(seatId);
+  const remote = remoteStaged[0] || null;
   const occupied = !isEmptyPerson(String(s.person || "").trim());
-  const swapDisplay = occupied && !pending
+  const swapDisplay = occupied && !pending && !remote
     ? resolveSeatSwapDisplay(s, Date.now(), { isAdminView: canManageGlobalLayoutOps() })
     : null;
   const name = pending
     ? String(pending.waiting?.name || "").trim() || "-"
-    : swapDisplay
-      ? swapDisplay.name || "-"
-      : "-";
+    : remote
+      ? remote.name || "-"
+      : swapDisplay
+        ? swapDisplay.name || "-"
+        : "-";
   const isSelf = occupied && isSeatAssignedToCurrentUser(s, auth.currentUser, GL.userProfile);
-  const personClass = [occupied || pending ? "seat-person" : "seat-person is-empty", isSelf ? "is-self" : ""]
+  const personClass = [occupied || pending || remote ? "seat-person" : "seat-person is-empty", isSelf ? "is-self" : ""]
     .filter(Boolean)
     .join(" ");
   const selectedClass = GL.selectedSeatIds.has(seatId) ? "selected" : "";
@@ -134,6 +145,7 @@ function buildGlobalSeatBoxState(s, idx, paletteMap) {
     selectedClass,
     alertClass,
     pending ? "is-pending-assign" : "",
+    remote ? "is-remote-pending-assign" : "",
     isBlinkOn ? "is-confirm-blink" : ""
   ]
     .filter(Boolean)
@@ -157,6 +169,7 @@ function buildGlobalSeatBoxState(s, idx, paletteMap) {
         ${historyBtnHtml}
         <div class="seat-title">SEAT ${escapeHtml(canvasLabel)}</div>
         <div class="${personClass}">${escapeHtml(name)}</div>
+        ${remote ? `<div class="seat-remote-stage" style="--op-color:${escapeHtml(remote.color)}">${escapeHtml(remoteStagedLabel(remoteStaged))}</div>` : ""}
       `
   };
 }
@@ -189,7 +202,7 @@ export function updateCanvasSeatTimerClasses() {
       box.classList.remove("t-green", "t-yellow", "t-orange", "t-red");
       return;
     }
-    const swapDisplay = GL.pendingSeatAssignments.get(id)
+    const swapDisplay = GL.pendingSeatAssignments.get(id) || getRemoteStagedForSeat(id).length
       ? null
       : resolveSeatSwapDisplay(s, now, { isAdminView });
     // 오른쪽 Seat 목록 타이머와 같은 기준 — 교대 확정 순간 목록과 동시에 색이 바뀌게
@@ -428,6 +441,7 @@ export function renderWaiting(_waiting) {
     const selected = pickUi.isSelected;
     const blocked = isWaitingBlocked(w);
     const isStagedForSeat = pendingWaitingIds.has(wid);
+    const remoteStagedWait = isStagedForSeat ? [] : getRemoteStagedForWaiting(wid);
     const startMs = getWaitingDisplayStartMs(w);
     const elapsed = Date.now() - startMs;
     const tClass = timerClass(elapsed);
@@ -455,7 +469,7 @@ export function renderWaiting(_waiting) {
       : "";
     return `
     <div
-      class="seat-manage-row wait-panel-row gl-panel-list-row ${selected ? "selected" : ""} ${blocked ? "is-blocked" : ""} ${isStagedForSeat ? "is-staged-for-seat" : ""} ${pickUi.classes}"
+      class="seat-manage-row wait-panel-row gl-panel-list-row ${selected ? "selected" : ""} ${blocked ? "is-blocked" : ""} ${isStagedForSeat ? "is-staged-for-seat" : ""} ${remoteStagedWait.length ? "is-remote-staged-for-seat" : ""} ${pickUi.classes}"
       style="--wait-pick-color:${escapeHtml(pickUi.pickColor)}"
       data-wid="${escapeHtml(wid)}"
       data-wait-join-ms="${joinedAtMs}"
@@ -468,6 +482,7 @@ export function renderWaiting(_waiting) {
           <div class="seat-manage-namecol">
             <span class="seat-manage-name">${escapeHtml(w.name || w.uid || "-")}</span>
             ${buildWaitingPickBadgesHtml(wid)}
+            ${remoteStagedWait.length ? `<span class="wait-pick-badges"><span class="wait-pick-badge" style="--pick-color:${escapeHtml(remoteStagedWait[0].color)}">${escapeHtml(remoteStagedLabel(remoteStagedWait))}</span></span>` : ""}
             ${blockBadge}
           </div>
         </div>
@@ -549,7 +564,8 @@ export function updateSeatPanelTimers() {
     const rowKey = String(row.getAttribute("data-select-seat") || "").trim();
     const seat = seatByRowKey.get(rowKey);
     const seatId = String(seat?.seatId || "").trim();
-    const hasPending = !!seat && !!GL.pendingSeatAssignments.get(seatId);
+    const hasPending =
+      !!seat && (!!GL.pendingSeatAssignments.get(seatId) || getRemoteStagedForSeat(seatId).length > 0);
     const swapDisplay = seat && !hasPending ? resolveSeatSwapDisplay(seat, now, { isAdminView }) : null;
 
     if (swapDisplay) {
@@ -642,15 +658,19 @@ export function renderSeatPanel() {
     .map((s) => {
       const seatId = String(s.seatId || "").trim();
       const pending = GL.pendingSeatAssignments.get(seatId) || null;
+      const remoteStaged = pending ? [] : getRemoteStagedForSeat(seatId);
+      const remote = remoteStaged[0] || null;
       const occupied = !isEmptyPerson(String(s.person || "").trim());
-      const swapDisplay = occupied && !pending
+      const swapDisplay = occupied && !pending && !remote
         ? resolveSeatSwapDisplay(s, Date.now(), { isAdminView: isAdminViewForPanel })
         : null;
       const name = pending
         ? String(pending.waiting?.name || "").trim() || "-"
-        : swapDisplay
-          ? swapDisplay.name || "-"
-          : "-";
+        : remote
+          ? remote.name || "-"
+          : swapDisplay
+            ? swapDisplay.name || "-"
+            : "-";
       const isSelf = occupied && isSeatAssignedToCurrentUser(s, auth.currentUser, GL.userProfile);
       const firestoreDocId = String(s.__firestoreDocId || "").trim();
       const rowKey = getGlobalSeatRowKey(s);
@@ -664,12 +684,12 @@ export function renderSeatPanel() {
       const isBlinkOn = swapDisplay?.highlight === true;
       const ebMeta = !occupied ? formatSeatPanelEventBoxMeta(s) : "";
       return `
-      <div class="seat-manage-row gl-panel-list-row ${paletteClass} ${selectedRowClass} ${seatAlertClass(s, canManageGlobalLayoutOps())} ${pending ? "is-pending-assign" : ""} ${isBlinkOn ? "is-confirm-blink" : ""}" data-select-seat="${escapeHtml(rowKey)}" data-firestore-doc="${escapeHtml(firestoreDocId)}">
+      <div class="seat-manage-row gl-panel-list-row ${paletteClass} ${selectedRowClass} ${seatAlertClass(s, canManageGlobalLayoutOps())} ${pending ? "is-pending-assign" : ""} ${remote ? "is-remote-pending-assign" : ""} ${isBlinkOn ? "is-confirm-blink" : ""}" style="${remote ? `--op-color:${escapeHtml(remote.color)}` : ""}" data-select-seat="${escapeHtml(rowKey)}" data-firestore-doc="${escapeHtml(firestoreDocId)}">
         <div class="seat-manage-main seat-manage-main--oneline">
           <div class="seat-manage-namewrap seat-manage-namewrap--with-num">
             <span class="seat-manage-num">${escapeHtml(seatCanvasDigitsOnly(s.label, s.no))}</span>
             <div class="seat-manage-namecol">
-              <span class="seat-manage-name ${occupied || pending ? "" : "is-empty"} ${isSelf ? "is-self" : ""}">${escapeHtml(name)}</span>
+              <span class="seat-manage-name ${occupied || pending || remote ? "" : "is-empty"} ${isSelf ? "is-self" : ""}">${escapeHtml(name)}</span>${remote ? `<span class="seat-remote-stage" style="--op-color:${escapeHtml(remote.color)}">${escapeHtml(remoteStagedLabel(remoteStaged))}</span>` : ""}
               ${ebMeta ? `<span class="seat-manage-eb-meta muted">${escapeHtml(ebMeta)}</span>` : ""}
             </div>
           </div>
